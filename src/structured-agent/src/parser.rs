@@ -1,0 +1,413 @@
+use crate::ast::{Expression, Function, FunctionBody, Parameter, Statement, Type};
+use combine::parser::char::{char, letter, spaces, string};
+use combine::parser::choice::choice;
+use combine::parser::repeat::{many, sep_by};
+use combine::{Parser, Stream, attempt, between};
+
+fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    spaces().silent()
+}
+
+fn lex_char<Input>(c: char) -> impl Parser<Input, Output = char>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    char(c).skip(skip_spaces())
+}
+
+fn lex_string<Input>(s: &'static str) -> impl Parser<Input, Output = &'static str>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    string(s).skip(skip_spaces())
+}
+
+fn identifier<Input>() -> impl Parser<Input, Output = String>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        choice((letter(), char('_'))),
+        many(choice((combine::parser::char::alpha_num(), char('_')))),
+    )
+        .map(|(first, rest): (char, Vec<char>)| {
+            let mut result = String::new();
+            result.push(first);
+            result.extend(rest);
+            result
+        })
+        .skip(skip_spaces())
+}
+
+pub fn parse_program<Input>() -> impl Parser<Input, Output = Vec<Function>>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    skip_spaces().with(many(parse_function()))
+}
+
+fn parse_function<Input>() -> impl Parser<Input, Output = Function>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        lex_string("fn"),
+        identifier(),
+        between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by(parse_parameter(), lex_char(',')),
+        ),
+        lex_string("->"),
+        parse_type(),
+        between(lex_char('{'), lex_char('}'), parse_function_body()),
+    )
+        .map(|(_, name, params, _, return_type, body)| Function {
+            name,
+            parameters: params,
+            return_type,
+            body,
+        })
+}
+
+fn parse_parameter<Input>() -> impl Parser<Input, Output = Parameter>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (identifier(), lex_char(':'), parse_type())
+        .map(|(name, _, param_type)| Parameter { name, param_type })
+}
+
+fn parse_type<Input>() -> impl Parser<Input, Output = Type>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        lex_string("()").map(|_| Type::Unit),
+        identifier().map(Type::Named),
+    ))
+}
+
+fn parse_function_body<Input>() -> impl Parser<Input, Output = FunctionBody>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many(parse_statement().skip(skip_spaces())).map(|statements| FunctionBody { statements })
+}
+
+fn parse_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((attempt(parse_assignment()), parse_injection()))
+}
+
+fn parse_injection<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    parse_expression()
+        .skip(lex_char('!'))
+        .map(Statement::Injection)
+}
+
+fn parse_assignment<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        lex_string("let"),
+        identifier(),
+        lex_char('='),
+        parse_expression(),
+    )
+        .map(|(_, variable, _, expression)| Statement::Assignment {
+            variable,
+            expression,
+        })
+}
+
+fn parse_expression<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        attempt(parse_call()),
+        parse_string_literal(),
+        parse_variable(),
+    ))
+}
+
+fn parse_call<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        attempt(
+            (
+                identifier(),
+                lex_string("::"),
+                identifier(),
+                between(
+                    lex_char('('),
+                    lex_char(')'),
+                    sep_by(parse_argument(), lex_char(',')),
+                ),
+            )
+                .map(|(target, _, function, args)| Expression::Call {
+                    target,
+                    function,
+                    arguments: args,
+                    is_method: false,
+                }),
+        ),
+        attempt(
+            (
+                identifier(),
+                lex_char('.'),
+                identifier(),
+                between(
+                    lex_char('('),
+                    lex_char(')'),
+                    sep_by(parse_argument(), lex_char(',')),
+                ),
+            )
+                .map(|(target, _, function, args)| Expression::Call {
+                    target,
+                    function,
+                    arguments: args,
+                    is_method: true,
+                }),
+        ),
+        (
+            identifier(),
+            between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by(parse_argument(), lex_char(',')),
+            ),
+        )
+            .map(|(function, args)| Expression::Call {
+                target: String::new(),
+                function,
+                arguments: args,
+                is_method: false,
+            }),
+    ))
+}
+
+fn parse_argument<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((parse_string_literal(), parse_variable()))
+}
+
+fn parse_string_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    between(
+        lex_char('"'),
+        char('"'),
+        many(combine::satisfy(|c| c != '"')),
+    )
+    .map(|chars: Vec<char>| Expression::StringLiteral(chars.into_iter().collect()))
+}
+
+fn parse_variable<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    identifier().map(Expression::Variable)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use combine::EasyParser;
+
+    #[test]
+    fn test_parse_simple_function() {
+        let input = r#"
+fn analyze_code(context: Context, code: String) -> Analysis {
+    "Analyze the following code for potential bugs"!
+    "Focus on edge cases and error handling"!
+    code!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (functions, _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "analyze_code");
+        assert_eq!(func.parameters.len(), 2);
+        assert_eq!(func.parameters[0].name, "context");
+        assert_eq!(func.parameters[1].name, "code");
+        assert_eq!(func.body.statements.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_prompt_injection() {
+        let input = r#""Analyze the following code for potential bugs"!"#;
+        let result = parse_statement().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (statement, _) = result.unwrap();
+        match statement {
+            Statement::Injection(Expression::StringLiteral(content)) => {
+                assert_eq!(content, "Analyze the following code for potential bugs");
+            }
+            _ => panic!("Expected injection with string literal"),
+        }
+    }
+
+    #[test]
+    fn test_parse_variable_injection() {
+        let input = "code!";
+        let result = parse_statement().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (statement, _) = result.unwrap();
+        match statement {
+            Statement::Injection(Expression::Variable(var)) => {
+                assert_eq!(var, "code");
+            }
+            _ => panic!("Expected injection with variable"),
+        }
+    }
+
+    #[test]
+    fn test_parse_assignment_with_method_call() {
+        let input = "let analysis = ctx.analyze_code(code)";
+        let result = parse_statement().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (statement, _) = result.unwrap();
+        match statement {
+            Statement::Assignment {
+                variable,
+                expression,
+            } => {
+                assert_eq!(variable, "analysis");
+                match expression {
+                    Expression::Call {
+                        target,
+                        function,
+                        arguments,
+                        is_method,
+                    } => {
+                        assert_eq!(target, "ctx");
+                        assert_eq!(function, "analyze_code");
+                        assert_eq!(arguments.len(), 1);
+                        match &arguments[0] {
+                            Expression::Variable(name) => assert_eq!(name, "code"),
+                            _ => panic!("Expected variable argument"),
+                        }
+                        assert!(is_method);
+                    }
+                    _ => panic!("Expected call"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+    }
+
+    #[test]
+    fn test_complete_example_from_ideas() {
+        let input = r#"
+fn analyze_code(context: Context, code: String) -> Analysis {
+    "Analyze the following code for potential bugs"!
+    "Focus on edge cases and error handling"!
+    code!
+}
+
+fn suggest_fix(context: Context, analysis: Analysis) -> CodeFix {
+    "Given this analysis, suggest a fix"!
+    analysis!
+}
+
+fn main() -> () {
+    let ctx = Context::new()
+    let code = "def divide(a, b): return a / b"
+    let analysis = ctx.analyze_code(code)
+    let fix = ctx.suggest_fix(analysis)
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (functions, _) = result.unwrap();
+        assert_eq!(functions.len(), 3);
+
+        assert_eq!(functions[0].name, "analyze_code");
+        assert_eq!(functions[1].name, "suggest_fix");
+        assert_eq!(functions[2].name, "main");
+
+        let main_func = &functions[2];
+        assert_eq!(main_func.body.statements.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_call_with_expression_arguments() {
+        let input = r#"func("hello", var_name, "world")"#;
+        let result = parse_expression().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expression, _) = result.unwrap();
+        match expression {
+            Expression::Call {
+                target,
+                function,
+                arguments,
+                is_method,
+            } => {
+                assert_eq!(target, "");
+                assert_eq!(function, "func");
+                assert_eq!(arguments.len(), 3);
+                assert!(!is_method);
+
+                match &arguments[0] {
+                    Expression::StringLiteral(s) => assert_eq!(s, "hello"),
+                    _ => panic!("Expected string literal"),
+                }
+
+                match &arguments[1] {
+                    Expression::Variable(name) => assert_eq!(name, "var_name"),
+                    _ => panic!("Expected variable"),
+                }
+
+                match &arguments[2] {
+                    Expression::StringLiteral(s) => assert_eq!(s, "world"),
+                    _ => panic!("Expected string literal"),
+                }
+            }
+            _ => panic!("Expected call expression"),
+        }
+    }
+}
