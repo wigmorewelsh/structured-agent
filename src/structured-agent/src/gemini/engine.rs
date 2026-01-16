@@ -37,55 +37,25 @@ impl GeminiEngine {
         self
     }
 
-    fn build_context_message(&self, context: &Context) -> String {
-        let mut message = String::new();
-
-        if !context.events.is_empty() {
-            message.push_str("Recent events:\n");
-            for event in &context.events {
-                message.push_str(&format!("- {}\n", event.message));
-            }
-            message.push('\n');
-        }
-
-        if !context.variables.is_empty() {
-            message.push_str("Available variables:\n");
-            for (name, value) in &context.variables {
-                match value {
-                    crate::runtime::ExprResult::String(s) => {
-                        message.push_str(&format!("- {}: \"{}\"\n", name, s));
-                    }
-                    crate::runtime::ExprResult::Unit => {
-                        message.push_str(&format!("- {}: ()\n", name));
-                    }
-                }
-            }
-            message.push('\n');
-        }
-
-        let functions = context.runtime().list_functions();
-        if !functions.is_empty() {
-            message.push_str("Available functions:\n");
-            for func_name in functions {
-                message.push_str(&format!("- {}\n", func_name));
-            }
-        }
-
-        if message.is_empty() {
-            "No context information available.".to_string()
+    fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
+        if context.events.is_empty() {
+            vec![ChatMessage::system("No events available.")]
         } else {
-            message
+            context
+                .events
+                .iter()
+                .map(|event| ChatMessage::system(&event.message))
+                .collect()
         }
     }
 }
 
 impl LanguageEngine for GeminiEngine {
     fn untyped(&self, context: &Context) -> String {
-        let context_message = self.build_context_message(context);
-        let chat_message = ChatMessage::user(context_message);
+        let chat_messages = self.build_context_messages(context);
 
         match self.runtime.block_on(self.client.structured_chat(
-            vec![chat_message],
+            chat_messages,
             self.model.clone(),
             None,
         )) {
