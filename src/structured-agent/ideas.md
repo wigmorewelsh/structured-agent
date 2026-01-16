@@ -138,3 +138,18 @@ fn main() -> () {
     let fix = ctx.suggest_fix(analysis);
 }
 ```
+
+
+# Future
+* Load code from files.
+* Use MCP servers as source for tools.
+* Small number of built in tools (std lib).
+* Run program from file.
+* Programs can import from other files.
+* Auto re-compile from source on changes. (salsa)
+* Update running programs.
+* Long running programs reacting to events.
+* User input.
+* Correcting failing processes. 
+* Durable Execution.
+* Track if events are from system(code)/user/model

@@ -5,8 +5,8 @@ use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
 use structured_agent::runtime::{Context, ExprResult, Runtime};
 
-#[test]
-fn test_full_pipeline_parse_compile_execute() {
+#[tokio::test]
+async fn test_full_pipeline_parse_compile_execute() {
     let code = r#"
 fn test_func() -> () {
     "Hello from function"!
@@ -32,7 +32,7 @@ fn test_func() -> () {
     // Test that the function can be executed
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let execution_result = compiled_function.evaluate(&mut context);
+    let execution_result = compiled_function.evaluate(&mut context).await;
     assert!(execution_result.is_ok());
 
     // Check that events were generated (injections)
@@ -40,8 +40,8 @@ fn test_func() -> () {
     assert_eq!(context.events[0].message, "Hello from function");
 }
 
-#[test]
-fn test_compile_and_execute_individual_statements() {
+#[tokio::test]
+async fn test_compile_and_execute_individual_statements() {
     let code = r#"
 fn test() -> () {
     "Hello world"!
@@ -60,7 +60,7 @@ fn test() -> () {
     // First statement: string injection
     let stmt1 = &function.body.statements[0];
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
-    let result1 = compiled_stmt1.evaluate(&mut context).unwrap();
+    let result1 = compiled_stmt1.evaluate(&mut context).await.unwrap();
 
     match result1 {
         ExprResult::String(s) => assert_eq!(s, "Hello world"),
@@ -74,7 +74,7 @@ fn test() -> () {
     // Second statement: assignment (compiles to expression evaluation)
     let stmt2 = &function.body.statements[1];
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
-    let result2 = compiled_stmt2.evaluate(&mut context).unwrap();
+    let result2 = compiled_stmt2.evaluate(&mut context).await.unwrap();
 
     match result2 {
         ExprResult::Unit => {}
@@ -85,8 +85,8 @@ fn test() -> () {
     assert_eq!(context.events.len(), 1);
 }
 
-#[test]
-fn test_variable_injection_after_assignment() {
+#[tokio::test]
+async fn test_variable_injection_after_assignment() {
     let code = r#"
 fn test_var_injection() -> () {
     let message = "Important message"
@@ -100,7 +100,7 @@ fn test_var_injection() -> () {
 
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context);
+    let result = compiled_function.evaluate(&mut context).await;
     assert!(result.is_ok());
 
     // Should have one event from the variable injection
@@ -108,8 +108,8 @@ fn test_var_injection() -> () {
     assert_eq!(context.events[0].message, "Important message");
 }
 
-#[test]
-fn test_call_compilation() {
+#[tokio::test]
+async fn test_call_compilation() {
     let code = r#"
 fn test() -> () {
 let result = "test value"
@@ -126,7 +126,7 @@ result!
 
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let result = compiled_stmt1.evaluate(&mut context).unwrap();
+    let result = compiled_stmt1.evaluate(&mut context).await.unwrap();
 
     match result {
         ExprResult::Unit => {}
@@ -136,7 +136,7 @@ result!
     // Test the second statement (injection)
     let stmt2 = &function.body.statements[1];
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
-    let result2 = compiled_stmt2.evaluate(&mut context).unwrap();
+    let result2 = compiled_stmt2.evaluate(&mut context).await.unwrap();
 
     match result2 {
         ExprResult::String(s) => assert_eq!(s, "test value"),

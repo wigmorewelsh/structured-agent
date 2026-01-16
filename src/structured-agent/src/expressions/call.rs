@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use async_trait::async_trait;
 use std::any::Any;
 
 pub struct CallExpr {
@@ -20,8 +21,9 @@ impl std::fmt::Debug for CallExpr {
     }
 }
 
+#[async_trait(?Send)]
 impl Expression for CallExpr {
-    fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
         let function_name = if self.is_method || self.target.is_empty() {
             self.function.clone()
         } else {
@@ -51,7 +53,7 @@ impl Expression for CallExpr {
 
         let mut args = Vec::new();
         for arg in &self.arguments {
-            args.push(arg.evaluate(context)?);
+            args.push(arg.evaluate(context).await?);
         }
 
         let mut function_context = context.create_child();
@@ -60,7 +62,7 @@ impl Expression for CallExpr {
             function_context.set_variable(param_name.clone(), args[i].clone());
         }
 
-        let result = function_info.evaluate(&mut function_context)?;
+        let result = function_info.evaluate(&mut function_context).await?;
 
         // For now, return the function result directly
         // In the future, we might want to use the language engine for more complex scenarios
@@ -104,8 +106,8 @@ mod tests {
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
-    #[test]
-    fn test_unknown_method() {
+    #[tokio::test]
+    async fn test_unknown_method() {
         let expr = CallExpr {
             target: "obj".to_string(),
             function: "unknown_method".to_string(),
@@ -115,7 +117,7 @@ mod tests {
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context);
+        let result = expr.evaluate(&mut context).await;
 
         assert!(result.is_err());
         assert!(
@@ -147,8 +149,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_call_with_registry() {
+    #[tokio::test]
+    async fn test_call_with_registry() {
         let mut runtime = Runtime::new();
 
         let function_info = FunctionExpr {
@@ -171,15 +173,15 @@ mod tests {
             is_method: false,
         };
 
-        let result = expr.evaluate(&mut context).unwrap();
+        let result = expr.evaluate(&mut context).await.unwrap();
         match result {
             ExprResult::String(s) => assert_eq!(s, "Hello, World!"),
             _ => panic!("Expected string result"),
         }
     }
 
-    #[test]
-    fn test_unknown_static_function() {
+    #[tokio::test]
+    async fn test_unknown_static_function() {
         let expr = CallExpr {
             target: "Unknown".to_string(),
             function: "func".to_string(),
@@ -189,7 +191,7 @@ mod tests {
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context);
+        let result = expr.evaluate(&mut context).await;
 
         assert!(result.is_err());
         assert!(

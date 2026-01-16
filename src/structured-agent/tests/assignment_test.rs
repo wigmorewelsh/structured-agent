@@ -5,8 +5,8 @@ use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
 use structured_agent::runtime::{Context, ExprResult, Runtime};
 
-#[test]
-fn test_assignment_full_pipeline() {
+#[tokio::test]
+async fn test_assignment_full_pipeline() {
     let code = r#"
 fn test_assignment() -> () {
     let message = "Hello, World!"
@@ -30,7 +30,7 @@ fn test_assignment() -> () {
 
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let execution_result = compiled_function.evaluate(&mut context);
+    let execution_result = compiled_function.evaluate(&mut context).await;
     assert!(execution_result.is_ok());
 
     assert_eq!(context.events.len(), 1);
@@ -44,8 +44,8 @@ fn test_assignment() -> () {
     }
 }
 
-#[test]
-fn test_assignment_with_variable_injection() {
+#[tokio::test]
+async fn test_assignment_with_variable_injection() {
     let code = r#"
 fn test_var_assignment() -> () {
     let greeting = "Hello"
@@ -61,7 +61,7 @@ fn test_var_assignment() -> () {
 
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context);
+    let result = compiled_function.evaluate(&mut context).await;
     assert!(result.is_ok());
 
     assert_eq!(context.events.len(), 2);
@@ -72,8 +72,8 @@ fn test_var_assignment() -> () {
     assert!(context.get_variable("name").is_some());
 }
 
-#[test]
-fn test_assignment_return_value() {
+#[tokio::test]
+async fn test_assignment_return_value() {
     let code = r#"
 fn test_return() -> () {
     let result = "test value"
@@ -86,7 +86,7 @@ fn test_return() -> () {
 
     let runtime = Rc::new(Runtime::new());
     let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context);
+    let result = compiled_function.evaluate(&mut context).await;
     assert!(result.is_ok());
 
     match result.unwrap() {

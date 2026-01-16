@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use async_trait::async_trait;
 use std::any::Any;
 
 #[derive(Debug, Clone)]
@@ -7,8 +8,9 @@ pub struct VariableExpr {
     pub name: String,
 }
 
+#[async_trait(?Send)]
 impl Expression for VariableExpr {
-    fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
         context
             .get_variable(&self.name)
             .cloned()
@@ -34,8 +36,8 @@ mod tests {
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
-    #[test]
-    fn test_variable_found() {
+    #[tokio::test]
+    async fn test_variable_found() {
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
         context.set_variable(
@@ -47,7 +49,7 @@ mod tests {
             name: "test_var".to_string(),
         };
 
-        let result = expr.evaluate(&mut context).unwrap();
+        let result = expr.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "test_value"),
@@ -55,15 +57,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_variable_not_found() {
+    #[tokio::test]
+    async fn test_variable_not_found() {
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
         let expr = VariableExpr {
             name: "unknown_var".to_string(),
         };
 
-        let result = expr.evaluate(&mut context);
+        let result = expr.evaluate(&mut context).await;
         assert!(result.is_err());
         assert!(
             result
@@ -82,8 +84,8 @@ mod tests {
         assert_eq!(return_type.name, "String");
     }
 
-    #[test]
-    fn test_variable_clone() {
+    #[tokio::test]
+    async fn test_variable_clone() {
         let expr = VariableExpr {
             name: "test_var".to_string(),
         };
@@ -92,8 +94,8 @@ mod tests {
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result1 = expr.evaluate(&mut context);
-        let result2 = cloned.evaluate(&mut context);
+        let result1 = expr.evaluate(&mut context).await;
+        let result2 = cloned.evaluate(&mut context).await;
 
         assert!(result1.is_err());
         assert!(result2.is_err());

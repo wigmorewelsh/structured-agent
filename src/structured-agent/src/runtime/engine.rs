@@ -84,7 +84,7 @@ impl Runtime {
         self.compiler.as_ref()
     }
 
-    pub fn run(&self, program_source: &str) -> Result<ExprResult, RuntimeError> {
+    pub async fn run(&self, program_source: &str) -> Result<ExprResult, RuntimeError> {
         let program = CompilationUnit::from_string(program_source.to_string());
         let compiled_program = self
             .compiler
@@ -98,19 +98,20 @@ impl Runtime {
         }
 
         if let Some(main_function) = compiled_program.main_function() {
-            runtime_with_functions.run_expression(main_function)
+            runtime_with_functions.run_expression(main_function).await
         } else {
             Err(RuntimeError::FunctionNotFound("main".to_string()))
         }
     }
 
-    pub fn run_expression(
+    pub async fn run_expression(
         &self,
         program: &dyn crate::types::Expression,
     ) -> Result<ExprResult, RuntimeError> {
         let mut context = Context::with_runtime(Rc::new(self.clone()));
         program
             .evaluate(&mut context)
+            .await
             .map_err(RuntimeError::ExecutionError)
     }
 }

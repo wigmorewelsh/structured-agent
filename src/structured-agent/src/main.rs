@@ -8,7 +8,8 @@ mod types;
 
 use runtime::Runtime;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let input = r#"
 fn hello_world() -> () {
     "Hello from the structured agent!"!
@@ -24,7 +25,7 @@ fn main() -> () {
 
     let runtime = Runtime::new();
 
-    match runtime.run(input) {
+    match runtime.run(input).await {
         Ok(result) => {
             println!("Program executed successfully");
             println!("Result: {:?}", result);

@@ -1,34 +1,29 @@
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
 use crate::types::LanguageEngine;
-use tokio::runtime::Runtime;
+use async_trait::async_trait;
 
 pub struct GeminiEngine {
     client: GeminiClient,
     model: ModelName,
-    runtime: Runtime,
 }
 
 impl GeminiEngine {
-    pub fn new(config: GeminiConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let runtime = Runtime::new()?;
-        let client = runtime.block_on(GeminiClient::new(config))?;
+    pub async fn new(config: GeminiConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let client = GeminiClient::new(config).await?;
 
         Ok(Self {
             client,
             model: ModelName::default(),
-            runtime,
         })
     }
 
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let runtime = Runtime::new()?;
-        let client = runtime.block_on(GeminiClient::from_env())?;
+    pub async fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        let client = GeminiClient::from_env().await?;
 
         Ok(Self {
             client,
             model: ModelName::default(),
-            runtime,
         })
     }
 
@@ -50,15 +45,16 @@ impl GeminiEngine {
     }
 }
 
+#[async_trait(?Send)]
 impl LanguageEngine for GeminiEngine {
-    fn untyped(&self, context: &Context) -> String {
+    async fn untyped(&self, context: &Context) -> String {
         let chat_messages = self.build_context_messages(context);
 
-        match self.runtime.block_on(self.client.structured_chat(
-            chat_messages,
-            self.model.clone(),
-            None,
-        )) {
+        match self
+            .client
+            .structured_chat(chat_messages, self.model.clone(), None)
+            .await
+        {
             Ok(response) => response
                 .first_content()
                 .unwrap_or("No response received")

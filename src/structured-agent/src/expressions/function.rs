@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use async_trait::async_trait;
 use std::any::Any;
 
 pub struct FunctionExpr {
@@ -31,11 +32,12 @@ impl Clone for FunctionExpr {
     }
 }
 
+#[async_trait(?Send)]
 impl Expression for FunctionExpr {
-    fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
         let mut last_result = ExprResult::Unit;
         for statement in &self.body {
-            last_result = statement.evaluate(context)?;
+            last_result = statement.evaluate(context).await?;
         }
         Ok(last_result)
     }

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::any::Any;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,8 +20,9 @@ impl Type {
     }
 }
 
+#[async_trait(?Send)]
 pub trait Expression: std::fmt::Debug {
-    fn evaluate(
+    async fn evaluate(
         &self,
         context: &mut crate::runtime::Context,
     ) -> Result<crate::runtime::ExprResult, String>;
@@ -29,14 +31,16 @@ pub trait Expression: std::fmt::Debug {
     fn clone_box(&self) -> Box<dyn Expression>;
 }
 
+#[async_trait(?Send)]
 pub trait LanguageEngine {
-    fn untyped(&self, context: &crate::runtime::Context) -> String;
+    async fn untyped(&self, context: &crate::runtime::Context) -> String;
 }
 
 pub struct PrintEngine {}
 
+#[async_trait(?Send)]
 impl LanguageEngine for PrintEngine {
-    fn untyped(&self, _context: &crate::runtime::Context) -> String {
+    async fn untyped(&self, _context: &crate::runtime::Context) -> String {
         println!("PrintEngine {{}}");
         "PrintEngine {}".to_string()
     }

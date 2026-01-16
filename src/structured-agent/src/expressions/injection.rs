@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use async_trait::async_trait;
 use std::any::Any;
 
 pub struct InjectionExpr {
@@ -14,9 +15,10 @@ impl std::fmt::Debug for InjectionExpr {
     }
 }
 
+#[async_trait(?Send)]
 impl Expression for InjectionExpr {
-    fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let result = self.inner.evaluate(context)?;
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+        let result = self.inner.evaluate(context).await?;
 
         match &result {
             ExprResult::String(s) => context.add_event(s.clone()),
@@ -48,8 +50,8 @@ mod tests {
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
-    #[test]
-    fn test_injection_evaluation() {
+    #[tokio::test]
+    async fn test_injection_evaluation() {
         let inner = StringLiteralExpr {
             value: "Injected content".to_string(),
         };
@@ -60,7 +62,7 @@ mod tests {
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).unwrap();
+        let result = expr.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Injected content"),
@@ -85,8 +87,8 @@ mod tests {
         assert_eq!(return_type.name, "String");
     }
 
-    #[test]
-    fn test_injection_clone() {
+    #[tokio::test]
+    async fn test_injection_clone() {
         let inner = StringLiteralExpr {
             value: "test content".to_string(),
         };
@@ -99,8 +101,8 @@ mod tests {
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
 
-        let result1 = expr.evaluate(&mut context).unwrap();
-        let result2 = cloned.evaluate(&mut context).unwrap();
+        let result1 = expr.evaluate(&mut context).await.unwrap();
+        let result2 = cloned.evaluate(&mut context).await.unwrap();
 
         assert_eq!(result1, result2);
         assert_eq!(context.events.len(), 2);

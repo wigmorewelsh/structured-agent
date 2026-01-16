@@ -234,14 +234,14 @@ mod tests {
     use crate::runtime::{Context, ExprResult, Runtime};
     use std::rc::Rc;
 
-    #[test]
-    fn test_compile_string_literal() {
+    #[tokio::test]
+    async fn test_compile_string_literal() {
         let ast_expr = AstExpression::StringLiteral("Hello".to_string());
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = compiled.evaluate(&mut context).unwrap();
+        let result = compiled.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Hello"),
@@ -249,15 +249,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_compile_injection() {
+    #[tokio::test]
+    async fn test_compile_injection() {
         let ast_expr = AstExpression::StringLiteral("Test injection".to_string());
         let ast_stmt = AstStatement::Injection(ast_expr);
         let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = compiled.evaluate(&mut context).unwrap();
+        let result = compiled.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Test injection"),
@@ -268,8 +268,8 @@ mod tests {
         assert_eq!(context.events[0].message, "Test injection");
     }
 
-    #[test]
-    fn test_compile_variable() {
+    #[tokio::test]
+    async fn test_compile_variable() {
         let ast_expr = AstExpression::Variable("test_var".to_string());
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
@@ -280,7 +280,7 @@ mod tests {
             ExprResult::String("variable_value".to_string()),
         );
 
-        let result = compiled.evaluate(&mut context).unwrap();
+        let result = compiled.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "variable_value"),
@@ -288,8 +288,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_new_architecture_end_to_end() {
+    #[tokio::test]
+    async fn test_new_architecture_end_to_end() {
         let program_source = r#"
 fn greet(name: String) -> () {
     "Hello, "!
@@ -313,7 +313,7 @@ fn main() -> () {
         assert!(compiled_program.main_function().is_some());
 
         let runtime = Runtime::new();
-        let result = runtime.run(program_source).unwrap();
+        let result = runtime.run(program_source).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Test completed"),

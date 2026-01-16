@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use async_trait::async_trait;
 use std::any::Any;
 
 #[derive(Debug)]
@@ -8,9 +9,10 @@ pub struct AssignmentExpr {
     pub expression: Box<dyn Expression>,
 }
 
+#[async_trait(?Send)]
 impl Expression for AssignmentExpr {
-    fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let value = self.expression.evaluate(context)?;
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+        let value = self.expression.evaluate(context).await?;
         context.set_variable(self.variable.clone(), value);
         Ok(ExprResult::Unit)
     }
@@ -38,8 +40,8 @@ mod tests {
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
-    #[test]
-    fn test_assignment_evaluation() {
+    #[tokio::test]
+    async fn test_assignment_evaluation() {
         let expr = AssignmentExpr {
             variable: "test_var".to_string(),
             expression: Box::new(StringLiteralExpr {
@@ -49,7 +51,7 @@ mod tests {
 
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).unwrap();
+        let result = expr.evaluate(&mut context).await.unwrap();
 
         match result {
             ExprResult::Unit => {}
@@ -75,8 +77,8 @@ mod tests {
         assert_eq!(return_type.name, "()");
     }
 
-    #[test]
-    fn test_assignment_clone() {
+    #[tokio::test]
+    async fn test_assignment_clone() {
         let expr = AssignmentExpr {
             variable: "var".to_string(),
             expression: Box::new(StringLiteralExpr {
@@ -88,8 +90,8 @@ mod tests {
         let runtime = Rc::new(Runtime::new());
         let mut context = Context::with_runtime(runtime);
 
-        let result1 = expr.evaluate(&mut context).unwrap();
-        let result2 = cloned.evaluate(&mut context).unwrap();
+        let result1 = expr.evaluate(&mut context).await.unwrap();
+        let result2 = cloned.evaluate(&mut context).await.unwrap();
 
         assert_eq!(result1, result2);
         assert_eq!(result1, ExprResult::Unit);
