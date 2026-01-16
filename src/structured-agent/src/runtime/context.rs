@@ -23,16 +23,6 @@ impl Context {
         }
     }
 
-    pub fn with_engine(engine: Rc<dyn crate::types::LanguageEngine>) -> Self {
-        let runtime = Rc::new(Runtime::with_engine(engine));
-        Self {
-            parent: None,
-            events: Vec::new(),
-            variables: HashMap::new(),
-            runtime,
-        }
-    }
-
     pub fn with_parent(parent: Rc<Context>, runtime: Rc<Runtime>) -> Self {
         Self {
             parent: Some(parent),
