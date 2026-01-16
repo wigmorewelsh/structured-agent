@@ -1,7 +1,12 @@
+use crate::gemini::error::GeminiResult;
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
 use crate::types::LanguageEngine;
 use async_trait::async_trait;
+
+// Constants for better maintainability
+const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
+const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
 
 pub struct GeminiEngine {
     client: GeminiClient,
@@ -9,7 +14,7 @@ pub struct GeminiEngine {
 }
 
 impl GeminiEngine {
-    pub async fn new(config: GeminiConfig) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(config: GeminiConfig) -> GeminiResult<Self> {
         let client = GeminiClient::new(config).await?;
 
         Ok(Self {
@@ -18,7 +23,7 @@ impl GeminiEngine {
         })
     }
 
-    pub async fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn from_env() -> GeminiResult<Self> {
         let client = GeminiClient::from_env().await?;
 
         Ok(Self {
@@ -34,7 +39,7 @@ impl GeminiEngine {
 
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
         if context.events.is_empty() {
-            vec![ChatMessage::system("No events available.")]
+            vec![ChatMessage::system(DEFAULT_NO_EVENTS_MESSAGE)]
         } else {
             context
                 .events
@@ -57,8 +62,7 @@ impl LanguageEngine for GeminiEngine {
         {
             Ok(response) => response
                 .first_content()
-                .unwrap_or("No response received")
-                .to_string(),
+                .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string()),
             Err(e) => {
                 format!("Error communicating with Gemini: {}", e)
             }

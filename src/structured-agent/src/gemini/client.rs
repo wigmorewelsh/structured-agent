@@ -2,14 +2,20 @@ use crate::gemini::{
     config::{AuthMethod, GeminiConfig},
     error::{GeminiError, GeminiResult},
     types::{
-        Candidate, ChatMessage, ChatRequest, GeminiResponse, GenerationConfig, ModelName, Role,
-        SafetyRating, UsageMetadata,
+        ChatMessage, ChatRequest, GeminiApiRequest, GeminiResponse, GenerationConfig, ModelName,
     },
 };
-use serde_json::{Value, json};
-use std::process::Command;
+use serde_json::Value;
+
 use std::time::Duration;
 use tokio::time::timeout;
+use url::Url;
+
+// Constants for better maintainability
+const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_API_BASE: &str = "https://generativelanguage.googleapis.com";
+const DEFAULT_VERTEX_BASE: &str = "https://{location}-aiplatform.googleapis.com";
+const GCLOUD_AUTH_COMMAND: &[&str] = &["auth", "print-access-token"];
 
 pub struct GeminiClient {
     client: reqwest::Client,
@@ -23,7 +29,7 @@ impl GeminiClient {
         config.validate().map_err(GeminiError::Configuration)?;
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
             .build()
             .map_err(|e| GeminiError::Network(e.to_string()))?;
 
@@ -32,13 +38,14 @@ impl GeminiClient {
                 let base_url = config
                     .api_endpoint
                     .clone()
-                    .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+                    .unwrap_or_else(|| DEFAULT_API_BASE.to_string());
                 (Some(key.clone()), base_url)
             }
             AuthMethod::ApplicationDefaultCredentials => {
-                let base_url = config.api_endpoint.clone().unwrap_or_else(|| {
-                    format!("https://{}-aiplatform.googleapis.com", config.location)
-                });
+                let base_url = config
+                    .api_endpoint
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_VERTEX_BASE.replace("{location}", &config.location));
 
                 (None, base_url)
             }
@@ -76,11 +83,7 @@ impl GeminiClient {
     async fn chat_internal(&self, request: ChatRequest) -> GeminiResult<GeminiResponse> {
         let (_url, request_builder) = match &self.config.auth_method {
             AuthMethod::ApiKey(_) => {
-                let url = format!(
-                    "{}/v1beta/models/{}:generateContent",
-                    self.base_url,
-                    request.model.as_str()
-                );
+                let url = self.build_api_url(&request.model)?;
                 let api_key = self
                     .api_key
                     .as_ref()
@@ -89,16 +92,8 @@ impl GeminiClient {
                 (url, builder)
             }
             AuthMethod::ApplicationDefaultCredentials => {
-                let url = format!(
-                    "{}/v1/projects/{}/locations/{}/publishers/google/models/{}:generateContent",
-                    self.base_url,
-                    self.config.project_id,
-                    self.config.location,
-                    request.model.as_str()
-                );
-
+                let url = self.build_vertex_url(&request.model)?;
                 let token = self.get_gcloud_token().await?;
-
                 let builder = self
                     .client
                     .post(&url)
@@ -135,16 +130,16 @@ impl GeminiClient {
 
     pub async fn simple_chat(&self, message: impl Into<String>) -> GeminiResult<String> {
         let chat_message = ChatMessage::user(message);
-        let request = ChatRequest::new(vec![chat_message], ModelName::default());
+        let response = self
+            .structured_chat(vec![chat_message], ModelName::default(), None)
+            .await?;
 
-        let response = self.chat(request).await?;
         response
             .first_content()
             .ok_or_else(|| GeminiError::ApiError {
                 code: 0,
                 message: "No response content received".to_string(),
             })
-            .map(|s| s.to_string())
     }
 
     pub async fn structured_chat(
@@ -163,133 +158,12 @@ impl GeminiClient {
     }
 
     fn build_request_payload(&self, request: &ChatRequest) -> GeminiResult<Value> {
-        let contents: Vec<Value> = request
-            .messages
-            .iter()
-            .map(|msg| {
-                let role = match msg.role {
-                    Role::User => "user",
-                    Role::Model => "model",
-                    Role::System => "user",
-                };
-
-                json!({
-                    "role": role,
-                    "parts": [{"text": msg.content}]
-                })
-            })
-            .collect();
-
-        let mut payload = json!({
-            "contents": contents
-        });
-
-        if let Some(gen_config) = &request.generation_config {
-            let mut generation_config = json!({});
-
-            if let Some(temperature) = gen_config.temperature {
-                generation_config["temperature"] = json!(temperature);
-            }
-            if let Some(top_k) = gen_config.top_k {
-                generation_config["topK"] = json!(top_k);
-            }
-            if let Some(top_p) = gen_config.top_p {
-                generation_config["topP"] = json!(top_p);
-            }
-            if let Some(max_tokens) = gen_config.max_output_tokens {
-                generation_config["maxOutputTokens"] = json!(max_tokens);
-            }
-            if let Some(stop_sequences) = &gen_config.stop_sequences {
-                generation_config["stopSequences"] = json!(stop_sequences);
-            }
-
-            payload["generationConfig"] = generation_config;
-        }
-
-        if let Some(system_instruction) = &request.system_instruction {
-            payload["systemInstruction"] = json!({
-                "parts": [{"text": system_instruction}]
-            });
-        }
-
-        Ok(payload)
+        let api_request = GeminiApiRequest::from(request);
+        serde_json::to_value(&api_request).map_err(Into::into)
     }
 
     fn parse_response(&self, response: Value) -> GeminiResult<GeminiResponse> {
-        let candidates_array = response
-            .get("candidates")
-            .and_then(|c| c.as_array())
-            .ok_or_else(|| GeminiError::ApiError {
-                code: 0,
-                message: "Invalid response format: missing candidates".to_string(),
-            })?;
-
-        let candidates: Vec<Candidate> = candidates_array
-            .iter()
-            .map(|candidate| {
-                let content = candidate
-                    .get("content")
-                    .and_then(|c| c.get("parts"))
-                    .and_then(|p| p.as_array())
-                    .map(|parts| {
-                        parts
-                            .iter()
-                            .filter_map(|part| part.get("text").and_then(|t| t.as_str()))
-                            .collect::<Vec<_>>()
-                            .join("")
-                    })
-                    .unwrap_or_default();
-
-                let finish_reason = candidate
-                    .get("finishReason")
-                    .and_then(|fr| fr.as_str())
-                    .map(|s| s.to_string());
-
-                let safety_ratings = candidate
-                    .get("safetyRatings")
-                    .and_then(|sr| sr.as_array())
-                    .map(|ratings| {
-                        ratings
-                            .iter()
-                            .filter_map(|rating| {
-                                Some(SafetyRating {
-                                    category: rating.get("category")?.as_str()?.to_string(),
-                                    probability: rating.get("probability")?.as_str()?.to_string(),
-                                    blocked: rating.get("blocked").and_then(|b| b.as_bool()),
-                                })
-                            })
-                            .collect()
-                    });
-
-                Candidate {
-                    content,
-                    finish_reason,
-                    safety_ratings,
-                    citation_metadata: candidate.get("citationMetadata").cloned(),
-                }
-            })
-            .collect();
-
-        let usage_metadata = response.get("usageMetadata").map(|metadata| UsageMetadata {
-            prompt_token_count: metadata
-                .get("promptTokenCount")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32),
-            candidates_token_count: metadata
-                .get("candidatesTokenCount")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32),
-            total_token_count: metadata
-                .get("totalTokenCount")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32),
-        });
-
-        Ok(GeminiResponse {
-            candidates,
-            usage_metadata,
-            prompt_feedback: response.get("promptFeedback").cloned(),
-        })
+        serde_json::from_value(response).map_err(Into::into)
     }
 
     fn map_http_error(&self, status_code: u16, error_message: String) -> GeminiError {
@@ -311,10 +185,47 @@ impl GeminiClient {
         &self.config
     }
 
+    fn build_api_url(&self, model: &ModelName) -> GeminiResult<String> {
+        let mut url = Url::parse(&self.base_url)
+            .map_err(|e| GeminiError::Configuration(format!("Invalid base URL: {}", e)))?;
+
+        url.path_segments_mut()
+            .map_err(|_| GeminiError::Configuration("Cannot be base URL".to_string()))?
+            .extend(&[
+                "v1beta",
+                "models",
+                &format!("{}:generateContent", model.as_str()),
+            ]);
+
+        Ok(url.to_string())
+    }
+
+    fn build_vertex_url(&self, model: &ModelName) -> GeminiResult<String> {
+        let mut url = Url::parse(&self.base_url)
+            .map_err(|e| GeminiError::Configuration(format!("Invalid base URL: {}", e)))?;
+
+        url.path_segments_mut()
+            .map_err(|_| GeminiError::Configuration("Cannot be base URL".to_string()))?
+            .extend(&[
+                "v1",
+                "projects",
+                &self.config.project_id,
+                "locations",
+                &self.config.location,
+                "publishers",
+                "google",
+                "models",
+                &format!("{}:generateContent", model.as_str()),
+            ]);
+
+        Ok(url.to_string())
+    }
+
     async fn get_gcloud_token(&self) -> GeminiResult<String> {
-        let output = Command::new("gcloud")
-            .args(["auth", "print-access-token"])
+        let output = tokio::process::Command::new("gcloud")
+            .args(GCLOUD_AUTH_COMMAND)
             .output()
+            .await
             .map_err(|e| {
                 GeminiError::Authentication(format!(
                     "Failed to run gcloud command: {}. Make sure gcloud is installed and you've run 'gcloud auth application-default login'",

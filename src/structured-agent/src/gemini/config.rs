@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 
+// Constants for better maintainability
+const DEFAULT_PROJECT_ID: &str = "gemini-api";
+const DEFAULT_LOCATION: &str = "global";
+const DEFAULT_VERTEX_LOCATION: &str = "us-central1";
+const DEFAULT_API_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuthMethod {
     ApiKey(String),
@@ -53,9 +59,9 @@ impl GeminiConfig {
         // Try API key first, fall back to ADC
         if let Ok(api_key) = env::var("GEMINI_API_KEY") {
             Ok(Self {
-                project_id: "gemini-api".to_string(),
-                location: "global".to_string(),
-                api_endpoint: Some("https://generativelanguage.googleapis.com".to_string()),
+                project_id: DEFAULT_PROJECT_ID.to_string(),
+                location: DEFAULT_LOCATION.to_string(),
+                api_endpoint: Some(DEFAULT_API_ENDPOINT.to_string()),
                 auth_method: AuthMethod::ApiKey(api_key),
             })
         } else {
@@ -68,7 +74,7 @@ impl GeminiConfig {
             let location = env::var("VERTEX_AI_LOCATION")
                 .or_else(|_| env::var("GOOGLE_CLOUD_REGION"))
                 .or_else(|_| env::var("GCP_REGION"))
-                .unwrap_or_else(|_| "us-central1".to_string());
+                .unwrap_or_else(|_| DEFAULT_VERTEX_LOCATION.to_string());
 
             Ok(Self {
                 project_id,
@@ -99,9 +105,9 @@ impl GeminiConfig {
 impl Default for GeminiConfig {
     fn default() -> Self {
         Self {
-            project_id: "gemini-api".to_string(),
-            location: "global".to_string(),
-            api_endpoint: Some("https://generativelanguage.googleapis.com".to_string()),
+            project_id: DEFAULT_PROJECT_ID.to_string(),
+            location: DEFAULT_LOCATION.to_string(),
+            api_endpoint: Some(DEFAULT_API_ENDPOINT.to_string()),
             auth_method: AuthMethod::ApplicationDefaultCredentials,
         }
     }
