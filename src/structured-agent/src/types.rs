@@ -42,6 +42,16 @@ impl Context {
         }
     }
 
+    pub fn with_engine(engine: Rc<dyn LanguageEngine>) -> Self {
+        Self {
+            parent: None,
+            events: Vec::new(),
+            variables: HashMap::new(),
+            registry: FunctionRegistry::new(),
+            engine,
+        }
+    }
+
     pub fn add_event(&mut self, message: String) {
         self.events.push(Event { message });
     }

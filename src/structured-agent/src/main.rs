@@ -1,16 +1,29 @@
 mod ast;
 mod compiler;
 mod expressions;
+mod gemini;
 mod parser;
 mod types;
 
 use combine::EasyParser;
 use compiler::Compiler;
 use expressions::Expression;
+use gemini::{GeminiConfig, GeminiEngine};
 use parser::*;
+use std::rc::Rc;
 use types::Context;
 
 fn main() {
+    // Example 1: Using default PrintEngine
+    println!("=== Example 1: Default PrintEngine ===");
+    run_with_default_engine();
+
+    // Example 2: Using GeminiEngine (if configured)
+    println!("\n=== Example 2: GeminiEngine ===");
+    run_with_gemini_engine();
+}
+
+fn run_with_default_engine() {
     let input = r#"
 fn analyze_code(context: Context, code: String) -> Analysis {
     "Analyze the following code for potential bugs"!
@@ -57,5 +70,54 @@ fn main() -> () {
             }
         }
         Err(e) => println!("Parse error: {:?}", e),
+    }
+}
+
+fn run_with_gemini_engine() {
+    // Try to create a GeminiEngine from environment variables
+    match GeminiEngine::from_env() {
+        Ok(gemini_engine) => {
+            println!("Successfully created GeminiEngine from environment");
+
+            let mut context = Context::with_engine(Rc::new(gemini_engine));
+
+            // Add some context information
+            context.add_event("User is analyzing Rust code for potential issues".to_string());
+            context.set_variable(
+                "language".to_string(),
+                types::ExprResult::String("Rust".to_string()),
+            );
+
+            // Use the engine to generate a response
+            let response = context.engine.untyped(&context);
+            println!("Gemini response: {}", response);
+        }
+        Err(e) => {
+            println!("Failed to create GeminiEngine: {}", e);
+            println!(
+                "Make sure GEMINI_API_KEY environment variable is set or gcloud is configured"
+            );
+
+            // Try with explicit config as fallback
+            if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
+                let config = GeminiConfig::with_api_key(
+                    "gemini-api".to_string(),
+                    "global".to_string(),
+                    api_key,
+                );
+                match GeminiEngine::new(config) {
+                    Ok(gemini_engine) => {
+                        println!("Successfully created GeminiEngine with API key");
+
+                        let mut context = Context::with_engine(Rc::new(gemini_engine));
+                        context.add_event("Testing Gemini integration".to_string());
+
+                        let response = context.engine.untyped(&context);
+                        println!("Gemini response: {}", response);
+                    }
+                    Err(e2) => println!("Also failed with explicit API key: {}", e2),
+                }
+            }
+        }
     }
 }
