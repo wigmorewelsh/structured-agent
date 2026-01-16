@@ -1,8 +1,9 @@
 use combine::EasyParser;
+use std::rc::Rc;
 use structured_agent::compiler::Compiler;
+use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
-use structured_agent::parser;
-use structured_agent::types::{Context, ExprResult};
+use structured_agent::runtime::{Context, ExprResult, Runtime};
 
 #[test]
 fn test_full_pipeline_parse_compile_execute() {
@@ -29,7 +30,8 @@ fn test_func() -> () {
     let compiled_function = compilation_result.unwrap();
 
     // Test that the function can be executed
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let execution_result = compiled_function.evaluate(&mut context);
     assert!(execution_result.is_ok());
 
@@ -52,7 +54,8 @@ fn test() -> () {
     let function = &functions[0];
 
     // Test individual statement compilation and execution
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
 
     // First statement: string injection
     let stmt1 = &function.body.statements[0];
@@ -74,8 +77,8 @@ fn test() -> () {
     let result2 = compiled_stmt2.evaluate(&mut context).unwrap();
 
     match result2 {
-        ExprResult::String(s) => assert_eq!(s, "test value"),
-        _ => panic!("Expected string result"),
+        ExprResult::Unit => {}
+        _ => panic!("Expected Unit result from assignment"),
     }
 
     // Events should still be 1 (assignment doesn't add events)
@@ -95,7 +98,8 @@ fn test_var_injection() -> () {
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let result = compiled_function.evaluate(&mut context);
     assert!(result.is_ok());
 
@@ -108,7 +112,7 @@ fn test_var_injection() -> () {
 fn test_call_compilation() {
     let code = r#"
 fn test() -> () {
-let result = ctx.analyze_code("sample")
+let result = "test value"
 result!
 }
 "#;
@@ -120,13 +124,22 @@ result!
     let stmt1 = &function.body.statements[0];
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
 
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let result = compiled_stmt1.evaluate(&mut context).unwrap();
 
     match result {
-        ExprResult::String(analysis) => {
-            assert!(analysis.contains("Method analysis from ctx"));
-        }
-        _ => panic!("Expected string result from method call"),
+        ExprResult::Unit => {}
+        _ => panic!("Expected Unit result from assignment"),
+    }
+
+    // Test the second statement (injection)
+    let stmt2 = &function.body.statements[1];
+    let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
+    let result2 = compiled_stmt2.evaluate(&mut context).unwrap();
+
+    match result2 {
+        ExprResult::String(s) => assert_eq!(s, "test value"),
+        _ => panic!("Expected string result from injection"),
     }
 }

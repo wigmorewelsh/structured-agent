@@ -1,8 +1,9 @@
 use combine::EasyParser;
+use std::rc::Rc;
 use structured_agent::compiler::Compiler;
+use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
-use structured_agent::parser;
-use structured_agent::types::{Context, ExprResult};
+use structured_agent::runtime::{Context, ExprResult, Runtime};
 
 #[test]
 fn test_assignment_full_pipeline() {
@@ -27,7 +28,8 @@ fn test_assignment() -> () {
     assert!(compilation_result.is_ok());
     let compiled_function = compilation_result.unwrap();
 
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let execution_result = compiled_function.evaluate(&mut context);
     assert!(execution_result.is_ok());
 
@@ -57,7 +59,8 @@ fn test_var_assignment() -> () {
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let result = compiled_function.evaluate(&mut context);
     assert!(result.is_ok());
 
@@ -81,7 +84,8 @@ fn test_return() -> () {
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let mut context = Context::new();
+    let runtime = Rc::new(Runtime::new());
+    let mut context = Context::with_runtime(runtime);
     let result = compiled_function.evaluate(&mut context);
     assert!(result.is_ok());
 

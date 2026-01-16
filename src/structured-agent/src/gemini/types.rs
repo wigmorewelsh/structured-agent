@@ -223,7 +223,7 @@ impl GeminiResponse {
 
     pub fn is_blocked(&self) -> bool {
         self.candidates.iter().any(|candidate| {
-            candidate.safety_ratings.as_ref().map_or(false, |ratings| {
+            candidate.safety_ratings.as_ref().is_some_and(|ratings| {
                 ratings.iter().any(|rating| rating.blocked.unwrap_or(false))
             })
         })

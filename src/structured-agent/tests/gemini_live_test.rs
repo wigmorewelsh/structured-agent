@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod gemini_live_tests {
-    use structured_agent::gemini::{
-        ChatMessage, ChatRequest, GeminiClient, GeminiConfig, GenerationConfig, ModelName,
-    };
+    use structured_agent::gemini::types::{ChatRequest, GenerationConfig};
+    use structured_agent::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
     use tokio;
 
     #[tokio::test]

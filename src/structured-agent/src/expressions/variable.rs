@@ -1,4 +1,5 @@
-use crate::types::{Context, ExprResult, Expression, Type};
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
 use std::any::Any;
 
 #[derive(Debug, Clone)]
@@ -30,10 +31,13 @@ impl Expression for VariableExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
 
     #[test]
     fn test_variable_found() {
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         context.set_variable(
             "test_var".to_string(),
             ExprResult::String("test_value".to_string()),
@@ -53,7 +57,8 @@ mod tests {
 
     #[test]
     fn test_variable_not_found() {
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let expr = VariableExpr {
             name: "unknown_var".to_string(),
         };
@@ -85,7 +90,8 @@ mod tests {
 
         let cloned = expr.clone_box();
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result1 = expr.evaluate(&mut context);
         let result2 = cloned.evaluate(&mut context);
 

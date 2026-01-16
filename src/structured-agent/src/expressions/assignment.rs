@@ -1,4 +1,5 @@
-use crate::types::{Context, ExprResult, Expression, Type};
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
 use std::any::Any;
 
 #[derive(Debug)]
@@ -34,6 +35,8 @@ impl Expression for AssignmentExpr {
 mod tests {
     use super::*;
     use crate::expressions::StringLiteralExpr;
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
 
     #[test]
     fn test_assignment_evaluation() {
@@ -44,19 +47,19 @@ mod tests {
             }),
         };
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = expr.evaluate(&mut context).unwrap();
 
         match result {
-            ExprResult::Unit => (),
+            ExprResult::Unit => {}
             _ => panic!("Expected unit result"),
         }
 
-        let stored_value = context.get_variable("test_var").unwrap();
-        match stored_value {
-            ExprResult::String(s) => assert_eq!(s, "test_value"),
-            _ => panic!("Expected string in context"),
-        }
+        assert_eq!(
+            context.get_variable("test_var").unwrap(),
+            &ExprResult::String("test_value".to_string())
+        );
     }
 
     #[test]
@@ -82,11 +85,13 @@ mod tests {
         };
 
         let cloned = expr.clone_box();
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
 
         let result1 = expr.evaluate(&mut context).unwrap();
         let result2 = cloned.evaluate(&mut context).unwrap();
 
+        assert_eq!(result1, result2);
         assert_eq!(result1, ExprResult::Unit);
         assert_eq!(result2, ExprResult::Unit);
         assert_eq!(

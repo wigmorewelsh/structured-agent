@@ -1,3 +1,5 @@
+pub mod parser;
+
 use crate::ast;
 use crate::expressions::{
     AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, StringLiteralExpr, VariableExpr,
@@ -85,16 +87,18 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Compiler;
     use crate::ast::{Expression as AstExpression, Statement as AstStatement};
-    use crate::types::{Context, ExprResult};
+    use crate::runtime::{Context, ExprResult, Runtime};
+    use std::rc::Rc;
 
     #[test]
     fn test_compile_string_literal() {
         let ast_expr = AstExpression::StringLiteral("Hello".to_string());
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = compiled.evaluate(&mut context).unwrap();
 
         match result {
@@ -109,7 +113,8 @@ mod tests {
         let ast_stmt = AstStatement::Injection(ast_expr);
         let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = compiled.evaluate(&mut context).unwrap();
 
         match result {
@@ -126,7 +131,8 @@ mod tests {
         let ast_expr = AstExpression::Variable("test_var".to_string());
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         context.set_variable(
             "test_var".to_string(),
             ExprResult::String("variable_value".to_string()),

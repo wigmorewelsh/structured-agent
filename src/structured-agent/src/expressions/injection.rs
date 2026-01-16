@@ -1,4 +1,5 @@
-use crate::types::{Context, ExprResult, Expression, Type};
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
 use std::any::Any;
 
 pub struct InjectionExpr {
@@ -44,6 +45,8 @@ impl Expression for InjectionExpr {
 mod tests {
     use super::*;
     use crate::expressions::StringLiteralExpr;
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
 
     #[test]
     fn test_injection_evaluation() {
@@ -55,7 +58,8 @@ mod tests {
             inner: Box::new(inner),
         };
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = expr.evaluate(&mut context).unwrap();
 
         match result {
@@ -92,7 +96,8 @@ mod tests {
         };
 
         let cloned = expr.clone_box();
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
 
         let result1 = expr.evaluate(&mut context).unwrap();
         let result2 = cloned.evaluate(&mut context).unwrap();

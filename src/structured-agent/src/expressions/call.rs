@@ -1,4 +1,5 @@
-use crate::types::{Context, ExprResult, Expression, Type};
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
 use std::any::Any;
 
 pub struct CallExpr {
@@ -28,7 +29,7 @@ impl Expression for CallExpr {
         };
 
         let function_info = context
-            .registry
+            .runtime()
             .get_function(&function_name)
             .ok_or_else(|| {
                 if self.is_method {
@@ -59,26 +60,27 @@ impl Expression for CallExpr {
             function_context.set_variable(param_name.clone(), args[i].clone());
         }
 
-        let _result = function_info.evaluate(&mut function_context)?;
+        let result = function_info.evaluate(&mut function_context)?;
 
-        let llm_result = context.engine.untyped(&function_context);
-
-        Ok(ExprResult::String(llm_result))
+        // For now, return the function result directly
+        // In the future, we might want to use the language engine for more complex scenarios
+        Ok(result)
     }
 
     fn return_type(&self) -> Type {
-        let function_name = if self.is_method || self.target.is_empty() {
+        let _function_name = if self.is_method || self.target.is_empty() {
             self.function.clone()
         } else {
             format!("{}::{}", self.target, self.function)
         };
 
-        let context = Context::new();
-        if let Some(function) = context.registry.get_function(&function_name) {
+        // TODO: This needs a runtime instance to work properly
+        Type::unit()
+        /*
+        if let Some(function) = runtime.get_function(&function_name) {
             function.return_type.clone()
-        } else {
-            Type::unit()
         }
+        */
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -99,6 +101,8 @@ impl Expression for CallExpr {
 mod tests {
     use super::*;
     use crate::expressions::{FunctionExpr, StringLiteralExpr};
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
 
     #[test]
     fn test_unknown_method() {
@@ -109,7 +113,8 @@ mod tests {
             is_method: true,
         };
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = expr.evaluate(&mut context);
 
         assert!(result.is_err());
@@ -144,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_call_with_registry() {
-        let mut context = Context::new();
+        let mut runtime = Runtime::new();
 
         let function_info = FunctionExpr {
             name: "hello".to_string(),
@@ -154,7 +159,10 @@ mod tests {
                 value: "Hello, World!".to_string(),
             })],
         };
-        context.registry.register_function(function_info);
+        runtime.register_function(function_info);
+
+        let runtime = Rc::new(runtime);
+        let mut context = Context::with_runtime(runtime);
 
         let expr = CallExpr {
             target: String::new(),
@@ -179,7 +187,8 @@ mod tests {
             is_method: false,
         };
 
-        let mut context = Context::new();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
         let result = expr.evaluate(&mut context);
 
         assert!(result.is_err());

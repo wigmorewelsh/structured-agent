@@ -1,6 +1,5 @@
-use structured_agent::gemini::{
-    ChatMessage, GeminiClient, GeminiConfig, GenerationConfig, ModelName,
-};
+use structured_agent::gemini::types::GenerationConfig;
+use structured_agent::gemini::{ChatMessage, GeminiConfig, ModelName};
 use tokio;
 
 #[tokio::test]

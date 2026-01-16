@@ -313,7 +313,7 @@ impl GeminiClient {
 
     async fn get_gcloud_token(&self) -> GeminiResult<String> {
         let output = Command::new("gcloud")
-            .args(&["auth", "print-access-token"])
+            .args(["auth", "print-access-token"])
             .output()
             .map_err(|e| {
                 GeminiError::Authentication(format!(

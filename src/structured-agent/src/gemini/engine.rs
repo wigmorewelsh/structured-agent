@@ -1,5 +1,6 @@
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
-use crate::types::{Context, LanguageEngine};
+use crate::runtime::Context;
+use crate::types::LanguageEngine;
 use tokio::runtime::Runtime;
 
 pub struct GeminiEngine {
@@ -51,10 +52,10 @@ impl GeminiEngine {
             message.push_str("Available variables:\n");
             for (name, value) in &context.variables {
                 match value {
-                    crate::types::ExprResult::String(s) => {
+                    crate::runtime::ExprResult::String(s) => {
                         message.push_str(&format!("- {}: \"{}\"\n", name, s));
                     }
-                    crate::types::ExprResult::Unit => {
+                    crate::runtime::ExprResult::Unit => {
                         message.push_str(&format!("- {}: ()\n", name));
                     }
                 }
@@ -62,7 +63,7 @@ impl GeminiEngine {
             message.push('\n');
         }
 
-        let functions = context.registry.list_functions();
+        let functions = context.runtime().list_functions();
         if !functions.is_empty() {
             message.push_str("Available functions:\n");
             for func_name in functions {

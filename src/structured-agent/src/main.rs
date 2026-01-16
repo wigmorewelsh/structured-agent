@@ -2,16 +2,18 @@ mod ast;
 mod compiler;
 mod expressions;
 mod gemini;
-mod parser;
+
+mod runtime;
 mod types;
 
 use combine::EasyParser;
 use compiler::Compiler;
+use compiler::parser::*;
 use expressions::Expression;
 use gemini::{GeminiConfig, GeminiEngine};
-use parser::*;
+use runtime::Runtime;
+use runtime::{Context, ExprResult};
 use std::rc::Rc;
-use types::Context;
 
 fn main() {
     // Example 1: Using default PrintEngine
@@ -55,7 +57,8 @@ fn main() -> () {
             if let Some(func) = functions.first() {
                 match Compiler::compile_function(func) {
                     Ok(compiled) => {
-                        let mut context = Context::new();
+                        let runtime = Rc::new(Runtime::new());
+                        let mut context = Context::with_runtime(runtime);
 
                         match compiled.evaluate(&mut context) {
                             Ok(_) => println!(
@@ -85,11 +88,11 @@ fn run_with_gemini_engine() {
             context.add_event("User is analyzing Rust code for potential issues".to_string());
             context.set_variable(
                 "language".to_string(),
-                types::ExprResult::String("Rust".to_string()),
+                ExprResult::String("Rust".to_string()),
             );
 
             // Use the engine to generate a response
-            let response = context.engine.untyped(&context);
+            let response = context.runtime().engine().untyped(&context);
             println!("Gemini response: {}", response);
         }
         Err(e) => {
@@ -112,7 +115,7 @@ fn run_with_gemini_engine() {
                         let mut context = Context::with_engine(Rc::new(gemini_engine));
                         context.add_event("Testing Gemini integration".to_string());
 
-                        let response = context.engine.untyped(&context);
+                        let response = context.runtime().engine().untyped(&context);
                         println!("Gemini response: {}", response);
                     }
                     Err(e2) => println!("Also failed with explicit API key: {}", e2),
