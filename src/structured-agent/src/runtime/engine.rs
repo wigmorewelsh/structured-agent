@@ -1,18 +1,20 @@
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::FunctionExpr;
 use crate::runtime::{Context, ExprResult};
-use crate::types::LanguageEngine;
+use crate::types::{ExternalFunctionDefinition, LanguageEngine};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Runtime {
     function_registry: HashMap<String, FunctionExpr>,
+    external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     language_engine: Rc<dyn LanguageEngine>,
     compiler: Rc<dyn CompilerTrait>,
 }
 
 pub struct RuntimeBuilder {
     function_registry: HashMap<String, FunctionExpr>,
+    external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     language_engine: Option<Rc<dyn LanguageEngine>>,
     compiler: Option<Rc<dyn CompilerTrait>>,
 }
@@ -28,6 +30,7 @@ impl RuntimeBuilder {
     pub fn new() -> Self {
         Self {
             function_registry: HashMap::new(),
+            external_function_registry: HashMap::new(),
             language_engine: None,
             compiler: None,
         }
@@ -46,6 +49,7 @@ impl RuntimeBuilder {
     pub fn build(self) -> Runtime {
         Runtime {
             function_registry: self.function_registry,
+            external_function_registry: self.external_function_registry,
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Rc::new(crate::types::PrintEngine {})),
@@ -72,6 +76,15 @@ impl Runtime {
         self.function_registry.get(name)
     }
 
+    pub fn register_external_function(&mut self, function: ExternalFunctionDefinition) {
+        self.external_function_registry
+            .insert(function.name.clone(), function);
+    }
+
+    pub fn get_external_function(&self, name: &str) -> Option<&ExternalFunctionDefinition> {
+        self.external_function_registry.get(name)
+    }
+
     pub fn list_functions(&self) -> Vec<&str> {
         self.function_registry.keys().map(|s| s.as_str()).collect()
     }
@@ -91,10 +104,13 @@ impl Runtime {
             .compile_program(&program)
             .map_err(RuntimeError::ExecutionError)?;
 
-        // Create a new runtime with all compiled functions registered
+        // Create a new runtime with all compiled functions and external functions registered
         let mut runtime_with_functions = self.clone();
         for (_, function) in compiled_program.functions() {
             runtime_with_functions.register_function(function.clone());
+        }
+        for (_, external_function) in compiled_program.external_functions() {
+            runtime_with_functions.register_external_function(external_function.clone());
         }
 
         if let Some(main_function) = compiled_program.main_function() {
@@ -126,6 +142,7 @@ impl Clone for Runtime {
     fn clone(&self) -> Self {
         Self {
             function_registry: self.function_registry.clone(),
+            external_function_registry: self.external_function_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
         }

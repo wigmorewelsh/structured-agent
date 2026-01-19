@@ -6,6 +6,13 @@ pub struct Type {
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternalFunctionDefinition {
+    pub name: String,
+    pub parameters: Vec<(String, Type)>,
+    pub return_type: Type,
+}
+
 impl Type {
     pub fn string() -> Self {
         Self {
@@ -16,6 +23,16 @@ impl Type {
     pub fn unit() -> Self {
         Self {
             name: "()".to_string(),
+        }
+    }
+}
+
+impl ExternalFunctionDefinition {
+    pub fn new(name: String, parameters: Vec<(String, Type)>, return_type: Type) -> Self {
+        Self {
+            name,
+            parameters,
+            return_type,
         }
     }
 }

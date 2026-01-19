@@ -4,7 +4,7 @@ use crate::ast;
 use crate::expressions::{
     AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, StringLiteralExpr, VariableExpr,
 };
-use crate::types::{Expression, Type};
+use crate::types::{Expression, ExternalFunctionDefinition, Type};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -43,17 +43,23 @@ impl CompilationUnit {
 }
 
 pub trait Parser {
-    fn parse(&self, program: &CompilationUnit) -> Result<Vec<ast::Function>, String>;
+    fn parse(
+        &self,
+        program: &CompilationUnit,
+    ) -> Result<(Vec<ast::Function>, Vec<ast::ExternalFunction>), String>;
 }
 
 pub struct DefaultParser;
 
 impl Parser for DefaultParser {
-    fn parse(&self, program: &CompilationUnit) -> Result<Vec<ast::Function>, String> {
+    fn parse(
+        &self,
+        program: &CompilationUnit,
+    ) -> Result<(Vec<ast::Function>, Vec<ast::ExternalFunction>), String> {
         use combine::EasyParser;
 
         match parser::parse_program().easy_parse(program.source()) {
-            Ok((functions, _)) => Ok(functions),
+            Ok(((functions, external_functions), _)) => Ok((functions, external_functions)),
             Err(e) => Err(format!("Parse error: {:?}", e)),
         }
     }
@@ -67,6 +73,7 @@ pub trait CompilerTrait {
 #[derive(Debug)]
 pub struct CompiledProgram {
     functions: HashMap<String, FunctionExpr>,
+    external_functions: HashMap<String, ExternalFunctionDefinition>,
     main_function: Option<String>,
 }
 
@@ -74,6 +81,7 @@ impl CompiledProgram {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
+            external_functions: HashMap::new(),
             main_function: None,
         }
     }
@@ -84,6 +92,11 @@ impl CompiledProgram {
             self.main_function = Some(name.clone());
         }
         self.functions.insert(name, function);
+    }
+
+    pub fn add_external_function(&mut self, external_function: ExternalFunctionDefinition) {
+        let name = external_function.name.clone();
+        self.external_functions.insert(name, external_function);
     }
 
     pub fn get_function(&self, name: &str) -> Option<&FunctionExpr> {
@@ -98,6 +111,10 @@ impl CompiledProgram {
 
     pub fn functions(&self) -> &HashMap<String, FunctionExpr> {
         &self.functions
+    }
+
+    pub fn external_functions(&self) -> &HashMap<String, ExternalFunctionDefinition> {
+        &self.external_functions
     }
 }
 
@@ -125,12 +142,18 @@ impl Compiler {
 
 impl CompilerTrait for Compiler {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
-        let ast_functions = self.parser.parse(program)?;
+        let (ast_functions, ast_external_functions) = self.parser.parse(program)?;
         let mut compiled_program = CompiledProgram::new();
 
         for ast_function in ast_functions {
             let compiled_function = self.compile_function(&ast_function)?;
             compiled_program.add_function(compiled_function);
+        }
+
+        for ast_external_function in ast_external_functions {
+            let compiled_external_function =
+                Self::compile_external_function(&ast_external_function)?;
+            compiled_program.add_external_function(compiled_external_function);
         }
 
         Ok(compiled_program)
@@ -223,7 +246,26 @@ impl Compiler {
                     expression: compiled_expression,
                 }))
             }
+            ast::Statement::ExternalDeclaration(_) => Err(
+                "External function declarations should not appear in function bodies".to_string(),
+            ),
         }
+    }
+
+    pub fn compile_external_function(
+        ast_ext_func: &ast::ExternalFunction,
+    ) -> Result<ExternalFunctionDefinition, String> {
+        let parameters = ast_ext_func
+            .parameters
+            .iter()
+            .map(|p| (p.name.clone(), convert_ast_type_to_type(&p.param_type)))
+            .collect();
+
+        Ok(ExternalFunctionDefinition::new(
+            ast_ext_func.name.clone(),
+            parameters,
+            convert_ast_type_to_type(&ast_ext_func.return_type),
+        ))
     }
 }
 

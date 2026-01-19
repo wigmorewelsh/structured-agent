@@ -17,8 +17,9 @@ fn test_assignment() -> () {
     let parse_result = parser::parse_program().easy_parse(code);
     assert!(parse_result.is_ok());
 
-    let (functions, _) = parse_result.unwrap();
+    let ((functions, external_functions), _) = parse_result.unwrap();
     assert_eq!(functions.len(), 1);
+    assert_eq!(external_functions.len(), 0);
 
     let function = &functions[0];
     assert_eq!(function.name, "test_assignment");
@@ -55,7 +56,8 @@ fn test_var_assignment() -> () {
 }
 "#;
 
-    let (functions, _) = parser::parse_program().easy_parse(code).unwrap();
+    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
+    assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
@@ -80,7 +82,8 @@ fn test_return() -> () {
 }
 "#;
 
-    let (functions, _) = parser::parse_program().easy_parse(code).unwrap();
+    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
+    assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 

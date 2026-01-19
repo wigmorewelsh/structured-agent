@@ -141,6 +141,9 @@ fn main() -> () {
 
 
 # Future
+* Add select statement
+* Add loops
+* Add return statement
 * Load code from files.
 * Use MCP servers as source for tools.
 * Small number of built in tools (std lib).
@@ -153,3 +156,6 @@ fn main() -> () {
 * Correcting failing processes. 
 * Durable Execution.
 * Track if events are from system(code)/user/model
+* Add basic types
+* Add struct and array types
+* Add parsing json response to structs

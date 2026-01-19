@@ -15,6 +15,13 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ExternalFunction {
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Named(String),
     Unit,
@@ -32,6 +39,7 @@ pub enum Statement {
         variable: String,
         expression: Expression,
     },
+    ExternalDeclaration(ExternalFunction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +86,16 @@ impl fmt::Display for Statement {
                 expression,
             } => {
                 write!(f, "let {} = {}", variable, expression)
+            }
+            Statement::ExternalDeclaration(ext_fn) => {
+                write!(f, "extern fn {}(", ext_fn.name)?;
+                for (i, param) in ext_fn.parameters.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", param.name, param.param_type)?;
+                }
+                write!(f, ") -> {};", ext_fn.return_type)
             }
         }
     }
