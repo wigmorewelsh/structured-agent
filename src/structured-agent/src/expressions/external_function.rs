@@ -1,14 +1,16 @@
+use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
 use crate::types::{ExecutableFunction, Expression, Function, Type};
 use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
+use std::rc::Rc;
 
 pub struct ExternalFunctionExpr {
     pub name: String,
     pub parameters: Vec<(String, Type)>,
     pub return_type: Type,
-    pub client_index: usize,
+    pub mcp_client: Rc<McpClient>,
 }
 
 impl std::fmt::Debug for ExternalFunctionExpr {
@@ -17,7 +19,7 @@ impl std::fmt::Debug for ExternalFunctionExpr {
             .field("name", &self.name)
             .field("parameters", &self.parameters)
             .field("return_type", &self.return_type)
-            .field("client_index", &self.client_index)
+            .field("mcp_client", &"McpClient")
             .finish()
     }
 }
@@ -28,7 +30,7 @@ impl Clone for ExternalFunctionExpr {
             name: self.name.clone(),
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
-            client_index: self.client_index,
+            mcp_client: self.mcp_client.clone(),
         }
     }
 }
@@ -36,15 +38,9 @@ impl Clone for ExternalFunctionExpr {
 #[async_trait(?Send)]
 impl Expression for ExternalFunctionExpr {
     async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let runtime = context.runtime();
-        let mut runtime_mut = runtime.clone();
-
-        let client = runtime_mut
-            .get_mcp_client_for_function(&self.name)
-            .ok_or_else(|| format!("No MCP client found for function: {}", self.name))?;
-
         let mut arguments = json!({});
 
+        // Map parameter names to values from the context
         for (param_name, _param_type) in &self.parameters {
             if let Some(value) = context.get_variable(param_name) {
                 let json_value = match value {
@@ -55,7 +51,8 @@ impl Expression for ExternalFunctionExpr {
             }
         }
 
-        let result = client
+        let result = self
+            .mcp_client
             .call_tool(&self.name, arguments)
             .await
             .map_err(|e| format!("MCP tool call failed: {}", e))?;
@@ -63,12 +60,8 @@ impl Expression for ExternalFunctionExpr {
         if result.content.is_empty() {
             Ok(ExprResult::Unit)
         } else {
-            let content_str = result
-                .content
-                .iter()
-                .map(|c| format!("{:?}", c))
-                .collect::<Vec<_>>()
-                .join(" ");
+            // For now, just convert the entire result to a string
+            let content_str = format!("{:?}", result.content);
             Ok(ExprResult::String(content_str))
         }
     }
@@ -91,13 +84,13 @@ impl ExternalFunctionExpr {
         name: String,
         parameters: Vec<(String, Type)>,
         return_type: Type,
-        client_index: usize,
+        mcp_client: Rc<McpClient>,
     ) -> Self {
         Self {
             name,
             parameters,
             return_type,
-            client_index,
+            mcp_client,
         }
     }
 }

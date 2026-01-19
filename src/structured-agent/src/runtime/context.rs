@@ -63,6 +63,10 @@ impl Context {
     pub fn runtime(&self) -> &Runtime {
         &self.runtime
     }
+
+    pub fn runtime_rc(&self) -> Rc<Runtime> {
+        self.runtime.clone()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

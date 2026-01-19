@@ -9,10 +9,9 @@ use std::rc::Rc;
 pub struct Runtime {
     function_registry: HashMap<String, Box<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
-    mcp_tool_mappings: HashMap<String, usize>,
     language_engine: Rc<dyn LanguageEngine>,
     compiler: Rc<dyn CompilerTrait>,
-    mcp_clients: Vec<McpClient>,
+    mcp_clients: Vec<Rc<McpClient>>,
 }
 
 pub struct RuntimeBuilder {
@@ -20,7 +19,7 @@ pub struct RuntimeBuilder {
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     language_engine: Option<Rc<dyn LanguageEngine>>,
     compiler: Option<Rc<dyn CompilerTrait>>,
-    mcp_clients: Vec<McpClient>,
+    mcp_clients: Vec<Rc<McpClient>>,
 }
 
 #[derive(Debug)]
@@ -52,12 +51,12 @@ impl RuntimeBuilder {
     }
 
     pub fn with_mcp_client(mut self, client: McpClient) -> Self {
-        self.mcp_clients.push(client);
+        self.mcp_clients.push(Rc::new(client));
         self
     }
 
     pub fn with_mcp_clients(mut self, clients: Vec<McpClient>) -> Self {
-        self.mcp_clients.extend(clients);
+        self.mcp_clients.extend(clients.into_iter().map(Rc::new));
         self
     }
 
@@ -65,7 +64,6 @@ impl RuntimeBuilder {
         Runtime {
             function_registry: self.function_registry,
             external_function_registry: self.external_function_registry,
-            mcp_tool_mappings: HashMap::new(),
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Rc::new(crate::types::PrintEngine {})),
@@ -134,6 +132,8 @@ impl Runtime {
             runtime_with_functions.register_external_function(external_function.clone());
         }
 
+        runtime_with_functions.mcp_clients = self.mcp_clients.clone();
+
         runtime_with_functions
             .map_mcp_tools_to_external_functions()
             .await?;
@@ -159,7 +159,7 @@ impl Runtime {
     async fn map_mcp_tools_to_external_functions(&mut self) -> Result<(), RuntimeError> {
         let mut functions_to_register = Vec::new();
 
-        for (client_index, client) in self.mcp_clients.iter_mut().enumerate() {
+        for client in &self.mcp_clients {
             let tools = client.list_tools().await.map_err(|e| {
                 RuntimeError::ExecutionError(format!("Failed to list MCP tools: {}", e))
             })?;
@@ -170,7 +170,7 @@ impl Runtime {
                         tool.name.clone(),
                         external_fn.parameters.clone(),
                         external_fn.return_type.clone(),
-                        client_index,
+                        client.clone(),
                     );
 
                     functions_to_register.push((tool.name.clone(), external_function_expr));
@@ -185,22 +185,9 @@ impl Runtime {
         Ok(())
     }
 
-    pub fn get_mcp_client_for_function(&mut self, function_name: &str) -> Option<&mut McpClient> {
-        if let Some(&client_index) = self.mcp_tool_mappings.get(function_name) {
-            self.mcp_clients.get_mut(client_index)
-        } else {
-            None
-        }
-    }
-
     #[cfg(test)]
     pub fn mcp_clients_count(&self) -> usize {
         self.mcp_clients.len()
-    }
-
-    #[cfg(test)]
-    pub fn mcp_tool_mappings_count(&self) -> usize {
-        self.mcp_tool_mappings.len()
     }
 
     #[cfg(test)]
@@ -225,10 +212,9 @@ impl Clone for Runtime {
         Self {
             function_registry: cloned_functions,
             external_function_registry: self.external_function_registry.clone(),
-            mcp_tool_mappings: self.mcp_tool_mappings.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
-            mcp_clients: Vec::new(),
+            mcp_clients: self.mcp_clients.clone(),
         }
     }
 }

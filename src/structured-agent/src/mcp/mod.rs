@@ -7,6 +7,7 @@ use rust_mcp_sdk::{
     McpClient as SdkMcpClient, StdioTransport, ToMcpClientHandler, TransportOptions,
 };
 use serde_json::Value;
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
@@ -50,7 +51,7 @@ pub struct StructuredAgentHandler;
 impl rust_mcp_sdk::mcp_client::ClientHandler for StructuredAgentHandler {}
 
 pub struct McpClient {
-    client: Option<Arc<dyn SdkMcpClient>>,
+    client: RefCell<Option<Arc<dyn SdkMcpClient>>>,
     command: String,
     args: Vec<String>,
 }
@@ -61,20 +62,20 @@ impl McpClient {
         args: Vec<String>,
     ) -> std::result::Result<Self, McpError> {
         Ok(Self {
-            client: None,
+            client: RefCell::new(None),
             command: command.to_string(),
             args,
         })
     }
 
-    async fn ensure_connected(&mut self) -> std::result::Result<(), McpError> {
-        if self.client.is_none() {
+    async fn ensure_connected(&self) -> std::result::Result<(), McpError> {
+        if self.client.borrow().is_none() {
             self.connect().await?;
         }
         Ok(())
     }
 
-    async fn connect(&mut self) -> std::result::Result<(), McpError> {
+    async fn connect(&self) -> std::result::Result<(), McpError> {
         let client_details = InitializeRequestParams {
             protocol_version: LATEST_PROTOCOL_VERSION.into(),
             capabilities: ClientCapabilities::default(),
@@ -108,24 +109,26 @@ impl McpClient {
 
         client.clone().start().await?;
 
-        self.client = Some(client);
+        *self.client.borrow_mut() = Some(client);
         Ok(())
     }
 
-    pub async fn list_tools(&mut self) -> std::result::Result<Vec<Tool>, McpError> {
+    pub async fn list_tools(&self) -> std::result::Result<Vec<Tool>, McpError> {
         self.ensure_connected().await?;
 
         let client = self
             .client
+            .borrow()
             .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?;
+            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?
+            .clone();
 
         let response = client.request_tool_list(None).await?;
         Ok(response.tools)
     }
 
     pub async fn call_tool(
-        &mut self,
+        &self,
         name: &str,
         arguments: Value,
     ) -> std::result::Result<CallToolResult, McpError> {
@@ -133,8 +136,10 @@ impl McpClient {
 
         let client = self
             .client
+            .borrow()
             .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?;
+            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?
+            .clone();
 
         let params = CallToolRequestParams {
             name: name.to_string(),
@@ -152,7 +157,7 @@ impl McpClient {
     }
 
     pub async fn shutdown(&self) -> std::result::Result<(), McpError> {
-        if let Some(client) = &self.client {
+        if let Some(client) = self.client.borrow().as_ref() {
             client.shut_down().await?;
         }
         Ok(())
@@ -161,7 +166,7 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        if let Some(client) = self.client.take() {
+        if let Some(client) = self.client.borrow_mut().take() {
             std::mem::drop(tokio::spawn(async move {
                 let _ = client.shut_down().await;
             }));

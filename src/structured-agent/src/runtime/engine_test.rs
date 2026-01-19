@@ -6,10 +6,10 @@ use tokio;
 #[tokio::test]
 async fn test_runtime_builder_with_mcp_client() {
     let client = McpClient::new_stdio("echo", vec![]).await.unwrap();
-    let mut runtime = Runtime::builder().with_mcp_client(client).build();
+    let runtime = Runtime::builder().with_mcp_client(client).build();
 
-    // Check that we can access the client
-    assert!(runtime.get_mcp_client_for_function("test").is_none());
+    // Check that runtime was created successfully with MCP client
+    assert_eq!(runtime.mcp_clients_count(), 1);
 }
 
 #[tokio::test]
@@ -20,8 +20,8 @@ async fn test_runtime_builder_with_multiple_mcp_clients() {
 
     let runtime = Runtime::builder().with_mcp_clients(clients).build();
 
-    // Test that runtime was created successfully
-    assert!(runtime.get_function("nonexistent").is_none());
+    // Test that runtime was created successfully with multiple clients
+    assert_eq!(runtime.mcp_clients_count(), 2);
 }
 
 #[test]
