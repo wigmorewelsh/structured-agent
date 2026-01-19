@@ -1,7 +1,8 @@
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
-use crate::expressions::{ExternalFunctionExpr, FunctionExpr};
+use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
+use crate::types::NativeFunction;
 use crate::types::{ExecutableFunction, ExternalFunctionDefinition, LanguageEngine};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -60,6 +61,13 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn with_native_function(mut self, native_function: Box<dyn NativeFunction>) -> Self {
+        let name = native_function.name().to_string();
+        let expr = NativeFunctionExpr::new(native_function);
+        self.function_registry.insert(name, Box::new(expr));
+        self
+    }
+
     pub fn build(self) -> Runtime {
         Runtime {
             function_registry: self.function_registry,
@@ -89,6 +97,12 @@ impl Runtime {
 
     pub fn register_expression(&mut self, name: String, expression: Box<dyn ExecutableFunction>) {
         self.function_registry.insert(name, expression);
+    }
+
+    pub fn register_native_function(&mut self, native_function: Box<dyn NativeFunction>) {
+        let name = native_function.name().to_string();
+        let expr = NativeFunctionExpr::new(native_function);
+        self.function_registry.insert(name, Box::new(expr));
     }
 
     pub fn get_function(&self, name: &str) -> Option<&dyn ExecutableFunction> {
@@ -123,16 +137,31 @@ impl Runtime {
             .compile_program(&program)
             .map_err(RuntimeError::ExecutionError)?;
 
-        // Create a new runtime with all compiled functions and external functions registered
-        let mut runtime_with_functions = self.clone();
+        let mut runtime_with_functions = Runtime {
+            function_registry: HashMap::new(),
+            external_function_registry: self.external_function_registry.clone(),
+            language_engine: self.language_engine.clone(),
+            compiler: self.compiler.clone(),
+            mcp_clients: self.mcp_clients.clone(),
+        };
+
+        for (name, function) in self.function_registry.iter() {
+            if let Some(func_expr) = function.as_any().downcast_ref::<FunctionExpr>() {
+                runtime_with_functions.register_function(func_expr.clone());
+            } else if let Some(ext_func_expr) =
+                function.as_any().downcast_ref::<ExternalFunctionExpr>()
+            {
+                runtime_with_functions
+                    .register_expression(name.clone(), Box::new(ext_func_expr.clone()));
+            }
+        }
+
         for (_, function) in compiled_program.functions() {
             runtime_with_functions.register_function(function.clone());
         }
         for (_, external_function) in compiled_program.external_functions() {
             runtime_with_functions.register_external_function(external_function.clone());
         }
-
-        runtime_with_functions.mcp_clients = self.mcp_clients.clone();
 
         runtime_with_functions
             .map_mcp_tools_to_external_functions()
@@ -149,11 +178,21 @@ impl Runtime {
         &self,
         program: &dyn crate::types::Expression,
     ) -> Result<ExprResult, RuntimeError> {
-        let mut context = Context::with_runtime(Rc::new(self.clone()));
+        let mut context = Context::with_runtime(Rc::new(self.create_runtime_ref()));
         program
             .evaluate(&mut context)
             .await
             .map_err(RuntimeError::ExecutionError)
+    }
+
+    fn create_runtime_ref(&self) -> Runtime {
+        Runtime {
+            function_registry: HashMap::new(),
+            external_function_registry: self.external_function_registry.clone(),
+            language_engine: self.language_engine.clone(),
+            compiler: self.compiler.clone(),
+            mcp_clients: self.mcp_clients.clone(),
+        }
     }
 
     async fn map_mcp_tools_to_external_functions(&mut self) -> Result<(), RuntimeError> {
@@ -206,7 +245,18 @@ impl Clone for Runtime {
     fn clone(&self) -> Self {
         let mut cloned_functions = HashMap::new();
         for (name, expr) in &self.function_registry {
-            cloned_functions.insert(name.clone(), expr.clone_executable());
+            if let Some(func_expr) = expr.as_any().downcast_ref::<FunctionExpr>() {
+                cloned_functions.insert(
+                    name.clone(),
+                    Box::new(func_expr.clone()) as Box<dyn ExecutableFunction>,
+                );
+            } else if let Some(ext_func_expr) = expr.as_any().downcast_ref::<ExternalFunctionExpr>()
+            {
+                cloned_functions.insert(
+                    name.clone(),
+                    Box::new(ext_func_expr.clone()) as Box<dyn ExecutableFunction>,
+                );
+            }
         }
 
         Self {

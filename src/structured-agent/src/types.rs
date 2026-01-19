@@ -74,3 +74,14 @@ impl LanguageEngine for PrintEngine {
         "PrintEngine {}".to_string()
     }
 }
+
+#[async_trait(?Send)]
+pub trait NativeFunction: std::fmt::Debug + Send + Sync {
+    fn name(&self) -> &str;
+    fn parameters(&self) -> &[(String, Type)];
+    fn return_type(&self) -> &Type;
+    async fn execute(
+        &self,
+        args: Vec<crate::runtime::ExprResult>,
+    ) -> Result<crate::runtime::ExprResult, String>;
+}
