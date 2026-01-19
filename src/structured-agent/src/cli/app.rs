@@ -1,8 +1,11 @@
-use crate::cli::config::{Config, ProgramSource};
+use crate::cli::config::{Config, EngineType, ProgramSource};
 use crate::cli::errors::CliError;
+use crate::gemini::GeminiEngine;
 use crate::mcp::McpClient;
 use crate::runtime::Runtime;
+use crate::types::LanguageEngine;
 use std::fs;
+use std::rc::Rc;
 
 pub struct App;
 
@@ -22,14 +25,14 @@ impl App {
         println!("Initializing structured agent runtime...");
 
         let mcp_clients = Self::create_mcp_clients(&config.mcp_servers).await?;
-        let runtime = Self::build_runtime(mcp_clients);
+        let runtime = Self::build_runtime(mcp_clients, &config.engine).await?;
 
         println!("Executing program...");
 
         match runtime.run(&program).await {
             Ok(result) => {
                 println!("Program executed successfully");
-                println!("Result: {:?}", result);
+                Self::display_result(&result);
                 Ok(())
             }
             Err(e) => Err(CliError::RuntimeError(format!("{:?}", e))),
@@ -66,13 +69,77 @@ impl App {
         Ok(clients)
     }
 
-    fn build_runtime(mcp_clients: Vec<McpClient>) -> Runtime {
+    async fn build_runtime(
+        mcp_clients: Vec<McpClient>,
+        engine_type: &EngineType,
+    ) -> Result<Runtime, CliError> {
         let mut runtime_builder = Runtime::builder();
 
         for client in mcp_clients {
             runtime_builder = runtime_builder.with_mcp_client(client);
         }
 
-        runtime_builder.build()
+        let engine: Rc<dyn LanguageEngine> = match engine_type {
+            EngineType::Print => Rc::new(crate::types::PrintEngine {}),
+            EngineType::Gemini => match GeminiEngine::from_env().await {
+                Ok(gemini) => Rc::new(gemini),
+                Err(e) => {
+                    return Err(CliError::RuntimeError(format!(
+                        "Failed to initialize Gemini engine: {}. Make sure you're authenticated with 'gcloud auth application-default login'",
+                        e
+                    )));
+                }
+            },
+        };
+
+        runtime_builder = runtime_builder.with_engine(engine);
+        Ok(runtime_builder.build())
+    }
+
+    fn display_result(result: &crate::runtime::ExprResult) {
+        match result {
+            crate::runtime::ExprResult::String(s) => {
+                println!("\n═══ Agent Response ═══");
+
+                // Clean up and format the response
+                let cleaned = s.trim();
+
+                if cleaned.contains('\n') {
+                    // Handle multiline responses with proper formatting
+                    let mut in_code_block = false;
+
+                    for line in cleaned.lines() {
+                        let trimmed_line = line.trim();
+
+                        // Detect code block markers
+                        if trimmed_line.starts_with("```") {
+                            in_code_block = !in_code_block;
+                            if in_code_block {
+                                println!("\n┌─ Code Block ─");
+                            } else {
+                                println!("└─────────────");
+                            }
+                            continue;
+                        }
+
+                        // Format content based on context
+                        if in_code_block {
+                            println!("│ {}", line);
+                        } else if trimmed_line.is_empty() {
+                            println!();
+                        } else {
+                            println!("{}", line);
+                        }
+                    }
+                } else {
+                    println!("{}", cleaned);
+                }
+
+                println!("═══════════════════════");
+            }
+            crate::runtime::ExprResult::Unit => {
+                println!("Result: (no output)");
+            }
+        }
     }
 }

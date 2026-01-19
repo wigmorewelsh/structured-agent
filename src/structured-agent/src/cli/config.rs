@@ -5,12 +5,19 @@ use std::process;
 pub struct Config {
     pub program_source: ProgramSource,
     pub mcp_servers: Vec<McpServerConfig>,
+    pub engine: EngineType,
 }
 
 #[derive(Debug)]
 pub enum ProgramSource {
     File(String),
     Inline(String),
+}
+
+#[derive(Debug)]
+pub enum EngineType {
+    Print,
+    Gemini,
 }
 
 #[derive(Debug)]
@@ -23,10 +30,12 @@ impl Config {
     pub fn from_matches(matches: &ArgMatches) -> Self {
         let program_source = Self::parse_program_source(matches);
         let mcp_servers = Self::parse_mcp_servers(matches);
+        let engine = Self::parse_engine(matches);
 
         Config {
             program_source,
             mcp_servers,
+            engine,
         }
     }
 
@@ -58,6 +67,17 @@ impl Config {
         McpServerConfig {
             command: parts[0].to_string(),
             args: parts[1..].iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn parse_engine(matches: &ArgMatches) -> EngineType {
+        match matches
+            .get_one::<String>("engine")
+            .map(|s| s.as_str())
+            .unwrap_or("print")
+        {
+            "gemini" => EngineType::Gemini,
+            _ => EngineType::Print,
         }
     }
 

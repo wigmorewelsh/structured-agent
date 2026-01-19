@@ -39,6 +39,12 @@ impl Expression for FunctionExpr {
         for statement in &self.body {
             last_result = statement.evaluate(context).await?;
         }
+
+        if !context.events.is_empty() {
+            let engine_response = context.runtime().engine().untyped(context).await;
+            return Ok(ExprResult::String(engine_response));
+        }
+
         Ok(last_result)
     }
 

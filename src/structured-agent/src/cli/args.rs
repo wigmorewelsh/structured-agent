@@ -28,4 +28,14 @@ pub fn build_cli() -> Command {
                 .help("MCP server command (format: 'command arg1 arg2')")
                 .action(clap::ArgAction::Append),
         )
+        .arg(
+            Arg::new("engine")
+                .short('e')
+                .long("engine")
+                .value_name("ENGINE")
+                .help(
+                    "Language engine to use: 'print' for console output, 'gemini' for AI responses",
+                )
+                .default_value("print"),
+        )
 }
