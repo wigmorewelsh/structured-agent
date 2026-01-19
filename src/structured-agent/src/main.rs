@@ -1,4 +1,5 @@
 mod ast;
+mod cli;
 mod compiler;
 mod expressions;
 mod gemini;
@@ -6,32 +7,16 @@ mod mcp;
 mod runtime;
 mod types;
 
-use runtime::Runtime;
+use cli::{App, CliError, Config, build_cli};
+use std::process;
 
 #[tokio::main]
 async fn main() {
-    let input = r#"
-fn hello_world() -> () {
-    "Hello from the structured agent!"!
-    "This demonstrates the new compiler architecture"!
-}
+    let matches = build_cli().get_matches();
+    let config = Config::from_matches(&matches);
 
-fn main() -> () {
-    "Starting program execution"!
-    let result = hello_world()
-    "Program completed successfully"!
-}
-"#;
-
-    let runtime = Runtime::new();
-
-    match runtime.run(input).await {
-        Ok(result) => {
-            println!("Program executed successfully");
-            println!("Result: {:?}", result);
-        }
-        Err(e) => {
-            println!("Execution failed: {:?}", e);
-        }
+    if let Err(e) = App::run(config).await {
+        eprintln!("Error: {}", e);
+        process::exit(1);
     }
 }

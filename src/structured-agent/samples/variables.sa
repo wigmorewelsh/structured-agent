@@ -1,0 +1,18 @@
+fn main() -> () {
+    "Demonstrating variable usage"!
+
+    let greeting = "Hello"
+    let name = "Alice"
+    let number = "42"
+
+    "Using variables:"!
+    greeting!
+    name!
+    number!
+
+    "Assigning new values:"!
+    let result = "Success"
+    result!
+
+    "Variables demonstration complete"!
+}

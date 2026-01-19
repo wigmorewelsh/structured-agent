@@ -5,6 +5,8 @@ use crate::expressions::{
     AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, StringLiteralExpr, VariableExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
+
+use combine::stream::position::IndexPositioner;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -56,13 +58,79 @@ impl Parser for DefaultParser {
         &self,
         program: &CompilationUnit,
     ) -> Result<(Vec<ast::Function>, Vec<ast::ExternalFunction>), String> {
-        use combine::EasyParser;
+        use combine::{EasyParser, stream::position};
 
-        match parser::parse_program().easy_parse(program.source()) {
+        let input = program.source();
+        let stream = position::Stream::with_positioner(input, IndexPositioner::new());
+
+        match parser::parse_program().easy_parse(stream) {
             Ok(((functions, external_functions), _)) => Ok((functions, external_functions)),
-            Err(e) => Err(format!("Parse error: {:?}", e)),
+            Err(e) => {
+                let formatted_error = format_parse_error_with_position(&e, input);
+                Err(formatted_error)
+            }
         }
     }
+}
+
+fn format_parse_error_with_position(
+    error: &combine::easy::Errors<char, &str, usize>,
+    source: &str,
+) -> String {
+    let position = error.position;
+    let (line, column) = calculate_line_column(source, position);
+
+    // Use combine's built-in Display but clean it up
+    let error_text = error.to_string();
+    let clean_error = clean_combine_error(&error_text);
+
+    format!(
+        "Parse error at line {}, column {}: {}",
+        line, column, clean_error
+    )
+}
+
+fn clean_combine_error(error_text: &str) -> String {
+    // Parse combine's format: "Parse error at {pos}\nUnexpected `{token}`\nExpected `{token}`\n"
+    let lines: Vec<&str> = error_text.lines().collect();
+    let mut messages = Vec::new();
+
+    for line in lines {
+        if line.starts_with("Unexpected") {
+            let clean = line.replace("Unexpected `", "unexpected ").replace("`", "");
+            messages.push(clean);
+        } else if line.starts_with("Expected") {
+            let clean = line.replace("Expected `", "expected ").replace("`", "");
+            messages.push(clean);
+        } else if !line.starts_with("Parse error at") && !line.trim().is_empty() {
+            messages.push(line.to_string());
+        }
+    }
+
+    if messages.is_empty() {
+        "syntax error".to_string()
+    } else {
+        messages.join(", ")
+    }
+}
+
+fn calculate_line_column(source: &str, position: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut column = 1;
+
+    for (i, ch) in source.char_indices() {
+        if i >= position {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+
+    (line, column)
 }
 
 pub trait CompilerTrait {

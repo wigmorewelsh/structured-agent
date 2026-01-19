@@ -1,0 +1,10 @@
+fn main() -> () {
+    "This is a test"!
+    let x = 5 +
+    "Missing operand and syntax error"!
+    invalid_function_call()
+}
+
+fn incomplete_function(
+    "Missing parameters and return type"!
+}

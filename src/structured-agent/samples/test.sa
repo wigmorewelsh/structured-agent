@@ -1,0 +1,4 @@
+fn main() -> () {
+    "Testing file execution"!
+    "This is a simple test program"!
+}

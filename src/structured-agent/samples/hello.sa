@@ -1,0 +1,5 @@
+fn main() -> () {
+    "Hello, World!"!
+    "This is a simple hello world program"!
+    "Written in the structured agent language"!
+}

@@ -1,0 +1,22 @@
+fn greet() -> () {
+    "Hello, World!"!
+    "Welcome to the structured agent!"!
+}
+
+fn calculate() -> () {
+    "Performing calculations"!
+    let x = "42"
+    "The answer is: "!
+    x!
+}
+
+fn main() -> () {
+    "Starting example program"!
+
+    let result = greet()
+
+    "Now running calculations:"!
+    let calc_result = calculate()
+
+    "Example program completed successfully"!
+}
