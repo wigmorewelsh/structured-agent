@@ -39,14 +39,15 @@ impl Expression for CallExpr {
                 } else {
                     format!("Unknown function: {}", function_name)
                 }
-            })?
-            .clone();
+            })?;
 
-        if self.arguments.len() != function_info.parameters.len() {
+        let parameters = function_info.parameters().to_vec();
+
+        if self.arguments.len() != parameters.len() {
             return Err(format!(
                 "Function {} expects {} arguments, got {}",
                 function_name,
-                function_info.parameters.len(),
+                parameters.len(),
                 self.arguments.len()
             ));
         }
@@ -58,14 +59,14 @@ impl Expression for CallExpr {
 
         let mut function_context = context.create_child();
 
-        for (i, (param_name, _param_type)) in function_info.parameters.iter().enumerate() {
+        for (i, (param_name, _param_type)) in parameters.iter().enumerate() {
             function_context.set_variable(param_name.clone(), args[i].clone());
         }
 
+        let function_info = context.runtime().get_function(&function_name).unwrap();
+
         let result = function_info.evaluate(&mut function_context).await?;
 
-        // For now, return the function result directly
-        // In the future, we might want to use the language engine for more complex scenarios
         Ok(result)
     }
 
@@ -76,13 +77,7 @@ impl Expression for CallExpr {
             format!("{}::{}", self.target, self.function)
         };
 
-        // TODO: This needs a runtime instance to work properly
         Type::unit()
-        /*
-        if let Some(function) = runtime.get_function(&function_name) {
-            function.return_type.clone()
-        }
-        */
     }
 
     fn as_any(&self) -> &dyn Any {

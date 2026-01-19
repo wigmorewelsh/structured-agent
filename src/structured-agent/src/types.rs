@@ -38,6 +38,13 @@ impl ExternalFunctionDefinition {
 }
 
 #[async_trait(?Send)]
+pub trait Function: std::fmt::Debug {
+    fn name(&self) -> &str;
+    fn parameters(&self) -> &[(String, Type)];
+    fn function_return_type(&self) -> &Type;
+}
+
+#[async_trait(?Send)]
 pub trait Expression: std::fmt::Debug {
     async fn evaluate(
         &self,
@@ -46,6 +53,11 @@ pub trait Expression: std::fmt::Debug {
     fn return_type(&self) -> Type;
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn Expression>;
+}
+
+#[async_trait(?Send)]
+pub trait ExecutableFunction: Function + Expression + std::fmt::Debug {
+    fn clone_executable(&self) -> Box<dyn ExecutableFunction>;
 }
 
 #[async_trait(?Send)]

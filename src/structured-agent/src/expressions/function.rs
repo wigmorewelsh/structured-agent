@@ -1,5 +1,5 @@
 use crate::runtime::{Context, ExprResult};
-use crate::types::{Expression, Type};
+use crate::types::{ExecutableFunction, Expression, Function, Type};
 use async_trait::async_trait;
 use std::any::Any;
 
@@ -51,6 +51,28 @@ impl Expression for FunctionExpr {
     }
 
     fn clone_box(&self) -> Box<dyn Expression> {
+        Box::new(self.clone())
+    }
+}
+
+#[async_trait(?Send)]
+impl Function for FunctionExpr {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn parameters(&self) -> &[(String, Type)] {
+        &self.parameters
+    }
+
+    fn function_return_type(&self) -> &Type {
+        &self.return_type
+    }
+}
+
+#[async_trait(?Send)]
+impl ExecutableFunction for FunctionExpr {
+    fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
         Box::new(self.clone())
     }
 }
