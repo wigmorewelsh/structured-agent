@@ -1,0 +1,25 @@
+fn main() -> () {
+    "Starting while statement demo"!
+
+    let should_continue = true
+    "Entering while loop"!
+    while should_continue {
+        "Inside while loop iteration"!
+        let should_continue = false
+    }
+    "Exited while loop"!
+
+    "Testing while with false condition"!
+    while false {
+        "This should never execute"!
+    }
+
+    "While with boolean literal true (will loop once)"!
+    let loop_once = true
+    while loop_once {
+        "Loop body executed once"!
+        let loop_once = false
+    }
+
+    "While statement demo completed"!
+}

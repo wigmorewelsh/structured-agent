@@ -1,0 +1,52 @@
+fn task_complete(iteration: String) -> Boolean {
+    "Is the task complete after iteration "!
+    iteration!
+    "?"!
+}
+
+fn process_item(item: String) -> () {
+    "Processing item: "!
+    item!
+}
+
+fn main() -> () {
+    "Starting control flow demonstration"!
+
+    let has_items = true
+    if has_items {
+        "Items found, beginning processing"!
+
+        let current_iteration = "1"
+        let should_continue = true
+
+        while should_continue {
+            "=== Loop iteration "!
+            current_iteration!
+            " ==="!
+
+            let item_name = "item_"
+            item_name!
+            current_iteration!
+
+            process_item(item_name)
+
+            let complete = task_complete(current_iteration)
+            if complete {
+                "Task completed, stopping loop"!
+                should_continue = false
+            }
+
+            "Iteration complete"!
+            let current_iteration = "2"
+        }
+
+        "All processing complete"!
+    }
+
+    let final_check = false
+    if final_check {
+        "This final check should not execute"!
+    }
+
+    "Control flow demonstration finished"!
+}

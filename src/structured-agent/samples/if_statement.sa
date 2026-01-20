@@ -1,0 +1,24 @@
+fn main() -> () {
+    "Starting if statement demo"!
+
+    let condition = true
+    if condition {
+        "Condition was true, executing if body"!
+    }
+
+    let another_condition = false
+    if another_condition {
+        "This should not execute"!
+    }
+
+    "Checking boolean literals"!
+    if true {
+        "Boolean literal true works"!
+    }
+
+    if false {
+        "This should not execute either"!
+    }
+
+    "If statement demo completed"!
+}

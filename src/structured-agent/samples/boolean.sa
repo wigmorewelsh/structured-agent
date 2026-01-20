@@ -1,0 +1,25 @@
+fn check_status() -> Boolean {
+    "Checking system status..."!
+    let status = true
+    status!
+}
+
+fn is_ready() -> Boolean {
+    "Determining readiness..."!
+    let ready = false
+    ready!
+}
+
+fn main() -> () {
+    "Boolean support demonstration"!
+
+    "Testing boolean literals assignment:"!
+    let success = true
+    let failure = false
+
+    "Testing boolean function calls:"!
+    let status_result = check_status()
+    let ready_result = is_ready()
+
+    "All boolean operations completed successfully"!
+}

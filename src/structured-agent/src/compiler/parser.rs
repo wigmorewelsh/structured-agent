@@ -152,20 +152,22 @@ where
     Input: Stream<Token = char>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    many(parse_statement().skip(skip_spaces())).map(|statements| FunctionBody { statements })
+    many(statement().skip(skip_spaces())).map(|statements| FunctionBody { statements })
 }
 
-fn parse_statement<Input>() -> impl Parser<Input, Output = Statement>
-where
-    Input: Stream<Token = char>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(parse_assignment()),
-        attempt(parse_select()),
-        attempt(parse_injection()),
-        parse_expression_statement(),
-    ))
+combine::parser! {
+    fn statement[Input]()(Input) -> Statement
+    where [Input: Stream<Token = char>]
+    {
+        choice((
+            attempt(parse_assignment()),
+            attempt(parse_select()),
+            attempt(parse_injection()),
+            attempt(parse_if_statement()),
+            attempt(parse_while_statement()),
+            parse_expression_statement(),
+        ))
+    }
 }
 
 fn parse_injection<Input>() -> impl Parser<Input, Output = Statement>
@@ -385,6 +387,40 @@ where
         )
 }
 
+fn parse_if_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        lex_string("if"),
+        parse_expression(),
+        between(
+            lex_char('{'),
+            lex_char('}'),
+            many(statement().skip(skip_spaces())),
+        ),
+    )
+        .map(|(_, condition, body)| Statement::If { condition, body })
+}
+
+fn parse_while_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        lex_string("while"),
+        parse_expression(),
+        between(
+            lex_char('{'),
+            lex_char('}'),
+            many(statement().skip(skip_spaces())),
+        ),
+    )
+        .map(|(_, condition, body)| Statement::While { condition, body })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,7 +491,7 @@ fn main() -> () {
     #[test]
     fn test_parse_prompt_injection() {
         let input = r#""Analyze the following code for potential bugs"!"#;
-        let result = parse_statement().easy_parse(input);
+        let result = statement().easy_parse(input);
         assert!(result.is_ok());
 
         let (statement, _) = result.unwrap();
@@ -470,7 +506,7 @@ fn main() -> () {
     #[test]
     fn test_parse_variable_injection() {
         let input = "code!";
-        let result = parse_statement().easy_parse(input);
+        let result = statement().easy_parse(input);
         assert!(result.is_ok());
 
         let (statement, _) = result.unwrap();
@@ -485,7 +521,7 @@ fn main() -> () {
     #[test]
     fn test_parse_assignment_with_method_call() {
         let input = "let analysis = ctx.analyze_code(code)";
-        let result = parse_statement().easy_parse(input);
+        let result = statement().easy_parse(input);
         assert!(result.is_ok());
 
         let (statement, _) = result.unwrap();

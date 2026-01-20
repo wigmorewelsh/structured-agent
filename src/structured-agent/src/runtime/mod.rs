@@ -10,5 +10,8 @@ mod function_call_test;
 #[cfg(test)]
 mod boolean_test;
 
+#[cfg(test)]
+mod control_flow_test;
+
 pub use context::{Context, ExprResult};
 pub use engine::Runtime;

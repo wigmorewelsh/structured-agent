@@ -1,0 +1,8 @@
+fn main() -> () {
+    "Testing basic boolean literals"!
+
+    let flag = true
+    let ready = false
+
+    "Boolean test completed"!
+}

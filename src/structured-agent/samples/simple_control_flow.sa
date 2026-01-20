@@ -1,0 +1,26 @@
+fn main() -> () {
+    "Starting simple control flow demonstration"!
+
+    let has_items = true
+    if has_items {
+        "Found items, processing..."!
+
+        let item_count = "3"
+        "Processing "!
+        item_count!
+        " items"!
+    }
+
+    let check_complete = false
+    if check_complete {
+        "This should not execute"!
+    }
+
+    let loop_once = true
+    while loop_once {
+        "Executing loop body once"!
+        let loop_once = false
+    }
+
+    "Simple control flow demonstration complete"!
+}

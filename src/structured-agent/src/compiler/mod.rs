@@ -2,8 +2,8 @@ pub mod parser;
 
 use crate::ast;
 use crate::expressions::{
-    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr,
-    SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableExpr,
+    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
+    PlaceholderExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableExpr, WhileExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
 
@@ -340,7 +340,28 @@ impl Compiler {
                     expression: compiled_expression,
                 }))
             }
-
+            ast::Statement::If { condition, body } => {
+                let compiled_condition = Self::compile_expression(condition)?;
+                let compiled_body = body
+                    .iter()
+                    .map(|stmt| Self::compile_statement(stmt))
+                    .collect::<Result<Vec<_>, String>>()?;
+                Ok(Box::new(IfExpr {
+                    condition: compiled_condition,
+                    body: compiled_body,
+                }))
+            }
+            ast::Statement::While { condition, body } => {
+                let compiled_condition = Self::compile_expression(condition)?;
+                let compiled_body = body
+                    .iter()
+                    .map(|stmt| Self::compile_statement(stmt))
+                    .collect::<Result<Vec<_>, String>>()?;
+                Ok(Box::new(WhileExpr {
+                    condition: compiled_condition,
+                    body: compiled_body,
+                }))
+            }
             ast::Statement::ExpressionStatement(expr) => Self::compile_expression(expr),
         }
     }

@@ -41,6 +41,14 @@ pub enum Statement {
         expression: Expression,
     },
     ExpressionStatement(Expression),
+    If {
+        condition: Expression,
+        body: Vec<Statement>,
+    },
+    While {
+        condition: Expression,
+        body: Vec<Statement>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +113,20 @@ impl fmt::Display for Statement {
                 write!(f, "let {} = {}", variable, expression)
             }
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
+            Statement::If { condition, body } => {
+                writeln!(f, "if {} {{", condition)?;
+                for stmt in body {
+                    writeln!(f, "    {}", stmt)?;
+                }
+                write!(f, "}}")
+            }
+            Statement::While { condition, body } => {
+                writeln!(f, "while {} {{", condition)?;
+                for stmt in body {
+                    writeln!(f, "    {}", stmt)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }

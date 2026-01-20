@@ -1,0 +1,304 @@
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
+use async_trait::async_trait;
+use std::any::Any;
+
+#[derive(Debug)]
+pub struct WhileExpr {
+    pub condition: Box<dyn Expression>,
+    pub body: Vec<Box<dyn Expression>>,
+}
+
+#[async_trait(?Send)]
+impl Expression for WhileExpr {
+    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+        loop {
+            let condition_result = self.condition.evaluate(context).await?;
+            let condition_value = condition_result
+                .as_boolean()
+                .map_err(|_| "while condition must be a boolean expression".to_string())?;
+
+            if !condition_value {
+                break;
+            }
+
+            for statement in &self.body {
+                statement.evaluate(context).await?;
+            }
+        }
+
+        Ok(ExprResult::Unit)
+    }
+
+    fn return_type(&self) -> Type {
+        Type::unit()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Expression> {
+        Box::new(WhileExpr {
+            condition: self.condition.clone_box(),
+            body: self.body.iter().map(|expr| expr.clone_box()).collect(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expressions::{
+        AssignmentExpr, BooleanLiteralExpr, InjectionExpr, StringLiteralExpr, VariableExpr,
+    };
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
+
+    #[tokio::test]
+    async fn test_while_false_condition() {
+        let condition = Box::new(BooleanLiteralExpr { value: false });
+        let body = vec![Box::new(InjectionExpr {
+            inner: Box::new(StringLiteralExpr {
+                value: "never executed".to_string(),
+            }),
+        }) as Box<dyn Expression>];
+
+        let while_expr = WhileExpr { condition, body };
+
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        let result = while_expr.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(context.events.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_while_non_boolean_condition() {
+        let condition = Box::new(StringLiteralExpr {
+            value: "not a boolean".to_string(),
+        });
+        let body = vec![];
+
+        let while_expr = WhileExpr { condition, body };
+
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        let result = while_expr.evaluate(&mut context).await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "while condition must be a boolean expression"
+        );
+    }
+
+    #[test]
+    fn test_while_return_type() {
+        let condition = Box::new(BooleanLiteralExpr { value: true });
+        let body = vec![];
+        let while_expr = WhileExpr { condition, body };
+
+        assert_eq!(while_expr.return_type().name, "()");
+    }
+
+    #[tokio::test]
+    async fn test_while_with_variable_condition() {
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+
+        let condition = Box::new(VariableExpr {
+            name: "should_continue".to_string(),
+        });
+
+        let body = vec![
+            Box::new(InjectionExpr {
+                inner: Box::new(StringLiteralExpr {
+                    value: "loop iteration".to_string(),
+                }),
+            }) as Box<dyn Expression>,
+            Box::new(AssignmentExpr {
+                variable: "should_continue".to_string(),
+                expression: Box::new(BooleanLiteralExpr { value: false }),
+            }) as Box<dyn Expression>,
+        ];
+
+        let while_expr = WhileExpr { condition, body };
+        let result = while_expr.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(context.events.len(), 1);
+        assert_eq!(context.events[0].message, "loop iteration");
+        assert_eq!(
+            context.get_variable("should_continue").unwrap(),
+            &ExprResult::Boolean(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_while_variable_scoping() {
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+
+        // Set outer variable
+        context.set_variable(
+            "outer_var".to_string(),
+            ExprResult::String("outer_value".to_string()),
+        );
+        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+
+        let condition = Box::new(VariableExpr {
+            name: "should_continue".to_string(),
+        });
+
+        let body = vec![
+            Box::new(AssignmentExpr {
+                variable: "inner_var".to_string(),
+                expression: Box::new(StringLiteralExpr {
+                    value: "inner_value".to_string(),
+                }),
+            }) as Box<dyn Expression>,
+            Box::new(AssignmentExpr {
+                variable: "should_continue".to_string(),
+                expression: Box::new(BooleanLiteralExpr { value: false }),
+            }) as Box<dyn Expression>,
+        ];
+
+        let while_expr = WhileExpr { condition, body };
+        let result = while_expr.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+
+        // Outer variable should still exist
+        assert_eq!(
+            context.get_variable("outer_var").unwrap(),
+            &ExprResult::String("outer_value".to_string())
+        );
+
+        // The should_continue variable should now be false due to assignment in loop
+        assert_eq!(
+            context.get_variable("should_continue").unwrap(),
+            &ExprResult::Boolean(false)
+        );
+
+        // Inner variable should now exist in the same context
+        assert_eq!(
+            context.get_variable("inner_var").unwrap(),
+            &ExprResult::String("inner_value".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nested_while_statements() {
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        context.set_variable("outer_continue".to_string(), ExprResult::Boolean(true));
+        context.set_variable("inner_continue".to_string(), ExprResult::Boolean(true));
+
+        let inner_while = WhileExpr {
+            condition: Box::new(VariableExpr {
+                name: "inner_continue".to_string(),
+            }),
+            body: vec![
+                Box::new(InjectionExpr {
+                    inner: Box::new(StringLiteralExpr {
+                        value: "inner while executed".to_string(),
+                    }),
+                }) as Box<dyn Expression>,
+                Box::new(AssignmentExpr {
+                    variable: "inner_continue".to_string(),
+                    expression: Box::new(BooleanLiteralExpr { value: false }),
+                }) as Box<dyn Expression>,
+            ],
+        };
+
+        let outer_while = WhileExpr {
+            condition: Box::new(VariableExpr {
+                name: "outer_continue".to_string(),
+            }),
+            body: vec![
+                Box::new(InjectionExpr {
+                    inner: Box::new(StringLiteralExpr {
+                        value: "outer while executed".to_string(),
+                    }),
+                }) as Box<dyn Expression>,
+                Box::new(inner_while) as Box<dyn Expression>,
+                Box::new(AssignmentExpr {
+                    variable: "outer_continue".to_string(),
+                    expression: Box::new(BooleanLiteralExpr { value: false }),
+                }) as Box<dyn Expression>,
+            ],
+        };
+
+        let result = outer_while.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(context.events.len(), 2);
+        assert_eq!(context.events[0].message, "outer while executed");
+        assert_eq!(context.events[1].message, "inner while executed");
+    }
+
+    #[tokio::test]
+    async fn test_while_can_access_parent_variables() {
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+
+        // Set parent variables
+        context.set_variable(
+            "parent_var".to_string(),
+            ExprResult::String("parent_value".to_string()),
+        );
+        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+
+        let condition = Box::new(VariableExpr {
+            name: "should_continue".to_string(),
+        });
+
+        let body = vec![
+            Box::new(InjectionExpr {
+                inner: Box::new(VariableExpr {
+                    name: "parent_var".to_string(),
+                }),
+            }) as Box<dyn Expression>,
+            Box::new(AssignmentExpr {
+                variable: "local_var".to_string(),
+                expression: Box::new(StringLiteralExpr {
+                    value: "local_value".to_string(),
+                }),
+            }) as Box<dyn Expression>,
+            Box::new(AssignmentExpr {
+                variable: "should_continue".to_string(),
+                expression: Box::new(BooleanLiteralExpr { value: false }),
+            }) as Box<dyn Expression>,
+        ];
+
+        let while_expr = WhileExpr { condition, body };
+        let result = while_expr.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+
+        // Should have injected parent variable value
+        assert_eq!(context.events.len(), 1);
+        assert_eq!(context.events[0].message, "parent_value");
+
+        // Parent variable should still exist
+        assert_eq!(
+            context.get_variable("parent_var").unwrap(),
+            &ExprResult::String("parent_value".to_string())
+        );
+
+        // Local variable should now exist in the same context
+        assert_eq!(
+            context.get_variable("local_var").unwrap(),
+            &ExprResult::String("local_value".to_string())
+        );
+
+        // should_continue should now be false due to assignment in loop
+        assert_eq!(
+            context.get_variable("should_continue").unwrap(),
+            &ExprResult::Boolean(false)
+        );
+    }
+}
