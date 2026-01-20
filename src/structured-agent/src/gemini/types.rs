@@ -103,6 +103,8 @@ pub struct GenerationConfig {
     pub stop_sequences: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "candidateCount")]
     pub candidate_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "responseSchema")]
+    pub response_schema: Option<JsonSchema>,
 }
 
 impl GenerationConfig {
@@ -114,6 +116,7 @@ impl GenerationConfig {
             max_output_tokens: None,
             stop_sequences: None,
             candidate_count: None,
+            response_schema: None,
         }
     }
 
@@ -139,6 +142,11 @@ impl GenerationConfig {
 
     pub fn with_stop_sequences(mut self, sequences: Vec<String>) -> Self {
         self.stop_sequences = Some(sequences);
+        self
+    }
+
+    pub fn with_response_schema(mut self, schema: JsonSchema) -> Self {
+        self.response_schema = Some(schema);
         self
     }
 }
@@ -271,6 +279,46 @@ pub struct Content {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonSchema {
+    #[serde(rename = "type")]
+    pub schema_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, JsonSchemaProperty>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonSchemaProperty {
+    #[serde(rename = "type")]
+    pub property_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimum: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximum: Option<u32>,
+}
+
+impl JsonSchema {
+    pub fn integer_selection(max_value: u32) -> Self {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "selection".to_string(),
+            JsonSchemaProperty {
+                property_type: "integer".to_string(),
+                minimum: Some(0),
+                maximum: Some(max_value),
+            },
+        );
+
+        Self {
+            schema_type: "object".to_string(),
+            properties: Some(properties),
+            required: Some(vec!["selection".to_string()]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInstruction {
     pub parts: Vec<Part>,
 }
@@ -337,6 +385,7 @@ mod tests {
             max_output_tokens: Some(1024),
             stop_sequences: Some(vec!["STOP".to_string(), "END".to_string()]),
             candidate_count: Some(1),
+            response_schema: None,
         };
 
         let serialized = serde_json::to_value(&config).unwrap();
@@ -364,6 +413,7 @@ mod tests {
             max_output_tokens: None,
             stop_sequences: None,
             candidate_count: None,
+            response_schema: None,
         };
 
         let serialized = serde_json::to_value(&config).unwrap();
@@ -396,6 +446,7 @@ mod tests {
             max_output_tokens: Some(1024),
             stop_sequences: None,
             candidate_count: None,
+            response_schema: None,
         };
 
         let request = ChatRequest {
