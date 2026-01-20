@@ -63,6 +63,11 @@ pub trait ExecutableFunction: Function + Expression + std::fmt::Debug {
 #[async_trait(?Send)]
 pub trait LanguageEngine {
     async fn untyped(&self, context: &crate::runtime::Context) -> String;
+    async fn select(
+        &self,
+        context: &crate::runtime::Context,
+        options: &[String],
+    ) -> Result<usize, String>;
 }
 
 pub struct PrintEngine {}
@@ -75,6 +80,14 @@ impl LanguageEngine for PrintEngine {
         } else {
             "PrintEngine {}".to_string()
         }
+    }
+
+    async fn select(
+        &self,
+        _context: &crate::runtime::Context,
+        _options: &[String],
+    ) -> Result<usize, String> {
+        Ok(0)
     }
 }
 

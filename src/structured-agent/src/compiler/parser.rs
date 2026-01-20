@@ -1,5 +1,6 @@
 use crate::ast::{
-    Expression, ExternalFunction, Function, FunctionBody, Parameter, Statement, Type,
+    Expression, ExternalFunction, Function, FunctionBody, Parameter, SelectClause,
+    SelectExpression, Statement, Type,
 };
 use combine::parser::char::{char, letter, spaces, string};
 use combine::parser::choice::choice;
@@ -159,19 +160,11 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        attempt(parse_external_declaration()),
         attempt(parse_assignment()),
+        attempt(parse_select()),
         attempt(parse_injection()),
         parse_expression_statement(),
     ))
-}
-
-fn parse_external_declaration<Input>() -> impl Parser<Input, Output = Statement>
-where
-    Input: Stream<Token = char>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    parse_external_function().map(Statement::ExternalDeclaration)
 }
 
 fn parse_injection<Input>() -> impl Parser<Input, Output = Statement>
@@ -216,6 +209,8 @@ where
 {
     choice((
         attempt(parse_call()),
+        attempt(parse_select_expression()),
+        parse_placeholder(),
         parse_string_literal(),
         parse_variable(),
     ))
@@ -285,7 +280,11 @@ where
     Input: Stream<Token = char>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((parse_string_literal(), parse_variable()))
+    choice((
+        parse_placeholder(),
+        parse_string_literal(),
+        parse_variable(),
+    ))
 }
 
 fn parse_string_literal<Input>() -> impl Parser<Input, Output = Expression>
@@ -307,6 +306,69 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     identifier().map(Expression::Variable)
+}
+
+fn parse_placeholder<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    lex_char('_').map(|_| Expression::Placeholder)
+}
+
+fn parse_select<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    lex_string("select")
+        .with(between(
+            lex_char('{'),
+            lex_char('}'),
+            sep_by(parse_select_clause(), lex_char(',')),
+        ))
+        .map(|clauses| {
+            Statement::ExpressionStatement(Expression::Select(SelectExpression { clauses }))
+        })
+}
+
+fn parse_select_expression<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    lex_string("select")
+        .with(between(
+            lex_char('{'),
+            lex_char('}'),
+            sep_by(parse_select_clause(), lex_char(',')),
+        ))
+        .map(|clauses| Expression::Select(SelectExpression { clauses }))
+}
+
+fn parse_select_clause<Input>() -> impl Parser<Input, Output = SelectClause>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    parse_call()
+        .skip(skip_spaces())
+        .skip(lex_string("as"))
+        .and(identifier())
+        .skip(lex_string("=>"))
+        .and(choice((
+            attempt(parse_call()),
+            parse_placeholder(),
+            parse_string_literal(),
+            parse_variable(),
+        )))
+        .map(
+            |((expression_to_run, result_variable), expression_next)| SelectClause {
+                expression_to_run,
+                result_variable,
+                expression_next,
+            },
+        )
 }
 
 #[cfg(test)]
@@ -553,5 +615,70 @@ fn test_function() -> () {
             }
             _ => panic!("Expected injection statement"),
         }
+    }
+
+    #[test]
+    fn test_parse_select_statement() {
+        let input = r#"
+fn calculator_agent(ctx: Context, request: String) -> i32 {
+    "You are a calculator. Use the tools provided."!
+    request!
+
+    let result = select {
+        add(ctx, _, _) as sum => sum,
+        subtract(ctx, _, _) as diff => diff
+    }
+
+    result
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, _), _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "calculator_agent");
+        assert_eq!(func.body.statements.len(), 4);
+
+        let Statement::Assignment {
+            variable,
+            expression,
+        } = &func.body.statements[2]
+        else {
+            panic!("Expected assignment statement");
+        };
+        assert_eq!(variable, "result");
+
+        let Expression::Select(select_stmt) = expression else {
+            panic!("Expected select expression");
+        };
+        assert_eq!(select_stmt.clauses.len(), 2);
+
+        let first_clause = &select_stmt.clauses[0];
+        assert_eq!(first_clause.result_variable, "sum");
+
+        let Expression::Call {
+            function,
+            arguments,
+            ..
+        } = &first_clause.expression_to_run
+        else {
+            panic!("Expected call expression");
+        };
+        assert_eq!(function, "add");
+        assert_eq!(arguments.len(), 3);
+        assert!(matches!(arguments[1], Expression::Placeholder));
+        assert!(matches!(arguments[2], Expression::Placeholder));
+
+        let second_clause = &select_stmt.clauses[1];
+        assert_eq!(second_clause.result_variable, "diff");
+
+        let Expression::Call { function, .. } = &second_clause.expression_to_run else {
+            panic!("Expected call expression");
+        };
+        assert_eq!(function, "subtract");
     }
 }

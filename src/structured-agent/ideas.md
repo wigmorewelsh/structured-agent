@@ -100,8 +100,15 @@ fn tool_a(Context) -> ?? {
 
 fn choose_from_tool(Context) -> () {
   select {
-    case tool_a(Context, _, _): //do stuff for tool a result
-    case tool_b(Context, _): //do stuff for tool b result
+    tool_a(Context, _, _) as a => { }, # do stuff for tool a result
+    tool_b(Context, _) as b => b # do stuff for tool b result
+  }
+}
+
+fn get_result_from_tool(Context): () {
+  let result = select {
+    tool_a(Context, _, _) as a => { ...transform_a... },
+    tool_b(Context, _) as b => b
   }
 }
 ```

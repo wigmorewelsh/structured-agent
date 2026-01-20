@@ -68,4 +68,48 @@ impl LanguageEngine for GeminiEngine {
             }
         }
     }
+
+    async fn select(&self, context: &Context, options: &[String]) -> Result<usize, String> {
+        let mut selection_prompt =
+            "SELECT: Choose one of the following options by responding with just the number:\n"
+                .to_string();
+        for (index, option) in options.iter().enumerate() {
+            selection_prompt.push_str(&format!("{}: {}\n", index, option));
+        }
+
+        let mut chat_messages = self.build_context_messages(context);
+        chat_messages.push(ChatMessage::user(selection_prompt));
+
+        match self
+            .client
+            .structured_chat(chat_messages, self.model.clone(), None)
+            .await
+        {
+            Ok(response) => {
+                let selection_text = response
+                    .first_content()
+                    .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
+
+                let selected_index: usize = selection_text.trim().parse().map_err(|_| {
+                    format!(
+                        "Language engine returned invalid selection: '{}'",
+                        selection_text
+                    )
+                })?;
+
+                if selected_index >= options.len() {
+                    return Err(format!(
+                        "Language engine selected invalid option index: {}",
+                        selected_index
+                    ));
+                }
+
+                Ok(selected_index)
+            }
+            Err(e) => Err(format!(
+                "Error communicating with Gemini for selection: {}",
+                e
+            )),
+        }
+    }
 }

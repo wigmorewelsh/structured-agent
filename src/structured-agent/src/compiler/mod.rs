@@ -2,7 +2,8 @@ pub mod parser;
 
 use crate::ast;
 use crate::expressions::{
-    AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, StringLiteralExpr, VariableExpr,
+    AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr, SelectClauseExpr,
+    SelectExpr, StringLiteralExpr, VariableExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
 
@@ -293,6 +294,27 @@ impl Compiler {
                     is_method: *is_method,
                 }))
             }
+            ast::Expression::Placeholder => Ok(Box::new(PlaceholderExpr {})),
+            ast::Expression::Select(select_expression) => {
+                let compiled_clauses = select_expression
+                    .clauses
+                    .iter()
+                    .map(|clause| {
+                        let expression_to_run =
+                            Self::compile_expression(&clause.expression_to_run)?;
+                        let expression_next = Self::compile_expression(&clause.expression_next)?;
+                        Ok(SelectClauseExpr {
+                            expression_to_run,
+                            result_variable: clause.result_variable.clone(),
+                            expression_next,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+
+                Ok(Box::new(SelectExpr {
+                    clauses: compiled_clauses,
+                }))
+            }
         }
     }
 
@@ -314,9 +336,7 @@ impl Compiler {
                     expression: compiled_expression,
                 }))
             }
-            ast::Statement::ExternalDeclaration(_) => Err(
-                "External function declarations should not appear in function bodies".to_string(),
-            ),
+
             ast::Statement::ExpressionStatement(expr) => Self::compile_expression(expr),
         }
     }
@@ -428,6 +448,47 @@ fn main() -> () {
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Test completed"),
+            _ => panic!("Expected string result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_select_statement_end_to_end() {
+        let program_source = r#"
+fn add(a: String, b: String) -> () {
+    "Adding numbers"
+}
+
+fn subtract(a: String, b: String) -> () {
+    "Subtracting numbers"
+}
+
+fn calculator(x: String, y: String) -> () {
+    let result = select {
+        add(x, y) as sum => sum,
+        subtract(x, y) as diff => diff
+    }
+    result
+}
+
+fn main() -> () {
+    let result = calculator("5", "3")
+    result!
+}
+"#;
+
+        let program = CompilationUnit::from_string(program_source.to_string());
+        let compiler = Compiler::new();
+        let compiled_program = compiler.compile_program(&program).unwrap();
+
+        assert_eq!(compiled_program.functions().len(), 4);
+        assert!(compiled_program.main_function().is_some());
+
+        let runtime = Runtime::new();
+        let result = runtime.run(program_source).await.unwrap();
+
+        match result {
+            ExprResult::String(s) => assert_eq!(s, "Adding numbers"),
             _ => panic!("Expected string result"),
         }
     }

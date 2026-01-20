@@ -496,12 +496,10 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
     "You are a calculator. Use the tools provided."!
     request!
     
-    let result = select {
-        case add(_, _):
-            @results@
-        case subtract(_, _):
-            @results@
-    }
+      let result = select {
+        add_, _) as a => { ...transform_a... },
+        substract(_ _) as b => b
+      }
     
     return result
 }

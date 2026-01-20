@@ -39,8 +39,19 @@ pub enum Statement {
         variable: String,
         expression: Expression,
     },
-    ExternalDeclaration(ExternalFunction),
     ExpressionStatement(Expression),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectExpression {
+    pub clauses: Vec<SelectClause>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectClause {
+    pub expression_to_run: Expression,
+    pub result_variable: String,
+    pub expression_next: Expression,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +64,8 @@ pub enum Expression {
     },
     Variable(String),
     StringLiteral(String),
+    Placeholder,
+    Select(SelectExpression),
 }
 
 impl fmt::Display for Type {
@@ -88,18 +101,23 @@ impl fmt::Display for Statement {
             } => {
                 write!(f, "let {} = {}", variable, expression)
             }
-            Statement::ExternalDeclaration(ext_fn) => {
-                write!(f, "extern fn {}(", ext_fn.name)?;
-                for (i, param) in ext_fn.parameters.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}: {}", param.name, param.param_type)?;
-                }
-                write!(f, ") -> {};", ext_fn.return_type)
-            }
+
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
         }
+    }
+}
+
+impl fmt::Display for SelectExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "select {{")?;
+        for clause in &self.clauses {
+            writeln!(
+                f,
+                "    {} as {} => {},",
+                clause.expression_to_run, clause.result_variable, clause.expression_next
+            )?;
+        }
+        write!(f, "}}")
     }
 }
 
@@ -128,6 +146,8 @@ impl fmt::Display for Expression {
             }
             Expression::Variable(name) => write!(f, "{}", name),
             Expression::StringLiteral(content) => write!(f, "\"{}\"", content),
+            Expression::Placeholder => write!(f, "_"),
+            Expression::Select(select) => write!(f, "{}", select),
         }
     }
 }
