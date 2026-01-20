@@ -40,6 +40,10 @@ pub enum Statement {
         variable: String,
         expression: Expression,
     },
+    VariableAssignment {
+        variable: String,
+        expression: Expression,
+    },
     ExpressionStatement(Expression),
     If {
         condition: Expression,
@@ -111,6 +115,12 @@ impl fmt::Display for Statement {
                 expression,
             } => {
                 write!(f, "let {} = {}", variable, expression)
+            }
+            Statement::VariableAssignment {
+                variable,
+                expression,
+            } => {
+                write!(f, "{} = {}", variable, expression)
             }
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
             Statement::If { condition, body } => {

@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{ExecutableFunction, Expression, Function, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 pub struct FunctionExpr {
     pub name: String,
@@ -34,14 +35,14 @@ impl Clone for FunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for FunctionExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut last_result = ExprResult::Unit;
         for statement in &self.body {
-            last_result = statement.evaluate(context).await?;
+            last_result = statement.evaluate(context.clone()).await?;
         }
 
-        if !context.events.is_empty() {
-            let engine_response = context.runtime().engine().untyped(context).await;
+        if !context.events.borrow().is_empty() {
+            let engine_response = context.runtime().engine().untyped(&context).await;
             return Ok(ExprResult::String(engine_response));
         }
 

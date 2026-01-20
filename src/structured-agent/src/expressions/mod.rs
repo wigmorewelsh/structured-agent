@@ -11,6 +11,7 @@ pub mod select;
 
 pub mod string_literal;
 pub mod variable;
+pub mod variable_assignment;
 pub mod while_stmt;
 
 pub use assignment::AssignmentExpr;
@@ -26,6 +27,7 @@ pub use select::{SelectClauseExpr, SelectExpr};
 
 pub use string_literal::StringLiteralExpr;
 pub use variable::VariableExpr;
+pub use variable_assignment::VariableAssignmentExpr;
 pub use while_stmt::WhileExpr;
 
 pub use crate::types::Expression;

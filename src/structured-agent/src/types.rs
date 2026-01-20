@@ -54,7 +54,7 @@ pub trait Function: std::fmt::Debug {
 pub trait Expression: std::fmt::Debug {
     async fn evaluate(
         &self,
-        context: &mut crate::runtime::Context,
+        context: std::sync::Arc<crate::runtime::Context>,
     ) -> Result<crate::runtime::ExprResult, String>;
     fn return_type(&self) -> Type;
     fn as_any(&self) -> &dyn Any;
@@ -81,7 +81,7 @@ pub struct PrintEngine {}
 #[async_trait(?Send)]
 impl LanguageEngine for PrintEngine {
     async fn untyped(&self, context: &crate::runtime::Context) -> String {
-        if let Some(last_event) = context.events.last() {
+        if let Some(last_event) = context.events.borrow().last() {
             last_event.message.clone()
         } else {
             "PrintEngine {}".to_string()

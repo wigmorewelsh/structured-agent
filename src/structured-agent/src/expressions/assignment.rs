@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct AssignmentExpr {
@@ -11,9 +12,9 @@ pub struct AssignmentExpr {
 
 #[async_trait(?Send)]
 impl Expression for AssignmentExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let value = self.expression.evaluate(context).await?;
-        context.set_variable(self.variable.clone(), value);
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+        let value = self.expression.evaluate(context.clone()).await?;
+        context.declare_variable(self.variable.clone(), value);
         Ok(ExprResult::Unit)
     }
 
@@ -50,8 +51,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = expr.evaluate(context.clone()).await.unwrap();
 
         match result {
             ExprResult::Unit => {}
@@ -60,7 +61,7 @@ mod tests {
 
         assert_eq!(
             context.get_variable("test_var").unwrap(),
-            &ExprResult::String("test_value".to_string())
+            ExprResult::String("test_value".to_string())
         );
     }
 
@@ -88,17 +89,17 @@ mod tests {
 
         let cloned = expr.clone_box();
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        let result1 = expr.evaluate(&mut context).await.unwrap();
-        let result2 = cloned.evaluate(&mut context).await.unwrap();
+        let result1 = expr.evaluate(context.clone()).await.unwrap();
+        let result2 = cloned.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result1, result2);
         assert_eq!(result1, ExprResult::Unit);
         assert_eq!(result2, ExprResult::Unit);
         assert_eq!(
             context.get_variable("var").unwrap(),
-            &ExprResult::String("value".to_string())
+            ExprResult::String("value".to_string())
         );
     }
 }

@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 pub struct CallExpr {
     pub target: String,
@@ -23,7 +24,7 @@ impl std::fmt::Debug for CallExpr {
 
 #[async_trait(?Send)]
 impl Expression for CallExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let function_name = if self.is_method || self.target.is_empty() {
             self.function.clone()
         } else {
@@ -54,13 +55,13 @@ impl Expression for CallExpr {
 
         let mut args = Vec::new();
         for arg in &self.arguments {
-            args.push(arg.evaluate(context).await?);
+            args.push(arg.evaluate(context.clone()).await?);
         }
 
-        let mut function_context = context.create_child();
+        let function_context = Arc::new(Context::with_runtime(context.runtime_rc()));
 
         for (i, (param_name, _param_type)) in parameters.iter().enumerate() {
-            function_context.set_variable(param_name.clone(), args[i].clone());
+            function_context.declare_variable(param_name.clone(), args[i].clone());
         }
 
         let function_info = context
@@ -68,7 +69,7 @@ impl Expression for CallExpr {
             .get_function(&function_name)
             .expect("Function not found");
 
-        let result = function_info.evaluate(&mut function_context).await?;
+        let result = function_info.evaluate(function_context).await?;
 
         Ok(result)
     }
@@ -114,8 +115,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = expr.evaluate(context).await;
 
         assert!(result.is_err());
         assert!(
@@ -162,7 +163,7 @@ mod tests {
         runtime.register_function(function_info);
 
         let runtime = Rc::new(runtime);
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
         let expr = CallExpr {
             target: String::new(),
@@ -171,7 +172,7 @@ mod tests {
             is_method: false,
         };
 
-        let result = expr.evaluate(&mut context).await.unwrap();
+        let result = expr.evaluate(context).await.unwrap();
         match result {
             ExprResult::String(s) => assert_eq!(s, "Hello, World!"),
             _ => panic!("Expected string result"),
@@ -188,8 +189,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = expr.evaluate(context).await;
 
         assert!(result.is_err());
         assert!(

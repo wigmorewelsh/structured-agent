@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct WhileExpr {
@@ -11,9 +12,9 @@ pub struct WhileExpr {
 
 #[async_trait(?Send)]
 impl Expression for WhileExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         loop {
-            let condition_result = self.condition.evaluate(context).await?;
+            let condition_result = self.condition.evaluate(context.clone()).await?;
             let condition_value = condition_result
                 .as_boolean()
                 .map_err(|_| "while condition must be a boolean expression".to_string())?;
@@ -22,8 +23,14 @@ impl Expression for WhileExpr {
                 break;
             }
 
+            let child_context = Arc::new(Context::create_child(
+                context.clone(),
+                false,
+                context.runtime_rc(),
+            ));
+
             for statement in &self.body {
-                statement.evaluate(context).await?;
+                statement.evaluate(child_context.clone()).await?;
             }
         }
 
@@ -67,11 +74,11 @@ mod tests {
         let while_expr = WhileExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = while_expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 0);
+        assert_eq!(context.events.borrow().len(), 0);
     }
 
     #[tokio::test]
@@ -84,8 +91,8 @@ mod tests {
         let while_expr = WhileExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = while_expr.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = while_expr.evaluate(context).await;
 
         assert!(result.is_err());
         assert_eq!(
@@ -106,8 +113,8 @@ mod tests {
     #[tokio::test]
     async fn test_while_with_variable_condition() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+        let context = Arc::new(Context::with_runtime(runtime));
+        context.declare_variable("should_continue".to_string(), ExprResult::Boolean(true));
 
         let condition = Box::new(VariableExpr {
             name: "should_continue".to_string(),
@@ -126,28 +133,27 @@ mod tests {
         ];
 
         let while_expr = WhileExpr { condition, body };
-        let result = while_expr.evaluate(&mut context).await.unwrap();
+        let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "loop iteration");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "loop iteration");
         assert_eq!(
             context.get_variable("should_continue").unwrap(),
-            &ExprResult::Boolean(false)
+            ExprResult::Boolean(false)
         );
     }
 
     #[tokio::test]
     async fn test_while_variable_scoping() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        // Set outer variable
-        context.set_variable(
+        context.declare_variable(
             "outer_var".to_string(),
             ExprResult::String("outer_value".to_string()),
         );
-        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+        context.declare_variable("should_continue".to_string(), ExprResult::Boolean(true));
 
         let condition = Box::new(VariableExpr {
             name: "should_continue".to_string(),
@@ -167,35 +173,32 @@ mod tests {
         ];
 
         let while_expr = WhileExpr { condition, body };
-        let result = while_expr.evaluate(&mut context).await.unwrap();
+        let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
 
-        // Outer variable should still exist
         assert_eq!(
             context.get_variable("outer_var").unwrap(),
-            &ExprResult::String("outer_value".to_string())
+            ExprResult::String("outer_value".to_string())
         );
 
-        // The should_continue variable should now be false due to assignment in loop
         assert_eq!(
             context.get_variable("should_continue").unwrap(),
-            &ExprResult::Boolean(false)
+            ExprResult::Boolean(false)
         );
 
-        // Inner variable should now exist in the same context
         assert_eq!(
             context.get_variable("inner_var").unwrap(),
-            &ExprResult::String("inner_value".to_string())
+            ExprResult::String("inner_value".to_string())
         );
     }
 
     #[tokio::test]
     async fn test_nested_while_statements() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        context.set_variable("outer_continue".to_string(), ExprResult::Boolean(true));
-        context.set_variable("inner_continue".to_string(), ExprResult::Boolean(true));
+        let context = Arc::new(Context::with_runtime(runtime));
+        context.declare_variable("outer_continue".to_string(), ExprResult::Boolean(true));
+        context.declare_variable("inner_continue".to_string(), ExprResult::Boolean(true));
 
         let inner_while = WhileExpr {
             condition: Box::new(VariableExpr {
@@ -232,25 +235,24 @@ mod tests {
             ],
         };
 
-        let result = outer_while.evaluate(&mut context).await.unwrap();
+        let result = outer_while.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 2);
-        assert_eq!(context.events[0].message, "outer while executed");
-        assert_eq!(context.events[1].message, "inner while executed");
+        assert_eq!(context.events.borrow().len(), 2);
+        assert_eq!(context.events.borrow()[0].message, "outer while executed");
+        assert_eq!(context.events.borrow()[1].message, "inner while executed");
     }
 
     #[tokio::test]
     async fn test_while_can_access_parent_variables() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        // Set parent variables
-        context.set_variable(
+        context.declare_variable(
             "parent_var".to_string(),
             ExprResult::String("parent_value".to_string()),
         );
-        context.set_variable("should_continue".to_string(), ExprResult::Boolean(true));
+        context.declare_variable("should_continue".to_string(), ExprResult::Boolean(true));
 
         let condition = Box::new(VariableExpr {
             name: "should_continue".to_string(),
@@ -275,30 +277,26 @@ mod tests {
         ];
 
         let while_expr = WhileExpr { condition, body };
-        let result = while_expr.evaluate(&mut context).await.unwrap();
+        let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
 
-        // Should have injected parent variable value
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "parent_value");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "parent_value");
 
-        // Parent variable should still exist
         assert_eq!(
             context.get_variable("parent_var").unwrap(),
-            &ExprResult::String("parent_value".to_string())
+            ExprResult::String("parent_value".to_string())
         );
 
-        // Local variable should now exist in the same context
         assert_eq!(
             context.get_variable("local_var").unwrap(),
-            &ExprResult::String("local_value".to_string())
+            ExprResult::String("local_value".to_string())
         );
 
-        // should_continue should now be false due to assignment in loop
         assert_eq!(
             context.get_variable("should_continue").unwrap(),
-            &ExprResult::Boolean(false)
+            ExprResult::Boolean(false)
         );
     }
 }

@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct StringLiteralExpr {
@@ -10,7 +11,7 @@ pub struct StringLiteralExpr {
 
 #[async_trait(?Send)]
 impl Expression for StringLiteralExpr {
-    async fn evaluate(&self, _context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
         Ok(ExprResult::String(self.value.clone()))
     }
 
@@ -40,8 +41,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = expr.evaluate(context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Hello, world!"),
@@ -67,10 +68,10 @@ mod tests {
 
         let cloned = expr.clone_box();
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        let result1 = expr.evaluate(&mut context).await.unwrap();
-        let result2 = cloned.evaluate(&mut context).await.unwrap();
+        let result1 = expr.evaluate(context.clone()).await.unwrap();
+        let result2 = cloned.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result1, result2);
     }

@@ -1,5 +1,8 @@
 use crate::runtime::Runtime;
-use std::{collections::HashMap, rc::Rc};
+use dashmap::DashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -7,9 +10,10 @@ pub struct Event {
 }
 
 pub struct Context {
-    pub parent: Option<Rc<Context>>,
-    pub events: Vec<Event>,
-    pub variables: HashMap<String, ExprResult>,
+    pub parent: Option<Arc<Context>>,
+    pub events: RefCell<Vec<Event>>,
+    pub variables: DashMap<String, ExprResult>,
+    pub is_scope_boundary: bool,
     runtime: Rc<Runtime>,
 }
 
@@ -17,50 +21,65 @@ impl Context {
     pub fn with_runtime(runtime: Rc<Runtime>) -> Self {
         Self {
             parent: None,
-            events: Vec::new(),
-            variables: HashMap::new(),
+            events: RefCell::new(Vec::new()),
+            variables: DashMap::new(),
+            is_scope_boundary: true,
             runtime,
         }
     }
 
-    pub fn with_parent(parent: Rc<Context>, runtime: Rc<Runtime>) -> Self {
+    pub fn with_parent(parent: Arc<Context>, runtime: Rc<Runtime>) -> Self {
         Self {
             parent: Some(parent),
-            events: Vec::new(),
-            variables: HashMap::new(),
+            events: RefCell::new(Vec::new()),
+            variables: DashMap::new(),
+            is_scope_boundary: false,
             runtime,
         }
     }
 
-    pub fn add_event(&mut self, message: String) {
-        self.events.push(Event { message });
+    pub fn add_event(&self, message: String) {
+        self.events.borrow_mut().push(Event { message });
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<&ExprResult> {
-        self.variables
-            .get(name)
-            .or_else(|| self.parent.as_ref().and_then(|p| p.get_variable(name)))
+    pub fn get_variable(&self, name: &str) -> Option<ExprResult> {
+        if let Some(value) = self.variables.get(name) {
+            Some(value.clone())
+        } else if self.is_scope_boundary {
+            None
+        } else {
+            self.parent.as_ref().and_then(|p| p.get_variable(name))
+        }
     }
 
-    pub fn get_local_variable(&self, name: &str) -> Option<&ExprResult> {
-        self.variables.get(name)
-    }
-
-    pub fn set_variable(&mut self, name: String, value: ExprResult) {
+    pub fn declare_variable(&self, name: String, value: ExprResult) {
         self.variables.insert(name, value);
     }
 
-    pub fn create_child(&self) -> Self {
+    pub fn assign_variable(&self, name: String, value: ExprResult) -> Result<(), String> {
+        if self.variables.contains_key(&name) {
+            self.variables.insert(name, value);
+            Ok(())
+        } else if self.is_scope_boundary {
+            Err(format!("Variable '{}' not found", name))
+        } else if let Some(parent) = &self.parent {
+            parent.assign_variable(name, value)
+        } else {
+            Err(format!("Variable '{}' not found", name))
+        }
+    }
+
+    pub fn create_child(
+        parent: Arc<Context>,
+        is_scope_boundary: bool,
+        runtime: Rc<Runtime>,
+    ) -> Self {
         Self {
-            parent: Some(Rc::new(Context {
-                parent: self.parent.clone(),
-                events: self.events.clone(),
-                variables: self.variables.clone(),
-                runtime: self.runtime.clone(),
-            })),
-            events: Vec::new(),
-            variables: HashMap::new(),
-            runtime: self.runtime.clone(),
+            parent: Some(parent),
+            events: RefCell::new(Vec::new()),
+            variables: DashMap::new(),
+            is_scope_boundary,
+            runtime,
         }
     }
 

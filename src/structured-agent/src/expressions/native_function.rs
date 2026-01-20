@@ -2,7 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{ExecutableFunction, Expression, Function, NativeFunction, Type};
 use async_trait::async_trait;
 use std::any::Any;
-use std::rc::Rc;
+
 use std::sync::Arc;
 
 pub struct NativeFunctionExpr {
@@ -27,11 +27,11 @@ impl Clone for NativeFunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for NativeFunctionExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut args = Vec::new();
 
         for (param_name, _) in self.native_function.parameters() {
-            if let Some(value) = context.get_local_variable(param_name) {
+            if let Some(value) = context.get_variable(param_name) {
                 args.push(value.clone());
             } else {
                 return Err(format!("Parameter '{}' not found in context", param_name));

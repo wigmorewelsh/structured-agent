@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 pub struct SelectClauseExpr {
     pub expression_to_run: Box<dyn Expression>,
@@ -31,7 +32,7 @@ impl std::fmt::Debug for SelectExpr {
 
 #[async_trait(?Send)]
 impl Expression for SelectExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         if self.clauses.is_empty() {
             return Err("Select statement must have at least one clause".to_string());
         }
@@ -47,21 +48,21 @@ impl Expression for SelectExpr {
         let selected_index = context
             .runtime()
             .engine()
-            .select(context, &clause_descriptions)
+            .select(&context, &clause_descriptions)
             .await?;
 
         let selected_clause = &self.clauses[selected_index];
 
-        let mut select_context = context.create_child();
+        let select_context = Arc::new(Context::with_runtime(context.runtime_rc()));
         let result = selected_clause
             .expression_to_run
-            .evaluate(&mut select_context)
+            .evaluate(select_context.clone())
             .await?;
-        select_context.set_variable(selected_clause.result_variable.clone(), result);
+        select_context.declare_variable(selected_clause.result_variable.clone(), result);
 
         selected_clause
             .expression_next
-            .evaluate(&mut select_context)
+            .evaluate(select_context)
             .await
     }
 
@@ -100,8 +101,8 @@ mod tests {
         let select_expr = SelectExpr { clauses: vec![] };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = select_expr.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = select_expr.evaluate(context).await;
 
         assert!(result.is_err());
         assert!(
@@ -128,8 +129,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = select_expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = select_expr.evaluate(context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "test"),
@@ -174,8 +175,8 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = select_expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = select_expr.evaluate(context.clone()).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "assigned_value"),
@@ -202,29 +203,25 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        // Set an outer variable before the select
-        context.set_variable(
+        context.declare_variable(
             "outer_var".to_string(),
             ExprResult::String("outer_value".to_string()),
         );
 
-        let result = select_expr.evaluate(&mut context).await.unwrap();
+        let result = select_expr.evaluate(context.clone()).await.unwrap();
 
-        // The select should return the scoped value
         match result {
             ExprResult::String(s) => assert_eq!(s, "scoped_value"),
             _ => panic!("Expected string result"),
         }
 
-        // The outer variable should still exist
         assert_eq!(
             context.get_variable("outer_var").unwrap(),
-            &ExprResult::String("outer_value".to_string())
+            ExprResult::String("outer_value".to_string())
         );
 
-        // The scoped variable should NOT exist in the outer context
         assert!(context.get_variable("scoped_var").is_none());
     }
 }

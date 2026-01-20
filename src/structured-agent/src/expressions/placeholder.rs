@@ -2,13 +2,14 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct PlaceholderExpr {}
 
 #[async_trait(?Send)]
 impl Expression for PlaceholderExpr {
-    async fn evaluate(&self, _context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
         Err("Placeholder expressions should be replaced before evaluation".to_string())
     }
 
@@ -34,10 +35,10 @@ mod tests {
     #[tokio::test]
     async fn test_placeholder_evaluation_fails() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
         let expr = PlaceholderExpr {};
 
-        let result = expr.evaluate(&mut context).await;
+        let result = expr.evaluate(context).await;
         assert!(result.is_err());
         assert!(
             result

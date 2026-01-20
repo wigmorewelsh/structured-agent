@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct IfExpr {
@@ -11,15 +12,21 @@ pub struct IfExpr {
 
 #[async_trait(?Send)]
 impl Expression for IfExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let condition_result = self.condition.evaluate(context).await?;
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+        let condition_result = self.condition.evaluate(context.clone()).await?;
         let condition_value = condition_result
             .as_boolean()
             .map_err(|_| "if condition must be a boolean expression".to_string())?;
 
         if condition_value {
+            let child_context = Arc::new(Context::create_child(
+                context.clone(),
+                false,
+                context.runtime_rc(),
+            ));
+
             for statement in &self.body {
-                statement.evaluate(context).await?;
+                statement.evaluate(child_context.clone()).await?;
             }
         }
         Ok(ExprResult::Unit)
@@ -60,12 +67,12 @@ mod tests {
         let if_expr = IfExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = if_expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = if_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "executed");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "executed");
     }
 
     #[tokio::test]
@@ -80,11 +87,11 @@ mod tests {
         let if_expr = IfExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = if_expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = if_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 0);
+        assert_eq!(context.events.borrow().len(), 0);
     }
 
     #[tokio::test]
@@ -97,8 +104,8 @@ mod tests {
         let if_expr = IfExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = if_expr.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = if_expr.evaluate(context).await;
 
         assert!(result.is_err());
         assert_eq!(
@@ -131,27 +138,24 @@ mod tests {
         let if_expr = IfExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        // Set outer variable
-        context.set_variable(
+        context.declare_variable(
             "outer_var".to_string(),
             ExprResult::String("outer_value".to_string()),
         );
 
-        let result = if_expr.evaluate(&mut context).await.unwrap();
+        let result = if_expr.evaluate(context.clone()).await.unwrap();
         assert_eq!(result, ExprResult::Unit);
 
-        // Outer variable should still exist
         assert_eq!(
             context.get_variable("outer_var").unwrap(),
-            &ExprResult::String("outer_value".to_string())
+            ExprResult::String("outer_value".to_string())
         );
 
-        // Inner variable should now exist in the same context
         assert_eq!(
             context.get_variable("inner_var").unwrap(),
-            &ExprResult::String("inner_value".to_string())
+            ExprResult::String("inner_value".to_string())
         );
     }
 
@@ -179,13 +183,13 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = outer_if.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = outer_if.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.len(), 2);
-        assert_eq!(context.events[0].message, "outer if executed");
-        assert_eq!(context.events[1].message, "inner if executed");
+        assert_eq!(context.events.borrow().len(), 2);
+        assert_eq!(context.events.borrow()[0].message, "outer if executed");
+        assert_eq!(context.events.borrow()[1].message, "inner if executed");
     }
 
     #[tokio::test]
@@ -210,31 +214,27 @@ mod tests {
         let if_expr = IfExpr { condition, body };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        // Set parent variable
-        context.set_variable(
+        context.declare_variable(
             "parent_var".to_string(),
             ExprResult::String("parent_value".to_string()),
         );
 
-        let result = if_expr.evaluate(&mut context).await.unwrap();
+        let result = if_expr.evaluate(context.clone()).await.unwrap();
         assert_eq!(result, ExprResult::Unit);
 
-        // Should have injected parent variable value
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "parent_value");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "parent_value");
 
-        // Parent variable should still exist
         assert_eq!(
             context.get_variable("parent_var").unwrap(),
-            &ExprResult::String("parent_value".to_string())
+            ExprResult::String("parent_value".to_string())
         );
 
-        // Local variable should now exist in the same context
         assert_eq!(
             context.get_variable("local_var").unwrap(),
-            &ExprResult::String("local_value".to_string())
+            ExprResult::String("local_value".to_string())
         );
     }
 }

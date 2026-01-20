@@ -3,7 +3,8 @@ pub mod parser;
 use crate::ast;
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
-    PlaceholderExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableExpr, WhileExpr,
+    PlaceholderExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableAssignmentExpr,
+    VariableExpr, WhileExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
 
@@ -340,6 +341,16 @@ impl Compiler {
                     expression: compiled_expression,
                 }))
             }
+            ast::Statement::VariableAssignment {
+                variable,
+                expression,
+            } => {
+                let compiled_expression = Self::compile_expression(expression)?;
+                Ok(Box::new(VariableAssignmentExpr {
+                    variable: variable.clone(),
+                    expression: compiled_expression,
+                }))
+            }
             ast::Statement::If { condition, body } => {
                 let compiled_condition = Self::compile_expression(condition)?;
                 let compiled_body = body
@@ -389,6 +400,7 @@ mod tests {
     use crate::ast::{Expression as AstExpression, Statement as AstStatement};
     use crate::runtime::{Context, ExprResult, Runtime};
     use std::rc::Rc;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_compile_string_literal() {
@@ -396,8 +408,8 @@ mod tests {
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = compiled.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = compiled.evaluate(context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Hello"),
@@ -412,16 +424,16 @@ mod tests {
         let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = compiled.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = compiled.evaluate(context.clone()).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Test injection"),
             _ => panic!("Expected string result"),
         }
 
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "Test injection");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "Test injection");
     }
 
     #[tokio::test]
@@ -430,13 +442,13 @@ mod tests {
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        context.set_variable(
+        let context = Arc::new(Context::with_runtime(runtime));
+        context.declare_variable(
             "test_var".to_string(),
             ExprResult::String("variable_value".to_string()),
         );
 
-        let result = compiled.evaluate(&mut context).await.unwrap();
+        let result = compiled.evaluate(context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "variable_value"),

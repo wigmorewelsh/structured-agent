@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 pub struct InjectionExpr {
     pub inner: Box<dyn Expression>,
@@ -17,8 +18,8 @@ impl std::fmt::Debug for InjectionExpr {
 
 #[async_trait(?Send)]
 impl Expression for InjectionExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
-        let result = self.inner.evaluate(context).await?;
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+        let result = self.inner.evaluate(context.clone()).await?;
 
         match &result {
             ExprResult::String(s) => context.add_event(s.clone()),
@@ -62,16 +63,16 @@ mod tests {
         };
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result = expr.evaluate(&mut context).await.unwrap();
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result = expr.evaluate(context.clone()).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Injected content"),
             _ => panic!("Expected string result"),
         }
 
-        assert_eq!(context.events.len(), 1);
-        assert_eq!(context.events[0].message, "Injected content");
+        assert_eq!(context.events.borrow().len(), 1);
+        assert_eq!(context.events.borrow()[0].message, "Injected content");
     }
 
     #[test]
@@ -100,14 +101,14 @@ mod tests {
 
         let cloned = expr.clone_box();
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
 
-        let result1 = expr.evaluate(&mut context).await.unwrap();
-        let result2 = cloned.evaluate(&mut context).await.unwrap();
+        let result1 = expr.evaluate(context.clone()).await.unwrap();
+        let result2 = cloned.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result1, result2);
-        assert_eq!(context.events.len(), 2);
-        assert_eq!(context.events[0].message, "test content");
-        assert_eq!(context.events[1].message, "test content");
+        assert_eq!(context.events.borrow().len(), 2);
+        assert_eq!(context.events.borrow()[0].message, "test content");
+        assert_eq!(context.events.borrow()[1].message, "test content");
     }
 }

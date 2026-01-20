@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct ExternalFunctionExpr {
     pub name: String,
@@ -37,7 +38,7 @@ impl Clone for ExternalFunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for ExternalFunctionExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut arguments = json!({});
 
         for (param_name, _param_type) in &self.parameters {

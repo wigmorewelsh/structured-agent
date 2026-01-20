@@ -166,9 +166,9 @@ impl Runtime {
         &self,
         program: &dyn crate::types::Expression,
     ) -> Result<ExprResult, RuntimeError> {
-        let mut context = Context::with_runtime(Rc::new(self.create_runtime_ref()));
+        let context = Arc::new(Context::with_runtime(Rc::new(self.create_runtime_ref())));
         program
-            .evaluate(&mut context)
+            .evaluate(context)
             .await
             .map_err(RuntimeError::ExecutionError)
     }

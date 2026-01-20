@@ -2,6 +2,7 @@ use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct VariableExpr {
@@ -10,10 +11,9 @@ pub struct VariableExpr {
 
 #[async_trait(?Send)]
 impl Expression for VariableExpr {
-    async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         context
             .get_variable(&self.name)
-            .cloned()
             .ok_or_else(|| format!("Variable '{}' not found", self.name))
     }
 
@@ -39,8 +39,8 @@ mod tests {
     #[tokio::test]
     async fn test_variable_found() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        context.set_variable(
+        let context = Arc::new(Context::with_runtime(runtime));
+        context.declare_variable(
             "test_var".to_string(),
             ExprResult::String("test_value".to_string()),
         );
@@ -49,7 +49,7 @@ mod tests {
             name: "test_var".to_string(),
         };
 
-        let result = expr.evaluate(&mut context).await.unwrap();
+        let result = expr.evaluate(context).await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "test_value"),
@@ -60,12 +60,12 @@ mod tests {
     #[tokio::test]
     async fn test_variable_not_found() {
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
         let expr = VariableExpr {
             name: "unknown_var".to_string(),
         };
 
-        let result = expr.evaluate(&mut context).await;
+        let result = expr.evaluate(context).await;
         assert!(result.is_err());
         assert!(
             result
@@ -93,9 +93,9 @@ mod tests {
         let cloned = expr.clone_box();
 
         let runtime = Rc::new(Runtime::new());
-        let mut context = Context::with_runtime(runtime);
-        let result1 = expr.evaluate(&mut context).await;
-        let result2 = cloned.evaluate(&mut context).await;
+        let context = Arc::new(Context::with_runtime(runtime));
+        let result1 = expr.evaluate(context.clone()).await;
+        let result2 = cloned.evaluate(context.clone()).await;
 
         assert!(result1.is_err());
         assert!(result2.is_err());

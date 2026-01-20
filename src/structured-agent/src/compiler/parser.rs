@@ -161,6 +161,7 @@ combine::parser! {
     {
         choice((
             attempt(parse_assignment()),
+            attempt(parse_variable_assignment()),
             attempt(parse_select()),
             attempt(parse_injection()),
             attempt(parse_if_statement()),
@@ -195,6 +196,19 @@ where
             variable,
             expression,
         })
+}
+
+fn parse_variable_assignment<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (identifier(), lex_char('='), parse_expression()).map(|(variable, _, expression)| {
+        Statement::VariableAssignment {
+            variable,
+            expression,
+        }
+    })
 }
 
 fn parse_expression_statement<Input>() -> impl Parser<Input, Output = Statement>
