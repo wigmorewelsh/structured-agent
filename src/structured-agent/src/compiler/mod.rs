@@ -2,8 +2,8 @@ pub mod parser;
 
 use crate::ast;
 use crate::expressions::{
-    AssignmentExpr, CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr, SelectClauseExpr,
-    SelectExpr, StringLiteralExpr, VariableExpr,
+    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr,
+    SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
 
@@ -15,6 +15,7 @@ fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
     match ast_type {
         ast::Type::Named(name) => Type { name: name.clone() },
         ast::Type::Unit => Type::unit(),
+        ast::Type::Boolean => Type::boolean(),
     }
 }
 
@@ -275,6 +276,9 @@ impl Compiler {
             ast::Expression::StringLiteral(value) => Ok(Box::new(StringLiteralExpr {
                 value: value.clone(),
             })),
+            ast::Expression::BooleanLiteral(value) => {
+                Ok(Box::new(BooleanLiteralExpr { value: *value }))
+            }
             ast::Expression::Variable(name) => Ok(Box::new(VariableExpr { name: name.clone() })),
             ast::Expression::Call {
                 target,

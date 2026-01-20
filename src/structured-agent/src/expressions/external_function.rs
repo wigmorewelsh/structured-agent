@@ -40,12 +40,12 @@ impl Expression for ExternalFunctionExpr {
     async fn evaluate(&self, context: &mut Context) -> Result<ExprResult, String> {
         let mut arguments = json!({});
 
-        // Map parameter names to values from the context
         for (param_name, _param_type) in &self.parameters {
             if let Some(value) = context.get_variable(param_name) {
                 let json_value = match value {
                     ExprResult::String(s) => json!(s),
                     ExprResult::Unit => json!(null),
+                    ExprResult::Boolean(b) => json!(b),
                 };
                 arguments[param_name] = json_value;
             }
@@ -60,7 +60,6 @@ impl Expression for ExternalFunctionExpr {
         if result.content.is_empty() {
             Ok(ExprResult::Unit)
         } else {
-            // For now, just convert the entire result to a string
             let content_str = format!("{:?}", result.content);
             Ok(ExprResult::String(content_str))
         }

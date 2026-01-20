@@ -77,6 +77,7 @@ impl Context {
 pub enum ExprResult {
     String(String),
     Unit,
+    Boolean(bool),
 }
 
 impl ExprResult {
@@ -84,6 +85,13 @@ impl ExprResult {
         match self {
             ExprResult::String(s) => Ok(s),
             _ => Err("Expected string result".to_string()),
+        }
+    }
+
+    pub fn as_boolean(&self) -> Result<bool, String> {
+        match self {
+            ExprResult::Boolean(b) => Ok(*b),
+            _ => Err("Expected boolean result".to_string()),
         }
     }
 }

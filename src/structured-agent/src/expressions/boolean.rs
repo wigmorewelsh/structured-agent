@@ -1,0 +1,85 @@
+use crate::runtime::{Context, ExprResult};
+use crate::types::{Expression, Type};
+use async_trait::async_trait;
+use std::any::Any;
+
+#[derive(Debug, Clone)]
+pub struct BooleanLiteralExpr {
+    pub value: bool,
+}
+
+#[async_trait(?Send)]
+impl Expression for BooleanLiteralExpr {
+    async fn evaluate(&self, _context: &mut Context) -> Result<ExprResult, String> {
+        Ok(ExprResult::Boolean(self.value))
+    }
+
+    fn return_type(&self) -> Type {
+        Type::boolean()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Expression> {
+        Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::Runtime;
+    use std::rc::Rc;
+
+    #[tokio::test]
+    async fn test_boolean_literal_true_evaluation() {
+        let expr = BooleanLiteralExpr { value: true };
+
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        let result = expr.evaluate(&mut context).await.unwrap();
+
+        match result {
+            ExprResult::Boolean(b) => assert_eq!(b, true),
+            _ => panic!("Expected boolean result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_boolean_literal_false_evaluation() {
+        let expr = BooleanLiteralExpr { value: false };
+
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+        let result = expr.evaluate(&mut context).await.unwrap();
+
+        match result {
+            ExprResult::Boolean(b) => assert_eq!(b, false),
+            _ => panic!("Expected boolean result"),
+        }
+    }
+
+    #[test]
+    fn test_boolean_literal_return_type() {
+        let expr = BooleanLiteralExpr { value: true };
+
+        let return_type = expr.return_type();
+        assert_eq!(return_type.name, "Boolean");
+    }
+
+    #[tokio::test]
+    async fn test_boolean_literal_clone() {
+        let expr = BooleanLiteralExpr { value: true };
+
+        let cloned = expr.clone_box();
+        let runtime = Rc::new(Runtime::new());
+        let mut context = Context::with_runtime(runtime);
+
+        let result1 = expr.evaluate(&mut context).await.unwrap();
+        let result2 = cloned.evaluate(&mut context).await.unwrap();
+
+        assert_eq!(result1, result2);
+    }
+}

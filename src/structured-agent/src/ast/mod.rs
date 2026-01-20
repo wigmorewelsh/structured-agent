@@ -25,6 +25,7 @@ pub struct ExternalFunction {
 pub enum Type {
     Named(String),
     Unit,
+    Boolean,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +65,7 @@ pub enum Expression {
     },
     Variable(String),
     StringLiteral(String),
+    BooleanLiteral(bool),
     Placeholder,
     Select(SelectExpression),
 }
@@ -73,6 +75,7 @@ impl fmt::Display for Type {
         match self {
             Type::Named(name) => write!(f, "{}", name),
             Type::Unit => write!(f, "()"),
+            Type::Boolean => write!(f, "Boolean"),
         }
     }
 }
@@ -101,7 +104,6 @@ impl fmt::Display for Statement {
             } => {
                 write!(f, "let {} = {}", variable, expression)
             }
-
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
         }
     }
@@ -146,6 +148,7 @@ impl fmt::Display for Expression {
             }
             Expression::Variable(name) => write!(f, "{}", name),
             Expression::StringLiteral(content) => write!(f, "\"{}\"", content),
+            Expression::BooleanLiteral(value) => write!(f, "{}", value),
             Expression::Placeholder => write!(f, "_"),
             Expression::Select(select) => write!(f, "{}", select),
         }

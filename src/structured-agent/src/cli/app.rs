@@ -140,6 +140,9 @@ impl App {
             crate::runtime::ExprResult::Unit => {
                 println!("Result: (no output)");
             }
+            crate::runtime::ExprResult::Boolean(b) => {
+                println!("Result: {}", b);
+            }
         }
     }
 }

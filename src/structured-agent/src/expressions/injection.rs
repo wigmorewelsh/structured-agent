@@ -23,6 +23,7 @@ impl Expression for InjectionExpr {
         match &result {
             ExprResult::String(s) => context.add_event(s.clone()),
             ExprResult::Unit => {}
+            ExprResult::Boolean(b) => context.add_event(b.to_string()),
         }
 
         Ok(result)

@@ -25,6 +25,12 @@ impl Type {
             name: "()".to_string(),
         }
     }
+
+    pub fn boolean() -> Self {
+        Self {
+            name: "Boolean".to_string(),
+        }
+    }
 }
 
 impl ExternalFunctionDefinition {

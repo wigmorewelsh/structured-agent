@@ -142,6 +142,7 @@ where
 {
     choice((
         lex_string("()").map(|_| Type::Unit),
+        lex_string("Boolean").map(|_| Type::Boolean),
         identifier().map(Type::Named),
     ))
 }
@@ -212,6 +213,7 @@ where
         attempt(parse_select_expression()),
         parse_placeholder(),
         parse_string_literal(),
+        parse_boolean_literal(),
         parse_variable(),
     ))
 }
@@ -283,6 +285,7 @@ where
     choice((
         parse_placeholder(),
         parse_string_literal(),
+        parse_boolean_literal(),
         parse_variable(),
     ))
 }
@@ -314,6 +317,17 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     lex_char('_').map(|_| Expression::Placeholder)
+}
+
+fn parse_boolean_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        lex_string("true").map(|_| Expression::BooleanLiteral(true)),
+        lex_string("false").map(|_| Expression::BooleanLiteral(false)),
+    ))
 }
 
 fn parse_select<Input>() -> impl Parser<Input, Output = Statement>
