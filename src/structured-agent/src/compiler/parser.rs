@@ -161,7 +161,8 @@ where
     choice((
         attempt(parse_external_declaration()),
         attempt(parse_assignment()),
-        parse_injection(),
+        attempt(parse_injection()),
+        parse_expression_statement(),
     ))
 }
 
@@ -198,6 +199,14 @@ where
             variable,
             expression,
         })
+}
+
+fn parse_expression_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    parse_expression().map(Statement::ExpressionStatement)
 }
 
 fn parse_expression<Input>() -> impl Parser<Input, Output = Expression>
@@ -493,5 +502,56 @@ fn calculator(request: String) -> String {
         assert_eq!(external_functions[0].name, "add");
         assert_eq!(external_functions[1].name, "subtract");
         assert_eq!(functions[0].name, "calculator");
+    }
+
+    #[test]
+    fn test_parse_standalone_expression_statement() {
+        let input = r#"
+fn test_function() -> () {
+    let result = some_call()
+    another_call()
+    "final prompt"!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, _), _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "test_function");
+        assert_eq!(func.body.statements.len(), 3);
+
+        match &func.body.statements[0] {
+            Statement::Assignment {
+                variable,
+                expression,
+            } => {
+                assert_eq!(variable, "result");
+                match expression {
+                    Expression::Call { function, .. } => {
+                        assert_eq!(function, "some_call");
+                    }
+                    _ => panic!("Expected call expression"),
+                }
+            }
+            _ => panic!("Expected assignment statement"),
+        }
+
+        match &func.body.statements[1] {
+            Statement::ExpressionStatement(Expression::Call { function, .. }) => {
+                assert_eq!(function, "another_call");
+            }
+            _ => panic!("Expected standalone expression statement with call"),
+        }
+
+        match &func.body.statements[2] {
+            Statement::Injection(Expression::StringLiteral(content)) => {
+                assert_eq!(content, "final prompt");
+            }
+            _ => panic!("Expected injection statement"),
+        }
     }
 }

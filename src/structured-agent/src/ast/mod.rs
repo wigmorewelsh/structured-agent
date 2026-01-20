@@ -40,6 +40,7 @@ pub enum Statement {
         expression: Expression,
     },
     ExternalDeclaration(ExternalFunction),
+    ExpressionStatement(Expression),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +98,7 @@ impl fmt::Display for Statement {
                 }
                 write!(f, ") -> {};", ext_fn.return_type)
             }
+            Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
         }
     }
 }

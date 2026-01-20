@@ -69,9 +69,12 @@ pub struct PrintEngine {}
 
 #[async_trait(?Send)]
 impl LanguageEngine for PrintEngine {
-    async fn untyped(&self, _context: &crate::runtime::Context) -> String {
-        println!("PrintEngine {{}}");
-        "PrintEngine {}".to_string()
+    async fn untyped(&self, context: &crate::runtime::Context) -> String {
+        if let Some(last_event) = context.events.last() {
+            last_event.message.clone()
+        } else {
+            "PrintEngine {}".to_string()
+        }
     }
 }
 

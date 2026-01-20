@@ -317,6 +317,7 @@ impl Compiler {
             ast::Statement::ExternalDeclaration(_) => Err(
                 "External function declarations should not appear in function bodies".to_string(),
             ),
+            ast::Statement::ExpressionStatement(expr) => Self::compile_expression(expr),
         }
     }
 

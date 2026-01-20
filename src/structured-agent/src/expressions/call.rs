@@ -63,7 +63,10 @@ impl Expression for CallExpr {
             function_context.set_variable(param_name.clone(), args[i].clone());
         }
 
-        let function_info = context.runtime().get_function(&function_name).unwrap();
+        let function_info = context
+            .runtime()
+            .get_function(&function_name)
+            .expect("Function not found");
 
         let result = function_info.evaluate(&mut function_context).await?;
 

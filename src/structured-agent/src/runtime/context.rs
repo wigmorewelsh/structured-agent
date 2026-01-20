@@ -42,6 +42,10 @@ impl Context {
             .or_else(|| self.parent.as_ref().and_then(|p| p.get_variable(name)))
     }
 
+    pub fn get_local_variable(&self, name: &str) -> Option<&ExprResult> {
+        self.variables.get(name)
+    }
+
     pub fn set_variable(&mut self, name: String, value: ExprResult) {
         self.variables.insert(name, value);
     }
