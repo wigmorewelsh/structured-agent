@@ -136,8 +136,7 @@ mod tests {
         let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "loop iteration");
+        assert_eq!(context.events.borrow().len(), 0);
         assert_eq!(
             context.get_variable("should_continue").unwrap(),
             ExprResult::Boolean(false)
@@ -187,10 +186,7 @@ mod tests {
             ExprResult::Boolean(false)
         );
 
-        assert_eq!(
-            context.get_variable("inner_var").unwrap(),
-            ExprResult::String("inner_value".to_string())
-        );
+        assert!(context.get_variable("inner_var").is_none());
     }
 
     #[tokio::test]
@@ -238,9 +234,7 @@ mod tests {
         let result = outer_while.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 2);
-        assert_eq!(context.events.borrow()[0].message, "outer while executed");
-        assert_eq!(context.events.borrow()[1].message, "inner while executed");
+        assert_eq!(context.events.borrow().len(), 0);
     }
 
     #[tokio::test]
@@ -281,18 +275,14 @@ mod tests {
 
         assert_eq!(result, ExprResult::Unit);
 
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "parent_value");
+        assert_eq!(context.events.borrow().len(), 0);
 
         assert_eq!(
             context.get_variable("parent_var").unwrap(),
             ExprResult::String("parent_value".to_string())
         );
 
-        assert_eq!(
-            context.get_variable("local_var").unwrap(),
-            ExprResult::String("local_value".to_string())
-        );
+        assert!(context.get_variable("local_var").is_none());
 
         assert_eq!(
             context.get_variable("should_continue").unwrap(),

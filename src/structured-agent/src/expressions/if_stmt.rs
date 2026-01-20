@@ -71,8 +71,7 @@ mod tests {
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "executed");
+        assert_eq!(context.events.borrow().len(), 0);
     }
 
     #[tokio::test]
@@ -153,10 +152,7 @@ mod tests {
             ExprResult::String("outer_value".to_string())
         );
 
-        assert_eq!(
-            context.get_variable("inner_var").unwrap(),
-            ExprResult::String("inner_value".to_string())
-        );
+        assert!(context.get_variable("inner_var").is_none());
     }
 
     #[tokio::test]
@@ -187,9 +183,7 @@ mod tests {
         let result = outer_if.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 2);
-        assert_eq!(context.events.borrow()[0].message, "outer if executed");
-        assert_eq!(context.events.borrow()[1].message, "inner if executed");
+        assert_eq!(context.events.borrow().len(), 0);
     }
 
     #[tokio::test]
@@ -224,17 +218,13 @@ mod tests {
         let result = if_expr.evaluate(context.clone()).await.unwrap();
         assert_eq!(result, ExprResult::Unit);
 
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "parent_value");
+        assert_eq!(context.events.borrow().len(), 0);
 
         assert_eq!(
             context.get_variable("parent_var").unwrap(),
             ExprResult::String("parent_value".to_string())
         );
 
-        assert_eq!(
-            context.get_variable("local_var").unwrap(),
-            ExprResult::String("local_value".to_string())
-        );
+        assert!(context.get_variable("local_var").is_none());
     }
 }

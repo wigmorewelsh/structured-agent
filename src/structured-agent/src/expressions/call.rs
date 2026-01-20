@@ -1,3 +1,4 @@
+use crate::expressions::PlaceholderExpr;
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
@@ -54,8 +55,20 @@ impl Expression for CallExpr {
         }
 
         let mut args = Vec::new();
-        for arg in &self.arguments {
-            args.push(arg.evaluate(context.clone()).await?);
+        for (i, arg) in self.arguments.iter().enumerate() {
+            if arg.as_any().downcast_ref::<PlaceholderExpr>().is_some() {
+                let (param_name, param_type) = &parameters[i];
+
+                let value = context
+                    .runtime()
+                    .engine()
+                    .fill_parameter(&context, param_name, param_type)
+                    .await?;
+
+                args.push(value);
+            } else {
+                args.push(arg.evaluate(context.clone()).await?);
+            }
         }
 
         let function_context = Arc::new(Context::with_runtime(context.runtime_rc()));
@@ -137,7 +150,6 @@ mod tests {
 
         let cloned = expr.clone_box();
 
-        // Test that cloning produces equivalent objects
         assert_eq!(
             expr.target,
             cloned.as_any().downcast_ref::<CallExpr>().unwrap().target
@@ -198,5 +210,88 @@ mod tests {
                 .unwrap_err()
                 .contains("Unknown function: Unknown::func")
         );
+    }
+
+    #[tokio::test]
+    async fn test_placeholder_parameter_population() {
+        use crate::expressions::{InjectionExpr, PlaceholderExpr};
+
+        let mut runtime = Runtime::new();
+
+        let function_info = FunctionExpr {
+            name: "process".to_string(),
+            parameters: vec![("data".to_string(), Type::string())],
+            return_type: Type::string(),
+            body: vec![Box::new(InjectionExpr {
+                inner: Box::new(StringLiteralExpr {
+                    value: "Processing:".to_string(),
+                }),
+            })],
+        };
+        runtime.register_function(function_info);
+
+        let runtime = Rc::new(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
+
+        context.add_event("Please provide data for processing".to_string());
+
+        let expr = CallExpr {
+            target: String::new(),
+            function: "process".to_string(),
+            arguments: vec![Box::new(PlaceholderExpr {})],
+            is_method: false,
+        };
+
+        let result = expr.evaluate(context.clone()).await.unwrap();
+
+        match result {
+            ExprResult::String(s) => {
+                assert!(!s.is_empty());
+            }
+            _ => panic!("Expected string result"),
+        }
+
+        let events = context.events.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].message, "Please provide data for processing");
+    }
+
+    #[tokio::test]
+    async fn test_placeholder_with_multiple_context_events() {
+        use crate::expressions::PlaceholderExpr;
+
+        let mut runtime = Runtime::new();
+
+        let function_info = FunctionExpr {
+            name: "analyze".to_string(),
+            parameters: vec![("comments".to_string(), Type::string())],
+            return_type: Type::string(),
+            body: vec![],
+        };
+        runtime.register_function(function_info);
+
+        let runtime = Rc::new(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
+
+        context.add_event("Analyze the following".to_string());
+        context.add_event("Focus on code quality".to_string());
+        context.add_event("Provide actionable feedback".to_string());
+
+        let expr = CallExpr {
+            target: String::new(),
+            function: "analyze".to_string(),
+            arguments: vec![Box::new(PlaceholderExpr {})],
+            is_method: false,
+        };
+
+        let result = expr.evaluate(context.clone()).await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
+
+        let events = context.events.borrow();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].message, "Analyze the following");
+        assert_eq!(events[1].message, "Focus on code quality");
+        assert_eq!(events[2].message, "Provide actionable feedback");
     }
 }

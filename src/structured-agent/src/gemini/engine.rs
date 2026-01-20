@@ -1,19 +1,31 @@
 use crate::gemini::error::GeminiResult;
 use crate::gemini::types::GenerationConfig;
 use crate::gemini::types::JsonSchema;
+use crate::gemini::types::JsonSchemaProperty;
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
+use crate::runtime::ExprResult;
 use crate::types::LanguageEngine;
+use crate::types::Type;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-// Constants for better maintainability
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
 const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
 
 #[derive(Serialize, Deserialize)]
 struct SelectionResponse {
     selection: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StringResponse {
+    value: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BooleanResponse {
+    value: bool,
 }
 
 pub struct GeminiEngine {
@@ -134,6 +146,64 @@ impl LanguageEngine for GeminiEngine {
                 "Error communicating with Gemini for selection: {}",
                 e
             )),
+        }
+    }
+
+    async fn fill_parameter(
+        &self,
+        context: &Context,
+        param_name: &str,
+        param_type: &Type,
+    ) -> Result<ExprResult, String> {
+        if param_type.name == "()" {
+            return Ok(ExprResult::Unit);
+        }
+
+        let (schema, temperature) = match param_type.name.as_str() {
+            "String" => (
+                JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
+                0.7,
+            ),
+            "Boolean" => (
+                JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
+                0.0,
+            ),
+            _ => return Err(format!("Unsupported parameter type: {}", param_type.name)),
+        };
+
+        let mut chat_messages = self.build_context_messages(context);
+        let prompt = format!(
+            "Provide a value for parameter '{}' of type '{}'",
+            param_name, param_type.name
+        );
+        chat_messages.push(ChatMessage::user(prompt));
+
+        let generation_config = GenerationConfig::new()
+            .with_temperature(temperature)
+            .with_response_schema(schema);
+
+        let response = self
+            .client
+            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
+            .await
+            .map_err(|e| format!("Error communicating with Gemini: {}", e))?;
+
+        let response_text = response
+            .first_content()
+            .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
+
+        match param_type.name.as_str() {
+            "String" => {
+                let string_response: StringResponse = serde_json::from_str(&response_text)
+                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
+                Ok(ExprResult::String(string_response.value))
+            }
+            "Boolean" => {
+                let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
+                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
+                Ok(ExprResult::Boolean(boolean_response.value))
+            }
+            _ => unreachable!(),
         }
     }
 }

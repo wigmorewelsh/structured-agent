@@ -316,6 +316,57 @@ impl JsonSchema {
             required: Some(vec!["selection".to_string()]),
         }
     }
+
+    pub fn object() -> Self {
+        Self {
+            schema_type: "object".to_string(),
+            properties: Some(HashMap::new()),
+            required: None,
+        }
+    }
+
+    pub fn with_property(
+        mut self,
+        name: &str,
+        property_schema: JsonSchemaProperty,
+        required: bool,
+    ) -> Self {
+        if self.properties.is_none() {
+            self.properties = Some(HashMap::new());
+        }
+
+        self.properties
+            .as_mut()
+            .unwrap()
+            .insert(name.to_string(), property_schema);
+
+        if required {
+            if self.required.is_none() {
+                self.required = Some(Vec::new());
+            }
+            self.required.as_mut().unwrap().push(name.to_string());
+        }
+
+        self
+    }
+}
+
+impl JsonSchemaProperty {
+    pub fn string() -> Self {
+        Self {
+            property_type: "string".to_string(),
+            minimum: None,
+            maximum: None,
+        }
+    }
+
+    pub fn boolean() -> Self {
+        Self {
+            property_type: "boolean".to_string(),
+            minimum: None,
+            maximum: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

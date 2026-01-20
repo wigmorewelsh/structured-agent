@@ -74,6 +74,12 @@ pub trait LanguageEngine {
         context: &crate::runtime::Context,
         options: &[String],
     ) -> Result<usize, String>;
+    async fn fill_parameter(
+        &self,
+        context: &crate::runtime::Context,
+        param_name: &str,
+        param_type: &Type,
+    ) -> Result<crate::runtime::ExprResult, String>;
 }
 
 pub struct PrintEngine {}
@@ -94,6 +100,25 @@ impl LanguageEngine for PrintEngine {
         _options: &[String],
     ) -> Result<usize, String> {
         Ok(0)
+    }
+
+    async fn fill_parameter(
+        &self,
+        context: &crate::runtime::Context,
+        param_name: &str,
+        param_type: &Type,
+    ) -> Result<crate::runtime::ExprResult, String> {
+        match param_type.name.as_str() {
+            "String" => {
+                let value = self.untyped(context).await;
+                Ok(crate::runtime::ExprResult::String(value))
+            }
+            "Boolean" => Ok(crate::runtime::ExprResult::Boolean(true)),
+            _ => Ok(crate::runtime::ExprResult::String(format!(
+                "PrintEngine: {} ({})",
+                param_name, param_type.name
+            ))),
+        }
     }
 }
 
