@@ -67,6 +67,10 @@ impl Expression for FunctionExpr {
     fn clone_box(&self) -> Box<dyn Expression> {
         Box::new(self.clone())
     }
+
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_deref()
+    }
 }
 
 #[async_trait(?Send)]

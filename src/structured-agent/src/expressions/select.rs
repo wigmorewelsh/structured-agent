@@ -39,10 +39,18 @@ impl Expression for SelectExpr {
 
         let mut clause_descriptions = Vec::new();
         for clause in &self.clauses {
-            clause_descriptions.push(format!(
-                "Execute function and store result as '{}'",
-                clause.result_variable
-            ));
+            let description = if let Some(doc) = clause.expression_to_run.documentation() {
+                format!(
+                    "Execute function '{}' and store result as '{}': {}",
+                    clause.result_variable, clause.result_variable, doc
+                )
+            } else {
+                format!(
+                    "Execute function and store result as '{}'",
+                    clause.result_variable
+                )
+            };
+            clause_descriptions.push(description);
         }
 
         let selected_index = context
@@ -227,5 +235,88 @@ mod tests {
         );
 
         assert!(context.get_variable("scoped_var").is_none());
+    }
+
+    #[test]
+    fn test_select_uses_documentation_in_descriptions() {
+        use crate::expressions::FunctionExpr;
+        use crate::types::Type;
+
+        let function_with_docs = FunctionExpr {
+            name: "documented_function".to_string(),
+            parameters: vec![],
+            return_type: Type::string(),
+            body: vec![Box::new(StringLiteralExpr {
+                value: "result".to_string(),
+            })],
+            documentation: Some("This function does something useful".to_string()),
+        };
+
+        let function_without_docs = StringLiteralExpr {
+            value: "no_docs".to_string(),
+        };
+
+        let clause_with_docs = SelectClauseExpr {
+            expression_to_run: Box::new(function_with_docs),
+            result_variable: "documented_result".to_string(),
+            expression_next: Box::new(VariableExpr {
+                name: "documented_result".to_string(),
+            }),
+        };
+
+        let clause_without_docs = SelectClauseExpr {
+            expression_to_run: Box::new(function_without_docs),
+            result_variable: "undocumented_result".to_string(),
+            expression_next: Box::new(VariableExpr {
+                name: "undocumented_result".to_string(),
+            }),
+        };
+
+        assert_eq!(
+            clause_with_docs.expression_to_run.documentation(),
+            Some("This function does something useful")
+        );
+
+        assert_eq!(clause_without_docs.expression_to_run.documentation(), None);
+    }
+
+    #[tokio::test]
+    async fn test_select_with_documented_function_integration() {
+        use crate::expressions::FunctionExpr;
+        use crate::runtime::Runtime;
+        use crate::types::Type;
+        use std::rc::Rc;
+
+        let documented_function = FunctionExpr {
+            name: "calculate_result".to_string(),
+            parameters: vec![],
+            return_type: Type::string(),
+            body: vec![Box::new(StringLiteralExpr {
+                value: "calculated_value".to_string(),
+            })],
+            documentation: Some("Calculates an important mathematical result".to_string()),
+        };
+
+        let clause = SelectClauseExpr {
+            expression_to_run: Box::new(documented_function),
+            result_variable: "calc_result".to_string(),
+            expression_next: Box::new(VariableExpr {
+                name: "calc_result".to_string(),
+            }),
+        };
+
+        let select_expr = SelectExpr {
+            clauses: vec![clause],
+        };
+
+        let runtime = Rc::new(Runtime::new());
+        let context = Arc::new(Context::with_runtime(runtime));
+
+        let result = select_expr.evaluate(context).await.unwrap();
+
+        match result {
+            ExprResult::String(s) => assert_eq!(s, "calculated_value"),
+            _ => panic!("Expected string result"),
+        }
     }
 }

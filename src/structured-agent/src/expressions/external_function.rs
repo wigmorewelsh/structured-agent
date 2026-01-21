@@ -12,6 +12,7 @@ pub struct ExternalFunctionExpr {
     pub parameters: Vec<(String, Type)>,
     pub return_type: Type,
     pub mcp_client: Rc<McpClient>,
+    pub documentation: Option<String>,
 }
 
 impl std::fmt::Debug for ExternalFunctionExpr {
@@ -21,6 +22,7 @@ impl std::fmt::Debug for ExternalFunctionExpr {
             .field("parameters", &self.parameters)
             .field("return_type", &self.return_type)
             .field("mcp_client", &"McpClient")
+            .field("documentation", &self.documentation)
             .finish()
     }
 }
@@ -32,6 +34,7 @@ impl Clone for ExternalFunctionExpr {
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
             mcp_client: self.mcp_client.clone(),
+            documentation: self.documentation.clone(),
         }
     }
 }
@@ -77,6 +80,10 @@ impl Expression for ExternalFunctionExpr {
     fn clone_box(&self) -> Box<dyn Expression> {
         Box::new(self.clone())
     }
+
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_deref()
+    }
 }
 
 impl ExternalFunctionExpr {
@@ -85,12 +92,14 @@ impl ExternalFunctionExpr {
         parameters: Vec<(String, Type)>,
         return_type: Type,
         mcp_client: Rc<McpClient>,
+        documentation: Option<String>,
     ) -> Self {
         Self {
             name,
             parameters,
             return_type,
             mcp_client,
+            documentation,
         }
     }
 }
@@ -107,6 +116,41 @@ impl Function for ExternalFunctionExpr {
 
     fn function_return_type(&self) -> &Type {
         &self.return_type
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Type;
+    use std::rc::Rc;
+
+    #[tokio::test]
+    async fn test_external_function_documentation() {
+        let client = Rc::new(McpClient::new_stdio("echo", vec![]).await.unwrap());
+
+        let expr_with_docs = ExternalFunctionExpr {
+            name: "test_function".to_string(),
+            parameters: vec![],
+            return_type: Type::string(),
+            mcp_client: client.clone(),
+            documentation: Some("This is a test external function".to_string()),
+        };
+
+        assert_eq!(
+            expr_with_docs.documentation(),
+            Some("This is a test external function")
+        );
+
+        let expr_without_docs = ExternalFunctionExpr {
+            name: "undocumented_function".to_string(),
+            parameters: vec![],
+            return_type: Type::string(),
+            mcp_client: client,
+            documentation: None,
+        };
+
+        assert_eq!(expr_without_docs.documentation(), None);
     }
 }
 

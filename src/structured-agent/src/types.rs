@@ -11,6 +11,7 @@ pub struct ExternalFunctionDefinition {
     pub name: String,
     pub parameters: Vec<(String, Type)>,
     pub return_type: Type,
+    pub documentation: Option<String>,
 }
 
 impl Type {
@@ -39,6 +40,21 @@ impl ExternalFunctionDefinition {
             name,
             parameters,
             return_type,
+            documentation: None,
+        }
+    }
+
+    pub fn new_with_docs(
+        name: String,
+        parameters: Vec<(String, Type)>,
+        return_type: Type,
+        documentation: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            parameters,
+            return_type,
+            documentation,
         }
     }
 }
@@ -59,6 +75,9 @@ pub trait Expression: std::fmt::Debug {
     fn return_type(&self) -> Type;
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn Expression>;
+    fn documentation(&self) -> Option<&str> {
+        None
+    }
 }
 
 #[async_trait(?Send)]
@@ -131,4 +150,7 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
         &self,
         args: Vec<crate::runtime::ExprResult>,
     ) -> Result<crate::runtime::ExprResult, String>;
+    fn documentation(&self) -> Option<&str> {
+        None
+    }
 }

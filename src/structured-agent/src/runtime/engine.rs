@@ -198,6 +198,7 @@ impl Runtime {
                         external_fn.parameters.clone(),
                         external_fn.return_type.clone(),
                         client.clone(),
+                        external_fn.documentation.clone(),
                     );
 
                     functions_to_register.push((tool.name.clone(), external_function_expr));
