@@ -90,6 +90,57 @@ impl LanguageEngine for GeminiEngine {
         }
     }
 
+    async fn typed(&self, context: &Context, return_type: &Type) -> Result<ExprResult, String> {
+        if return_type.name == "()" {
+            return Ok(ExprResult::Unit);
+        }
+
+        let (schema, temperature) = match return_type.name.as_str() {
+            "String" => (
+                JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
+                0.7,
+            ),
+            "Boolean" => (
+                JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
+                0.0,
+            ),
+            _ => return Err(format!("Unsupported return type: {}", return_type.name)),
+        };
+
+        let mut chat_messages = self.build_context_messages(context);
+        let prompt = format!("Generate a response of type '{}'", return_type.name);
+        chat_messages.push(ChatMessage::user(prompt));
+
+        let generation_config = GenerationConfig::new()
+            .with_temperature(temperature)
+            .with_response_mime_type("application/json".to_string())
+            .with_response_schema(schema);
+
+        let response = self
+            .client
+            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
+            .await
+            .map_err(|e| format!("Error communicating with Gemini: {}", e))?;
+
+        let response_text = response
+            .first_content()
+            .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
+
+        match return_type.name.as_str() {
+            "String" => {
+                let string_response: StringResponse = serde_json::from_str(&response_text)
+                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
+                Ok(ExprResult::String(string_response.value))
+            }
+            "Boolean" => {
+                let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
+                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
+                Ok(ExprResult::Boolean(boolean_response.value))
+            }
+            _ => unreachable!(),
+        }
+    }
+
     async fn select(&self, context: &Context, options: &[String]) -> Result<usize, String> {
         let mut selection_prompt =
             "SELECT: Choose one of the following options by responding with the appropriate number:\n"

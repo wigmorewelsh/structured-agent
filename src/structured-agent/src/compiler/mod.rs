@@ -474,7 +474,7 @@ fn greet(name: String) -> () {
     "!"!
 }
 
-fn main() -> () {
+fn main() -> String {
     "Starting test program"!
     let greeting_name = "World"
     let result = greet(greeting_name)
@@ -501,15 +501,15 @@ fn main() -> () {
     #[tokio::test]
     async fn test_select_statement_end_to_end() {
         let program_source = r#"
-fn add(a: String, b: String) -> () {
+fn add(a: String, b: String) -> String {
     "Adding numbers"
 }
 
-fn subtract(a: String, b: String) -> () {
+fn subtract(a: String, b: String) -> String {
     "Subtracting numbers"
 }
 
-fn calculator(x: String, y: String) -> () {
+fn calculator(x: String, y: String) -> String {
     let result = select {
         add(x, y) as sum => sum,
         subtract(x, y) as diff => diff
@@ -517,7 +517,7 @@ fn calculator(x: String, y: String) -> () {
     result
 }
 
-fn main() -> () {
+fn main() -> String {
     let result = calculator("5", "3")
     result!
 }

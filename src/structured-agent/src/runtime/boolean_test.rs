@@ -193,7 +193,7 @@ fn check_status() -> Boolean {
     status!
 }
 
-fn main() -> () {
+fn main() -> String {
     let result = check_status()
     "Function completed"!
 }
@@ -213,7 +213,7 @@ async fn test_mixed_boolean_and_string_variables() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main() -> String {
     let message = "Processing complete"
     let success = true
     let log_result = log_bool(success)

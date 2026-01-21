@@ -88,6 +88,11 @@ pub trait ExecutableFunction: Function + Expression + std::fmt::Debug {
 #[async_trait(?Send)]
 pub trait LanguageEngine {
     async fn untyped(&self, context: &crate::runtime::Context) -> String;
+    async fn typed(
+        &self,
+        context: &crate::runtime::Context,
+        return_type: &Type,
+    ) -> Result<crate::runtime::ExprResult, String>;
     async fn select(
         &self,
         context: &crate::runtime::Context,
@@ -110,6 +115,25 @@ impl LanguageEngine for PrintEngine {
             last_event.message.clone()
         } else {
             "PrintEngine {}".to_string()
+        }
+    }
+
+    async fn typed(
+        &self,
+        context: &crate::runtime::Context,
+        return_type: &Type,
+    ) -> Result<crate::runtime::ExprResult, String> {
+        match return_type.name.as_str() {
+            "String" => {
+                let value = self.untyped(context).await;
+                Ok(crate::runtime::ExprResult::String(value))
+            }
+            "Boolean" => Ok(crate::runtime::ExprResult::Boolean(true)),
+            "()" => Ok(crate::runtime::ExprResult::Unit),
+            _ => {
+                let value = self.untyped(context).await;
+                Ok(crate::runtime::ExprResult::String(value))
+            }
         }
     }
 

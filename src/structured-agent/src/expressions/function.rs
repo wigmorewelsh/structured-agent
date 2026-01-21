@@ -49,8 +49,16 @@ impl Expression for FunctionExpr {
         }
 
         if context.has_events() {
-            let engine_response = context.runtime().engine().untyped(&context).await;
-            return Ok(ExprResult::String(engine_response));
+            if self.return_type.name == "()" {
+                return Ok(ExprResult::Unit);
+            } else {
+                let engine_response = context
+                    .runtime()
+                    .engine()
+                    .typed(&context, &self.return_type)
+                    .await?;
+                return Ok(engine_response);
+            }
         }
 
         Ok(last_result)
