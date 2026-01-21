@@ -1,5 +1,6 @@
 use combine::EasyParser;
 use std::rc::Rc;
+use std::sync::Arc;
 use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
@@ -32,13 +33,13 @@ fn test_func() -> () {
 
     // Test that the function can be executed
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let execution_result = compiled_function.evaluate(&mut context).await;
+    let context = Arc::new(Context::with_runtime(runtime));
+    let execution_result = compiled_function.evaluate(context.clone()).await;
     assert!(execution_result.is_ok());
 
     // Check that events were generated (injections)
-    assert_eq!(context.events.len(), 1);
-    assert_eq!(context.events[0].message, "Hello from function");
+    assert_eq!(context.events_count(), 1);
+    assert_eq!(context.get_event(0).unwrap().message, "Hello from function");
 }
 
 #[tokio::test]
@@ -57,12 +58,12 @@ fn test() -> () {
 
     // Test individual statement compilation and execution
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
+    let context = Arc::new(Context::with_runtime(runtime));
 
     // First statement: string injection
     let stmt1 = &function.body.statements[0];
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
-    let result1 = compiled_stmt1.evaluate(&mut context).await.unwrap();
+    let result1 = compiled_stmt1.evaluate(context.clone()).await.unwrap();
 
     match result1 {
         ExprResult::String(s) => assert_eq!(s, "Hello world"),
@@ -70,13 +71,13 @@ fn test() -> () {
     }
 
     // Check event was added
-    assert_eq!(context.events.len(), 1);
-    assert_eq!(context.events[0].message, "Hello world");
+    assert_eq!(context.events_count(), 1);
+    assert_eq!(context.get_event(0).unwrap().message, "Hello world");
 
     // Second statement: assignment (compiles to expression evaluation)
     let stmt2 = &function.body.statements[1];
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
-    let result2 = compiled_stmt2.evaluate(&mut context).await.unwrap();
+    let result2 = compiled_stmt2.evaluate(context.clone()).await.unwrap();
 
     match result2 {
         ExprResult::Unit => {}
@@ -84,7 +85,7 @@ fn test() -> () {
     }
 
     // Events should still be 1 (assignment doesn't add events)
-    assert_eq!(context.events.len(), 1);
+    assert_eq!(context.events_count(), 1);
 }
 
 #[tokio::test]
@@ -102,13 +103,13 @@ fn test_var_injection() -> () {
     let compiled_function = Compiler::compile_function(function).unwrap();
 
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context).await;
+    let context = Arc::new(Context::with_runtime(runtime));
+    let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
 
     // Should have one event from the variable injection
-    assert_eq!(context.events.len(), 1);
-    assert_eq!(context.events[0].message, "Important message");
+    assert_eq!(context.events_count(), 1);
+    assert_eq!(context.get_event(0).unwrap().message, "Important message");
 }
 
 #[tokio::test]
@@ -129,8 +130,8 @@ result!
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
 
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let result = compiled_stmt1.evaluate(&mut context).await.unwrap();
+    let context = Arc::new(Context::with_runtime(runtime));
+    let result = compiled_stmt1.evaluate(context.clone()).await.unwrap();
 
     match result {
         ExprResult::Unit => {}
@@ -140,7 +141,7 @@ result!
     // Test the second statement (injection)
     let stmt2 = &function.body.statements[1];
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
-    let result2 = compiled_stmt2.evaluate(&mut context).await.unwrap();
+    let result2 = compiled_stmt2.evaluate(context.clone()).await.unwrap();
 
     match result2 {
         ExprResult::String(s) => assert_eq!(s, "test value"),

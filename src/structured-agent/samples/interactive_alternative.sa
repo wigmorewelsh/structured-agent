@@ -1,0 +1,39 @@
+
+extern fn input() -> String;
+extern fn print(message: String) -> ();
+
+fn agent_response() -> String {
+    "You are an agent responding to user requests and queries."!
+    "Based on the conversation_history and user_query, you will provide a response."!
+}
+
+fn summarize_history() -> String {
+    "Create a summary of the conversation history, user input and the agent response"!
+}
+
+fn main() -> () {
+    print("Program started")
+
+    let history = ""
+
+    while true {
+        "<conversation_history>"!
+        history!
+        "</conversation_history>"!
+
+        let user_input = input()
+
+        "<user_query>"!
+        user_input!
+        "</user_query>"!
+
+        let agent_response = agent_response()
+        print(agent_response)
+
+        "<agent_response>"!
+        agent_response!
+        "</agent_response>"!
+
+        history = summarize_history()
+    }
+}

@@ -1,6 +1,8 @@
 pub mod ast;
+pub mod cli;
 pub mod compiler;
 pub mod expressions;
+pub mod functions;
 pub mod gemini;
 pub mod mcp;
 pub mod runtime;

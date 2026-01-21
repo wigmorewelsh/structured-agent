@@ -71,8 +71,8 @@ mod tests {
             _ => panic!("Expected string result"),
         }
 
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "Injected content");
+        assert_eq!(context.events_count(), 1);
+        assert_eq!(context.get_event(0).unwrap().message, "Injected content");
     }
 
     #[test]
@@ -107,8 +107,8 @@ mod tests {
         let result2 = cloned.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result1, result2);
-        assert_eq!(context.events.borrow().len(), 2);
-        assert_eq!(context.events.borrow()[0].message, "test content");
-        assert_eq!(context.events.borrow()[1].message, "test content");
+        assert_eq!(context.events_count(), 2);
+        assert_eq!(context.get_event(0).unwrap().message, "test content");
+        assert_eq!(context.get_event(1).unwrap().message, "test content");
     }
 }

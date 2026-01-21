@@ -71,7 +71,7 @@ mod tests {
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
     }
 
     #[tokio::test]
@@ -90,7 +90,7 @@ mod tests {
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
     }
 
     #[tokio::test]
@@ -183,7 +183,7 @@ mod tests {
         let result = outer_if.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
     }
 
     #[tokio::test]
@@ -218,7 +218,7 @@ mod tests {
         let result = if_expr.evaluate(context.clone()).await.unwrap();
         assert_eq!(result, ExprResult::Unit);
 
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
 
         assert_eq!(
             context.get_variable("parent_var").unwrap(),

@@ -78,7 +78,7 @@ mod tests {
         let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
     }
 
     #[tokio::test]
@@ -136,7 +136,7 @@ mod tests {
         let result = while_expr.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
         assert_eq!(
             context.get_variable("should_continue").unwrap(),
             ExprResult::Boolean(false)
@@ -234,7 +234,7 @@ mod tests {
         let result = outer_while.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result, ExprResult::Unit);
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
     }
 
     #[tokio::test]
@@ -275,7 +275,7 @@ mod tests {
 
         assert_eq!(result, ExprResult::Unit);
 
-        assert_eq!(context.events.borrow().len(), 0);
+        assert_eq!(context.events_count(), 0);
 
         assert_eq!(
             context.get_variable("parent_var").unwrap(),

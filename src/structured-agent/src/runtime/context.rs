@@ -11,7 +11,7 @@ pub struct Event {
 
 pub struct Context {
     pub parent: Option<Arc<Context>>,
-    pub events: RefCell<Vec<Event>>,
+    events: RefCell<Vec<Event>>,
     pub variables: DashMap<String, ExprResult>,
     pub is_scope_boundary: bool,
     runtime: Rc<Runtime>,
@@ -40,6 +40,50 @@ impl Context {
 
     pub fn add_event(&self, message: String) {
         self.events.borrow_mut().push(Event { message });
+    }
+
+    pub fn iter_all_events(&self) -> impl Iterator<Item = Event> {
+        let mut all_events = Vec::new();
+        let mut current_context = Some(self);
+
+        let mut context_chain = Vec::new();
+        while let Some(ctx) = current_context {
+            context_chain.push(ctx);
+            current_context = ctx.parent.as_deref();
+        }
+
+        for ctx in context_chain.into_iter().rev() {
+            all_events.extend(ctx.events.borrow().clone());
+        }
+
+        all_events.into_iter()
+    }
+
+    pub fn events_count(&self) -> usize {
+        self.events.borrow().len()
+    }
+
+    pub fn has_events(&self) -> bool {
+        let mut current_context = Some(self);
+        while let Some(ctx) = current_context {
+            if !ctx.events.borrow().is_empty() {
+                return true;
+            }
+            current_context = ctx.parent.as_deref();
+        }
+        false
+    }
+
+    pub fn has_local_events(&self) -> bool {
+        !self.events.borrow().is_empty()
+    }
+
+    pub fn get_event(&self, index: usize) -> Option<Event> {
+        self.events.borrow().get(index).cloned()
+    }
+
+    pub fn last_event(&self) -> Option<Event> {
+        self.events.borrow().last().cloned()
     }
 
     pub fn get_variable(&self, name: &str) -> Option<ExprResult> {

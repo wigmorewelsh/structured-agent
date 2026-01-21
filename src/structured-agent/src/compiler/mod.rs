@@ -432,8 +432,8 @@ mod tests {
             _ => panic!("Expected string result"),
         }
 
-        assert_eq!(context.events.borrow().len(), 1);
-        assert_eq!(context.events.borrow()[0].message, "Test injection");
+        assert_eq!(context.events_count(), 1);
+        assert_eq!(context.get_event(0).unwrap().message, "Test injection");
     }
 
     #[tokio::test]

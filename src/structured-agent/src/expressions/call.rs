@@ -71,7 +71,11 @@ impl Expression for CallExpr {
             }
         }
 
-        let function_context = Arc::new(Context::with_runtime(context.runtime_rc()));
+        let function_context = Arc::new(Context::create_child(
+            context.clone(),
+            true,
+            context.runtime_rc(),
+        ));
 
         for (i, (param_name, _param_type)) in parameters.iter().enumerate() {
             function_context.declare_variable(param_name.clone(), args[i].clone());
@@ -251,9 +255,11 @@ mod tests {
             _ => panic!("Expected string result"),
         }
 
-        let events = context.events.borrow();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].message, "Please provide data for processing");
+        assert_eq!(context.events_count(), 1);
+        assert_eq!(
+            context.get_event(0).unwrap().message,
+            "Please provide data for processing"
+        );
     }
 
     #[tokio::test]
@@ -288,10 +294,18 @@ mod tests {
 
         assert_eq!(result, ExprResult::Unit);
 
-        let events = context.events.borrow();
-        assert_eq!(events.len(), 3);
-        assert_eq!(events[0].message, "Analyze the following");
-        assert_eq!(events[1].message, "Focus on code quality");
-        assert_eq!(events[2].message, "Provide actionable feedback");
+        assert_eq!(context.events_count(), 3);
+        assert_eq!(
+            context.get_event(0).unwrap().message,
+            "Analyze the following"
+        );
+        assert_eq!(
+            context.get_event(1).unwrap().message,
+            "Focus on code quality"
+        );
+        assert_eq!(
+            context.get_event(2).unwrap().message,
+            "Provide actionable feedback"
+        );
     }
 }

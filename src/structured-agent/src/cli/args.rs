@@ -38,4 +38,10 @@ pub fn build_cli() -> Command {
                 )
                 .default_value("print"),
         )
+        .arg(
+            Arg::new("with-default-functions")
+                .long("with-default-functions")
+                .help("Include default functions (input, print)")
+                .action(clap::ArgAction::SetTrue),
+        )
 }

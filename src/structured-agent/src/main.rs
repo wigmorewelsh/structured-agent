@@ -2,6 +2,7 @@ mod ast;
 mod cli;
 mod compiler;
 mod expressions;
+mod functions;
 mod gemini;
 mod mcp;
 mod runtime;

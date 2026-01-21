@@ -41,7 +41,7 @@ impl Expression for FunctionExpr {
             last_result = statement.evaluate(context.clone()).await?;
         }
 
-        if !context.events.borrow().is_empty() {
+        if context.has_events() {
             let engine_response = context.runtime().engine().untyped(&context).await;
             return Ok(ExprResult::String(engine_response));
         }

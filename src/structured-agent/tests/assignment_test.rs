@@ -1,5 +1,6 @@
 use combine::EasyParser;
 use std::rc::Rc;
+use std::sync::Arc;
 use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
@@ -30,12 +31,12 @@ fn test_assignment() -> () {
     let compiled_function = compilation_result.unwrap();
 
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let execution_result = compiled_function.evaluate(&mut context).await;
+    let context = Arc::new(Context::with_runtime(runtime));
+    let execution_result = compiled_function.evaluate(context.clone()).await;
     assert!(execution_result.is_ok());
 
-    assert_eq!(context.events.len(), 1);
-    assert_eq!(context.events[0].message, "Hello, World!");
+    assert_eq!(context.events_count(), 1);
+    assert_eq!(context.get_event(0).unwrap().message, "Hello, World!");
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
@@ -62,13 +63,13 @@ fn test_var_assignment() -> () {
     let compiled_function = Compiler::compile_function(function).unwrap();
 
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context).await;
+    let context = Arc::new(Context::with_runtime(runtime));
+    let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
 
-    assert_eq!(context.events.len(), 2);
-    assert_eq!(context.events[0].message, "Hello");
-    assert_eq!(context.events[1].message, "Alice");
+    assert_eq!(context.events_count(), 2);
+    assert_eq!(context.get_event(0).unwrap().message, "Hello");
+    assert_eq!(context.get_event(1).unwrap().message, "Alice");
 
     assert!(context.get_variable("greeting").is_some());
     assert!(context.get_variable("name").is_some());
@@ -88,8 +89,8 @@ fn test_return() -> () {
     let compiled_function = Compiler::compile_function(function).unwrap();
 
     let runtime = Rc::new(Runtime::new());
-    let mut context = Context::with_runtime(runtime);
-    let result = compiled_function.evaluate(&mut context).await;
+    let context = Arc::new(Context::with_runtime(runtime));
+    let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
 
     match result.unwrap() {

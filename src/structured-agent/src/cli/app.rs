@@ -1,11 +1,13 @@
 use crate::cli::config::{Config, EngineType, ProgramSource};
 use crate::cli::errors::CliError;
+use crate::functions::{InputFunction, PrintFunction};
 use crate::gemini::GeminiEngine;
 use crate::mcp::McpClient;
 use crate::runtime::Runtime;
 use crate::types::LanguageEngine;
 use std::fs;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct App;
 
@@ -25,7 +27,8 @@ impl App {
         println!("Initializing structured agent runtime...");
 
         let mcp_clients = Self::create_mcp_clients(&config.mcp_servers).await?;
-        let runtime = Self::build_runtime(mcp_clients, &config.engine).await?;
+        let runtime =
+            Self::build_runtime(mcp_clients, &config.engine, config.with_default_functions).await?;
 
         println!("Executing program...");
 
@@ -72,6 +75,7 @@ impl App {
     async fn build_runtime(
         mcp_clients: Vec<McpClient>,
         engine_type: &EngineType,
+        with_default_functions: bool,
     ) -> Result<Runtime, CliError> {
         let mut runtime_builder = Runtime::builder();
 
@@ -93,6 +97,13 @@ impl App {
         };
 
         runtime_builder = runtime_builder.with_engine(engine);
+
+        if with_default_functions {
+            runtime_builder = runtime_builder
+                .with_native_function(Arc::new(InputFunction::new()))
+                .with_native_function(Arc::new(PrintFunction::new()));
+        }
+
         Ok(runtime_builder.build())
     }
 
@@ -144,5 +155,33 @@ impl App {
                 println!("Result: {}", b);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::config::EngineType;
+
+    #[tokio::test]
+    async fn test_build_runtime_with_default_functions() {
+        let runtime = App::build_runtime(vec![], &EngineType::Print, true)
+            .await
+            .unwrap();
+
+        let functions = runtime.list_functions();
+        assert!(functions.contains(&"input"));
+        assert!(functions.contains(&"print"));
+    }
+
+    #[tokio::test]
+    async fn test_build_runtime_without_default_functions() {
+        let runtime = App::build_runtime(vec![], &EngineType::Print, false)
+            .await
+            .unwrap();
+
+        let functions = runtime.list_functions();
+        assert!(!functions.contains(&"input"));
+        assert!(!functions.contains(&"print"));
     }
 }

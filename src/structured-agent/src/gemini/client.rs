@@ -7,7 +7,9 @@ use crate::gemini::{
 };
 use serde_json::Value;
 
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 use url::Url;
 
@@ -17,11 +19,24 @@ const DEFAULT_API_BASE: &str = "https://generativelanguage.googleapis.com";
 const DEFAULT_VERTEX_BASE: &str = "https://{location}-aiplatform.googleapis.com";
 const GCLOUD_AUTH_COMMAND: &[&str] = &["auth", "print-access-token"];
 
+#[derive(Debug, Clone)]
+struct CachedToken {
+    token: String,
+    expires_at: SystemTime,
+}
+
+impl CachedToken {
+    fn is_expired(&self) -> bool {
+        SystemTime::now() > self.expires_at
+    }
+}
+
 pub struct GeminiClient {
     client: reqwest::Client,
     api_key: Option<String>,
     base_url: String,
     config: GeminiConfig,
+    cached_token: Arc<RwLock<Option<CachedToken>>>,
 }
 
 impl GeminiClient {
@@ -56,6 +71,7 @@ impl GeminiClient {
             api_key,
             base_url,
             config,
+            cached_token: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -222,6 +238,17 @@ impl GeminiClient {
     }
 
     async fn get_gcloud_token(&self) -> GeminiResult<String> {
+        // Check if we have a valid cached token
+        {
+            let cached_token = self.cached_token.read().await;
+            if let Some(ref token_data) = *cached_token {
+                if !token_data.is_expired() {
+                    return Ok(token_data.token.clone());
+                }
+            }
+        }
+
+        // Need to fetch a new token
         let output = tokio::process::Command::new("gcloud")
             .args(GCLOUD_AUTH_COMMAND)
             .output()
@@ -250,7 +277,18 @@ impl GeminiClient {
             ));
         }
 
-        Ok(token.to_string())
+        // Cache the token (expires in 55 minutes to be safe)
+        let cached_token_data = CachedToken {
+            token: token.to_string(),
+            expires_at: SystemTime::now() + Duration::from_secs(55 * 60),
+        };
+
+        {
+            let mut cached_token = self.cached_token.write().await;
+            *cached_token = Some(cached_token_data.clone());
+        }
+
+        Ok(cached_token_data.token)
     }
 
     pub fn is_using_adc(&self) -> bool {

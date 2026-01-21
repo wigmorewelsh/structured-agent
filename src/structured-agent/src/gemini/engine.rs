@@ -58,12 +58,12 @@ impl GeminiEngine {
     }
 
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
-        if context.events.borrow().is_empty() {
+        let events: Vec<_> = context.iter_all_events().collect();
+
+        if events.is_empty() {
             vec![ChatMessage::system(DEFAULT_NO_EVENTS_MESSAGE)]
         } else {
-            context
-                .events
-                .borrow()
+            events
                 .iter()
                 .map(|event| ChatMessage::system(&event.message))
                 .collect()

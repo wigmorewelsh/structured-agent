@@ -69,7 +69,30 @@ impl GeminiConfig {
             let project_id = env::var("VERTEX_AI_PROJECT")
                 .or_else(|_| env::var("GOOGLE_CLOUD_PROJECT"))
                 .or_else(|_| env::var("GCP_PROJECT"))
-                .map_err(|_| "For ADC auth, set VERTEX_AI_PROJECT, GOOGLE_CLOUD_PROJECT or GCP_PROJECT environment variable")?;
+                .or_else(|_| {
+                    // Try to get project from gcloud config as fallback
+                    std::process::Command::new("gcloud")
+                        .args(&["config", "get-value", "project"])
+                        .output()
+                        .ok()
+                        .and_then(|output| {
+                            if output.status.success() {
+                                let project = String::from_utf8(output.stdout)
+                                    .ok()?
+                                    .trim()
+                                    .to_string();
+                                if !project.is_empty() && project != "(unset)" {
+                                    Some(project)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "gcloud config not found"))
+                })
+                .map_err(|_| "For ADC auth, set VERTEX_AI_PROJECT, GOOGLE_CLOUD_PROJECT or GCP_PROJECT environment variable, or ensure gcloud is configured with a default project")?;
 
             let location = env::var("VERTEX_AI_LOCATION")
                 .or_else(|_| env::var("GOOGLE_CLOUD_REGION"))
