@@ -103,6 +103,8 @@ pub struct GenerationConfig {
     pub stop_sequences: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "candidateCount")]
     pub candidate_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "responseMimeType")]
+    pub response_mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "responseSchema")]
     pub response_schema: Option<JsonSchema>,
 }
@@ -116,6 +118,7 @@ impl GenerationConfig {
             max_output_tokens: None,
             stop_sequences: None,
             candidate_count: None,
+            response_mime_type: None,
             response_schema: None,
         }
     }
@@ -142,6 +145,11 @@ impl GenerationConfig {
 
     pub fn with_stop_sequences(mut self, sequences: Vec<String>) -> Self {
         self.stop_sequences = Some(sequences);
+        self
+    }
+
+    pub fn with_response_mime_type(mut self, mime_type: String) -> Self {
+        self.response_mime_type = Some(mime_type);
         self
     }
 
@@ -436,6 +444,7 @@ mod tests {
             max_output_tokens: Some(1024),
             stop_sequences: Some(vec!["STOP".to_string(), "END".to_string()]),
             candidate_count: Some(1),
+            response_mime_type: None,
             response_schema: None,
         };
 
@@ -461,19 +470,22 @@ mod tests {
             temperature: Some(0.5),
             top_k: None,
             top_p: Some(0.8),
-            max_output_tokens: None,
+            max_output_tokens: Some(512),
             stop_sequences: None,
-            candidate_count: None,
+            candidate_count: Some(1),
+            response_mime_type: None,
             response_schema: None,
         };
 
         let serialized = serde_json::to_value(&config).unwrap();
 
-        // Check that only non-None fields are serialized
+        // Check that None fields are not serialized
         assert!(serialized.get("topK").is_none());
-        assert!(serialized.get("maxOutputTokens").is_none());
         assert!(serialized.get("stopSequences").is_none());
-        assert!(serialized.get("candidateCount").is_none());
+
+        // Check that Some fields are serialized
+        assert!(serialized.get("maxOutputTokens").is_some());
+        assert!(serialized.get("candidateCount").is_some());
 
         // Check floating point values with tolerance
         let temp = serialized["temperature"].as_f64().unwrap();
@@ -497,6 +509,7 @@ mod tests {
             max_output_tokens: Some(1024),
             stop_sequences: None,
             candidate_count: None,
+            response_mime_type: None,
             response_schema: None,
         };
 

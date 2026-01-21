@@ -7,3 +7,6 @@ pub mod gemini;
 pub mod mcp;
 pub mod runtime;
 pub mod types;
+
+#[cfg(test)]
+mod test_doc;

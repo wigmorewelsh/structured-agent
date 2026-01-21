@@ -6,6 +6,7 @@ pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub body: FunctionBody,
+    pub documentation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +95,11 @@ impl fmt::Display for Type {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(doc) = &self.documentation {
+            for line in doc.lines() {
+                writeln!(f, "# {}", line)?;
+            }
+        }
         write!(f, "fn {}(", self.name)?;
         for (i, param) in self.parameters.iter().enumerate() {
             if i > 0 {

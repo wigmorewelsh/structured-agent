@@ -1,0 +1,37 @@
+
+extern fn input() -> String;
+extern fn print(message: String) -> ();
+
+fn agent_response(user_input: String) -> String {
+    "You are an agent responding to user requests and queries."!
+    "Based on the most recent_user_query, you will provide a response."!
+    "<recent_user_query>"!
+    user_input!
+    "</recent_user_query>"!
+}
+
+fn turn() -> () {
+    let user_input = input()
+
+    let agent_response = agent_response(user_input)
+
+    print(agent_response)
+
+    "<prev_user_query>"!
+    user_input!
+    "</prev_user_query>"!
+
+    "<prev_agent_response>"!
+    agent_response!
+    "</prev_agent_response>"!
+
+    turn()!
+}
+
+fn main() -> () {
+    print("Program started")
+
+    "The following is a conversation between a user and an agent."!
+
+    turn()
+}

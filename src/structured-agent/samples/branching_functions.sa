@@ -1,0 +1,60 @@
+
+extern fn input() -> String;
+extern fn print(message: String) -> ();
+
+fn thinking(request: String) -> String {
+    "You are an expert at analyzing user requests and understanding their intent."!
+    "Think through this step by step:"!
+    "1. What is the user asking for?"!
+    "2. What type of task is this (creative, analytical, debugging, implementation)?"!
+    "3. What information or context would be needed?"!
+    "4. What would be the key characteristics of a good response?"!
+    "Provide your reasoning process clearly without mentioning specific tools."!
+    request!
+}
+
+
+fn brainstorm() -> String {
+    print("Agent chose: Brainstorm")
+    "Brainstorm ideas and approaches for the given topic."!
+}
+
+fn analyze_codebase() -> String {
+    print("Agent chose: Analyze Codebase")
+    "Analyze the provided codebase."!
+    "Provide insights on structure, patterns, and potential improvements."!
+}
+
+fn fix_bug() -> String {
+    print("Agent chose: Fix Bug")
+    "Fix the described bug in the provided code."!
+}
+
+fn implement_feature(ticket_number: String) -> String {
+    print("Agent chose: Implement Feature")
+    "Implement the requested feature based on the provided context."!
+}
+
+fn main() -> () {
+    let user_request = input()
+    user_request!
+
+    let reasoning = thinking(user_request)
+    print("Thinking process:")
+    print(reasoning)
+
+    "<reasoning>"!
+    reasoning!
+    "</reasoning>"!
+
+    "Based on the reasoning chose from the following standard processes to follow:"!
+
+    let result = select {
+        brainstorm() as ideas => ideas,
+        analyze_codebase() as analysis => analysis,
+        fix_bug() as fix => fix,
+        implement_feature(_) as implementation => implementation
+    }
+
+    print(result)
+}

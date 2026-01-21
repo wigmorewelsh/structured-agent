@@ -247,6 +247,7 @@ impl CompilerTrait for Compiler {
                 .collect(),
             return_type: convert_ast_type_to_type(&ast_func.return_type),
             body: compiled_statements,
+            documentation: ast_func.documentation.clone(),
         })
     }
 }
@@ -269,6 +270,7 @@ impl Compiler {
                 .collect(),
             return_type: convert_ast_type_to_type(&ast_func.return_type),
             body: compiled_statements,
+            documentation: ast_func.documentation.clone(),
         })
     }
 
@@ -364,10 +366,13 @@ impl Compiler {
             }
             ast::Statement::While { condition, body } => {
                 let compiled_condition = Self::compile_expression(condition)?;
-                let compiled_body = body
-                    .iter()
-                    .map(|stmt| Self::compile_statement(stmt))
-                    .collect::<Result<Vec<_>, String>>()?;
+
+                let mut compiled_body = Vec::new();
+                for stmt in body.iter() {
+                    let compiled_stmt = Self::compile_statement(stmt)?;
+                    compiled_body.push(compiled_stmt);
+                }
+
                 Ok(Box::new(WhileExpr {
                     condition: compiled_condition,
                     body: compiled_body,

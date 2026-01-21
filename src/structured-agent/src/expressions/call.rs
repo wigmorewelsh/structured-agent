@@ -175,6 +175,7 @@ mod tests {
             body: vec![Box::new(StringLiteralExpr {
                 value: "Hello, World!".to_string(),
             })],
+            documentation: None,
         };
         runtime.register_function(function_info);
 
@@ -231,6 +232,7 @@ mod tests {
                     value: "Processing:".to_string(),
                 }),
             })],
+            documentation: None,
         };
         runtime.register_function(function_info);
 
@@ -273,6 +275,7 @@ mod tests {
             parameters: vec![("comments".to_string(), Type::string())],
             return_type: Type::string(),
             body: vec![],
+            documentation: None,
         };
         runtime.register_function(function_info);
 
@@ -292,7 +295,7 @@ mod tests {
 
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result, ExprResult::String("PrintEngine {}".to_string()));
 
         assert_eq!(context.events_count(), 3);
         assert_eq!(

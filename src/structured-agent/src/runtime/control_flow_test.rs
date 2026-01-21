@@ -123,8 +123,9 @@ fn main() -> () {
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
+
     assert_eq!(messages, vec!["after if", "if body executed"]);
-    assert_eq!(result, ExprResult::String("after if".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -146,8 +147,9 @@ fn main() -> () {
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
+
     assert_eq!(messages, vec!["after if"]);
-    assert_eq!(result, ExprResult::String("after if".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -171,7 +173,7 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["condition was true", "done"]);
-    assert_eq!(result, ExprResult::String("done".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -196,7 +198,7 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["finished", "function returned true"]);
-    assert_eq!(result, ExprResult::String("finished".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -219,7 +221,7 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["after while"]);
-    assert_eq!(result, ExprResult::String("after while".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -234,7 +236,7 @@ fn main() -> () {
     let continue_loop = true
     while continue_loop {
         log("loop iteration")
-        let continue_loop = false
+        continue_loop = false
     }
     log("loop finished")
 }
@@ -244,7 +246,7 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["loop finished", "loop iteration"]);
-    assert_eq!(result, ExprResult::String("loop finished".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -274,7 +276,7 @@ fn main() -> () {
         messages,
         vec!["after inner if", "done", "inner if", "outer if"]
     );
-    assert_eq!(result, ExprResult::String("done".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -292,7 +294,7 @@ fn main() -> () {
         let counter = true
         while counter {
             log("in loop")
-            let counter = false
+            counter = false
         }
         log("loop done")
     }
@@ -307,7 +309,7 @@ fn main() -> () {
         messages,
         vec!["all done", "in loop", "loop done", "starting loop"]
     );
-    assert_eq!(result, ExprResult::String("all done".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -329,7 +331,8 @@ fn main() -> () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("if condition must be a boolean expression"));
+    // Parser correctly rejects string literals as if conditions
+    assert!(error_message.contains("Parse error"));
     assert_eq!(logger.messages_vec(), Vec::<String>::new());
 }
 
@@ -352,7 +355,7 @@ fn main() -> () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("while condition must be a boolean expression"));
+    assert!(error_message.contains("Parse error"));
     assert_eq!(logger.messages_vec(), Vec::<String>::new());
 }
 
@@ -377,7 +380,7 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in if", "outside if"]);
-    assert_eq!(result, ExprResult::String("outside if".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }
 
 #[tokio::test]
@@ -393,7 +396,7 @@ fn main() -> () {
     while run_once {
         let message = "assigned in while"
         log(message)
-        let run_once = false
+        run_once = false
     }
     log("outside while")
 }
@@ -403,5 +406,5 @@ fn main() -> () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in while", "outside while"]);
-    assert_eq!(result, ExprResult::String("outside while".to_string()));
+    assert_eq!(result, ExprResult::Unit);
 }

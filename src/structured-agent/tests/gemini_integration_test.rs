@@ -4,20 +4,20 @@ use tokio;
 
 #[tokio::test]
 async fn test_gemini_config_creation() {
-    let config = GeminiConfig::new("test-project".to_string(), "us-central1".to_string())
+    let config = GeminiConfig::new("test-project".to_string(), "europe-west9".to_string())
         .with_api_key_auth("test-api-key".to_string());
 
     assert_eq!(config.project_id, "test-project");
-    assert_eq!(config.location, "us-central1");
+    assert_eq!(config.location, "europe-west9");
     assert!(config.validate().is_ok());
 }
 
 #[tokio::test]
 async fn test_gemini_config_validation() {
-    let empty_config = GeminiConfig::new("".to_string(), "us-central1".to_string());
+    let empty_config = GeminiConfig::new("".to_string(), "europe-west9".to_string());
     assert!(empty_config.validate().is_err());
 
-    let valid_config = GeminiConfig::new("valid-project".to_string(), "us-central1".to_string())
+    let valid_config = GeminiConfig::new("valid-project".to_string(), "europe-west9".to_string())
         .with_api_key_auth("test-api-key".to_string());
     assert!(valid_config.validate().is_ok());
 }
@@ -53,10 +53,10 @@ async fn test_model_name_formatting() {
     let model = ModelName::Gemini25Flash;
     assert_eq!(model.as_str(), "gemini-2.5-flash");
 
-    let full_name = model.full_name("test-project", "us-central1");
+    let full_name = model.full_name("test-project", "europe-west9");
     assert_eq!(
         full_name,
-        "projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash"
+        "projects/test-project/locations/europe-west9/publishers/google/models/gemini-2.5-flash"
     );
 }
 

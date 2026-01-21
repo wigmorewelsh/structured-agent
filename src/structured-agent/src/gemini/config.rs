@@ -4,7 +4,7 @@ use std::env;
 // Constants for better maintainability
 const DEFAULT_PROJECT_ID: &str = "gemini-api";
 const DEFAULT_LOCATION: &str = "global";
-const DEFAULT_VERTEX_LOCATION: &str = "us-central1";
+const DEFAULT_VERTEX_LOCATION: &str = "europe-west9";
 const DEFAULT_API_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

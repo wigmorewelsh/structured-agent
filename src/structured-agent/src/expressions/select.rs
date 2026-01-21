@@ -53,7 +53,11 @@ impl Expression for SelectExpr {
 
         let selected_clause = &self.clauses[selected_index];
 
-        let select_context = Arc::new(Context::with_runtime(context.runtime_rc()));
+        let select_context = Arc::new(Context::create_child(
+            context.clone(),
+            false,
+            context.runtime_rc(),
+        ));
         let result = selected_clause
             .expression_to_run
             .evaluate(select_context.clone())

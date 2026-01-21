@@ -2,10 +2,11 @@ use crate::ast::{
     Expression, ExternalFunction, Function, FunctionBody, Parameter, SelectClause,
     SelectExpression, Statement, Type,
 };
-use combine::parser::char::{char, letter, spaces, string};
+use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
-use combine::parser::repeat::{many, sep_by};
-use combine::{Parser, Stream, attempt, between};
+use combine::parser::repeat::{many, many1, sep_by};
+use combine::parser::token::satisfy;
+use combine::{Parser, Stream, attempt, between, optional};
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
@@ -29,6 +30,27 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     string(s).skip(skip_spaces())
+}
+
+fn comment_line<Input>() -> impl Parser<Input, Output = String>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (char('#'), many(satisfy(|c| c != '\n')), optional(newline())).map(
+        |(_, content, _): (char, Vec<char>, Option<char>)| {
+            content.into_iter().collect::<String>().trim().to_string()
+        },
+    )
+}
+
+fn parse_comments<Input>() -> impl Parser<Input, Output = Option<String>>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    optional(many1(comment_line()))
+        .map(|comments: Option<Vec<String>>| comments.map(|lines| lines.join("\n")))
 }
 
 fn identifier<Input>() -> impl Parser<Input, Output = String>
@@ -56,7 +78,7 @@ where
 {
     skip_spaces()
         .with(many(choice((
-            parse_function().map(|f| (Some(f), None)),
+            parse_function_with_docs().map(|f| (Some(f), None)),
             parse_external_function().map(|ef| (None, Some(ef))),
         ))))
         .map(|items: Vec<(Option<Function>, Option<ExternalFunction>)>| {
@@ -101,6 +123,17 @@ where
         })
 }
 
+fn parse_function_with_docs<Input>() -> impl Parser<Input, Output = Function>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (parse_comments(), parse_function()).map(|(doc, mut func)| {
+        func.documentation = doc;
+        func
+    })
+}
+
 fn parse_function<Input>() -> impl Parser<Input, Output = Function>
 where
     Input: Stream<Token = char>,
@@ -123,6 +156,7 @@ where
             parameters: params,
             return_type,
             body,
+            documentation: None,
         })
 }
 
@@ -432,7 +466,7 @@ where
             many(statement().skip(skip_spaces())),
         ),
     )
-        .map(|(_, condition, body)| Statement::While { condition, body })
+        .map(|(_, condition, body): (_, _, Vec<Statement>)| Statement::While { condition, body })
 }
 
 #[cfg(test)]
@@ -744,5 +778,73 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
             panic!("Expected call expression");
         };
         assert_eq!(function, "subtract");
+    }
+
+    #[test]
+    fn test_parse_function_with_comments() {
+        let input = r#"
+# This function analyzes code for bugs
+# It focuses on edge cases and error handling
+fn analyze_code(context: Context, code: String) -> Analysis {
+    "Analyze the following code for potential bugs"!
+    code!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, external_functions), _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+        assert_eq!(external_functions.len(), 0);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "analyze_code");
+        assert!(func.documentation.is_some());
+        let doc = func.documentation.as_ref().unwrap();
+        assert_eq!(
+            doc,
+            "This function analyzes code for bugs\nIt focuses on edge cases and error handling"
+        );
+    }
+
+    #[test]
+    fn test_parse_function_without_comments() {
+        let input = r#"
+fn simple_function() -> () {
+    "Hello"!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, external_functions), _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+        assert_eq!(external_functions.len(), 0);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "simple_function");
+        assert!(func.documentation.is_none());
+    }
+
+    #[test]
+    fn test_parse_single_line_comment() {
+        let input = r#"
+# Single line documentation
+fn documented_function() -> () {
+    "test"!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, _), _) = result.unwrap();
+        let func = &functions[0];
+        assert_eq!(func.name, "documented_function");
+        assert!(func.documentation.is_some());
+        let doc = func.documentation.as_ref().unwrap();
+        assert_eq!(doc, "Single line documentation");
     }
 }

@@ -9,6 +9,7 @@ pub struct FunctionExpr {
     pub parameters: Vec<(String, Type)>,
     pub return_type: Type,
     pub body: Vec<Box<dyn Expression>>,
+    pub documentation: Option<String>,
 }
 
 impl std::fmt::Debug for FunctionExpr {
@@ -18,6 +19,7 @@ impl std::fmt::Debug for FunctionExpr {
             .field("parameters", &self.parameters)
             .field("return_type", &self.return_type)
             .field("body", &format!("[{} statements]", self.body.len()))
+            .field("documentation", &self.documentation)
             .finish()
     }
 }
@@ -29,6 +31,7 @@ impl Clone for FunctionExpr {
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
             body: self.body.iter().map(|expr| expr.clone_box()).collect(),
+            documentation: self.documentation.clone(),
         }
     }
 }
