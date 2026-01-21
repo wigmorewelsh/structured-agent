@@ -42,6 +42,10 @@ impl Expression for FunctionExpr {
         let mut last_result = ExprResult::Unit;
         for statement in &self.body {
             last_result = statement.evaluate(context.clone()).await?;
+
+            if context.has_return_value() {
+                return Ok(context.get_return_value().unwrap());
+            }
         }
 
         if context.has_events() {

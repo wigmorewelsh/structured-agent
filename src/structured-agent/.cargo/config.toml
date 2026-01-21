@@ -1,0 +1,3 @@
+[alias]
+# Run structured agent with default functions and Gemini AI from a file
+run-agent = "run -- --with-default-functions --engine gemini --file"

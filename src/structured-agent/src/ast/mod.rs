@@ -54,6 +54,7 @@ pub enum Statement {
         condition: Expression,
         body: Vec<Statement>,
     },
+    Return(Expression),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -143,6 +144,7 @@ impl fmt::Display for Statement {
                 }
                 write!(f, "}}")
             }
+            Statement::Return(expr) => write!(f, "return {}", expr),
         }
     }
 }

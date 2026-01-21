@@ -7,6 +7,7 @@ pub mod if_stmt;
 pub mod injection;
 pub mod native_function;
 pub mod placeholder;
+pub mod return_stmt;
 pub mod select;
 
 pub mod string_literal;
@@ -23,6 +24,7 @@ pub use if_stmt::IfExpr;
 pub use injection::InjectionExpr;
 pub use native_function::NativeFunctionExpr;
 pub use placeholder::PlaceholderExpr;
+pub use return_stmt::ReturnExpr;
 pub use select::{SelectClauseExpr, SelectExpr};
 
 pub use string_literal::StringLiteralExpr;

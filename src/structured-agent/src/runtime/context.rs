@@ -14,6 +14,7 @@ pub struct Context {
     events: RefCell<Vec<Event>>,
     pub variables: DashMap<String, ExprResult>,
     pub is_scope_boundary: bool,
+    return_value: RefCell<Option<ExprResult>>,
     runtime: Rc<Runtime>,
 }
 
@@ -24,6 +25,7 @@ impl Context {
             events: RefCell::new(Vec::new()),
             variables: DashMap::new(),
             is_scope_boundary: true,
+            return_value: RefCell::new(None),
             runtime,
         }
     }
@@ -34,6 +36,7 @@ impl Context {
             events: RefCell::new(Vec::new()),
             variables: DashMap::new(),
             is_scope_boundary: false,
+            return_value: RefCell::new(None),
             runtime,
         }
     }
@@ -123,6 +126,7 @@ impl Context {
             events: RefCell::new(Vec::new()),
             variables: DashMap::new(),
             is_scope_boundary,
+            return_value: RefCell::new(None),
             runtime,
         }
     }
@@ -133,6 +137,22 @@ impl Context {
 
     pub fn runtime_rc(&self) -> Rc<Runtime> {
         self.runtime.clone()
+    }
+
+    pub fn set_return_value(&self, value: ExprResult) {
+        if self.is_scope_boundary {
+            *self.return_value.borrow_mut() = Some(value);
+        } else if let Some(parent) = &self.parent {
+            parent.set_return_value(value);
+        }
+    }
+
+    pub fn get_return_value(&self) -> Option<ExprResult> {
+        self.return_value.borrow().clone()
+    }
+
+    pub fn has_return_value(&self) -> bool {
+        self.return_value.borrow().is_some()
     }
 }
 

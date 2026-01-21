@@ -27,6 +27,10 @@ impl Expression for IfExpr {
 
             for statement in &self.body {
                 statement.evaluate(child_context.clone()).await?;
+
+                if child_context.has_return_value() {
+                    return Ok(ExprResult::Unit);
+                }
             }
         }
         Ok(ExprResult::Unit)

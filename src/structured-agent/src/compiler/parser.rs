@@ -200,6 +200,7 @@ combine::parser! {
             attempt(parse_injection()),
             attempt(parse_if_statement()),
             attempt(parse_while_statement()),
+            attempt(parse_return_statement()),
             parse_expression_statement(),
         ))
     }
@@ -469,7 +470,14 @@ where
         .map(|(_, condition, body): (_, _, Vec<Statement>)| Statement::While { condition, body })
 }
 
-#[cfg(test)]
+fn parse_return_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (lex_string("return"), parse_expression()).map(|(_, expression)| Statement::Return(expression))
+}
+
 mod tests {
     use super::*;
     use combine::EasyParser;
@@ -846,5 +854,35 @@ fn documented_function() -> () {
         assert!(func.documentation.is_some());
         let doc = func.documentation.as_ref().unwrap();
         assert_eq!(doc, "Single line documentation");
+    }
+
+    #[test]
+    fn test_parse_return_statement() {
+        let input = r#"return "hello world""#;
+        let result = statement().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (statement, _) = result.unwrap();
+        match statement {
+            Statement::Return(Expression::StringLiteral(content)) => {
+                assert_eq!(content, "hello world");
+            }
+            _ => panic!("Expected return statement with string literal"),
+        }
+    }
+
+    #[test]
+    fn test_parse_return_with_variable() {
+        let input = r#"return result"#;
+        let result = statement().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (statement, _) = result.unwrap();
+        match statement {
+            Statement::Return(Expression::Variable(var_name)) => {
+                assert_eq!(var_name, "result");
+            }
+            _ => panic!("Expected return statement with variable"),
+        }
     }
 }

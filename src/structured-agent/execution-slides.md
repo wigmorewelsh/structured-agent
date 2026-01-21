@@ -352,10 +352,8 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
     request!
     
     let result = select {
-        case add(ctx, _, _):
-            @results@
-        case subtract(ctx, _, _):
-            @results@
+        add(ctx, _, _) as r => r,
+        subtract(ctx, _, _) as r => r
     }
     
     return result
@@ -369,7 +367,40 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
 
 1. Choose which tool to execute
 2. Provide parameters using `_` placeholders  
-3. Access tool results via `@results@`
+3. Bind tool results with `as` keyword
+4. Transform results in handler expression
+
+:::
+::::::::::::::
+
+---
+
+# Select Statement: Syntax
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+let result = select {
+    add(ctx, _, _) as sum => sum,
+    subtract(ctx, _, _) as diff => diff
+}
+```
+
+**Syntax pattern:**
+```
+function_call(params) as variable => expression
+```
+
+:::
+::: {.column width="50%"}
+
+**Key elements:**
+
+- **Function call:** Can use `_` for LLM-populated params
+- **`as variable`:** Binds result to variable name
+- **`=> expression`:** Handler that processes result
+- **Multiple clauses:** Comma-separated options for LLM
 
 :::
 ::::::::::::::
@@ -383,10 +414,8 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
 
 ```rust
 let result = select {
-    case add(ctx, _, _):
-        @results@
-    case subtract(ctx, _, _):
-        @results@
+    add(ctx, _, _) as sum => sum,
+    subtract(ctx, _, _) as diff => diff
 }
 ```
 
@@ -401,11 +430,11 @@ let result = select {
 Calculate 2 - 5
 
 Choose tool and provide parameters:
-- add(ctx, x, y)
-- subtract(ctx, x, y)
+- Execute function and store result as 'sum'
+- Execute function and store result as 'diff'
 ```
 
-**LLM chooses:** `subtract(ctx, 2, 5)`
+**LLM chooses:** Index 1 (subtract) with params `(ctx, 2, 5)`
 
 :::
 ::::::::::::::
@@ -422,8 +451,7 @@ fn subtract(ctx: Context, x: i32, y: i32) -> i32 {
     x - y
 }
 
-case subtract(ctx, _, _):
-    @results@
+subtract(ctx, _, _) as diff => diff
 ```
 
 :::
@@ -433,15 +461,50 @@ case subtract(ctx, _, _):
 
 1. LLM selected: `subtract(ctx, 2, 5)`
 2. Function executes: `2 - 5 = -3`
-3. `@results@` contains: `-3`
-4. Case handler returns: `-3`
+3. Result bound: `diff = -3`
+4. Handler evaluates: `diff` returns `-3`
 
 :::
 ::::::::::::::
 
 ---
 
+# Select Statement: Result Transformation
 
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+let result = select {
+    add(ctx, _, _) as sum => {
+        "Addition result: "!
+        sum!
+        sum
+    },
+    subtract(ctx, _, _) as diff => {
+        "Subtraction result: "!
+        diff!
+        diff
+    }
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**Handler expressions can:**
+
+- Execute multiple statements
+- Inject results into context
+- Transform values
+- Return modified results
+
+**Last expression is return value**
+
+:::
+::::::::::::::
+
+---
 
 # Select Statement: Complete Flow
 
@@ -454,10 +517,8 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
     request!
     
     let result = select {
-        case add(ctx, _, _):
-            @results@
-        case subtract(ctx, _, _):
-            @results@
+        add(ctx, _, _) as sum => sum,
+        subtract(ctx, _, _) as diff => diff
     }
     
     return result
@@ -470,17 +531,16 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
 **For "Calculate 2 - 5":**
 
 1. **Context:** Calculator prompt + user request
-2. **Tool Choice:** LLM selects `subtract(ctx, 2, 5)`
-3. **Execution:** `subtract` returns `-3`
-4. **Result:** `@results@` = `-3`
-5. **Return:** Function returns `-3`
+2. **Tool Choice:** LLM selects subtract clause
+3. **Parameter Population:** LLM provides 2, 5
+4. **Execution:** `subtract(ctx, 2, 5)` returns `-3`
+5. **Binding:** `diff = -3`
+6. **Handler:** Returns `diff` (-3)
 
 :::
 ::::::::::::::
 
 ---
-
-
 
 # External Functions
 
@@ -496,10 +556,10 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
     "You are a calculator. Use the tools provided."!
     request!
     
-      let result = select {
-        add_, _) as a => { ...transform_a... },
-        substract(_ _) as b => b
-      }
+    let result = select {
+        add(_, _) as sum => sum,
+        subtract(_, _) as diff => diff
+    }
     
     return result
 }
@@ -515,6 +575,346 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
 - Callable from `select` statements
 - No context parameter needed
 - Direct native execution
+
+:::
+::::::::::::::
+
+---
+
+# If Statement Overview
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn has_data(ctx: Context) -> Boolean {
+    "Is there data available to process?"!
+}
+
+fn check_value(ctx: Context) -> () {
+    "Checking if we should process"!
+    
+    if has_data(ctx) {
+        "Processing value"!
+    }
+    
+    "Check complete"!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**If statement features:**
+
+- Conditional execution based on boolean
+- Scoped block execution
+- Variables declared in block are local
+- Context flows into block
+
+:::
+::::::::::::::
+
+---
+
+# If Statement: Basic Usage
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn is_ready(ctx: Context) -> Boolean {
+    "Is the system ready?"!
+}
+
+fn main(ctx: Context) -> () {
+    "System initialization starting"!
+    
+    if is_ready(ctx) {
+        "System is ready, proceeding"!
+    }
+    
+    "After if statement"!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**Execution flow:**
+
+1. Call `is_ready(ctx)` → LLM returns boolean
+2. If true, enter if block
+3. Execute: `"System is ready, proceeding"!`
+4. Exit if block
+5. Execute: `"After if statement"!`
+
+:::
+::::::::::::::
+
+---
+
+# If Statement: Variable Scoping
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn needs_update(ctx: Context) -> Boolean {
+    "Does the status need updating?"!
+}
+
+fn main(ctx: Context) -> () {
+    let status = "initial"
+    
+    if needs_update(ctx) {
+        "In if block"!
+        status = "modified"
+        let local_var = "block only"
+    }
+    
+    status!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**Scoping rules:**
+
+- **Variable assignment:** Updates parent scope
+- **New declarations:** Local to if block
+- `status = "modified"` updates parent's `status`
+- `local_var` only exists in if block
+- Final `status` value is `"modified"`
+
+:::
+::::::::::::::
+
+---
+
+# If Statement: Placeholders in Condition
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn should_process(ctx: Context, data: String) -> Boolean {
+    "Determine if we should process: "!
+    data!
+}
+
+fn process_data(ctx: Context, data: String) -> () {
+    "Processing: "!
+    data!
+}
+
+fn main(ctx: Context) -> () {
+    "You are a data processor"!
+    "The input data needs validation"!
+    
+    if should_process(ctx, _) {
+        "Processing data"!
+        process_data(ctx, _)
+    }
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**LLM populates placeholders:**
+
+1. Context: "data processor" + "needs validation"
+2. LLM fills `_` in `should_process(ctx, _)`
+3. Function called with LLM-provided data
+4. LLM generates boolean response
+5. If true, enter block
+6. LLM fills `_` in `process_data(ctx, _)`
+
+**LLM provides data parameter and decides whether to process**
+
+:::
+::::::::::::::
+
+---
+
+# While Statement Overview
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn main(ctx: Context) -> () {
+    let should_continue = true
+    
+    while should_continue {
+        "Processing iteration"!
+        
+        should_continue = false
+    }
+    
+    "Loop complete"!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**While statement features:**
+
+- Loop while condition is true
+- Re-evaluate condition each iteration
+- Scoped block like if statement
+- Variable assignments affect parent scope
+
+:::
+::::::::::::::
+
+---
+
+# While Statement: Loop Control
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn main(ctx: Context) -> () {
+    let counter = true
+    
+    while counter {
+        "Loop iteration"!
+        
+        counter = false
+    }
+    
+    "Loop exited"!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**Execution flow:**
+
+1. **Iteration 1:** `counter = true`, enter block
+2. Execute: `"Loop iteration"!`
+3. Set: `counter = false`
+4. **Check condition:** `counter = false`, exit loop
+5. Execute: `"Loop exited"!`
+
+:::
+::::::::::::::
+
+---
+
+# While Statement: Placeholders in Condition
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn task_complete(ctx: Context, progress: String) -> Boolean {
+    "Is the task complete given progress: "!
+    progress!
+    "?"!
+}
+
+fn do_work(ctx: Context, step: String) -> String {
+    "Performing step: "!
+    step!
+}
+
+fn main(ctx: Context) -> () {
+    "You are solving a complex task"!
+    "Work through the problem step by step"!
+    
+    let result = ""
+    
+    while !task_complete(ctx, result) {
+        "Working on next step"!
+        result = do_work(ctx, _)
+        result!
+    }
+    
+    "Task finished"!
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**LLM controls loop with placeholders:**
+
+1. Context: "solving a complex task"
+2. `result` stores latest work result
+3. Each iteration: `task_complete(ctx, result)`
+4. LLM sees latest result, decides if done
+5. Inside loop: `do_work(ctx, _)` 
+6. LLM fills `_` with next step to perform
+7. Result stored in `result`
+
+**LLM sees latest result and controls when to stop**
+
+:::
+::::::::::::::
+
+---
+
+# Control Flow: Combined Example
+
+:::::::::::::: {.columns}
+::: {.column width="50%"}
+
+```rust
+fn should_start(ctx: Context) -> Boolean {
+    "Should we start processing?"!
+}
+
+fn keep_going(ctx: Context, status: String) -> Boolean {
+    "Should we continue given status: "!
+    status!
+    "?"!
+}
+
+fn process_step(ctx: Context) -> String {
+    "Perform the next processing step"!
+}
+
+fn main(ctx: Context) -> () {
+    "You are a task executor"!
+    
+    if should_start(ctx) {
+        "Starting task"!
+        let status = "started"
+        
+        while keep_going(ctx, status) {
+            "Processing step"!
+            status = process_step(ctx)
+            status!
+        }
+        
+        "Task complete"!
+    }
+}
+```
+
+:::
+::: {.column width="50%"}
+
+**LLM decision points:**
+
+1. **If condition:** Should we start at all?
+2. **While condition:** Continue given current status?
+
+**LLM-controlled flow:**
+
+- `should_start(ctx)` - LLM decides to begin
+- `process_step(ctx)` - LLM performs work, updates status
+- `keep_going(ctx, status)` - LLM sees status, decides to continue
+- Loop exits when LLM returns false
+
+**Enables adaptive, context-aware processes with state**
 
 :::
 ::::::::::::::

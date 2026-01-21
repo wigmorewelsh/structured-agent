@@ -3,8 +3,8 @@ pub mod parser;
 use crate::ast;
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
-    PlaceholderExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr, VariableAssignmentExpr,
-    VariableExpr, WhileExpr,
+    PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
+    VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
 use crate::types::{Expression, ExternalFunctionDefinition, Type};
 
@@ -377,6 +377,10 @@ impl Compiler {
                     condition: compiled_condition,
                     body: compiled_body,
                 }))
+            }
+            ast::Statement::Return(expr) => {
+                let compiled_expression = Self::compile_expression(expr)?;
+                Ok(Box::new(ReturnExpr::new(compiled_expression)))
             }
             ast::Statement::ExpressionStatement(expr) => Self::compile_expression(expr),
         }
