@@ -1,23 +1,20 @@
-; Keywords
-[
-  "fn"
-  "extern"
-  "let"
-  "if"
-  "while"
-  "return"
-  "select"
-  "as"
-] @keyword
+; Keywords as literal strings
+"fn" @keyword
+"extern" @keyword
+"let" @keyword
+"if" @keyword
+"while" @keyword
+"return" @keyword
+"select" @keyword
+"as" @keyword
 
-; Types
-[
-  "String"
-  "Boolean"
-  "i32"
-  "Context"
-] @type
+; Type keywords as literal strings
+"String" @type
+"Boolean" @type
+"i32" @type
+"Context" @type
 
+; Unit type
 (unit_type) @type
 
 ; Function definitions
@@ -42,7 +39,8 @@
 (escape_sequence) @string.escape
 
 ; Boolean literals
-(boolean_literal) @boolean
+"true" @boolean
+"false" @boolean
 
 ; Placeholder
 (placeholder) @variable.special
@@ -51,37 +49,34 @@
 (comment) @comment
 
 ; Operators
-[
-  "="
-  "+"
-  "-"
-  "*"
-  "/"
-  "=="
-  "!="
-  "<"
-  ">"
-  "<="
-  ">="
-  "!"
-  "=>"
-] @operator
+"=" @operator
+"+" @operator
+"-" @operator
+"*" @operator
+"/" @operator
+"==" @operator
+"!=" @operator
+"<" @operator
+">" @operator
+"<=" @operator
+">=" @operator
+"!" @operator
+"=>" @operator
 
 ; Punctuation
-[
-  "("
-  ")"
-  "{"
-  "}"
-  ","
-  ":"
-  "->"
-] @punctuation.delimiter
+"(" @punctuation.bracket
+")" @punctuation.bracket
+"{" @punctuation.bracket
+"}" @punctuation.bracket
+"," @punctuation.delimiter
+":" @punctuation.delimiter
+"->" @punctuation.delimiter
+";" @punctuation.delimiter
 
 ; Identifiers (variables)
 (identifier) @variable
 
-; Let bindings
+; Let bindings - higher precedence
 (let_declaration
   name: (identifier) @variable)
 
