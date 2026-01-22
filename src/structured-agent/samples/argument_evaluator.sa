@@ -1,9 +1,9 @@
-extern fn fetch(url: String) -> String;
-extern fn websearch(query: String) -> String;
-extern fn print(message: String) -> Unit;
-extern fn input() -> String;
+extern fn fetch(url: String): String
+extern fn websearch(query: String): String
+extern fn print(message: String): Unit
+extern fn input(): String
 
-fn select_best_profile_url(author_name: String, search_results: String) -> String {
+fn select_best_profile_url(author_name: String, search_results: String): String {
     "From these search results, select the URL that best represents the author's professional background."!
     ""!
     "PRIORITY ORDER (choose the first available):"!
@@ -31,18 +31,18 @@ fn select_best_profile_url(author_name: String, search_results: String) -> Strin
     search_results!
 }
 
-fn find_author_profile_url(author_name: String) -> String {
+fn find_author_profile_url(author_name: String): String {
     let search_results = websearch(author_name)
     return select_best_profile_url(author_name, search_results)
 }
 
-fn get_author_competence(author_name: String) -> String {
+fn get_author_competence(author_name: String): String {
     let profile_url = find_author_profile_url(author_name)
     let author_profile = fetch(profile_url)
     return assess_circle_of_competence(author_profile)
 }
 
-fn extract_author(content: String) -> String {
+fn extract_author(content: String): String {
     "You are analyzing article content to find the author's name."!
     "The author name appears near the beginning of the article, after the title."!
     "Look for a person's full name (first and last name)."!
@@ -56,7 +56,7 @@ fn extract_author(content: String) -> String {
     content!
 }
 
-fn assess_circle_of_competence(profile: String) -> String {
+fn assess_circle_of_competence(profile: String): String {
     "A Circle of Competence is the domain where a person has deep, tested understanding."!
     "It's defined by measurable proxies, not mere exposure or interest."!
     "Based on this author profile, identify their Circle of Competence using measurable proxies:"!
@@ -70,7 +70,7 @@ fn assess_circle_of_competence(profile: String) -> String {
     profile!
 }
 
-fn identify_logical_fallacies(article: String) -> String {
+fn identify_logical_fallacies(article: String): String {
     "You are a critical analyst trained to identify logical fallacies and weak reasoning."!
     "Your task is to find FLAWS in the argument, not to praise it."!
     "Be skeptical and thorough. Most arguments contain multiple fallacies."!
@@ -120,7 +120,7 @@ fn identify_logical_fallacies(article: String) -> String {
     article!
 }
 
-fn identify_knowledge_gaps(article: String, competence: String) -> String {
+fn identify_knowledge_gaps(article: String, competence: String): String {
     "Identify areas where the article makes claims that require expertise the author lacks."!
     "Look for topics discussed that fall outside the author's demonstrated Circle of Competence."!
     "List each knowledge gap with the subject area and why it's outside their expertise."!
@@ -130,7 +130,7 @@ fn identify_knowledge_gaps(article: String, competence: String) -> String {
     article!
 }
 
-fn assess_competence_match(article: String, competence: String) -> Boolean {
+fn assess_competence_match(article: String, competence: String): Boolean {
     "Is this article primarily within the author's Circle of Competence?"!
     "Return true only if the main claims and arguments fall within domains where the author"!
     "has demonstrated expertise through measurable proxies."!
@@ -140,7 +140,7 @@ fn assess_competence_match(article: String, competence: String) -> Boolean {
     article!
 }
 
-fn synthesize_report(competence: String, logical_fallacies: String, knowledge_gaps: String, within_competence: Boolean) -> String {
+fn synthesize_report(competence: String, logical_fallacies: String, knowledge_gaps: String, within_competence: Boolean): String {
     "Create a full evaluation report of this article."!
     "Include:"!
     "1. Summary of author's Circle of Competence"!
@@ -158,7 +158,7 @@ fn synthesize_report(competence: String, logical_fallacies: String, knowledge_ga
     knowledge_gaps!
 }
 
-fn main() -> String {
+fn main(): String {
     print("Fetching article...")
     let article_url = input()
     let article_content = fetch(article_url)

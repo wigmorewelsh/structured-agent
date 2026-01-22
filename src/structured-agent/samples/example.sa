@@ -1,16 +1,16 @@
-fn greet() -> () {
+fn greet(): () {
     "Hello, World!"!
     "Welcome to the structured agent!"!
 }
 
-fn calculate() -> () {
+fn calculate(): () {
     "Performing calculations"!
     let x = "42"
     "The answer is: "!
     x!
 }
 
-fn main() -> () {
+fn main(): () {
     "Starting example program"!
 
     let result = greet()

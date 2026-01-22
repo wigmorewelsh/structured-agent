@@ -8,4 +8,4 @@ repository = "https://github.com/your-repo/structured-agent-zed"
 
 [grammars.structured_agent]
 repository = "file:///Users/timwigmore-welsh/Projects/scratch/src/structured-agent-zed/tree-sitter-structured-agent"
-rev = "8e443d13b520dad489ca26cccae0eb84e4b0a580"
+rev = "841085a0c7000f83ee18e1a94ee9e2e973e8c3ef"

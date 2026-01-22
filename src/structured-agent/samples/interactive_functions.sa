@@ -1,8 +1,8 @@
 
-extern fn input() -> String;
-extern fn print(message: String) -> ();
+extern fn input(): String
+extern fn print(message: String): ()
 
-fn agent_response(history: String, user_input: String) -> String {
+fn agent_response(history: String, user_input: String): String {
     "You are an agent responding to user requests and queries."!
     "Based on the conversation_history and user_query, you will provide a response."!
     "<conversation_history>"!
@@ -14,7 +14,7 @@ fn agent_response(history: String, user_input: String) -> String {
     "</user_query>"!
 }
 
-fn summarize_history(history: String, user_input: String, agent_response: String) -> String {
+fn summarize_history(history: String, user_input: String, agent_response: String): String {
     "Create a summary of the conversation history, user input and the agent response"!
     "<conversation_history>"!
     history!
@@ -29,7 +29,7 @@ fn summarize_history(history: String, user_input: String, agent_response: String
     "</agent_response>"!
 }
 
-fn main() -> () {
+fn main(): () {
     print("Program started")
 
     let history = ""

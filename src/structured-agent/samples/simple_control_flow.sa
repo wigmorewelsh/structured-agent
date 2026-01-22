@@ -1,4 +1,4 @@
-fn main() -> () {
+fn main(): () {
     "Starting simple control flow demonstration"!
 
     let has_items = true

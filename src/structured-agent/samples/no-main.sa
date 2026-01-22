@@ -1,8 +1,8 @@
-fn helper_function() -> () {
+fn helper_function(): () {
     "This is a helper function"!
 }
 
-fn another_function() -> () {
+fn another_function(): () {
     "Another function here"!
     "No main function in this file"!
 }

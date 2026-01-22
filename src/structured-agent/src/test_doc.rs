@@ -6,11 +6,11 @@ fn test_comment_documentation_parsing() {
     let input = r#"
 # This is a documented function
 # It demonstrates multi-line comments
-fn documented_func() -> () {
+fn documented_func(): () {
     "Hello"!
 }
 
-fn undocumented_func() -> () {
+fn undocumented_func(): () {
     "World"!
 }
 "#;
@@ -41,7 +41,7 @@ fn undocumented_func() -> () {
 fn test_single_line_comment_parsing() {
     let input = r#"
 # Single line doc
-fn single_doc() -> () {
+fn single_doc(): () {
     "Test"!
 }
 "#;
@@ -66,7 +66,7 @@ fn test_comment_display() {
     let input = r#"
 # This function greets users
 # It takes a name parameter
-fn greet(name: String) -> () {
+fn greet(name: String): () {
     "Hello"!
     name!
 }
@@ -83,5 +83,5 @@ fn greet(name: String) -> () {
 
     assert!(output.contains("# This function greets users"));
     assert!(output.contains("# It takes a name parameter"));
-    assert!(output.contains("fn greet(name: String) -> ()"));
+    assert!(output.contains("fn greet(name: String): ()"));
 }

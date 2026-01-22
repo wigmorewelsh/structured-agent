@@ -1,16 +1,16 @@
-fn check_status() -> Boolean {
+fn check_status(): Boolean {
     "Checking system status..."!
     let status = true
     status!
 }
 
-fn is_ready() -> Boolean {
+fn is_ready(): Boolean {
     "Determining readiness..."!
     let ready = false
     ready!
 }
 
-fn main() -> () {
+fn main(): () {
     "Boolean support demonstration"!
 
     "Testing boolean literals assignment:"!

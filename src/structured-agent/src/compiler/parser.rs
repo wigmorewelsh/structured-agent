@@ -112,11 +112,10 @@ where
             lex_char(')'),
             sep_by(parse_parameter(), lex_char(',')),
         ),
-        lex_string("->"),
+        lex_char(':'),
         parse_type(),
-        lex_char(';'),
     )
-        .map(|(_, _, name, params, _, return_type, _)| ExternalFunction {
+        .map(|(_, _, name, params, _, return_type)| ExternalFunction {
             name,
             parameters: params,
             return_type,
@@ -147,7 +146,7 @@ where
             lex_char(')'),
             sep_by(parse_parameter(), lex_char(',')),
         ),
-        lex_string("->"),
+        lex_char(':'),
         parse_type(),
         between(lex_char('{'), lex_char('}'), parse_function_body()),
     )
@@ -274,58 +273,18 @@ where
     Input: Stream<Token = char>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((
-        attempt(
-            (
-                identifier(),
-                lex_string("::"),
-                identifier(),
-                between(
-                    lex_char('('),
-                    lex_char(')'),
-                    sep_by(parse_argument(), lex_char(',')),
-                ),
-            )
-                .map(|(target, _, function, args)| Expression::Call {
-                    target,
-                    function,
-                    arguments: args,
-                    is_method: false,
-                }),
+    (
+        identifier(),
+        between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by(parse_argument(), lex_char(',')),
         ),
-        attempt(
-            (
-                identifier(),
-                lex_char('.'),
-                identifier(),
-                between(
-                    lex_char('('),
-                    lex_char(')'),
-                    sep_by(parse_argument(), lex_char(',')),
-                ),
-            )
-                .map(|(target, _, function, args)| Expression::Call {
-                    target,
-                    function,
-                    arguments: args,
-                    is_method: true,
-                }),
-        ),
-        (
-            identifier(),
-            between(
-                lex_char('('),
-                lex_char(')'),
-                sep_by(parse_argument(), lex_char(',')),
-            ),
-        )
-            .map(|(function, args)| Expression::Call {
-                target: String::new(),
-                function,
-                arguments: args,
-                is_method: false,
-            }),
-    ))
+    )
+        .map(|(function, args)| Expression::Call {
+            function,
+            arguments: args,
+        })
 }
 
 fn parse_argument<Input>() -> impl Parser<Input, Output = Expression>
@@ -485,7 +444,7 @@ mod tests {
     #[test]
     fn test_parse_simple_function() {
         let input = r#"
-fn analyze_code(context: Context, code: String) -> Analysis {
+fn analyze_code(context: Context, code: String): Analysis {
     "Analyze the following code for potential bugs"!
     "Focus on edge cases and error handling"!
     code!
@@ -510,22 +469,21 @@ fn analyze_code(context: Context, code: String) -> Analysis {
     #[test]
     fn test_complete_example_from_ideas() {
         let input = r#"
-fn analyze_code(context: Context, code: String) -> Analysis {
+fn analyze_code(context: Context, code: String): Analysis {
     "Analyze the following code for potential bugs"!
     "Focus on edge cases and error handling"!
     code!
 }
 
-fn suggest_fix(context: Context, analysis: Analysis) -> CodeFix {
+fn suggest_fix(context: Context, analysis: Analysis): CodeFix {
     "Given this analysis, suggest a fix"!
     analysis!
 }
 
-fn main() -> () {
-    let ctx = Context::new()
+fn main(): () {
     let code = "def divide(a, b): return a / b"
-    let analysis = ctx.analyze_code(code)
-    let fix = ctx.suggest_fix(analysis)
+    let analysis = analyze_code(code)
+    let fix = suggest_fix(analysis)
 }
 "#;
 
@@ -541,7 +499,7 @@ fn main() -> () {
         assert_eq!(functions[2].name, "main");
 
         let main_func = &functions[2];
-        assert_eq!(main_func.body.statements.len(), 4);
+        assert_eq!(main_func.body.statements.len(), 3);
     }
 
     #[test]
@@ -576,7 +534,7 @@ fn main() -> () {
 
     #[test]
     fn test_parse_assignment_with_method_call() {
-        let input = "let analysis = ctx.analyze_code(code)";
+        let input = "let analysis = analyze_code(code)";
         let result = statement().easy_parse(input);
         assert!(result.is_ok());
 
@@ -589,19 +547,15 @@ fn main() -> () {
                 assert_eq!(variable, "analysis");
                 match expression {
                     Expression::Call {
-                        target,
                         function,
                         arguments,
-                        is_method,
                     } => {
-                        assert_eq!(target, "ctx");
                         assert_eq!(function, "analyze_code");
                         assert_eq!(arguments.len(), 1);
                         match &arguments[0] {
                             Expression::Variable(name) => assert_eq!(name, "code"),
                             _ => panic!("Expected variable argument"),
                         }
-                        assert!(is_method);
                     }
                     _ => panic!("Expected call"),
                 }
@@ -619,15 +573,11 @@ fn main() -> () {
         let (expression, _) = result.unwrap();
         match expression {
             Expression::Call {
-                target,
                 function,
                 arguments,
-                is_method,
             } => {
-                assert_eq!(target, "");
                 assert_eq!(function, "func");
                 assert_eq!(arguments.len(), 3);
-                assert!(!is_method);
 
                 match &arguments[0] {
                     Expression::StringLiteral(s) => assert_eq!(s, "hello"),
@@ -651,10 +601,10 @@ fn main() -> () {
     #[test]
     fn test_mixed_functions_and_externals() {
         let input = r#"
-extern fn add(x: String, y: String) -> String;
-extern fn subtract(x: String, y: String) -> String;
+extern fn add(x: String, y: String): String
+extern fn subtract(x: String, y: String): String
 
-fn calculator(request: String) -> String {
+fn calculator(request: String): String {
     "You are a calculator"!
     request!
 }
@@ -675,7 +625,7 @@ fn calculator(request: String) -> String {
     #[test]
     fn test_parse_standalone_expression_statement() {
         let input = r#"
-fn test_function() -> () {
+fn test_function(): () {
     let result = some_call()
     another_call()
     "final prompt"!
@@ -726,7 +676,7 @@ fn test_function() -> () {
     #[test]
     fn test_parse_select_statement() {
         let input = r#"
-fn calculator_agent(ctx: Context, request: String) -> i32 {
+fn calculator_agent(ctx: Context, request: String): i32 {
     "You are a calculator. Use the tools provided."!
     request!
 
@@ -793,7 +743,7 @@ fn calculator_agent(ctx: Context, request: String) -> i32 {
         let input = r#"
 # This function analyzes code for bugs
 # It focuses on edge cases and error handling
-fn analyze_code(context: Context, code: String) -> Analysis {
+fn analyze_code(context: Context, code: String): Analysis {
     "Analyze the following code for potential bugs"!
     code!
 }
@@ -819,7 +769,7 @@ fn analyze_code(context: Context, code: String) -> Analysis {
     #[test]
     fn test_parse_function_without_comments() {
         let input = r#"
-fn simple_function() -> () {
+fn simple_function(): () {
     "Hello"!
 }
 "#;
@@ -840,7 +790,7 @@ fn simple_function() -> () {
     fn test_parse_single_line_comment() {
         let input = r#"
 # Single line documentation
-fn documented_function() -> () {
+fn documented_function(): () {
     "test"!
 }
 "#;
@@ -884,5 +834,54 @@ fn documented_function() -> () {
             }
             _ => panic!("Expected return statement with variable"),
         }
+    }
+
+    #[test]
+    fn test_multiline_function_signature() {
+        let input = r#"
+fn multiline_function(
+    first_param: String,
+    second_param: Context,
+    third_param: Analysis
+): Result {
+    "Process data"!
+}
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, _), _) = result.unwrap();
+        assert_eq!(functions.len(), 1);
+
+        let func = &functions[0];
+        assert_eq!(func.name, "multiline_function");
+        assert_eq!(func.parameters.len(), 3);
+        assert_eq!(func.parameters[0].name, "first_param");
+        assert_eq!(func.parameters[1].name, "second_param");
+        assert_eq!(func.parameters[2].name, "third_param");
+    }
+
+    #[test]
+    fn test_multiline_external_function() {
+        let input = r#"
+extern fn external_multiline(
+    param1: String,
+    param2: String
+): Result
+"#;
+
+        let result = parse_program().easy_parse(input);
+        assert!(result.is_ok());
+
+        let ((functions, externals), _) = result.unwrap();
+        assert_eq!(functions.len(), 0);
+        assert_eq!(externals.len(), 1);
+
+        let ext = &externals[0];
+        assert_eq!(ext.name, "external_multiline");
+        assert_eq!(ext.parameters.len(), 2);
+        assert_eq!(ext.parameters[0].name, "param1");
+        assert_eq!(ext.parameters[1].name, "param2");
     }
 }

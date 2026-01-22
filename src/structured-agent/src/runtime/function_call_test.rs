@@ -58,13 +58,13 @@ async fn test_function_call_with_assignment() {
     runtime.register_native_function(extern_fn.clone());
 
     let program_source = r#"
-extern fn to_call() -> ();
+extern fn to_call(): ()
 
-fn assign_result() -> () {
+fn assign_result(): () {
     let result = to_call()
 }
 
-fn main() -> () {
+fn main(): () {
     assign_result()
 }
 "#;
@@ -82,13 +82,13 @@ async fn test_function_call_with_prompt_result() {
     runtime.register_native_function(extern_fn.clone());
 
     let program_source = r#"
-extern fn to_call() -> ();
+extern fn to_call(): ()
 
-fn prompt_result() -> () {
+fn prompt_result(): () {
     to_call()!
 }
 
-fn main() -> () {
+fn main(): () {
     prompt_result()
 }
 "#;
@@ -106,13 +106,13 @@ async fn test_function_call_ignore_result() {
     runtime.register_native_function(extern_fn.clone());
 
     let program_source = r#"
-extern fn to_call() -> ();
+extern fn to_call(): ()
 
-fn ignore_result() -> () {
+fn ignore_result(): () {
     to_call()
 }
 
-fn main() -> () {
+fn main(): () {
     ignore_result()
 }
 "#;

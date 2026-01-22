@@ -45,7 +45,7 @@ async fn test_runtime_with_mcp_client() {
 
     // Test a simple program without external functions first
     let simple_program = r#"
-fn main() -> () {
+fn main(): () {
     "Hello World"!
 }
 "#;
@@ -62,9 +62,9 @@ fn main() -> () {
 #[tokio::test]
 async fn test_mcp_echo_external_function_parsing() {
     let program_with_extern = r#"
-extern fn echo(message: String) -> String;
+extern fn echo(message: String): String
 
-fn main() -> () {
+fn main(): () {
     "Program with extern function parsed"!
 }
 "#;
@@ -101,9 +101,9 @@ async fn test_mcp_echo_integration_full_pipeline() {
         .build();
 
     let program_with_extern_call = r#"
-extern fn echo(message: String) -> String;
+extern fn echo(message: String): String
 
-fn main() -> () {
+fn main(): () {
     let result = echo("Hello from MCP integration test!")
     result!
 }
@@ -146,9 +146,9 @@ async fn test_mcp_complete_integration_workflow() {
 
     // Test program that declares an external function and calls it
     let complete_program = r#"
-extern fn echo(message: String) -> String;
+extern fn echo(message: String): String
 
-fn main() -> () {
+fn main(): () {
     "Starting MCP integration test"!
     let greeting = echo("Hello from structured agent!")
     greeting!

@@ -1,26 +1,26 @@
 # Sample Structured Agent Program
 # This file demonstrates the syntax highlighting capabilities
 
-extern fn add(x: i32, y: i32) -> i32;
-extern fn subtract(x: i32, y: i32) -> i32;
+extern fn add(x: i32, y: i32): i32
+extern fn subtract(x: i32, y: i32): i32
 
-fn greet(ctx: Context, name: String) -> String {
+fn greet(ctx: Context, name: String): String {
     "Generate a friendly greeting for "!
     name!
 }
 
-fn process_item(item: String) -> () {
+fn process_item(item: String): () {
     "Processing item: "!
     item!
 }
 
-fn task_complete(iteration: String) -> Boolean {
+fn task_complete(iteration: String): Boolean {
     "Is the task complete after iteration "!
     iteration!
     "?"!
 }
 
-fn calculator(ctx: Context, request: String) -> i32 {
+fn calculator(ctx: Context, request: String): i32 {
     request!
 
     let result = select {
@@ -31,7 +31,7 @@ fn calculator(ctx: Context, request: String) -> i32 {
     return result
 }
 
-fn main() -> () {
+fn main(): () {
     "Starting structured agent demo"!
 
     let greeting = greet(ctx, "Alice")

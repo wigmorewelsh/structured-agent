@@ -6,19 +6,15 @@ use std::any::Any;
 use std::sync::Arc;
 
 pub struct CallExpr {
-    pub target: String,
     pub function: String,
     pub arguments: Vec<Box<dyn Expression>>,
-    pub is_method: bool,
 }
 
 impl std::fmt::Debug for CallExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CallExpr")
-            .field("target", &self.target)
             .field("function", &self.function)
             .field("arguments", &format!("[{} args]", self.arguments.len()))
-            .field("is_method", &self.is_method)
             .finish()
     }
 }
@@ -26,29 +22,17 @@ impl std::fmt::Debug for CallExpr {
 #[async_trait(?Send)]
 impl Expression for CallExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        let function_name = if self.is_method || self.target.is_empty() {
-            self.function.clone()
-        } else {
-            format!("{}::{}", self.target, self.function)
-        };
-
         let function_info = context
             .runtime()
-            .get_function(&function_name)
-            .ok_or_else(|| {
-                if self.is_method {
-                    format!("Unknown method: {}.{}", self.target, self.function)
-                } else {
-                    format!("Unknown function: {}", function_name)
-                }
-            })?;
+            .get_function(&self.function)
+            .ok_or_else(|| format!("Unknown function: {}", self.function))?;
 
         let parameters = function_info.parameters().to_vec();
 
         if self.arguments.len() != parameters.len() {
             return Err(format!(
                 "Function {} expects {} arguments, got {}",
-                function_name,
+                self.function,
                 parameters.len(),
                 self.arguments.len()
             ));
@@ -83,7 +67,7 @@ impl Expression for CallExpr {
 
         let function_info = context
             .runtime()
-            .get_function(&function_name)
+            .get_function(&self.function)
             .expect("Function not found");
 
         let result = function_info.evaluate(function_context).await?;
@@ -92,12 +76,6 @@ impl Expression for CallExpr {
     }
 
     fn return_type(&self) -> Type {
-        let _function_name = if self.is_method || self.target.is_empty() {
-            self.function.clone()
-        } else {
-            format!("{}::{}", self.target, self.function)
-        };
-
         Type::unit()
     }
 
@@ -107,10 +85,8 @@ impl Expression for CallExpr {
 
     fn clone_box(&self) -> Box<dyn Expression> {
         Box::new(CallExpr {
-            target: self.target.clone(),
             function: self.function.clone(),
             arguments: self.arguments.iter().map(|arg| arg.clone_box()).collect(),
-            is_method: self.is_method,
         })
     }
 }
@@ -125,10 +101,8 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_method() {
         let expr = CallExpr {
-            target: "obj".to_string(),
             function: "unknown_method".to_string(),
             arguments: vec![],
-            is_method: true,
         };
 
         let runtime = Rc::new(Runtime::new());
@@ -139,25 +113,19 @@ mod tests {
         assert!(
             result
                 .unwrap_err()
-                .contains("Unknown method: obj.unknown_method")
+                .contains("Unknown function: unknown_method")
         );
     }
 
     #[test]
     fn test_call_clone() {
         let expr = CallExpr {
-            target: "obj".to_string(),
             function: "method".to_string(),
             arguments: vec![],
-            is_method: true,
         };
 
         let cloned = expr.clone_box();
 
-        assert_eq!(
-            expr.target,
-            cloned.as_any().downcast_ref::<CallExpr>().unwrap().target
-        );
         assert_eq!(
             expr.function,
             cloned.as_any().downcast_ref::<CallExpr>().unwrap().function
@@ -183,10 +151,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
 
         let expr = CallExpr {
-            target: String::new(),
             function: "hello".to_string(),
             arguments: vec![],
-            is_method: false,
         };
 
         let result = expr.evaluate(context).await.unwrap();
@@ -199,10 +165,8 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_static_function() {
         let expr = CallExpr {
-            target: "Unknown".to_string(),
             function: "func".to_string(),
             arguments: vec![],
-            is_method: false,
         };
 
         let runtime = Rc::new(Runtime::new());
@@ -210,11 +174,7 @@ mod tests {
         let result = expr.evaluate(context).await;
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("Unknown function: Unknown::func")
-        );
+        assert!(result.unwrap_err().contains("Unknown function: func"));
     }
 
     #[tokio::test]
@@ -242,10 +202,8 @@ mod tests {
         context.add_event("Please provide data for processing".to_string());
 
         let expr = CallExpr {
-            target: String::new(),
             function: "process".to_string(),
             arguments: vec![Box::new(PlaceholderExpr {})],
-            is_method: false,
         };
 
         let result = expr.evaluate(context.clone()).await.unwrap();
@@ -287,10 +245,8 @@ mod tests {
         context.add_event("Provide actionable feedback".to_string());
 
         let expr = CallExpr {
-            target: String::new(),
             function: "analyze".to_string(),
             arguments: vec![Box::new(PlaceholderExpr {})],
-            is_method: false,
         };
 
         let result = expr.evaluate(context.clone()).await.unwrap();

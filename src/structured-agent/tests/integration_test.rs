@@ -9,7 +9,7 @@ use structured_agent::runtime::{Context, ExprResult, Runtime};
 #[tokio::test]
 async fn test_full_pipeline_parse_compile_execute() {
     let code = r#"
-fn test_func() -> () {
+fn test_func(): () {
     "Hello from function"!
 }
 "#;
@@ -45,7 +45,7 @@ fn test_func() -> () {
 #[tokio::test]
 async fn test_compile_and_execute_individual_statements() {
     let code = r#"
-fn test() -> () {
+fn test(): () {
     "Hello world"!
     let x = "test value"
 }
@@ -91,7 +91,7 @@ fn test() -> () {
 #[tokio::test]
 async fn test_variable_injection_after_assignment() {
     let code = r#"
-fn test_var_injection() -> () {
+fn test_var_injection(): () {
     let message = "Important message"
     message!
 }
@@ -115,7 +115,7 @@ fn test_var_injection() -> () {
 #[tokio::test]
 async fn test_call_compilation() {
     let code = r#"
-fn test() -> () {
+fn test(): () {
 let result = "test value"
 result!
 }

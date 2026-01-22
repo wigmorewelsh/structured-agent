@@ -9,7 +9,7 @@ use structured_agent::runtime::{Context, ExprResult, Runtime};
 #[tokio::test]
 async fn test_assignment_full_pipeline() {
     let code = r#"
-fn test_assignment() -> () {
+fn test_assignment(): () {
     let message = "Hello, World!"
     message!
 }
@@ -49,7 +49,7 @@ fn test_assignment() -> () {
 #[tokio::test]
 async fn test_assignment_with_variable_injection() {
     let code = r#"
-fn test_var_assignment() -> () {
+fn test_var_assignment(): () {
     let greeting = "Hello"
     let name = "Alice"
     greeting!
@@ -78,7 +78,7 @@ fn test_var_assignment() -> () {
 #[tokio::test]
 async fn test_assignment_return_value() {
     let code = r#"
-fn test_return() -> () {
+fn test_return(): () {
     let result = "test value"
 }
 "#;

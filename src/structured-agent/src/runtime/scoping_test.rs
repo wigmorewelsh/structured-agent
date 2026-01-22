@@ -65,7 +65,7 @@ async fn test_calling_log_should_receive_literals() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> String {
+fn main(): String {
     let result = log("value1")
     result!
 }
@@ -88,7 +88,7 @@ async fn test_variable_assignment_in_if_block() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> String {
+fn main(): String {
     let val = "initial"
     log("step1")
     log(val)
@@ -141,7 +141,7 @@ async fn test_variable_assignment_in_while_loop() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> String {
+fn main(): String {
     let counter = true
     let iteration = "0"
 
@@ -177,7 +177,7 @@ async fn test_variable_scoping_with_boolean_assignment() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let val = true
 
     if val {

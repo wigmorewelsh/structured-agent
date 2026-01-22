@@ -284,10 +284,8 @@ impl Compiler {
             }
             ast::Expression::Variable(name) => Ok(Box::new(VariableExpr { name: name.clone() })),
             ast::Expression::Call {
-                target,
                 function,
                 arguments,
-                is_method,
             } => {
                 let compiled_args = arguments
                     .iter()
@@ -295,10 +293,8 @@ impl Compiler {
                     .collect::<Result<Vec<_>, String>>()?;
 
                 Ok(Box::new(CallExpr {
-                    target: target.clone(),
                     function: function.clone(),
                     arguments: compiled_args,
-                    is_method: *is_method,
                 }))
             }
             ast::Expression::Placeholder => Ok(Box::new(PlaceholderExpr {})),
@@ -468,13 +464,13 @@ mod tests {
     #[tokio::test]
     async fn test_new_architecture_end_to_end() {
         let program_source = r#"
-fn greet(name: String) -> () {
+fn greet(name: String): () {
     "Hello, "!
     name!
     "!"!
 }
 
-fn main() -> String {
+fn main(): String {
     "Starting test program"!
     let greeting_name = "World"
     let result = greet(greeting_name)
@@ -501,15 +497,15 @@ fn main() -> String {
     #[tokio::test]
     async fn test_select_statement_end_to_end() {
         let program_source = r#"
-fn add(a: String, b: String) -> String {
+fn add(a: String, b: String): String {
     "Adding numbers"
 }
 
-fn subtract(a: String, b: String) -> String {
+fn subtract(a: String, b: String): String {
     "Subtracting numbers"
 }
 
-fn calculator(x: String, y: String) -> String {
+fn calculator(x: String, y: String): String {
     let result = select {
         add(x, y) as sum => sum,
         subtract(x, y) as diff => diff
@@ -517,7 +513,7 @@ fn calculator(x: String, y: String) -> String {
     result
 }
 
-fn main() -> String {
+fn main(): String {
     let result = calculator("5", "3")
     result!
 }

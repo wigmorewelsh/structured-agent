@@ -112,7 +112,7 @@ async fn test_if_statement_true_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if true {
         log("if body executed")
     }
@@ -136,7 +136,7 @@ async fn test_if_statement_false_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if false {
         log("if body not executed")
     }
@@ -160,7 +160,7 @@ async fn test_if_statement_with_variable_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let condition = true
     if condition {
         log("condition was true")
@@ -186,7 +186,7 @@ async fn test_if_statement_with_function_condition() {
     runtime.register_native_function(bool_func.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if get_bool() {
         log("function returned true")
     }
@@ -209,7 +209,7 @@ async fn test_while_statement_false_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     while false {
         log("never executed")
     }
@@ -232,7 +232,7 @@ async fn test_while_statement_with_counter() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let continue_loop = true
     while continue_loop {
         log("loop iteration")
@@ -257,7 +257,7 @@ async fn test_nested_if_statements() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if true {
         log("outer if")
         if true {
@@ -287,7 +287,7 @@ async fn test_if_and_while_combined() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let should_run = true
     if should_run {
         log("starting loop")
@@ -320,7 +320,7 @@ async fn test_if_statement_non_boolean_condition_error() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if "not a boolean" {
         log("this should not execute")
     }
@@ -344,7 +344,7 @@ async fn test_while_statement_non_boolean_condition_error() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     while "not a boolean" {
         log("this should not execute")
     }
@@ -367,7 +367,7 @@ async fn test_if_with_variable_assignment_in_body() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     if true {
         let message = "assigned in if"
         log(message)
@@ -391,7 +391,7 @@ async fn test_while_with_variable_assignment_in_body() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let run_once = true
     while run_once {
         let message = "assigned in while"

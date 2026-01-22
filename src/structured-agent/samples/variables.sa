@@ -1,4 +1,4 @@
-fn main() -> () {
+fn main(): () {
     "Demonstrating variable usage"!
 
     let greeting = "Hello"

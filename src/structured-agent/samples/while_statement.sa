@@ -1,4 +1,4 @@
-fn main() -> () {
+fn main(): () {
     "Starting while statement demo"!
 
     let should_continue = true

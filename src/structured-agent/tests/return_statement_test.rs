@@ -3,7 +3,7 @@ use structured_agent::runtime::{ExprResult, Runtime};
 #[tokio::test]
 async fn test_return_statement_with_expression() {
     let program_source = r#"
-        fn main() -> String {
+        fn main(): String {
             return "calculated_value"
         }
     "#;
@@ -30,7 +30,7 @@ async fn test_return_statement_with_expression() {
 #[tokio::test]
 async fn test_return_statement_end_to_end() {
     let program_source = r#"
-        fn main() -> String {
+        fn main(): String {
             let x = "hello"
             return x
             let y = "unreachable"
@@ -59,7 +59,7 @@ async fn test_return_statement_end_to_end() {
 #[tokio::test]
 async fn test_return_in_nested_scope() {
     let program_source = r#"
-        fn main() -> String {
+        fn main(): String {
             if true {
                 return "from_if_block"
             }

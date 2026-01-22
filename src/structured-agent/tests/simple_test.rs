@@ -3,7 +3,7 @@ use structured_agent::runtime::{ExprResult, Runtime};
 #[tokio::test]
 async fn test_simple_function_call() {
     let program_source = r#"
-        fn main() -> String {
+        fn main(): String {
             "hello world"
         }
     "#;
@@ -30,7 +30,7 @@ async fn test_simple_function_call() {
 #[tokio::test]
 async fn test_simple_return_statement() {
     let program_source = r#"
-        fn main() -> String {
+        fn main(): String {
             return "returned_value"
         }
     "#;

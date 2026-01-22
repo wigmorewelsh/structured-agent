@@ -1,4 +1,4 @@
-fn main() -> () {
+fn main(): () {
     "This is a test"!
     let x = 5 +
     "Missing operand and syntax error"!

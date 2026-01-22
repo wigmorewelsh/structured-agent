@@ -1,10 +1,10 @@
-fn greet_user() -> () {
+fn greet_user(): () {
     "Starting greeting function"!
     "Hello there! Welcome to the structured agent"!
     "This function demonstrates basic output"!
 }
 
-fn process_data() -> () {
+fn process_data(): () {
     "Beginning data processing routine"!
     let data = "sample_data_123"
     "Processing the following data:"!
@@ -12,7 +12,7 @@ fn process_data() -> () {
     "Data processing completed successfully"!
 }
 
-fn analyze_results() -> () {
+fn analyze_results(): () {
     "Initiating analysis phase"!
     let result_code = "SUCCESS_200"
     let timestamp = "2024-01-15T10:30:00Z"
@@ -25,7 +25,7 @@ fn analyze_results() -> () {
     "Analysis phase completed"!
 }
 
-fn main() -> () {
+fn main(): () {
     "=== VERBOSE PROGRAM EXECUTION LOG ==="!
     "Program started at system initialization"!
 

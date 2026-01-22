@@ -1,8 +1,8 @@
 
-extern fn input() -> String;
-extern fn print(message: String) -> ();
+extern fn input(): String
+extern fn print(message: String): ()
 
-fn thinking(request: String) -> String {
+fn thinking(request: String): String {
     "You are an expert at analyzing user requests and understanding their intent."!
     "Think through this step by step:"!
     "1. What is the user asking for?"!
@@ -14,28 +14,28 @@ fn thinking(request: String) -> String {
 }
 
 
-fn brainstorm() -> String {
+fn brainstorm(): String {
     print("Agent chose: Brainstorm")
     "Brainstorm ideas and approaches for the given topic."!
 }
 
-fn analyze_codebase() -> String {
+fn analyze_codebase(): String {
     print("Agent chose: Analyze Codebase")
     "Analyze the provided codebase."!
     "Provide insights on structure, patterns, and potential improvements."!
 }
 
-fn fix_bug() -> String {
+fn fix_bug(): String {
     print("Agent chose: Fix Bug")
     "Fix the described bug in the provided code."!
 }
 
-fn implement_feature(ticket_number: String) -> String {
+fn implement_feature(ticket_number: String): String {
     print("Agent chose: Implement Feature")
     "Implement the requested feature based on the provided context."!
 }
 
-fn main() -> () {
+fn main(): () {
     let user_request = input()
     user_request!
 

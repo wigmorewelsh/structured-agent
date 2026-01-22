@@ -102,7 +102,7 @@ async fn test_boolean_literal_true() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let result = log_bool(true)
     result!
 }
@@ -129,7 +129,7 @@ async fn test_boolean_literal_false() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let result = log_bool(false)
     result!
 }
@@ -156,7 +156,7 @@ async fn test_boolean_variable_assignment() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> () {
+fn main(): () {
     let is_complete = true
     let log_result = log_bool(is_complete)
     let is_ready = false
@@ -188,12 +188,12 @@ async fn test_boolean_function_return() {
     runtime.register_native_function(bool_fn.clone());
 
     let program_source = r#"
-fn check_status() -> Boolean {
+fn check_status(): Boolean {
     let status = get_bool()
     status!
 }
 
-fn main() -> String {
+fn main(): String {
     let result = check_status()
     "Function completed"!
 }
@@ -213,7 +213,7 @@ async fn test_mixed_boolean_and_string_variables() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
-fn main() -> String {
+fn main(): String {
     let message = "Processing complete"
     let success = true
     let log_result = log_bool(success)

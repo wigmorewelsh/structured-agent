@@ -1,15 +1,15 @@
-fn task_complete(iteration: String) -> Boolean {
+fn task_complete(iteration: String): Boolean {
     "Is the task complete after iteration "!
     iteration!
     "?"!
 }
 
-fn process_item(item: String) -> () {
+fn process_item(item: String): () {
     "Processing item: "!
     item!
 }
 
-fn main() -> () {
+fn main(): () {
     "Starting control flow demonstration"!
 
     let has_items = true

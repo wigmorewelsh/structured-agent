@@ -72,10 +72,8 @@ pub struct SelectClause {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Call {
-        target: String,
         function: String,
         arguments: Vec<Expression>,
-        is_method: bool,
     },
     Variable(String),
     StringLiteral(String),
@@ -108,7 +106,7 @@ impl fmt::Display for Function {
             }
             write!(f, "{}: {}", param.name, param.param_type)?;
         }
-        write!(f, ") -> {}", self.return_type)?;
+        write!(f, "): {}", self.return_type)?;
         Ok(())
     }
 }
@@ -167,16 +165,10 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expression::Call {
-                target,
                 function,
                 arguments,
-                is_method,
             } => {
-                if *is_method {
-                    write!(f, "{}.{}", target, function)?;
-                } else {
-                    write!(f, "{}::{}", target, function)?;
-                }
+                write!(f, "{}", function)?;
                 write!(f, "(")?;
                 for (i, arg) in arguments.iter().enumerate() {
                     if i > 0 {
