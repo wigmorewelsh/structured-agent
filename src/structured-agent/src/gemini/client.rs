@@ -13,8 +13,10 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use url::Url;
 
-// Constants for better maintainability
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_TIMEOUT_SECS: u64 = 120;
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 90;
+const MAX_RETRIES: u32 = 3;
+const INITIAL_RETRY_DELAY_MS: u64 = 1000;
 const DEFAULT_API_BASE: &str = "https://generativelanguage.googleapis.com";
 const DEFAULT_VERTEX_BASE: &str = "https://{location}-aiplatform.googleapis.com";
 const GCLOUD_AUTH_COMMAND: &[&str] = &["auth", "print-access-token"];
@@ -37,6 +39,8 @@ pub struct GeminiClient {
     base_url: String,
     config: GeminiConfig,
     cached_token: Arc<RwLock<Option<CachedToken>>>,
+    request_timeout: Duration,
+    max_retries: u32,
 }
 
 impl GeminiClient {
@@ -45,6 +49,10 @@ impl GeminiClient {
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(10)
+            .tcp_keepalive(Duration::from_secs(60))
             .build()
             .map_err(|e| GeminiError::Network(e.to_string()))?;
 
@@ -72,6 +80,8 @@ impl GeminiClient {
             base_url,
             config,
             cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
         })
     }
 
@@ -82,8 +92,17 @@ impl GeminiClient {
     }
 
     pub async fn chat(&self, request: ChatRequest) -> GeminiResult<GeminiResponse> {
-        self.chat_with_timeout(request, Duration::from_secs(30))
-            .await
+        self.chat_with_timeout(request, self.request_timeout).await
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    pub fn with_max_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
+        self
     }
 
     pub async fn chat_with_timeout(
@@ -91,9 +110,44 @@ impl GeminiClient {
         request: ChatRequest,
         timeout_duration: Duration,
     ) -> GeminiResult<GeminiResponse> {
-        timeout(timeout_duration, self.chat_internal(request))
-            .await
-            .map_err(|_| GeminiError::Timeout)?
+        let mut last_error = None;
+        let mut retry_delay = Duration::from_millis(INITIAL_RETRY_DELAY_MS);
+
+        for attempt in 0..=self.max_retries {
+            match timeout(timeout_duration, self.chat_internal(request.clone())).await {
+                Ok(Ok(response)) => return Ok(response),
+                Ok(Err(e)) => {
+                    let should_retry = matches!(
+                        e,
+                        GeminiError::Timeout
+                            | GeminiError::Network(_)
+                            | GeminiError::ApiError {
+                                code: 500..=599,
+                                ..
+                            }
+                    );
+
+                    if should_retry && attempt < self.max_retries {
+                        last_error = Some(e);
+                        tokio::time::sleep(retry_delay).await;
+                        retry_delay *= 2;
+                        continue;
+                    }
+                    return Err(e);
+                }
+                Err(_) => {
+                    if attempt < self.max_retries {
+                        last_error = Some(GeminiError::Timeout);
+                        tokio::time::sleep(retry_delay).await;
+                        retry_delay *= 2;
+                        continue;
+                    }
+                    return Err(GeminiError::Timeout);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(GeminiError::Timeout))
     }
 
     async fn chat_internal(&self, request: ChatRequest) -> GeminiResult<GeminiResponse> {
@@ -120,11 +174,15 @@ impl GeminiClient {
 
         let payload = self.build_request_payload(&request)?;
 
-        let response = request_builder
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| GeminiError::Network(e.to_string()))?;
+        let response = request_builder.json(&payload).send().await.map_err(|e| {
+            if e.is_timeout() {
+                GeminiError::Timeout
+            } else if e.is_connect() {
+                GeminiError::Network(format!("Connection failed: {}", e))
+            } else {
+                GeminiError::Network(e.to_string())
+            }
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();

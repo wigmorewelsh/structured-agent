@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod gemini_live_tests {
-    use structured_agent::gemini::types::{ChatRequest, GenerationConfig};
+    use structured_agent::gemini::types::{ChatRequest, GenerationConfig, ThinkingConfig};
     use structured_agent::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
     use tokio;
 
@@ -248,8 +248,102 @@ mod gemini_live_tests {
         // Verify it actually works
         let response = client.simple_chat("Hello").await;
         match response {
-            Ok(_) => println!("✓ Authentication method works"),
-            Err(e) => panic!("Authentication failed: {}", e),
+            Ok(_) => {
+                println!("✓ Authentication working");
+            }
+            Err(e) => {
+                panic!("Authentication test failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_live_gemini_minimal_thinking() {
+        let client = match GeminiClient::from_env().await {
+            Ok(client) => client,
+            Err(e) => {
+                panic!("Failed to create client: {}", e);
+            }
+        };
+
+        let messages = vec![ChatMessage::user("What is 5 + 3? Just give me the number.")];
+
+        let generation_config = GenerationConfig::new().with_minimal_thinking();
+
+        let request = ChatRequest::new(messages, ModelName::Gemini25Flash)
+            .with_generation_config(generation_config);
+
+        let start = std::time::Instant::now();
+        let response = client.chat(request).await;
+        let duration = start.elapsed();
+
+        match response {
+            Ok(response) => {
+                if let Some(content) = response.first_content() {
+                    println!(
+                        "✓ Minimal thinking test passed in {:?}: {}",
+                        duration, content
+                    );
+                    assert!(content.contains("8"), "Should contain answer 8");
+                }
+
+                if let Some(usage) = response.usage_metadata {
+                    println!(
+                        "Token usage - Total: {:?}, Thoughts: {:?}",
+                        usage.total_token_count, usage.thoughts_token_count
+                    );
+                }
+            }
+            Err(e) => {
+                panic!("Minimal thinking test failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_live_gemini_without_thinking() {
+        let client = match GeminiClient::from_env().await {
+            Ok(client) => client,
+            Err(e) => {
+                panic!("Failed to create client: {}", e);
+            }
+        };
+
+        let messages = vec![ChatMessage::user("Say hello in one word.")];
+
+        let generation_config = GenerationConfig::new().without_thinking();
+
+        let request = ChatRequest::new(messages, ModelName::Gemini25Flash)
+            .with_generation_config(generation_config);
+
+        let start = std::time::Instant::now();
+        let response = client.chat(request).await;
+        let duration = start.elapsed();
+
+        match response {
+            Ok(response) => {
+                if let Some(content) = response.first_content() {
+                    println!(
+                        "✓ Without thinking test passed in {:?}: {}",
+                        duration, content
+                    );
+                }
+
+                if let Some(usage) = response.usage_metadata {
+                    println!(
+                        "Token usage - Total: {:?}, Thoughts: {:?}",
+                        usage.total_token_count, usage.thoughts_token_count
+                    );
+                    if let Some(thoughts) = usage.thoughts_token_count {
+                        assert_eq!(thoughts, 0, "Should have 0 thinking tokens");
+                    }
+                }
+            }
+            Err(e) => {
+                panic!("Without thinking test failed: {}", e);
+            }
         }
     }
 }

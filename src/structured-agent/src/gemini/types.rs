@@ -90,6 +90,71 @@ impl ChatMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingConfig {
+    #[serde(skip_serializing_if = "Option::is_none", rename = "thinkingLevel")]
+    pub thinking_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "thinkingBudget")]
+    pub thinking_budget: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "includeThoughts")]
+    pub include_thoughts: Option<bool>,
+}
+
+impl ThinkingConfig {
+    pub fn minimal() -> Self {
+        Self {
+            thinking_level: None,
+            thinking_budget: Some(0),
+            include_thoughts: None,
+        }
+    }
+
+    pub fn low() -> Self {
+        Self {
+            thinking_level: None,
+            thinking_budget: Some(512),
+            include_thoughts: None,
+        }
+    }
+
+    pub fn medium() -> Self {
+        Self {
+            thinking_level: Some("medium".to_string()),
+            thinking_budget: None,
+            include_thoughts: None,
+        }
+    }
+
+    pub fn high() -> Self {
+        Self {
+            thinking_level: Some("high".to_string()),
+            thinking_budget: None,
+            include_thoughts: None,
+        }
+    }
+
+    pub fn disabled() -> Self {
+        Self {
+            thinking_level: None,
+            thinking_budget: Some(0),
+            include_thoughts: None,
+        }
+    }
+
+    pub fn with_budget(budget: i32) -> Self {
+        Self {
+            thinking_level: None,
+            thinking_budget: Some(budget),
+            include_thoughts: None,
+        }
+    }
+
+    pub fn with_include_thoughts(mut self, include: bool) -> Self {
+        self.include_thoughts = Some(include);
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
@@ -107,6 +172,8 @@ pub struct GenerationConfig {
     pub response_mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "responseSchema")]
     pub response_schema: Option<JsonSchema>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "thinkingConfig")]
+    pub thinking_config: Option<ThinkingConfig>,
 }
 
 impl GenerationConfig {
@@ -120,6 +187,7 @@ impl GenerationConfig {
             candidate_count: None,
             response_mime_type: None,
             response_schema: None,
+            thinking_config: None,
         }
     }
 
@@ -155,6 +223,26 @@ impl GenerationConfig {
 
     pub fn with_response_schema(mut self, schema: JsonSchema) -> Self {
         self.response_schema = Some(schema);
+        self
+    }
+
+    pub fn with_thinking_config(mut self, thinking_config: ThinkingConfig) -> Self {
+        self.thinking_config = Some(thinking_config);
+        self
+    }
+
+    pub fn with_minimal_thinking(mut self) -> Self {
+        self.thinking_config = Some(ThinkingConfig::minimal());
+        self
+    }
+
+    pub fn with_low_thinking(mut self) -> Self {
+        self.thinking_config = Some(ThinkingConfig::low());
+        self
+    }
+
+    pub fn without_thinking(mut self) -> Self {
+        self.thinking_config = Some(ThinkingConfig::minimal());
         self
     }
 }
@@ -211,6 +299,8 @@ pub struct UsageMetadata {
     pub candidates_token_count: Option<u32>,
     #[serde(rename = "totalTokenCount")]
     pub total_token_count: Option<u32>,
+    #[serde(rename = "thoughtsTokenCount")]
+    pub thoughts_token_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -446,6 +536,7 @@ mod tests {
             candidate_count: Some(1),
             response_mime_type: None,
             response_schema: None,
+            thinking_config: None,
         };
 
         let serialized = serde_json::to_value(&config).unwrap();
@@ -475,6 +566,7 @@ mod tests {
             candidate_count: Some(1),
             response_mime_type: None,
             response_schema: None,
+            thinking_config: None,
         };
 
         let serialized = serde_json::to_value(&config).unwrap();
@@ -511,6 +603,7 @@ mod tests {
             candidate_count: None,
             response_mime_type: None,
             response_schema: None,
+            thinking_config: None,
         };
 
         let request = ChatRequest {

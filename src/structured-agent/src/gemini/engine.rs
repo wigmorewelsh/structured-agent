@@ -76,9 +76,13 @@ impl LanguageEngine for GeminiEngine {
     async fn untyped(&self, context: &Context) -> String {
         let chat_messages = self.build_context_messages(context);
 
+        let generation_config = GenerationConfig::new()
+            .with_temperature(0.9)
+            .with_low_thinking();
+
         match self
             .client
-            .structured_chat(chat_messages, self.model.clone(), None)
+            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
             .await
         {
             Ok(response) => response
@@ -114,7 +118,8 @@ impl LanguageEngine for GeminiEngine {
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
             .with_response_mime_type("application/json".to_string())
-            .with_response_schema(schema);
+            .with_response_schema(schema)
+            .with_minimal_thinking();
 
         let response = self
             .client
@@ -163,7 +168,8 @@ impl LanguageEngine for GeminiEngine {
         let generation_config = GenerationConfig::new()
             .with_temperature(0.0)
             .with_response_mime_type("application/json".to_string())
-            .with_response_schema(schema);
+            .with_response_schema(schema)
+            .with_minimal_thinking();
 
         match self
             .client
@@ -233,7 +239,8 @@ impl LanguageEngine for GeminiEngine {
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
             .with_response_mime_type("application/json".to_string())
-            .with_response_schema(schema);
+            .with_response_schema(schema)
+            .with_minimal_thinking();
 
         let response = self
             .client

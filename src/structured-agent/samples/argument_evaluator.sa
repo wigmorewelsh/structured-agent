@@ -1,0 +1,184 @@
+extern fn fetch(url: String) -> String;
+extern fn websearch(query: String) -> String;
+extern fn print(message: String) -> Unit;
+extern fn input() -> String;
+
+fn select_best_profile_url(author_name: String, search_results: String) -> String {
+    "From these search results, select the URL that best represents the author's professional background."!
+    ""!
+    "PRIORITY ORDER (choose the first available):"!
+    "1. Wikipedia page (en.wikipedia.org/wiki/...)"!
+    "2. Personal website with 'about' page"!
+    "3. Company bio or portfolio page"!
+    "4. GitHub profile page"!
+    ""!
+    "NEVER SELECT:"!
+    "- LinkedIn URLs (www.linkedin.com) - ALWAYS blocked"!
+    "- Medium author pages (username.medium.com) - not biographical"!
+    "- Substack author pages (username.substack.com) - not biographical"!
+    "- Dev.to or Hashnode author pages - not biographical"!
+    "- Social media posts (Twitter, Facebook, etc.)"!
+    "- News articles ABOUT the person"!
+    "- Article pages (look for profile/bio pages instead)"!
+    "- URLs for different people with similar names"!
+    ""!
+    "If Wikipedia is available, SELECT IT. Wikipedia provides the best biographical information."!
+    "Return ONLY the URL, nothing else. No explanation."!
+    ""!
+    "Author name:"!
+    author_name!
+    "Search results:"!
+    search_results!
+}
+
+fn find_author_profile_url(author_name: String) -> String {
+    let search_results = websearch(author_name)
+    return select_best_profile_url(author_name, search_results)
+}
+
+fn get_author_competence(author_name: String) -> String {
+    let profile_url = find_author_profile_url(author_name)
+    let author_profile = fetch(profile_url)
+    return assess_circle_of_competence(author_profile)
+}
+
+fn extract_author(content: String) -> String {
+    "You are analyzing article content to find the author's name."!
+    "The author name appears near the beginning of the article, after the title."!
+    "Look for a person's full name (first and last name)."!
+    "The name often appears twice: once as plain text, once as a hyperlink."!
+    "Common location: Between the article title and the publication date."!
+    "Example pattern: 'Title' followed by 'Nicholas C. Zakas' followed by 'Nicholas C. Zakas' again."!
+    "IMPORTANT: Ignore AI model names in co-author credits (e.g., Claude, GPT, Gemini, ChatGPT, o1, Sonnet)."!
+    "If multiple authors are listed, return only the human author's name."!
+    "Return ONLY the person's full name. Do not include any other text or explanation."!
+    "Here is the article content to analyze:"!
+    content!
+}
+
+fn assess_circle_of_competence(profile: String) -> String {
+    "A Circle of Competence is the domain where a person has deep, tested understanding."!
+    "It's defined by measurable proxies, not mere exposure or interest."!
+    "Based on this author profile, identify their Circle of Competence using measurable proxies:"!
+    "- Geographic locations (years lived, depth of engagement)"!
+    "- Employment (company, role, duration, scale of work, real consequences)"!
+    "- Publications (books, articles, projects with impact metrics, citations)"!
+    "- Teaching/speaking (venues, frequency, feedback loops)"!
+    "- Study areas (formal education, certifications, research)"!
+    "Only include domains with demonstrated expertise, not casual familiarity."!
+    "Format as: DOMAIN: evidence (measurable proxy)"!
+    profile!
+}
+
+fn identify_logical_fallacies(article: String) -> String {
+    "You are a critical analyst trained to identify logical fallacies and weak reasoning."!
+    "Your task is to find FLAWS in the argument, not to praise it."!
+    "Be skeptical and thorough. Most arguments contain multiple fallacies."!
+    ""!
+    "Use 'Logically Fallacious' by Bo Bennett as your comprehensive reference."!
+    "This book documents over 300 distinct fallacies. Search broadly across ALL categories:"!
+    "- Fallacies of Faulty Generalization"!
+    "- Fallacies of Questionable Cause"!
+    "- Fallacies of Weak Induction"!
+    "- Fallacies of Ambiguity"!
+    "- Fallacies of Grammatical Analogy"!
+    "- Fallacies of Relevance"!
+    "- Fallacies of Weak Evidence"!
+    "- Psychological Fallacies"!
+    "- Probabilistic Fallacies"!
+    ""!
+    "Do NOT limit yourself to common fallacies. Look for subtle and sophisticated errors."!
+    "Examples of less obvious fallacies to consider:"!
+    "- Kettle Logic (contradictory arguments used simultaneously)"!
+    "- Texas Sharpshooter (cherry-picking data to fit a pattern)"!
+    "- Nirvana Fallacy (comparing to unrealistic ideal)"!
+    "- Special Pleading (applying standards inconsistently)"!
+    "- Affirming the Consequent (invalid logical form)"!
+    "- Argument from Incredulity (finding something hard to believe as evidence)"!
+    ""!
+    "For EACH fallacy found, you MUST:"!
+    "1. Name the SPECIFIC fallacy from Bennett's taxonomy"!
+    "2. Quote the exact passage demonstrating it"!
+    "3. Explain precisely why this weakens the argument"!
+    "4. Identify what evidence or reasoning is missing"!
+    ""!
+    "Be especially critical of:"!
+    "- Claims without empirical evidence"!
+    "- Comparisons using obviously inferior alternatives"!
+    "- Novel solutions presented without justifying why existing solutions fail"!
+    "- Broad claims based on narrow evidence"!
+    "- Technical jargon that may obscure imprecise thinking"!
+    "- Arguments that assume their conclusion"!
+    "- Selective presentation of facts"!
+    ""!
+    "Do NOT accept arguments at face value. Question every assumption."!
+    "Do NOT be charitable - be maximally rigorous."!
+    "Find at least 5-8 distinct issues unless the argument is genuinely exceptional."!
+    "Prioritize finding DIFFERENT types of fallacies, not just variations of the same one."!
+    ""!
+    "Article to analyze:"!
+    article!
+}
+
+fn identify_knowledge_gaps(article: String, competence: String) -> String {
+    "Identify areas where the article makes claims that require expertise the author lacks."!
+    "Look for topics discussed that fall outside the author's demonstrated Circle of Competence."!
+    "List each knowledge gap with the subject area and why it's outside their expertise."!
+    "Author's Circle of Competence:"!
+    competence!
+    "Article:"!
+    article!
+}
+
+fn assess_competence_match(article: String, competence: String) -> Boolean {
+    "Is this article primarily within the author's Circle of Competence?"!
+    "Return true only if the main claims and arguments fall within domains where the author"!
+    "has demonstrated expertise through measurable proxies."!
+    "Author's Circle of Competence:"!
+    competence!
+    "Article:"!
+    article!
+}
+
+fn synthesize_report(competence: String, logical_fallacies: String, knowledge_gaps: String, within_competence: Boolean) -> String {
+    "Create a full evaluation report of this article."!
+    "Include:"!
+    "1. Summary of author's Circle of Competence"!
+    "2. Whether the article is within their competence (true/false)"!
+    "3. Logical fallacies identified"!
+    "4. Knowledge gaps where author lacks demonstrated expertise"!
+    "5. Overall assessment of argument quality"!
+    "Author's Circle of Competence:"!
+    competence!
+    "Article within competence:"!
+    within_competence!
+    "Logical fallacies:"!
+    logical_fallacies!
+    "Knowledge gaps:"!
+    knowledge_gaps!
+}
+
+fn main() -> String {
+    print("Fetching article...")
+    let article_url = input()
+    let article_content = fetch(article_url)
+
+    print("Extracting author name...")
+    let author_name = extract_author(article_content)
+    print(author_name)
+
+    print("Assessing author's Circle of Competence...")
+    let competence = get_author_competence(author_name)
+
+    print("Identifying logical fallacies...")
+    let logical_fallacies = identify_logical_fallacies(article_content)
+
+    print("Identifying knowledge gaps...")
+    let knowledge_gaps = identify_knowledge_gaps(article_content, competence)
+
+    print("Assessing competence match...")
+    let within_competence = assess_competence_match(article_content, competence)
+
+    print("Synthesizing final report...")
+    synthesize_report(competence, logical_fallacies, knowledge_gaps, within_competence)
+}

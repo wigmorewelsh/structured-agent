@@ -148,21 +148,21 @@ fn main() -> () {
 
 
 # Future
-* Add select statement
-* Add loops
-* Add return statement
-* Load code from files.
-* Use MCP servers as source for tools.
-* Small number of built in tools (std lib).
-* Run program from file.
-* Programs can import from other files.
-* Auto re-compile from source on changes. (salsa)
-* Update running programs.
-* Long running programs reacting to events.
-* User input.
-* Correcting failing processes. 
-* Durable Execution.
-* Track if events are from system(code)/user/model
-* Add basic types
+* DONE: Add select statement
+* DONE: Add loops (while statement implemented)
+* DONE: Add return statement
+* DONE: Load code from files
+* DONE: Use MCP servers as source for tools
+* DONE: Small number of built in tools (std lib) (input, print functions)
+* DONE: Run program from file
+* Programs can import from other files
+* Auto re-compile from source on changes (salsa)
+* Update running programs
+* Long running programs reacting to events
+* DONE: User input (input function)
+* Correcting failing processes
+* Durable Execution
+* DONE: Track if events are from system(code)/user/model
+* DONE: Add basic types (String, Boolean, Unit)
 * Add struct and array types
 * Add parsing json response to structs
