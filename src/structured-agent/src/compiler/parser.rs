@@ -291,10 +291,60 @@ where
     Input: Stream<Token = char>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
+    choice((
+        attempt(parse_multiline_string()),
+        parse_single_line_string(),
+    ))
+}
+
+fn parse_single_line_string<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
     between(
         lex_char('"'),
         char('"'),
-        many(combine::satisfy(|c| c != '"')),
+        many(
+            char('\\')
+                .with(satisfy(|_| true))
+                .map(|c| match c {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '\\' => '\\',
+                    '\'' => '\'',
+                    '"' => '"',
+                    c => c,
+                })
+                .or(satisfy(|c: char| c != '"')),
+        ),
+    )
+    .map(|chars: Vec<char>| Expression::StringLiteral(chars.into_iter().collect()))
+}
+
+fn parse_multiline_string<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    between(
+        string("'''"),
+        string("'''"),
+        many(
+            char('\\')
+                .with(satisfy(|_| true))
+                .map(|c| match c {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '\\' => '\\',
+                    '\'' => '\'',
+                    '"' => '"',
+                    c => c,
+                })
+                .or(satisfy(|c: char| c != '\'')),
+        ),
     )
     .map(|chars: Vec<char>| Expression::StringLiteral(chars.into_iter().collect()))
 }
@@ -426,6 +476,174 @@ where
 mod tests {
     use super::*;
     use combine::EasyParser;
+
+    #[test]
+    fn test_parse_simple_multiline_string() {
+        let input = r#"'''hello'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        if let Err(ref e) = result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "hello");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_multiline_string_minimal() {
+        let input = r#"''''''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        if let Err(ref e) = result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string() {
+        let input = r#"'''
+This is a multiline
+string with "quotes" inside
+and multiple lines
+'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        if let Err(ref e) = result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert!(content.contains("This is a multiline"));
+                assert!(content.contains("string with \"quotes\" inside"));
+                assert!(content.contains("and multiple lines"));
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string_with_escaped_quote() {
+        let input = r#"'''This has an \' escaped quote'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "This has an ' escaped quote");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string_with_escaped_backslash() {
+        let input = r#"'''This has a \\ backslash'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "This has a \\ backslash");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string_with_newline_escape() {
+        let input = r#"'''Line 1\nLine 2'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "Line 1\nLine 2");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string_with_unescaped_quote_fails() {
+        let input = r#"'''This has an unescaped ' quote'''"#;
+
+        let result = parse_multiline_string().easy_parse(input);
+        // This should fail because the parser stops at the unescaped single quote
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_single_line_string() {
+        let input = r#""Hello World""#;
+
+        let result = parse_string_literal().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "Hello World");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_single_line_string_with_escaped_quote() {
+        let input = r#""Hello \"quoted\" World""#;
+
+        let result = parse_string_literal().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "Hello \"quoted\" World");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_multiline_string() {
+        let input = r#""""""""#;
+
+        let result = parse_string_literal().easy_parse(input);
+        assert!(result.is_ok());
+
+        let (expr, _) = result.unwrap();
+        match expr {
+            Expression::StringLiteral(content) => {
+                assert_eq!(content, "");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
 
     #[test]
     fn test_parse_simple_function() {
