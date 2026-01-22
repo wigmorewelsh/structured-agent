@@ -1,6 +1,6 @@
 use crate::ast::{
-    Expression, ExternalFunction, Function, FunctionBody, Parameter, SelectClause,
-    SelectExpression, Statement, Type,
+    Definition, Expression, ExternalFunction, Function, FunctionBody, Module, Parameter,
+    SelectClause, SelectExpression, Statement, Type,
 };
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
@@ -71,31 +71,17 @@ where
         .skip(skip_spaces())
 }
 
-pub fn parse_program<Input>() -> impl Parser<Input, Output = (Vec<Function>, Vec<ExternalFunction>)>
+pub fn parse_program<Input>() -> impl Parser<Input, Output = Module>
 where
     Input: Stream<Token = char>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     skip_spaces()
         .with(many(choice((
-            parse_function_with_docs().map(|f| (Some(f), None)),
-            parse_external_function().map(|ef| (None, Some(ef))),
+            parse_function_with_docs().map(Definition::Function),
+            parse_external_function().map(Definition::ExternalFunction),
         ))))
-        .map(|items: Vec<(Option<Function>, Option<ExternalFunction>)>| {
-            let mut functions = Vec::new();
-            let mut external_functions = Vec::new();
-
-            for (func, ext_func) in items {
-                if let Some(f) = func {
-                    functions.push(f);
-                }
-                if let Some(ef) = ext_func {
-                    external_functions.push(ef);
-                }
-            }
-
-            (functions, external_functions)
-        })
+        .map(|definitions| Module { definitions })
 }
 
 fn parse_external_function<Input>() -> impl Parser<Input, Output = ExternalFunction>
@@ -454,11 +440,13 @@ fn analyze_code(context: Context, code: String): Analysis {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, external_functions), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
-        assert_eq!(external_functions.len(), 0);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "analyze_code");
         assert_eq!(func.parameters.len(), 2);
         assert_eq!(func.parameters[0].name, "context");
@@ -490,9 +478,18 @@ fn main(): () {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, external_functions), _) = result.unwrap();
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 3);
+
+        let functions: Vec<_> = module
+            .definitions
+            .iter()
+            .filter_map(|def| match def {
+                Definition::Function(f) => Some(f),
+                _ => None,
+            })
+            .collect();
         assert_eq!(functions.len(), 3);
-        assert_eq!(external_functions.len(), 0);
 
         assert_eq!(functions[0].name, "analyze_code");
         assert_eq!(functions[1].name, "suggest_fix");
@@ -613,7 +610,25 @@ fn calculator(request: String): String {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, external_functions), _) = result.unwrap();
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 3);
+
+        let functions: Vec<_> = module
+            .definitions
+            .iter()
+            .filter_map(|def| match def {
+                Definition::Function(f) => Some(f),
+                _ => None,
+            })
+            .collect();
+        let external_functions: Vec<_> = module
+            .definitions
+            .iter()
+            .filter_map(|def| match def {
+                Definition::ExternalFunction(ef) => Some(ef),
+                _ => None,
+            })
+            .collect();
         assert_eq!(functions.len(), 1);
         assert_eq!(external_functions.len(), 2);
 
@@ -635,10 +650,13 @@ fn test_function(): () {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, _), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "test_function");
         assert_eq!(func.body.statements.len(), 3);
 
@@ -692,10 +710,13 @@ fn calculator_agent(ctx: Context, request: String): i32 {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, _), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "calculator_agent");
         assert_eq!(func.body.statements.len(), 4);
 
@@ -752,11 +773,13 @@ fn analyze_code(context: Context, code: String): Analysis {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, external_functions), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
-        assert_eq!(external_functions.len(), 0);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "analyze_code");
         assert!(func.documentation.is_some());
         let doc = func.documentation.as_ref().unwrap();
@@ -777,11 +800,13 @@ fn simple_function(): () {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, external_functions), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
-        assert_eq!(external_functions.len(), 0);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "simple_function");
         assert!(func.documentation.is_none());
     }
@@ -798,8 +823,12 @@ fn documented_function(): () {
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, _), _) = result.unwrap();
-        let func = &functions[0];
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "documented_function");
         assert!(func.documentation.is_some());
         let doc = func.documentation.as_ref().unwrap();
@@ -851,10 +880,13 @@ fn multiline_function(
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, _), _) = result.unwrap();
-        assert_eq!(functions.len(), 1);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let func = &functions[0];
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
         assert_eq!(func.name, "multiline_function");
         assert_eq!(func.parameters.len(), 3);
         assert_eq!(func.parameters[0].name, "first_param");
@@ -874,11 +906,14 @@ extern fn external_multiline(
         let result = parse_program().easy_parse(input);
         assert!(result.is_ok());
 
-        let ((functions, externals), _) = result.unwrap();
-        assert_eq!(functions.len(), 0);
-        assert_eq!(externals.len(), 1);
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
 
-        let ext = &externals[0];
+        let external_func = match &module.definitions[0] {
+            Definition::ExternalFunction(ef) => ef,
+            _ => panic!("Expected external function definition"),
+        };
+        let ext = external_func;
         assert_eq!(ext.name, "external_multiline");
         assert_eq!(ext.parameters.len(), 2);
         assert_eq!(ext.parameters[0].name, "param1");

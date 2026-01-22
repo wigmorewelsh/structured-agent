@@ -1,6 +1,17 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Module {
+    pub definitions: Vec<Definition>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Definition {
+    Function(Function),
+    ExternalFunction(ExternalFunction),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
     pub parameters: Vec<Parameter>,
@@ -158,6 +169,40 @@ impl fmt::Display for SelectExpression {
             )?;
         }
         write!(f, "}}")
+    }
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, definition) in self.definitions.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "{}", definition)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Definition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Definition::Function(func) => write!(f, "{}", func),
+            Definition::ExternalFunction(ext_func) => write!(f, "{}", ext_func),
+        }
+    }
+}
+
+impl fmt::Display for ExternalFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "extern fn {}(", self.name)?;
+        for (i, param) in self.parameters.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {}", param.name, param.param_type)?;
+        }
+        write!(f, "): {}", self.return_type)
     }
 }
 

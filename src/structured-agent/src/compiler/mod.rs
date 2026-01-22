@@ -1,6 +1,6 @@
 pub mod parser;
 
-use crate::ast;
+use crate::ast::{self, Definition, Module};
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
     PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
@@ -48,26 +48,20 @@ impl CompilationUnit {
 }
 
 pub trait Parser {
-    fn parse(
-        &self,
-        program: &CompilationUnit,
-    ) -> Result<(Vec<ast::Function>, Vec<ast::ExternalFunction>), String>;
+    fn parse(&self, program: &CompilationUnit) -> Result<Module, String>;
 }
 
 pub struct DefaultParser;
 
 impl Parser for DefaultParser {
-    fn parse(
-        &self,
-        program: &CompilationUnit,
-    ) -> Result<(Vec<ast::Function>, Vec<ast::ExternalFunction>), String> {
+    fn parse(&self, program: &CompilationUnit) -> Result<Module, String> {
         use combine::{EasyParser, stream::position};
 
         let input = program.source();
         let stream = position::Stream::with_positioner(input, IndexPositioner::new());
 
         match parser::parse_program().easy_parse(stream) {
-            Ok(((functions, external_functions), _)) => Ok((functions, external_functions)),
+            Ok((module, _)) => Ok(module),
             Err(e) => {
                 let formatted_error = format_parse_error_with_position(&e, input);
                 Err(formatted_error)
@@ -213,18 +207,21 @@ impl Compiler {
 
 impl CompilerTrait for Compiler {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
-        let (ast_functions, ast_external_functions) = self.parser.parse(program)?;
+        let module = self.parser.parse(program)?;
         let mut compiled_program = CompiledProgram::new();
 
-        for ast_function in ast_functions {
-            let compiled_function = self.compile_function(&ast_function)?;
-            compiled_program.add_function(compiled_function);
-        }
-
-        for ast_external_function in ast_external_functions {
-            let compiled_external_function =
-                Self::compile_external_function(&ast_external_function)?;
-            compiled_program.add_external_function(compiled_external_function);
+        for definition in module.definitions {
+            match definition {
+                Definition::Function(ast_function) => {
+                    let compiled_function = self.compile_function(&ast_function)?;
+                    compiled_program.add_function(compiled_function);
+                }
+                Definition::ExternalFunction(ast_external_function) => {
+                    let compiled_external_function =
+                        Self::compile_external_function(&ast_external_function)?;
+                    compiled_program.add_external_function(compiled_external_function);
+                }
+            }
         }
 
         Ok(compiled_program)

@@ -18,11 +18,19 @@ fn undocumented_func(): () {
     let result = parse_program().easy_parse(input);
     assert!(result.is_ok());
 
-    let ((functions, _), _) = result.unwrap();
+    let (module, _) = result.unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            crate::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
     assert_eq!(functions.len(), 2);
 
     // Check documented function
-    let documented = &functions[0];
+    let documented = functions[0];
     assert_eq!(documented.name, "documented_func");
     assert!(documented.documentation.is_some());
     let doc = documented.documentation.as_ref().unwrap();
@@ -32,7 +40,7 @@ fn undocumented_func(): () {
     );
 
     // Check undocumented function
-    let undocumented = &functions[1];
+    let undocumented = functions[1];
     assert_eq!(undocumented.name, "undocumented_func");
     assert!(undocumented.documentation.is_none());
 }
@@ -49,10 +57,11 @@ fn single_doc(): () {
     let result = parse_program().easy_parse(input);
     assert!(result.is_ok());
 
-    let ((functions, _), _) = result.unwrap();
-    assert_eq!(functions.len(), 1);
-
-    let func = &functions[0];
+    let (module, _) = result.unwrap();
+    let func = match &module.definitions[0] {
+        crate::ast::Definition::Function(f) => f,
+        _ => panic!("Expected function definition"),
+    };
     assert_eq!(func.name, "single_doc");
     assert!(func.documentation.is_some());
     let doc = func.documentation.as_ref().unwrap();
@@ -75,8 +84,11 @@ fn greet(name: String): () {
     let result = parse_program().easy_parse(input);
     assert!(result.is_ok());
 
-    let ((functions, _), _) = result.unwrap();
-    let func = &functions[0];
+    let (module, _) = result.unwrap();
+    let func = match &module.definitions[0] {
+        crate::ast::Definition::Function(f) => f,
+        _ => panic!("Expected function definition"),
+    };
 
     let mut output = String::new();
     write!(&mut output, "{}", func).unwrap();

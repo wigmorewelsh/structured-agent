@@ -166,3 +166,4 @@ fn main() -> () {
 * DONE: Add basic types (String, Boolean, Unit)
 * Add struct and array types
 * Add parsing json response to structs
+* Zed editor highlighting support

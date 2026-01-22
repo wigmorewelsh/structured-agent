@@ -57,9 +57,17 @@ fn test_var_assignment(): () {
 }
 "#;
 
-    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
-    assert_eq!(external_functions.len(), 0);
-    let function = &functions[0];
+    let (module, _) = parser::parse_program().easy_parse(code).unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            crate::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(functions.len(), 1);
+    let function = functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
     let runtime = Rc::new(Runtime::new());
