@@ -1,0 +1,69 @@
+# Sample Structured Agent Program
+# This file demonstrates the syntax highlighting capabilities
+
+extern fn add(x: i32, y: i32) -> i32;
+extern fn subtract(x: i32, y: i32) -> i32;
+
+fn greet(ctx: Context, name: String) -> String {
+    "Generate a friendly greeting for "!
+    name!
+}
+
+fn process_item(item: String) -> () {
+    "Processing item: "!
+    item!
+}
+
+fn task_complete(iteration: String) -> Boolean {
+    "Is the task complete after iteration "!
+    iteration!
+    "?"!
+}
+
+fn calculator(ctx: Context, request: String) -> i32 {
+    request!
+
+    let result = select {
+        add(_, _) as sum => sum,
+        subtract(_, _) as diff => diff
+    }
+
+    return result
+}
+
+fn main() -> () {
+    "Starting structured agent demo"!
+
+    let greeting = greet(ctx, "Alice")
+    greeting!
+
+    let has_items = true
+    if has_items {
+        "Items found, beginning processing"!
+
+        let current_iteration = "1"
+        let should_continue = true
+
+        while should_continue {
+            "=== Loop iteration "!
+            current_iteration!
+            " ==="!
+
+            process_item("item_1")
+
+            let complete = task_complete(current_iteration)
+            if complete {
+                "Task completed, stopping loop"!
+                should_continue = false
+            }
+        }
+
+        "All processing complete"!
+    }
+
+    let calc_result = calculator(ctx, "Calculate something")
+    "Result: "!
+    calc_result!
+
+    "Demo finished"!
+}

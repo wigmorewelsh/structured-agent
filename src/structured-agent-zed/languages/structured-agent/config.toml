@@ -1,0 +1,6 @@
+name = "Structured Agent"
+grammar = "structured_agent"
+path_suffixes = ["sa"]
+line_comments = ["# "]
+tab_size = 4
+hard_tabs = false
