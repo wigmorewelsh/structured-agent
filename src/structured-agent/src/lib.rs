@@ -6,6 +6,7 @@ pub mod functions;
 pub mod gemini;
 pub mod mcp;
 pub mod runtime;
+pub mod typecheck;
 pub mod types;
 
 #[cfg(test)]

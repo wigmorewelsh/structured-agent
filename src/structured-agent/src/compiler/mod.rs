@@ -6,6 +6,7 @@ use crate::expressions::{
     PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
     VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
+use crate::typecheck::type_check_module;
 use crate::types::{Expression, ExternalFunctionDefinition, Parameter, Type};
 
 use combine::stream::position::IndexPositioner;
@@ -213,6 +214,9 @@ impl Compiler {
 impl CompilerTrait for Compiler {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
         let module = self.parser.parse(program)?;
+
+        type_check_module(&module).map_err(|e| format!("Type error: {}", e))?;
+
         let mut compiled_program = CompiledProgram::new();
 
         for definition in module.definitions {
