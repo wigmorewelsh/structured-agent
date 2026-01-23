@@ -75,7 +75,7 @@ mod tests {
         };
 
         let return_type = expr.return_type();
-        assert_eq!(return_type.name, "()");
+        assert_eq!(return_type.name(), "()");
     }
 
     #[tokio::test]

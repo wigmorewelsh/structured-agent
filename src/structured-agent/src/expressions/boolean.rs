@@ -67,7 +67,7 @@ mod tests {
         let expr = BooleanLiteralExpr { value: true };
 
         let return_type = expr.return_type();
-        assert_eq!(return_type.name, "Boolean");
+        assert_eq!(return_type.name(), "Boolean");
     }
 
     #[tokio::test]

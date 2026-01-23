@@ -1,12 +1,12 @@
 use crate::runtime::{Context, ExprResult};
-use crate::types::{ExecutableFunction, Expression, Function, Type};
+use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
 
 pub struct FunctionExpr {
     pub name: String,
-    pub parameters: Vec<(String, Type)>,
+    pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub body: Vec<Box<dyn Expression>>,
     pub documentation: Option<String>,
@@ -49,7 +49,7 @@ impl Expression for FunctionExpr {
         }
 
         if context.has_events() {
-            if self.return_type.name == "()" {
+            if matches!(self.return_type, Type::Unit) {
                 return Ok(ExprResult::Unit);
             } else {
                 let engine_response = context
@@ -87,7 +87,7 @@ impl Function for FunctionExpr {
         &self.name
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 

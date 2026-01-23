@@ -95,24 +95,27 @@ impl LanguageEngine for GeminiEngine {
     }
 
     async fn typed(&self, context: &Context, return_type: &Type) -> Result<ExprResult, String> {
-        if return_type.name == "()" {
+        if matches!(return_type, Type::Unit) {
             return Ok(ExprResult::Unit);
         }
 
-        let (schema, temperature) = match return_type.name.as_str() {
-            "String" => (
+        let (schema, temperature) = match return_type {
+            Type::String => (
                 JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
                 0.7,
             ),
-            "Boolean" => (
+            Type::Boolean => (
                 JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
                 0.0,
             ),
-            _ => return Err(format!("Unsupported return type: {}", return_type.name)),
+            Type::Unit => unreachable!("Unit type handled above"),
+            Type::Custom(_) => {
+                return Err(format!("Unsupported return type: {}", return_type.name()));
+            }
         };
 
         let mut chat_messages = self.build_context_messages(context);
-        let prompt = format!("Generate a response of type '{}'", return_type.name);
+        let prompt = format!("Generate a response of type '{}'", return_type.name());
         chat_messages.push(ChatMessage::user(prompt));
 
         let generation_config = GenerationConfig::new()
@@ -131,18 +134,18 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        match return_type.name.as_str() {
-            "String" => {
+        match return_type {
+            Type::String => {
                 let string_response: StringResponse = serde_json::from_str(&response_text)
                     .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
                 Ok(ExprResult::String(string_response.value))
             }
-            "Boolean" => {
+            Type::Boolean => {
                 let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
                     .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
                 Ok(ExprResult::Boolean(boolean_response.value))
             }
-            _ => unreachable!(),
+            Type::Unit | Type::Custom(_) => unreachable!(),
         }
     }
 
@@ -213,26 +216,30 @@ impl LanguageEngine for GeminiEngine {
         param_name: &str,
         param_type: &Type,
     ) -> Result<ExprResult, String> {
-        if param_type.name == "()" {
+        if matches!(param_type, Type::Unit) {
             return Ok(ExprResult::Unit);
         }
 
-        let (schema, temperature) = match param_type.name.as_str() {
-            "String" => (
+        let (schema, temperature) = match param_type {
+            Type::String => (
                 JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
                 0.7,
             ),
-            "Boolean" => (
+            Type::Boolean => (
                 JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
                 0.0,
             ),
-            _ => return Err(format!("Unsupported parameter type: {}", param_type.name)),
+            Type::Unit => unreachable!("Unit type handled above"),
+            Type::Custom(_) => {
+                return Err(format!("Unsupported parameter type: {}", param_type.name()));
+            }
         };
 
         let mut chat_messages = self.build_context_messages(context);
         let prompt = format!(
             "Provide a value for parameter '{}' of type '{}'",
-            param_name, param_type.name
+            param_name,
+            param_type.name()
         );
         chat_messages.push(ChatMessage::user(prompt));
 
@@ -252,18 +259,18 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        match param_type.name.as_str() {
-            "String" => {
+        match param_type {
+            Type::String => {
                 let string_response: StringResponse = serde_json::from_str(&response_text)
                     .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
                 Ok(ExprResult::String(string_response.value))
             }
-            "Boolean" => {
+            Type::Boolean => {
                 let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
                     .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
                 Ok(ExprResult::Boolean(boolean_response.value))
             }
-            _ => unreachable!(),
+            Type::Unit | Type::Custom(_) => unreachable!(),
         }
     }
 }

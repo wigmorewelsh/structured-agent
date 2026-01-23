@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime::ExprResult;
-use crate::types::{NativeFunction, Type};
+use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use dashmap::DashSet;
 
@@ -10,7 +10,7 @@ use tokio;
 #[derive(Debug)]
 struct LoggingFunction {
     messages: DashSet<String>,
-    parameters: Vec<(String, Type)>,
+    parameters: Vec<Parameter>,
     return_type: Type,
 }
 
@@ -18,7 +18,7 @@ impl LoggingFunction {
     fn new() -> Self {
         Self {
             messages: DashSet::new(),
-            parameters: vec![("str".to_string(), Type::string())],
+            parameters: vec![Parameter::new("str".to_string(), Type::string())],
             return_type: Type::unit(),
         }
     }
@@ -40,7 +40,7 @@ impl NativeFunction for LoggingFunction {
         "log"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 
@@ -67,7 +67,7 @@ impl NativeFunction for LoggingFunction {
 #[derive(Debug)]
 struct BooleanFunction {
     value: bool,
-    parameters: Vec<(String, Type)>,
+    parameters: Vec<Parameter>,
     return_type: Type,
 }
 
@@ -87,7 +87,7 @@ impl NativeFunction for BooleanFunction {
         "get_bool"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 

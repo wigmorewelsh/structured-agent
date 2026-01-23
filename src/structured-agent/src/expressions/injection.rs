@@ -86,7 +86,7 @@ mod tests {
         };
 
         let return_type = expr.return_type();
-        assert_eq!(return_type.name, "String");
+        assert_eq!(return_type.name(), "String");
     }
 
     #[tokio::test]

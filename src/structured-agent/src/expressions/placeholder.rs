@@ -51,7 +51,7 @@ mod tests {
     fn test_placeholder_return_type() {
         let expr = PlaceholderExpr {};
         let return_type = expr.return_type();
-        assert_eq!(return_type.name, "String");
+        assert_eq!(return_type.name(), "String");
     }
 
     #[test]
@@ -59,6 +59,6 @@ mod tests {
         let expr = PlaceholderExpr {};
         let cloned = expr.clone_box();
 
-        assert_eq!(expr.return_type().name, cloned.return_type().name);
+        assert_eq!(expr.return_type().name(), cloned.return_type().name());
     }
 }

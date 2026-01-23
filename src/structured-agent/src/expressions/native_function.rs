@@ -1,5 +1,5 @@
 use crate::runtime::{Context, ExprResult};
-use crate::types::{ExecutableFunction, Expression, Function, NativeFunction, Type};
+use crate::types::{ExecutableFunction, Expression, Function, NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
 
@@ -30,7 +30,8 @@ impl Expression for NativeFunctionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut args = Vec::new();
 
-        for (param_name, _) in self.native_function.parameters() {
+        for param in self.native_function.parameters() {
+            let param_name = &param.name;
             if let Some(value) = context.get_variable(param_name) {
                 args.push(value.clone());
             } else {
@@ -64,7 +65,7 @@ impl Function for NativeFunctionExpr {
         self.native_function.name()
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         self.native_function.parameters()
     }
 
@@ -112,7 +113,7 @@ mod tests {
             "test_function"
         }
 
-        fn parameters(&self) -> &[(String, Type)] {
+        fn parameters(&self) -> &[Parameter] {
             &[]
         }
 
@@ -153,7 +154,7 @@ mod tests {
             "undocumented_function"
         }
 
-        fn parameters(&self) -> &[(String, Type)] {
+        fn parameters(&self) -> &[Parameter] {
             &[]
         }
 

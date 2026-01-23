@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime::ExprResult;
-use crate::types::{NativeFunction, Type};
+use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl NativeFunction for TestExternFunction {
         "to_call"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &[]
     }
 

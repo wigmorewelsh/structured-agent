@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime::ExprResult;
-use crate::types::{NativeFunction, Type};
+use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use dashmap::DashSet;
 
@@ -10,7 +10,7 @@ use tokio;
 #[derive(Debug)]
 struct BooleanLoggingFunction {
     messages: DashSet<String>,
-    parameters: Vec<(String, Type)>,
+    parameters: Vec<Parameter>,
     return_type: Type,
 }
 
@@ -18,7 +18,7 @@ impl BooleanLoggingFunction {
     fn new() -> Self {
         Self {
             messages: DashSet::new(),
-            parameters: vec![("value".to_string(), Type::boolean())],
+            parameters: vec![Parameter::new("value".to_string(), Type::boolean())],
             return_type: Type::unit(),
         }
     }
@@ -34,7 +34,7 @@ impl NativeFunction for BooleanLoggingFunction {
         "log_bool"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 
@@ -61,7 +61,7 @@ impl NativeFunction for BooleanLoggingFunction {
 #[derive(Debug)]
 struct BooleanReturnFunction {
     return_value: bool,
-    parameters: Vec<(String, Type)>,
+    parameters: Vec<Parameter>,
     return_type: Type,
 }
 
@@ -81,7 +81,7 @@ impl NativeFunction for BooleanReturnFunction {
         "get_bool"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 

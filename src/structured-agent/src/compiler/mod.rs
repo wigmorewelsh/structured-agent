@@ -6,7 +6,7 @@ use crate::expressions::{
     PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
     VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
-use crate::types::{Expression, ExternalFunctionDefinition, Type};
+use crate::types::{Expression, ExternalFunctionDefinition, Parameter, Type};
 
 use combine::stream::position::IndexPositioner;
 use std::collections::HashMap;
@@ -14,7 +14,12 @@ use std::rc::Rc;
 
 fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
     match ast_type {
-        ast::Type::Named(name) => Type { name: name.clone() },
+        ast::Type::Named(name) => match name.as_str() {
+            "String" => Type::string(),
+            "Boolean" => Type::boolean(),
+            "()" => Type::unit(),
+            _ => Type::custom(name.clone()),
+        },
         ast::Type::Unit => Type::unit(),
         ast::Type::Boolean => Type::boolean(),
     }
@@ -240,7 +245,7 @@ impl CompilerTrait for Compiler {
             parameters: ast_func
                 .parameters
                 .iter()
-                .map(|p| (p.name.clone(), convert_ast_type_to_type(&p.param_type)))
+                .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
                 .collect(),
             return_type: convert_ast_type_to_type(&ast_func.return_type),
             body: compiled_statements,
@@ -263,7 +268,7 @@ impl Compiler {
             parameters: ast_func
                 .parameters
                 .iter()
-                .map(|p| (p.name.clone(), convert_ast_type_to_type(&p.param_type)))
+                .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
                 .collect(),
             return_type: convert_ast_type_to_type(&ast_func.return_type),
             body: compiled_statements,
@@ -385,7 +390,7 @@ impl Compiler {
         let parameters = ast_ext_func
             .parameters
             .iter()
-            .map(|p| (p.name.clone(), convert_ast_type_to_type(&p.param_type)))
+            .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
             .collect();
 
         Ok(ExternalFunctionDefinition::new(

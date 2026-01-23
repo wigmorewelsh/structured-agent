@@ -1,17 +1,17 @@
 use crate::runtime::ExprResult;
-use crate::types::{NativeFunction, Type};
+use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
 #[derive(Debug)]
 pub struct PrintFunction {
-    parameters: Vec<(String, Type)>,
+    parameters: Vec<Parameter>,
     return_type: Type,
 }
 
 impl PrintFunction {
     pub fn new() -> Self {
         Self {
-            parameters: vec![("value".to_string(), Type::string())],
+            parameters: vec![Parameter::new("value".to_string(), Type::string())],
             return_type: Type::unit(),
         }
     }
@@ -23,7 +23,7 @@ impl NativeFunction for PrintFunction {
         "print"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 
@@ -57,9 +57,9 @@ mod tests {
 
         assert_eq!(print_fn.name(), "print");
         assert_eq!(print_fn.parameters().len(), 1);
-        assert_eq!(print_fn.parameters()[0].0, "value");
-        assert_eq!(print_fn.parameters()[0].1.name, "String");
-        assert_eq!(print_fn.return_type().name, "()");
+        assert_eq!(print_fn.parameters()[0].name, "value");
+        assert_eq!(print_fn.parameters()[0].param_type.name(), "String");
+        assert_eq!(print_fn.return_type().name(), "()");
     }
 
     #[tokio::test]

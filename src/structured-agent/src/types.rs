@@ -2,40 +2,62 @@ use async_trait::async_trait;
 use std::any::Any;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Type {
+pub enum Type {
+    String,
+    Boolean,
+    Unit,
+    Custom(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
     pub name: String,
+    pub param_type: Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternalFunctionDefinition {
     pub name: String,
-    pub parameters: Vec<(String, Type)>,
+    pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub documentation: Option<String>,
 }
 
 impl Type {
     pub fn string() -> Self {
-        Self {
-            name: "String".to_string(),
-        }
+        Self::String
     }
 
     pub fn unit() -> Self {
-        Self {
-            name: "()".to_string(),
-        }
+        Self::Unit
     }
 
     pub fn boolean() -> Self {
-        Self {
-            name: "Boolean".to_string(),
+        Self::Boolean
+    }
+
+    pub fn custom(name: String) -> Self {
+        Self::Custom(name)
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Type::String => "String".to_string(),
+            Type::Boolean => "Boolean".to_string(),
+            Type::Unit => "()".to_string(),
+            Type::Custom(name) => name.clone(),
         }
     }
 }
 
+impl Parameter {
+    pub fn new(name: String, param_type: Type) -> Self {
+        Self { name, param_type }
+    }
+}
+
 impl ExternalFunctionDefinition {
-    pub fn new(name: String, parameters: Vec<(String, Type)>, return_type: Type) -> Self {
+    pub fn new(name: String, parameters: Vec<Parameter>, return_type: Type) -> Self {
         Self {
             name,
             parameters,
@@ -46,7 +68,7 @@ impl ExternalFunctionDefinition {
 
     pub fn new_with_docs(
         name: String,
-        parameters: Vec<(String, Type)>,
+        parameters: Vec<Parameter>,
         return_type: Type,
         documentation: Option<String>,
     ) -> Self {
@@ -62,7 +84,7 @@ impl ExternalFunctionDefinition {
 #[async_trait(?Send)]
 pub trait Function: std::fmt::Debug {
     fn name(&self) -> &str;
-    fn parameters(&self) -> &[(String, Type)];
+    fn parameters(&self) -> &[Parameter];
     fn function_return_type(&self) -> &Type;
 }
 
@@ -123,14 +145,14 @@ impl LanguageEngine for PrintEngine {
         context: &crate::runtime::Context,
         return_type: &Type,
     ) -> Result<crate::runtime::ExprResult, String> {
-        match return_type.name.as_str() {
-            "String" => {
+        match return_type {
+            Type::String => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExprResult::String(value))
             }
-            "Boolean" => Ok(crate::runtime::ExprResult::Boolean(true)),
-            "()" => Ok(crate::runtime::ExprResult::Unit),
-            _ => {
+            Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
+            Type::Unit => Ok(crate::runtime::ExprResult::Unit),
+            Type::Custom(_) => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExprResult::String(value))
             }
@@ -151,15 +173,16 @@ impl LanguageEngine for PrintEngine {
         param_name: &str,
         param_type: &Type,
     ) -> Result<crate::runtime::ExprResult, String> {
-        match param_type.name.as_str() {
-            "String" => {
+        match param_type {
+            Type::String => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExprResult::String(value))
             }
-            "Boolean" => Ok(crate::runtime::ExprResult::Boolean(true)),
-            _ => Ok(crate::runtime::ExprResult::String(format!(
+            Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
+            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExprResult::String(format!(
                 "PrintEngine: {} ({})",
-                param_name, param_type.name
+                param_name,
+                param_type.name()
             ))),
         }
     }
@@ -168,7 +191,7 @@ impl LanguageEngine for PrintEngine {
 #[async_trait(?Send)]
 pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
-    fn parameters(&self) -> &[(String, Type)];
+    fn parameters(&self) -> &[Parameter];
     fn return_type(&self) -> &Type;
     async fn execute(
         &self,

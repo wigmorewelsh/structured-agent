@@ -2,8 +2,9 @@ use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
-use crate::types::NativeFunction;
-use crate::types::{ExecutableFunction, Expression, ExternalFunctionDefinition, LanguageEngine};
+use crate::types::{
+    ExecutableFunction, ExternalFunctionDefinition, LanguageEngine, NativeFunction,
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;

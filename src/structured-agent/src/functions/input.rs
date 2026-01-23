@@ -1,5 +1,5 @@
 use crate::runtime::ExprResult;
-use crate::types::{NativeFunction, Type};
+use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::io::{self, Write};
 
@@ -22,7 +22,7 @@ impl NativeFunction for InputFunction {
         "input"
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &[]
     }
 
@@ -56,7 +56,7 @@ mod tests {
 
         assert_eq!(input_fn.name(), "input");
         assert_eq!(input_fn.parameters().len(), 0);
-        assert_eq!(input_fn.return_type().name, "String");
+        assert_eq!(input_fn.return_type().name(), "String");
     }
 
     #[tokio::test]

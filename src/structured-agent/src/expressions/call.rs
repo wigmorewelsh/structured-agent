@@ -1,6 +1,6 @@
 use crate::expressions::PlaceholderExpr;
 use crate::runtime::{Context, ExprResult};
-use crate::types::{Expression, Type};
+use crate::types::{Expression, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
@@ -41,7 +41,9 @@ impl Expression for CallExpr {
         let mut args = Vec::new();
         for (i, arg) in self.arguments.iter().enumerate() {
             if arg.as_any().downcast_ref::<PlaceholderExpr>().is_some() {
-                let (param_name, param_type) = &parameters[i];
+                let param = &parameters[i];
+                let param_name = &param.name;
+                let param_type = &param.param_type;
 
                 let value = context
                     .runtime()
@@ -61,7 +63,8 @@ impl Expression for CallExpr {
             context.runtime_rc(),
         ));
 
-        for (i, (param_name, _param_type)) in parameters.iter().enumerate() {
+        for (i, param) in parameters.iter().enumerate() {
+            let param_name = &param.name;
             function_context.declare_variable(param_name.clone(), args[i].clone());
         }
 
@@ -185,7 +188,7 @@ mod tests {
 
         let function_info = FunctionExpr {
             name: "process".to_string(),
-            parameters: vec![("data".to_string(), Type::string())],
+            parameters: vec![Parameter::new("data".to_string(), Type::string())],
             return_type: Type::string(),
             body: vec![Box::new(InjectionExpr {
                 inner: Box::new(StringLiteralExpr {
@@ -230,7 +233,7 @@ mod tests {
 
         let function_info = FunctionExpr {
             name: "analyze".to_string(),
-            parameters: vec![("comments".to_string(), Type::string())],
+            parameters: vec![Parameter::new("comments".to_string(), Type::string())],
             return_type: Type::string(),
             body: vec![],
             documentation: None,

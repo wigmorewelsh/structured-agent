@@ -1,6 +1,6 @@
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
-use crate::types::{ExecutableFunction, Expression, Function, Type};
+use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
 use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 pub struct ExternalFunctionExpr {
     pub name: String,
-    pub parameters: Vec<(String, Type)>,
+    pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub mcp_client: Rc<McpClient>,
     pub documentation: Option<String>,
@@ -44,7 +44,8 @@ impl Expression for ExternalFunctionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut arguments = json!({});
 
-        for (param_name, _param_type) in &self.parameters {
+        for param in &self.parameters {
+            let param_name = &param.name;
             if let Some(value) = context.get_variable(param_name) {
                 let json_value = match value {
                     ExprResult::String(s) => json!(s),
@@ -89,7 +90,7 @@ impl Expression for ExternalFunctionExpr {
 impl ExternalFunctionExpr {
     pub fn new(
         name: String,
-        parameters: Vec<(String, Type)>,
+        parameters: Vec<Parameter>,
         return_type: Type,
         mcp_client: Rc<McpClient>,
         documentation: Option<String>,
@@ -110,7 +111,7 @@ impl Function for ExternalFunctionExpr {
         &self.name
     }
 
-    fn parameters(&self) -> &[(String, Type)] {
+    fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 

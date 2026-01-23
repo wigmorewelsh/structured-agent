@@ -123,7 +123,7 @@ mod tests {
         let body = vec![];
         let if_expr = IfExpr { condition, body };
 
-        assert_eq!(if_expr.return_type().name, "()");
+        assert_eq!(if_expr.return_type().name(), "()");
     }
 
     #[tokio::test]
