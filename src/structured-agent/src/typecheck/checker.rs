@@ -334,7 +334,7 @@ impl TypeChecker {
                             expected: format!("{}", first_type),
                             found: format!("{}", clause_type),
                             branch_index: i,
-                            span: clause.span,
+                            span: clause.expression_next.span(),
                             file_id,
                         });
                     }

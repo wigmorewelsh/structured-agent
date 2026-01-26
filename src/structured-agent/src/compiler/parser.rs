@@ -54,7 +54,7 @@ where
         .map(|comments: Option<Vec<String>>| comments.map(|lines| lines.join("\n")))
 }
 
-fn identifier<Input>() -> impl Parser<Input, Output = String>
+fn identifier_raw<Input>() -> impl Parser<Input, Output = String>
 where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
@@ -69,7 +69,14 @@ where
             result.extend(rest);
             result
         })
-        .skip(skip_spaces())
+}
+
+fn identifier<Input>() -> impl Parser<Input, Output = String>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    identifier_raw().skip(skip_spaces())
 }
 
 pub fn parse_program<Input>(file_id: FileId) -> impl Parser<Input, Output = Module>
@@ -267,11 +274,10 @@ where
 {
     (
         position(),
-        attempt((identifier(), lex_char('='))),
+        attempt((identifier(), char('=').skip(skip_spaces()))),
         parse_expression(),
         position(),
     )
-        .skip(skip_spaces())
         .map(
             |(start, (variable, _), expression, end)| Statement::VariableAssignment {
                 variable,
@@ -432,7 +438,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), identifier(), position())
+    (position(), identifier_raw(), position())
         .skip(skip_spaces())
         .map(|(start, name, end)| Expression::Variable {
             name,
