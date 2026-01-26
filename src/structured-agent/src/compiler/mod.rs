@@ -222,7 +222,7 @@ impl CompilerTrait for Compiler {
             if let Err(io_err) = reporter.emit_type_error(&type_error) {
                 eprintln!("Failed to emit type error diagnostic: {}", io_err);
             }
-            return Err("Type error".to_string());
+            return Err(format!("Type error: {}", type_error));
         }
 
         let mut compiled_program = CompiledProgram::new();

@@ -215,8 +215,8 @@ combine::parser! {
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
-            attempt(parse_assignment()),
-            attempt(parse_variable_assignment()),
+            parse_assignment(),
+            parse_variable_assignment(),
             attempt(parse_select()),
             attempt(parse_injection()),
             attempt(parse_if_statement()),
@@ -244,7 +244,7 @@ where
 {
     (
         position(),
-        lex_string("let"),
+        attempt(lex_string("let")),
         identifier(),
         lex_char('='),
         parse_expression(),
@@ -266,13 +266,12 @@ where
 {
     (
         position(),
-        identifier(),
-        lex_char('='),
+        attempt((identifier(), lex_char('='))),
         parse_expression(),
         position(),
     )
         .map(
-            |(start, variable, _, expression, end)| Statement::VariableAssignment {
+            |(start, (variable, _), expression, end)| Statement::VariableAssignment {
                 variable,
                 expression,
                 span: Span::new(start, end),
@@ -288,18 +287,27 @@ where
     parse_expression().map(Statement::ExpressionStatement)
 }
 
+combine::parser! {
+    fn parse_simple_expression[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        choice((
+            attempt(parse_call()),
+            parse_string_literal(),
+            parse_boolean_literal(),
+            parse_variable(),
+        ))
+    }
+}
+
 fn parse_expression<Input>() -> impl Parser<Input, Output = Expression>
 where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        attempt(parse_call()),
         attempt(parse_select_expression()),
-        parse_placeholder(),
-        parse_string_literal(),
-        parse_boolean_literal(),
-        parse_variable(),
+        parse_simple_expression(),
     ))
 }
 
@@ -330,12 +338,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((
-        parse_placeholder(),
-        parse_string_literal(),
-        parse_boolean_literal(),
-        parse_variable(),
-    ))
+    choice((parse_placeholder(), parse_simple_expression()))
 }
 
 fn parse_string_literal<Input>() -> impl Parser<Input, Output = Expression>
@@ -358,7 +361,7 @@ where
         position(),
         between(
             lex_char('"'),
-            char('"'),
+            lex_char('"'),
             many(
                 char('\\')
                     .with(satisfy(|_| true))
@@ -392,8 +395,8 @@ where
     (
         position(),
         between(
-            string("'''"),
-            string("'''"),
+            lex_string("'''"),
+            lex_string("'''"),
             many(
                 char('\\')
                     .with(satisfy(|_| true))
@@ -543,7 +546,7 @@ where
     (
         position(),
         lex_string("if"),
-        parse_expression(),
+        parse_simple_expression(),
         between(
             lex_char('{'),
             lex_char('}'),
@@ -566,7 +569,7 @@ where
     (
         position(),
         lex_string("while"),
-        parse_expression(),
+        parse_simple_expression(),
         between(
             lex_char('{'),
             lex_char('}'),

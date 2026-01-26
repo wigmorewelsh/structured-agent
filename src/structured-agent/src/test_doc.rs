@@ -1,5 +1,9 @@
 use crate::compiler::parser::parse_program;
-use combine::EasyParser;
+use crate::types::FileId;
+use combine::Parser;
+use combine::stream::position;
+
+const TEST_FILE_ID: FileId = 0;
 
 #[test]
 fn test_comment_documentation_parsing() {
@@ -15,7 +19,8 @@ fn undocumented_func(): () {
 }
 "#;
 
-    let result = parse_program().easy_parse(input);
+    let stream = position::Stream::with_positioner(input, position::IndexPositioner::default());
+    let result = parse_program(TEST_FILE_ID).parse(stream);
     assert!(result.is_ok());
 
     let (module, _) = result.unwrap();
@@ -54,7 +59,8 @@ fn single_doc(): () {
 }
 "#;
 
-    let result = parse_program().easy_parse(input);
+    let stream = position::Stream::with_positioner(input, position::IndexPositioner::default());
+    let result = parse_program(TEST_FILE_ID).parse(stream);
     assert!(result.is_ok());
 
     let (module, _) = result.unwrap();
@@ -81,7 +87,8 @@ fn greet(name: String): () {
 }
 "#;
 
-    let result = parse_program().easy_parse(input);
+    let stream = position::Stream::with_positioner(input, position::IndexPositioner::default());
+    let result = parse_program(TEST_FILE_ID).parse(stream);
     assert!(result.is_ok());
 
     let (module, _) = result.unwrap();
