@@ -2,7 +2,7 @@ use crate::ast::{
     Definition, Expression, ExternalFunction, Function, FunctionBody, Module, Parameter,
     SelectClause, SelectExpression, Statement, Type,
 };
-use crate::types::{FileId, Span};
+use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by};
@@ -255,16 +255,16 @@ where
         identifier(),
         lex_char('='),
         parse_expression(),
-        position(),
     )
-        .skip(skip_spaces())
-        .map(
-            |(start, _, variable, _, expression, end)| Statement::Assignment {
+        .map(|(start, _, variable, _, expression)| {
+            let end = expression.span().end;
+            Statement::Assignment {
                 variable,
                 expression,
                 span: Span::new(start, end),
-            },
-        )
+            }
+        })
+        .skip(skip_spaces())
 }
 
 fn parse_variable_assignment<Input>() -> impl Parser<Input, Output = Statement>
@@ -274,17 +274,18 @@ where
 {
     (
         position(),
-        attempt((identifier(), char('=').skip(skip_spaces()))),
+        attempt((identifier(), lex_char('='))),
         parse_expression(),
-        position(),
     )
-        .map(
-            |(start, (variable, _), expression, end)| Statement::VariableAssignment {
+        .skip(skip_spaces())
+        .map(|(start, (variable, _), expression)| {
+            let end = expression.span().end;
+            Statement::VariableAssignment {
                 variable,
                 expression,
                 span: Span::new(start, end),
-            },
-        )
+            }
+        })
 }
 
 fn parse_expression_statement<Input>() -> impl Parser<Input, Output = Statement>

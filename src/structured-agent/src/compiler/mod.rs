@@ -1,5 +1,8 @@
 pub mod parser;
 
+use crate::analysis::{
+    AnalysisRunner, InfiniteLoopAnalyzer, ReachabilityAnalyzer, UnusedVariableAnalyzer,
+};
 use crate::ast::{self, Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::expressions::{
@@ -223,6 +226,18 @@ impl CompilerTrait for Compiler {
                 eprintln!("Failed to emit type error diagnostic: {}", io_err);
             }
             return Err(format!("Type error: {}", type_error));
+        }
+
+        let mut runner = AnalysisRunner::new()
+            .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
+            .with_analyzer(Box::new(ReachabilityAnalyzer::new()))
+            .with_analyzer(Box::new(InfiniteLoopAnalyzer::new()));
+
+        let warnings = runner.run(&module, file_id);
+        for warning in &warnings {
+            if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
+                eprintln!("Failed to emit warning diagnostic: {}", io_err);
+            }
         }
 
         let mut compiled_program = CompiledProgram::new();
@@ -565,5 +580,39 @@ fn main(): String {
             ExprResult::String(s) => assert_eq!(s, "Adding numbers"),
             _ => panic!("Expected string result"),
         }
+    }
+
+    #[test]
+    fn test_control_flow_analysis_warnings() {
+        let program_source = r#"
+fn test_unused(): () {
+    let unused_var = "never used"
+    "done"!
+}
+
+fn test_unreachable(): String {
+    return "early"
+    "unreachable"!
+}
+
+fn test_infinite(): () {
+    while true {
+        "looping forever"!
+    }
+    "never reached"!
+}
+
+fn main(): () {
+    "main"!
+}
+"#;
+
+        let program = CompilationUnit::from_string(program_source.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_program(&program);
+
+        assert!(result.is_ok());
+        let compiled_program = result.unwrap();
+        assert_eq!(compiled_program.functions().len(), 4);
     }
 }
