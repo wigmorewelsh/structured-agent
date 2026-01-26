@@ -16,7 +16,7 @@ struct FunctionSignature {
 
 #[derive(Debug, Clone)]
 struct TypeEnvironment {
-    variables: HashMap<String, AstType>,
+    variables: HashMap<String, (AstType, Span)>,
     parent: Option<Box<TypeEnvironment>>,
 }
 
@@ -109,7 +109,7 @@ impl TypeChecker {
         let mut env = TypeEnvironment::new();
 
         for param in &func.parameters {
-            env.declare_variable(param.name.clone(), param.param_type.clone());
+            env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
         }
 
         for statement in &func.body.statements {
@@ -134,10 +134,10 @@ impl TypeChecker {
             Statement::Assignment {
                 variable,
                 expression,
-                ..
+                span,
             } => {
                 let expr_type = self.check_expression(expression, &env, file_id)?;
-                env.declare_variable(variable.clone(), expr_type);
+                env.declare_variable(variable.clone(), expr_type, expression.span());
                 Ok(env)
             }
             Statement::VariableAssignment {
@@ -146,19 +146,21 @@ impl TypeChecker {
                 span,
             } => {
                 let expr_type = self.check_expression(expression, &env, file_id)?;
-                let existing_type =
-                    env.lookup_variable(variable)
-                        .ok_or_else(|| TypeError::UnknownVariable {
-                            name: variable.clone(),
-                            span: *span,
-                            file_id,
-                        })?;
+                let (existing_type, declaration_span) = env
+                    .lookup_variable_with_span(variable)
+                    .ok_or_else(|| TypeError::UnknownVariable {
+                        name: variable.clone(),
+                        span: *span,
+                        file_id,
+                    })?;
 
                 if !self.types_equal(&expr_type, &existing_type) {
-                    return Err(TypeError::TypeMismatch {
+                    return Err(TypeError::VariableTypeMismatch {
+                        variable: variable.clone(),
                         expected: format!("{}", existing_type),
                         found: format!("{}", expr_type),
                         span: expression.span(),
+                        declaration_span,
                         file_id,
                     });
                 }
@@ -314,8 +316,11 @@ impl TypeChecker {
                 let first_result_type =
                     self.check_expression(&first_clause.expression_to_run, env, file_id)?;
                 let mut first_clause_env = env.create_child();
-                first_clause_env
-                    .declare_variable(first_clause.result_variable.clone(), first_result_type);
+                first_clause_env.declare_variable(
+                    first_clause.result_variable.clone(),
+                    first_result_type,
+                    first_clause.expression_to_run.span(),
+                );
                 let first_type = self.check_expression(
                     &first_clause.expression_next,
                     &first_clause_env,
@@ -326,7 +331,11 @@ impl TypeChecker {
                     let result_type =
                         self.check_expression(&clause.expression_to_run, env, file_id)?;
                     let mut clause_env = env.create_child();
-                    clause_env.declare_variable(clause.result_variable.clone(), result_type);
+                    clause_env.declare_variable(
+                        clause.result_variable.clone(),
+                        result_type,
+                        clause.expression_to_run.span(),
+                    );
                     let clause_type =
                         self.check_expression(&clause.expression_next, &clause_env, file_id)?;
                     if !self.types_equal(&first_type, &clause_type) {
@@ -335,6 +344,7 @@ impl TypeChecker {
                             found: format!("{}", clause_type),
                             branch_index: i,
                             span: clause.expression_next.span(),
+                            first_branch_span: first_clause.expression_next.span(),
                             file_id,
                         });
                     }
@@ -370,15 +380,25 @@ impl TypeEnvironment {
         }
     }
 
-    fn declare_variable(&mut self, name: String, ast_type: AstType) {
-        self.variables.insert(name, ast_type);
+    fn declare_variable(&mut self, name: String, var_type: AstType, span: Span) {
+        self.variables.insert(name, (var_type, span));
     }
 
     fn lookup_variable(&self, name: &str) -> Option<AstType> {
-        if let Some(ast_type) = self.variables.get(name) {
-            Some(ast_type.clone())
-        } else if let Some(ref parent) = self.parent {
+        if let Some((var_type, _)) = self.variables.get(name) {
+            Some(var_type.clone())
+        } else if let Some(parent) = &self.parent {
             parent.lookup_variable(name)
+        } else {
+            None
+        }
+    }
+
+    fn lookup_variable_with_span(&self, name: &str) -> Option<(AstType, Span)> {
+        if let Some((var_type, span)) = self.variables.get(name) {
+            Some((var_type.clone(), *span))
+        } else if let Some(parent) = &self.parent {
+            parent.lookup_variable_with_span(name)
         } else {
             None
         }

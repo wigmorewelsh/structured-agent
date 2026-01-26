@@ -19,6 +19,14 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    VariableTypeMismatch {
+        variable: String,
+        expected: String,
+        found: String,
+        span: Span,
+        declaration_span: Span,
+        file_id: FileId,
+    },
     ArgumentCountMismatch {
         function: String,
         expected: usize,
@@ -46,6 +54,7 @@ pub enum TypeError {
         found: String,
         branch_index: usize,
         span: Span,
+        first_branch_span: Span,
         file_id: FileId,
     },
     UnsupportedType {
@@ -61,6 +70,7 @@ impl TypeError {
             TypeError::UnknownVariable { span, .. } => *span,
             TypeError::UnknownFunction { span, .. } => *span,
             TypeError::TypeMismatch { span, .. } => *span,
+            TypeError::VariableTypeMismatch { span, .. } => *span,
             TypeError::ArgumentCountMismatch { span, .. } => *span,
             TypeError::ArgumentTypeMismatch { span, .. } => *span,
             TypeError::ReturnTypeMismatch { span, .. } => *span,
@@ -74,6 +84,7 @@ impl TypeError {
             TypeError::UnknownVariable { file_id, .. } => *file_id,
             TypeError::UnknownFunction { file_id, .. } => *file_id,
             TypeError::TypeMismatch { file_id, .. } => *file_id,
+            TypeError::VariableTypeMismatch { file_id, .. } => *file_id,
             TypeError::ArgumentCountMismatch { file_id, .. } => *file_id,
             TypeError::ArgumentTypeMismatch { file_id, .. } => *file_id,
             TypeError::ReturnTypeMismatch { file_id, .. } => *file_id,
@@ -116,6 +127,24 @@ impl TypeError {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ]),
+            TypeError::VariableTypeMismatch {
+                variable,
+                expected,
+                found,
+                span,
+                declaration_span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "cannot assign `{}` to variable `{}`",
+                    found, variable
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                    Label::secondary(*file_id, declaration_span.to_byte_range())
+                        .with_message(format!("variable declared here with type `{}`", expected)),
                 ]),
             TypeError::ArgumentCountMismatch {
                 function: _,
@@ -167,12 +196,15 @@ impl TypeError {
                 found,
                 branch_index,
                 span,
+                first_branch_span,
                 file_id,
             } => Diagnostic::error()
                 .with_message("select branches have incompatible types")
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                    Label::secondary(*file_id, first_branch_span.to_byte_range())
+                        .with_message(format!("first branch has type `{}`", expected)),
                 ])
                 .with_notes(vec![format!("in select branch {}", branch_index)]),
             TypeError::UnsupportedType {
@@ -202,6 +234,18 @@ impl fmt::Display for TypeError {
                 expected, found, ..
             } => {
                 write!(f, "Type mismatch: expected {}, found {}", expected, found)
+            }
+            TypeError::VariableTypeMismatch {
+                variable,
+                expected,
+                found,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Variable {} type mismatch: expected {}, found {}",
+                    variable, expected, found
+                )
             }
             TypeError::ArgumentCountMismatch {
                 function,
