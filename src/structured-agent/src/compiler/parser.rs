@@ -250,6 +250,7 @@ where
         parse_expression(),
         position(),
     )
+        .skip(skip_spaces())
         .map(
             |(start, _, variable, _, expression, end)| Statement::Assignment {
                 variable,
@@ -270,6 +271,7 @@ where
         parse_expression(),
         position(),
     )
+        .skip(skip_spaces())
         .map(
             |(start, (variable, _), expression, end)| Statement::VariableAssignment {
                 variable,
@@ -321,11 +323,12 @@ where
         identifier(),
         between(
             lex_char('('),
-            lex_char(')'),
+            char(')'),
             sep_by(parse_argument(), lex_char(',')),
         ),
         position(),
     )
+        .skip(skip_spaces())
         .map(|(start, function, args, end)| Expression::Call {
             function,
             arguments: args,
@@ -361,7 +364,7 @@ where
         position(),
         between(
             lex_char('"'),
-            lex_char('"'),
+            char('"'),
             many(
                 char('\\')
                     .with(satisfy(|_| true))
@@ -379,6 +382,7 @@ where
         ),
         position(),
     )
+        .skip(skip_spaces())
         .map(
             |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
                 value: chars.into_iter().collect(),
@@ -396,7 +400,7 @@ where
         position(),
         between(
             lex_string("'''"),
-            lex_string("'''"),
+            string("'''"),
             many(
                 char('\\')
                     .with(satisfy(|_| true))
@@ -414,6 +418,7 @@ where
         ),
         position(),
     )
+        .skip(skip_spaces())
         .map(
             |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
                 value: chars.into_iter().collect(),
@@ -427,10 +432,12 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), identifier(), position()).map(|(start, name, end)| Expression::Variable {
-        name,
-        span: Span::new(start, end),
-    })
+    (position(), identifier(), position())
+        .skip(skip_spaces())
+        .map(|(start, name, end)| Expression::Variable {
+            name,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_placeholder<Input>() -> impl Parser<Input, Output = Expression>
@@ -449,18 +456,18 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        (position(), lex_string("true"), position()).map(|(start, _, end)| {
-            Expression::BooleanLiteral {
+        (position(), string("true"), position())
+            .skip(skip_spaces())
+            .map(|(start, _, end)| Expression::BooleanLiteral {
                 value: true,
                 span: Span::new(start, end),
-            }
-        }),
-        (position(), lex_string("false"), position()).map(|(start, _, end)| {
-            Expression::BooleanLiteral {
+            }),
+        (position(), string("false"), position())
+            .skip(skip_spaces())
+            .map(|(start, _, end)| Expression::BooleanLiteral {
                 value: false,
                 span: Span::new(start, end),
-            }
-        }),
+            }),
     ))
 }
 
