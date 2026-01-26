@@ -2,15 +2,16 @@ use crate::ast::{
     Definition, Expression, ExternalFunction, Function, FunctionBody, Module, Parameter,
     SelectClause, SelectExpression, Statement, Type,
 };
+use crate::types::{FileId, Span};
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by};
 use combine::parser::token::satisfy;
-use combine::{Parser, Stream, attempt, between, optional};
+use combine::{Parser, Stream, attempt, between, optional, position};
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     spaces().silent()
@@ -18,7 +19,7 @@ where
 
 fn lex_char<Input>(c: char) -> impl Parser<Input, Output = char>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     char(c).skip(skip_spaces())
@@ -26,7 +27,7 @@ where
 
 fn lex_string<Input>(s: &'static str) -> impl Parser<Input, Output = &'static str>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     string(s).skip(skip_spaces())
@@ -34,7 +35,7 @@ where
 
 fn comment_line<Input>() -> impl Parser<Input, Output = String>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (char('#'), many(satisfy(|c| c != '\n')), optional(newline())).map(
@@ -46,7 +47,7 @@ where
 
 fn parse_comments<Input>() -> impl Parser<Input, Output = Option<String>>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     optional(many1(comment_line()))
@@ -55,7 +56,7 @@ where
 
 fn identifier<Input>() -> impl Parser<Input, Output = String>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
@@ -71,25 +72,33 @@ where
         .skip(skip_spaces())
 }
 
-pub fn parse_program<Input>() -> impl Parser<Input, Output = Module>
+pub fn parse_program<Input>(file_id: FileId) -> impl Parser<Input, Output = Module>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    skip_spaces()
-        .with(many(choice((
+    (
+        position(),
+        skip_spaces().with(many(choice((
             parse_function_with_docs().map(Definition::Function),
             parse_external_function().map(Definition::ExternalFunction),
-        ))))
-        .map(|definitions| Module { definitions })
+        )))),
+        position(),
+    )
+        .map(move |(start, definitions, end)| Module {
+            definitions,
+            span: Span::new(start, end),
+            file_id,
+        })
 }
 
 fn parse_external_function<Input>() -> impl Parser<Input, Output = ExternalFunction>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         lex_string("extern"),
         lex_string("fn"),
         identifier(),
@@ -100,17 +109,21 @@ where
         ),
         lex_char(':'),
         parse_type(),
+        position(),
     )
-        .map(|(_, _, name, params, _, return_type)| ExternalFunction {
-            name,
-            parameters: params,
-            return_type,
-        })
+        .map(
+            |(start, _, _, name, params, _, return_type, end)| ExternalFunction {
+                name,
+                parameters: params,
+                return_type,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_function_with_docs<Input>() -> impl Parser<Input, Output = Function>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (parse_comments(), parse_function()).map(|(doc, mut func)| {
@@ -121,10 +134,11 @@ where
 
 fn parse_function<Input>() -> impl Parser<Input, Output = Function>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         lex_string("fn"),
         identifier(),
         between(
@@ -135,28 +149,42 @@ where
         lex_char(':'),
         parse_type(),
         between(lex_char('{'), lex_char('}'), parse_function_body()),
+        position(),
     )
-        .map(|(_, name, params, _, return_type, body)| Function {
-            name,
-            parameters: params,
-            return_type,
-            body,
-            documentation: None,
-        })
+        .map(
+            |(start, _, name, params, _, return_type, body, end)| Function {
+                name,
+                parameters: params,
+                return_type,
+                body,
+                documentation: None,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_parameter<Input>() -> impl Parser<Input, Output = Parameter>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (identifier(), lex_char(':'), parse_type())
-        .map(|(name, _, param_type)| Parameter { name, param_type })
+    (
+        position(),
+        identifier(),
+        lex_char(':'),
+        parse_type(),
+        position(),
+    )
+        .map(|(start, name, _, param_type, end)| Parameter {
+            name,
+            param_type,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_type<Input>() -> impl Parser<Input, Output = Type>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
@@ -168,15 +196,23 @@ where
 
 fn parse_function_body<Input>() -> impl Parser<Input, Output = FunctionBody>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    many(statement().skip(skip_spaces())).map(|statements| FunctionBody { statements })
+    (
+        position(),
+        many(statement().skip(skip_spaces())),
+        position(),
+    )
+        .map(|(start, statements, end)| FunctionBody {
+            statements,
+            span: Span::new(start, end),
+        })
 }
 
 combine::parser! {
     fn statement[Input]()(Input) -> Statement
-    where [Input: Stream<Token = char>]
+    where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
             attempt(parse_assignment()),
@@ -193,7 +229,7 @@ combine::parser! {
 
 fn parse_injection<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     parse_expression()
@@ -203,37 +239,50 @@ where
 
 fn parse_assignment<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         lex_string("let"),
         identifier(),
         lex_char('='),
         parse_expression(),
+        position(),
     )
-        .map(|(_, variable, _, expression)| Statement::Assignment {
-            variable,
-            expression,
-        })
+        .map(
+            |(start, _, variable, _, expression, end)| Statement::Assignment {
+                variable,
+                expression,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_variable_assignment<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (identifier(), lex_char('='), parse_expression()).map(|(variable, _, expression)| {
-        Statement::VariableAssignment {
-            variable,
-            expression,
-        }
-    })
+    (
+        position(),
+        identifier(),
+        lex_char('='),
+        parse_expression(),
+        position(),
+    )
+        .map(
+            |(start, variable, _, expression, end)| Statement::VariableAssignment {
+                variable,
+                expression,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_expression_statement<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     parse_expression().map(Statement::ExpressionStatement)
@@ -241,7 +290,7 @@ where
 
 fn parse_expression<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
@@ -256,26 +305,29 @@ where
 
 fn parse_call<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         identifier(),
         between(
             lex_char('('),
             lex_char(')'),
             sep_by(parse_argument(), lex_char(',')),
         ),
+        position(),
     )
-        .map(|(function, args)| Expression::Call {
+        .map(|(start, function, args, end)| Expression::Call {
             function,
             arguments: args,
+            span: Span::new(start, end),
         })
 }
 
 fn parse_argument<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
@@ -288,7 +340,7 @@ where
 
 fn parse_string_literal<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
@@ -299,144 +351,197 @@ where
 
 fn parse_single_line_string<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    between(
-        lex_char('"'),
-        char('"'),
-        many(
-            char('\\')
-                .with(satisfy(|_| true))
-                .map(|c| match c {
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    '\\' => '\\',
-                    '\'' => '\'',
-                    '"' => '"',
-                    c => c,
-                })
-                .or(satisfy(|c: char| c != '"')),
+    (
+        position(),
+        between(
+            lex_char('"'),
+            char('"'),
+            many(
+                char('\\')
+                    .with(satisfy(|_| true))
+                    .map(|c| match c {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '\'' => '\'',
+                        '"' => '"',
+                        c => c,
+                    })
+                    .or(satisfy(|c: char| c != '"')),
+            ),
         ),
+        position(),
     )
-    .map(|chars: Vec<char>| Expression::StringLiteral(chars.into_iter().collect()))
+        .map(
+            |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
+                value: chars.into_iter().collect(),
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_multiline_string<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    between(
-        string("'''"),
-        string("'''"),
-        many(
-            char('\\')
-                .with(satisfy(|_| true))
-                .map(|c| match c {
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    '\\' => '\\',
-                    '\'' => '\'',
-                    '"' => '"',
-                    c => c,
-                })
-                .or(satisfy(|c: char| c != '\'')),
+    (
+        position(),
+        between(
+            string("'''"),
+            string("'''"),
+            many(
+                char('\\')
+                    .with(satisfy(|_| true))
+                    .map(|c| match c {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '\'' => '\'',
+                        '"' => '"',
+                        c => c,
+                    })
+                    .or(satisfy(|c: char| c != '\'')),
+            ),
         ),
+        position(),
     )
-    .map(|chars: Vec<char>| Expression::StringLiteral(chars.into_iter().collect()))
+        .map(
+            |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
+                value: chars.into_iter().collect(),
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_variable<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    identifier().map(Expression::Variable)
+    (position(), identifier(), position()).map(|(start, name, end)| Expression::Variable {
+        name,
+        span: Span::new(start, end),
+    })
 }
 
 fn parse_placeholder<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    lex_char('_').map(|_| Expression::Placeholder)
+    (position(), lex_char('_'), position()).map(|(start, _, end)| Expression::Placeholder {
+        span: Span::new(start, end),
+    })
 }
 
 fn parse_boolean_literal<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        lex_string("true").map(|_| Expression::BooleanLiteral(true)),
-        lex_string("false").map(|_| Expression::BooleanLiteral(false)),
+        (position(), lex_string("true"), position()).map(|(start, _, end)| {
+            Expression::BooleanLiteral {
+                value: true,
+                span: Span::new(start, end),
+            }
+        }),
+        (position(), lex_string("false"), position()).map(|(start, _, end)| {
+            Expression::BooleanLiteral {
+                value: false,
+                span: Span::new(start, end),
+            }
+        }),
     ))
 }
 
 fn parse_select<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    lex_string("select")
-        .with(between(
+    (
+        position(),
+        lex_string("select").with(between(
             lex_char('{'),
             lex_char('}'),
             sep_by(parse_select_clause(), lex_char(',')),
-        ))
-        .map(|clauses| {
-            Statement::ExpressionStatement(Expression::Select(SelectExpression { clauses }))
+        )),
+        position(),
+    )
+        .map(|(start, clauses, end)| {
+            Statement::ExpressionStatement(Expression::Select(SelectExpression {
+                clauses,
+                span: Span::new(start, end),
+            }))
         })
 }
 
 fn parse_select_expression<Input>() -> impl Parser<Input, Output = Expression>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    lex_string("select")
-        .with(between(
+    (
+        position(),
+        lex_string("select").with(between(
             lex_char('{'),
             lex_char('}'),
             sep_by(parse_select_clause(), lex_char(',')),
-        ))
-        .map(|clauses| Expression::Select(SelectExpression { clauses }))
+        )),
+        position(),
+    )
+        .map(|(start, clauses, end)| {
+            Expression::Select(SelectExpression {
+                clauses,
+                span: Span::new(start, end),
+            })
+        })
 }
 
 fn parse_select_clause<Input>() -> impl Parser<Input, Output = SelectClause>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    parse_call()
-        .skip(skip_spaces())
-        .skip(lex_string("as"))
-        .and(identifier())
-        .skip(lex_string("=>"))
-        .and(choice((
-            attempt(parse_call()),
-            parse_placeholder(),
-            parse_string_literal(),
-            parse_variable(),
-        )))
+    (
+        position(),
+        parse_call()
+            .skip(skip_spaces())
+            .skip(lex_string("as"))
+            .and(identifier())
+            .skip(lex_string("=>"))
+            .and(choice((
+                attempt(parse_call()),
+                parse_placeholder(),
+                parse_string_literal(),
+                parse_variable(),
+            ))),
+        position(),
+    )
         .map(
-            |((expression_to_run, result_variable), expression_next)| SelectClause {
+            |(start, ((expression_to_run, result_variable), expression_next), end)| SelectClause {
                 expression_to_run,
                 result_variable,
                 expression_next,
+                span: Span::new(start, end),
             },
         )
 }
 
 fn parse_if_statement<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         lex_string("if"),
         parse_expression(),
         between(
@@ -444,16 +549,22 @@ where
             lex_char('}'),
             many(statement().skip(skip_spaces())),
         ),
+        position(),
     )
-        .map(|(_, condition, body)| Statement::If { condition, body })
+        .map(|(start, _, condition, body, end)| Statement::If {
+            condition,
+            body,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_while_statement<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (
+        position(),
         lex_string("while"),
         parse_expression(),
         between(
@@ -461,27 +572,37 @@ where
             lex_char('}'),
             many(statement().skip(skip_spaces())),
         ),
+        position(),
     )
-        .map(|(_, condition, body): (_, _, Vec<Statement>)| Statement::While { condition, body })
+        .map(|(start, _, condition, body, end)| Statement::While {
+            condition,
+            body,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_return_statement<Input>() -> impl Parser<Input, Output = Statement>
 where
-    Input: Stream<Token = char>,
+    Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (lex_string("return"), parse_expression()).map(|(_, expression)| Statement::Return(expression))
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
-    use combine::EasyParser;
+    use combine::Parser;
+    use combine::stream::position::{IndexPositioner, Stream};
+
+    const TEST_FILE_ID: FileId = 0;
 
     #[test]
     fn test_parse_simple_multiline_string() {
         let input = r#"'''hello'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         if let Err(ref e) = result {
             println!("Parse error: {:?}", e);
         }
@@ -489,18 +610,19 @@ mod tests {
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "hello");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "hello");
             }
             _ => panic!("Expected StringLiteral"),
         }
     }
 
     #[test]
-    fn test_parse_empty_multiline_string_minimal() {
+    fn test_parse_empty_multiline_string() {
         let input = r#"''''''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         if let Err(ref e) = result {
             println!("Parse error: {:?}", e);
         }
@@ -508,8 +630,8 @@ mod tests {
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -523,18 +645,13 @@ string with "quotes" inside
 and multiple lines
 '''"#;
 
-        let result = parse_multiline_string().easy_parse(input);
-        if let Err(ref e) = result {
-            println!("Parse error: {:?}", e);
-        }
-        assert!(result.is_ok());
-
-        let (expr, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_multiline_string().parse(stream).unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert!(content.contains("This is a multiline"));
-                assert!(content.contains("string with \"quotes\" inside"));
-                assert!(content.contains("and multiple lines"));
+            Expression::StringLiteral { value, .. } => {
+                assert!(value.contains("This is a multiline"));
+                assert!(value.contains("string with \"quotes\" inside"));
+                assert!(value.contains("and multiple lines"));
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -542,15 +659,16 @@ and multiple lines
 
     #[test]
     fn test_parse_multiline_string_with_escaped_quote() {
-        let input = r#"'''This has an \' escaped quote'''"#;
+        let input = r#"'''He said \"hello\"'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "This has an ' escaped quote");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "He said \"hello\"");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -558,15 +676,16 @@ and multiple lines
 
     #[test]
     fn test_parse_multiline_string_with_escaped_backslash() {
-        let input = r#"'''This has a \\ backslash'''"#;
+        let input = r#"'''path\\to\\file'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "This has a \\ backslash");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "path\\to\\file");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -574,15 +693,16 @@ and multiple lines
 
     #[test]
     fn test_parse_multiline_string_with_newline_escape() {
-        let input = r#"'''Line 1\nLine 2'''"#;
+        let input = r#"'''line1\nline2'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "Line 1\nLine 2");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "line1\nline2");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -591,23 +711,25 @@ and multiple lines
     #[test]
     fn test_parse_multiline_string_with_unescaped_quote_fails() {
         let input = r#"'''This has an unescaped ' quote'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_multiline_string().easy_parse(input);
+        let result = parse_multiline_string().parse(stream);
         // This should fail because the parser stops at the unescaped single quote
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_single_line_string() {
-        let input = r#""Hello World""#;
+        let input = r#""test \"string\"""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_string_literal().easy_parse(input);
+        let result = parse_single_line_string().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "Hello World");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "test \"string\"");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -616,30 +738,32 @@ and multiple lines
     #[test]
     fn test_parse_single_line_string_with_escaped_quote() {
         let input = r#""Hello \"quoted\" World""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_string_literal().easy_parse(input);
+        let result = parse_single_line_string().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "Hello \"quoted\" World");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "Hello \"quoted\" World");
             }
             _ => panic!("Expected StringLiteral"),
         }
     }
 
     #[test]
-    fn test_parse_empty_multiline_string() {
+    fn test_parse_empty_multiline_string_minimal() {
         let input = r#""""""""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_string_literal().easy_parse(input);
+        let result = parse_string_literal().parse(stream);
         assert!(result.is_ok());
 
         let (expr, _) = result.unwrap();
         match expr {
-            Expression::StringLiteral(content) => {
-                assert_eq!(content, "");
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "");
             }
             _ => panic!("Expected StringLiteral"),
         }
@@ -654,8 +778,9 @@ fn analyze_code(context: Context, code: String): Analysis {
     code!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -693,10 +818,8 @@ fn main(): () {
 }
 "#;
 
-        let result = parse_program().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (module, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         assert_eq!(module.definitions.len(), 3);
 
         let functions: Vec<_> = module
@@ -720,13 +843,11 @@ fn main(): () {
     #[test]
     fn test_parse_prompt_injection() {
         let input = r#""Analyze the following code for potential bugs"!"#;
-        let result = statement().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (statement, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (statement, _) = statement().parse(stream).unwrap();
         match statement {
-            Statement::Injection(Expression::StringLiteral(content)) => {
-                assert_eq!(content, "Analyze the following code for potential bugs");
+            Statement::Injection(Expression::StringLiteral { value, .. }) => {
+                assert_eq!(value, "Analyze the following code for potential bugs");
             }
             _ => panic!("Expected injection with string literal"),
         }
@@ -735,13 +856,11 @@ fn main(): () {
     #[test]
     fn test_parse_variable_injection() {
         let input = "code!";
-        let result = statement().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (statement, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (statement, _) = statement().parse(stream).unwrap();
         match statement {
-            Statement::Injection(Expression::Variable(var)) => {
-                assert_eq!(var, "code");
+            Statement::Injection(Expression::Variable { name, .. }) => {
+                assert_eq!(name, "code");
             }
             _ => panic!("Expected injection with variable"),
         }
@@ -750,26 +869,26 @@ fn main(): () {
     #[test]
     fn test_parse_assignment_with_method_call() {
         let input = "let analysis = analyze_code(code)";
-        let result = statement().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (statement, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (statement, _) = statement().parse(stream).unwrap();
         match statement {
             Statement::Assignment {
                 variable,
                 expression,
+                span: _,
             } => {
                 assert_eq!(variable, "analysis");
                 match expression {
                     Expression::Call {
                         function,
                         arguments,
+                        span: _,
                     } => {
                         assert_eq!(function, "analyze_code");
                         assert_eq!(arguments.len(), 1);
                         match &arguments[0] {
-                            Expression::Variable(name) => assert_eq!(name, "code"),
-                            _ => panic!("Expected variable argument"),
+                            Expression::Variable { name, .. } => assert_eq!(name, "code"),
+                            _ => panic!("Expected variable as argument"),
                         }
                     }
                     _ => panic!("Expected call"),
@@ -782,7 +901,8 @@ fn main(): () {
     #[test]
     fn test_parse_call_with_expression_arguments() {
         let input = r#"func("hello", var_name, "world")"#;
-        let result = parse_expression().easy_parse(input);
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_expression().parse(stream);
         assert!(result.is_ok());
 
         let (expression, _) = result.unwrap();
@@ -790,22 +910,21 @@ fn main(): () {
             Expression::Call {
                 function,
                 arguments,
+                span: _,
             } => {
                 assert_eq!(function, "func");
                 assert_eq!(arguments.len(), 3);
 
                 match &arguments[0] {
-                    Expression::StringLiteral(s) => assert_eq!(s, "hello"),
+                    Expression::StringLiteral { value, .. } => assert_eq!(value, "hello"),
                     _ => panic!("Expected string literal"),
                 }
-
                 match &arguments[1] {
-                    Expression::Variable(name) => assert_eq!(name, "var_name"),
+                    Expression::Variable { name, .. } => assert_eq!(name, "var_name"),
                     _ => panic!("Expected variable"),
                 }
-
                 match &arguments[2] {
-                    Expression::StringLiteral(s) => assert_eq!(s, "world"),
+                    Expression::StringLiteral { value, .. } => assert_eq!(value, "world"),
                     _ => panic!("Expected string literal"),
                 }
             }
@@ -824,8 +943,9 @@ fn calculator(request: String): String {
     request!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -860,12 +980,13 @@ fn calculator(request: String): String {
         let input = r#"
 fn test_function(): () {
     let result = some_call()
+    result
     another_call()
-    "final prompt"!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -882,6 +1003,7 @@ fn test_function(): () {
             Statement::Assignment {
                 variable,
                 expression,
+                span: _,
             } => {
                 assert_eq!(variable, "result");
                 match expression {
@@ -895,17 +1017,17 @@ fn test_function(): () {
         }
 
         match &func.body.statements[1] {
-            Statement::ExpressionStatement(Expression::Call { function, .. }) => {
-                assert_eq!(function, "another_call");
+            Statement::ExpressionStatement(Expression::Variable { name, .. }) => {
+                assert_eq!(name, "result");
             }
-            _ => panic!("Expected standalone expression statement with call"),
+            _ => panic!("Expected expression statement with variable"),
         }
 
         match &func.body.statements[2] {
-            Statement::Injection(Expression::StringLiteral(content)) => {
-                assert_eq!(content, "final prompt");
+            Statement::ExpressionStatement(Expression::Call { function, .. }) => {
+                assert_eq!(function, "another_call");
             }
-            _ => panic!("Expected injection statement"),
+            _ => panic!("Expected expression statement with call"),
         }
     }
 
@@ -925,10 +1047,8 @@ fn calculator_agent(ctx: Context, request: String): i32 {
 }
 "#;
 
-        let result = parse_program().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (module, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         assert_eq!(module.definitions.len(), 1);
 
         let func = match &module.definitions[0] {
@@ -941,6 +1061,7 @@ fn calculator_agent(ctx: Context, request: String): i32 {
         let Statement::Assignment {
             variable,
             expression,
+            span: _,
         } = &func.body.statements[2]
         else {
             panic!("Expected assignment statement");
@@ -965,8 +1086,8 @@ fn calculator_agent(ctx: Context, request: String): i32 {
         };
         assert_eq!(function, "add");
         assert_eq!(arguments.len(), 3);
-        assert!(matches!(arguments[1], Expression::Placeholder));
-        assert!(matches!(arguments[2], Expression::Placeholder));
+        assert!(matches!(arguments[1], Expression::Placeholder { .. }));
+        assert!(matches!(arguments[2], Expression::Placeholder { .. }));
 
         let second_clause = &select_stmt.clauses[1];
         assert_eq!(second_clause.result_variable, "diff");
@@ -983,12 +1104,13 @@ fn calculator_agent(ctx: Context, request: String): i32 {
 # This function analyzes code for bugs
 # It focuses on edge cases and error handling
 fn analyze_code(context: Context, code: String): Analysis {
-    "Analyze the following code for potential bugs"!
-    code!
+    let analysis = run_analysis(code)
+    analysis
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -1014,8 +1136,9 @@ fn simple_function(): () {
     "Hello"!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -1037,8 +1160,9 @@ fn documented_function(): () {
     "test"!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -1056,13 +1180,11 @@ fn documented_function(): () {
     #[test]
     fn test_parse_return_statement() {
         let input = r#"return "hello world""#;
-        let result = statement().easy_parse(input);
-        assert!(result.is_ok());
-
-        let (statement, _) = result.unwrap();
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (statement, _) = statement().parse(stream).unwrap();
         match statement {
-            Statement::Return(Expression::StringLiteral(content)) => {
-                assert_eq!(content, "hello world");
+            Statement::Return(Expression::StringLiteral { value, .. }) => {
+                assert_eq!(value, "hello world");
             }
             _ => panic!("Expected return statement with string literal"),
         }
@@ -1070,14 +1192,13 @@ fn documented_function(): () {
 
     #[test]
     fn test_parse_return_with_variable() {
-        let input = r#"return result"#;
-        let result = statement().easy_parse(input);
-        assert!(result.is_ok());
+        let input = "return result";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let (statement, _) = result.unwrap();
-        match statement {
-            Statement::Return(Expression::Variable(var_name)) => {
-                assert_eq!(var_name, "result");
+        let (stmt, _) = statement().parse(stream).unwrap();
+        match stmt {
+            Statement::Return(Expression::Variable { name, .. }) => {
+                assert_eq!(name, "result");
             }
             _ => panic!("Expected return statement with variable"),
         }
@@ -1094,8 +1215,9 @@ fn multiline_function(
     "Process data"!
 }
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();
@@ -1120,8 +1242,9 @@ extern fn external_multiline(
     param2: String
 ): Result
 "#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
 
-        let result = parse_program().easy_parse(input);
+        let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
 
         let (module, _) = result.unwrap();

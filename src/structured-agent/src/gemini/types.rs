@@ -541,13 +541,11 @@ mod tests {
 
         let serialized = serde_json::to_value(&config).unwrap();
 
-        // Check individual fields to avoid floating point precision issues
         assert_eq!(serialized["topK"], json!(40));
         assert_eq!(serialized["maxOutputTokens"], json!(1024));
         assert_eq!(serialized["stopSequences"], json!(["STOP", "END"]));
         assert_eq!(serialized["candidateCount"], json!(1));
 
-        // Check floating point values with tolerance
         let temp = serialized["temperature"].as_f64().unwrap();
         assert!((temp - 0.7).abs() < 0.001);
 
@@ -571,15 +569,12 @@ mod tests {
 
         let serialized = serde_json::to_value(&config).unwrap();
 
-        // Check that None fields are not serialized
         assert!(serialized.get("topK").is_none());
         assert!(serialized.get("stopSequences").is_none());
 
-        // Check that Some fields are serialized
         assert!(serialized.get("maxOutputTokens").is_some());
         assert!(serialized.get("candidateCount").is_some());
 
-        // Check floating point values with tolerance
         let temp = serialized["temperature"].as_f64().unwrap();
         assert!((temp - 0.5).abs() < 0.001);
 
@@ -616,7 +611,6 @@ mod tests {
         let api_request = GeminiApiRequest::from(&request);
         let serialized = serde_json::to_value(&api_request).unwrap();
 
-        // Check contents structure
         let contents = serialized["contents"].as_array().unwrap();
         assert_eq!(contents.len(), 2);
 
@@ -629,14 +623,12 @@ mod tests {
             "I'm doing well, thank you!"
         );
 
-        // Check generation config is included
         assert!(serialized.get("generationConfig").is_some());
         let gen_config = &serialized["generationConfig"];
         assert_eq!(gen_config["topK"], 40);
         assert_eq!(gen_config["maxOutputTokens"], 1024);
         assert!(gen_config.get("topP").is_none());
 
-        // Check system instruction
         assert!(serialized.get("systemInstruction").is_some());
         let sys_instruction = &serialized["systemInstruction"];
         assert_eq!(
@@ -659,12 +651,10 @@ mod tests {
         let api_request = GeminiApiRequest::from(&request);
         let serialized = serde_json::to_value(&api_request).unwrap();
 
-        // Check only required fields are present
         assert!(serialized.get("contents").is_some());
         assert!(serialized.get("generationConfig").is_none());
         assert!(serialized.get("systemInstruction").is_none());
 
-        // Check contents
         let contents = serialized["contents"].as_array().unwrap();
         assert_eq!(contents.len(), 1);
         assert_eq!(contents[0]["role"], "user");

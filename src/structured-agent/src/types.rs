@@ -1,5 +1,60 @@
 use async_trait::async_trait;
 use std::any::Any;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub type FileId = usize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn dummy() -> Self {
+        Self { start: 0, end: 0 }
+    }
+
+    pub fn to_byte_range(&self) -> std::ops::Range<usize> {
+        self.start..self.end
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceFiles {
+    inner: Rc<RefCell<codespan_reporting::files::SimpleFiles<String, String>>>,
+}
+
+pub trait Spanned {
+    fn span(&self) -> Span;
+}
+
+impl Default for SourceFiles {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SourceFiles {
+    pub fn new() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(codespan_reporting::files::SimpleFiles::new())),
+        }
+    }
+
+    pub fn add(&self, name: String, source: String) -> FileId {
+        self.inner.borrow_mut().add(name, source)
+    }
+
+    pub fn files(&self) -> Rc<RefCell<codespan_reporting::files::SimpleFiles<String, String>>> {
+        self.inner.clone()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {

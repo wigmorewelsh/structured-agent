@@ -21,7 +21,6 @@ impl fmt::Display for CliError {
             ),
             CliError::RuntimeError(e) => {
                 if e.contains("ExecutionError") && e.contains("Parse error at line") {
-                    // Extract the enhanced parse error with line/column info
                     if let Some(start) = e.find("Parse error at line") {
                         let error_part = &e[start..];
                         if let Some(end) = error_part.find("\")") {
@@ -32,10 +31,8 @@ impl fmt::Display for CliError {
                     } else {
                         write!(f, "Parse error: {}", e)
                     }
-                } else if e.contains("FunctionNotFound") {
-                    write!(f, "Function not found: main function is required")
                 } else {
-                    write!(f, "Runtime error: {}", e)
+                    write!(f, "Execution error: {}", e)
                 }
             }
         }

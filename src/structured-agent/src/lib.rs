@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod cli;
 pub mod compiler;
+pub mod diagnostics;
 pub mod expressions;
 pub mod functions;
 pub mod gemini;

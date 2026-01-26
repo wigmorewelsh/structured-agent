@@ -1,14 +1,16 @@
 mod ast;
 mod cli;
 mod compiler;
+mod diagnostics;
 mod expressions;
 mod functions;
 mod gemini;
 mod mcp;
 mod runtime;
+mod typecheck;
 mod types;
 
-use cli::{App, CliError, Config, build_cli};
+use cli::{App, Config, build_cli};
 use std::process;
 
 #[tokio::main]

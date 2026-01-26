@@ -178,7 +178,7 @@ fn main(): String {
             "Select statement with mismatched types should fail"
         );
         let err = result.unwrap_err();
-        assert!(err.contains("Type error"));
+        assert_eq!(err, "Type error");
     }
 
     #[test]
@@ -216,6 +216,6 @@ fn process(data: CustomType): () {
 
         assert!(result.is_err(), "Unsupported custom type should fail");
         let err = result.unwrap_err();
-        assert!(err.contains("Unsupported type"));
+        assert_eq!(err, "Type error");
     }
 }

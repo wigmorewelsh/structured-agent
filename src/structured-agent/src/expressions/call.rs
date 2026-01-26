@@ -1,6 +1,8 @@
 use crate::expressions::PlaceholderExpr;
 use crate::runtime::{Context, ExprResult};
-use crate::types::{Expression, Parameter, Type};
+#[cfg(test)]
+use crate::types::Parameter;
+use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;

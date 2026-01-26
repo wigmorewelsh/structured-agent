@@ -1,15 +1,18 @@
 pub mod parser;
 
 use crate::ast::{self, Definition, Module};
+use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
     PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
     VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
 use crate::typecheck::type_check_module;
-use crate::types::{Expression, ExternalFunctionDefinition, Parameter, Type};
+use crate::types::{Expression, ExternalFunctionDefinition, FileId, Parameter, Type};
 
-use combine::stream::position::IndexPositioner;
+use combine::Parser as CombineParser;
+use combine::stream::{easy, position};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -54,86 +57,61 @@ impl CompilationUnit {
 }
 
 pub trait Parser {
-    fn parse(&self, program: &CompilationUnit) -> Result<Module, String>;
+    fn parse(
+        &self,
+        program: &CompilationUnit,
+        file_id: FileId,
+        diagnostic_reporter: &DiagnosticReporter,
+    ) -> Result<Module, String>;
 }
 
-pub struct DefaultParser;
+pub struct CodespanParser {
+    diagnostic_reporter: DiagnosticReporter,
+}
 
-impl Parser for DefaultParser {
-    fn parse(&self, program: &CompilationUnit) -> Result<Module, String> {
-        use combine::{EasyParser, stream::position};
+impl CodespanParser {
+    pub fn new(diagnostic_reporter: DiagnosticReporter) -> Self {
+        Self {
+            diagnostic_reporter,
+        }
+    }
+}
 
+impl Parser for CodespanParser {
+    fn parse(
+        &self,
+        program: &CompilationUnit,
+        file_id: FileId,
+        _diagnostic_reporter: &DiagnosticReporter,
+    ) -> Result<Module, String> {
         let input = program.source();
-        let stream = position::Stream::with_positioner(input, IndexPositioner::new());
+        let stream = easy::Stream(position::Stream::with_positioner(
+            input,
+            position::IndexPositioner::new(),
+        ));
 
-        match parser::parse_program().easy_parse(stream) {
+        let result = parser::parse_program(file_id).parse(stream);
+
+        match result {
             Ok((module, _)) => Ok(module),
             Err(e) => {
-                let formatted_error = format_parse_error_with_position(&e, input);
-                Err(formatted_error)
+                let error_str = format!("{}", e);
+                let byte_offset = e.position;
+
+                let clean_message = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
+
+                if let Err(io_err) = self.diagnostic_reporter.emit_parse_error(
+                    file_id,
+                    &clean_message,
+                    Some((byte_offset, byte_offset + 1)),
+                ) {
+                    eprintln!("Failed to emit diagnostic: {}", io_err);
+                }
+
+                Err("Parse error".to_string())
             }
         }
     }
-}
-
-fn format_parse_error_with_position(
-    error: &combine::easy::Errors<char, &str, usize>,
-    source: &str,
-) -> String {
-    let position = error.position;
-    let (line, column) = calculate_line_column(source, position);
-
-    // Use combine's built-in Display but clean it up
-    let error_text = error.to_string();
-    let clean_error = clean_combine_error(&error_text);
-
-    format!(
-        "Parse error at line {}, column {}: {}",
-        line, column, clean_error
-    )
-}
-
-fn clean_combine_error(error_text: &str) -> String {
-    // Parse combine's format: "Parse error at {pos}\nUnexpected `{token}`\nExpected `{token}`\n"
-    let lines: Vec<&str> = error_text.lines().collect();
-    let mut messages = Vec::new();
-
-    for line in lines {
-        if line.starts_with("Unexpected") {
-            let clean = line.replace("Unexpected `", "unexpected ").replace("`", "");
-            messages.push(clean);
-        } else if line.starts_with("Expected") {
-            let clean = line.replace("Expected `", "expected ").replace("`", "");
-            messages.push(clean);
-        } else if !line.starts_with("Parse error at") && !line.trim().is_empty() {
-            messages.push(line.to_string());
-        }
-    }
-
-    if messages.is_empty() {
-        "syntax error".to_string()
-    } else {
-        messages.join(", ")
-    }
-}
-
-fn calculate_line_column(source: &str, position: usize) -> (usize, usize) {
-    let mut line = 1;
-    let mut column = 1;
-
-    for (i, ch) in source.char_indices() {
-        if i >= position {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-    }
-
-    (line, column)
 }
 
 pub trait CompilerTrait {
@@ -146,6 +124,12 @@ pub struct CompiledProgram {
     functions: HashMap<String, FunctionExpr>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     main_function: Option<String>,
+}
+
+impl Default for CompiledProgram {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CompiledProgram {
@@ -191,6 +175,7 @@ impl CompiledProgram {
 
 pub struct Compiler {
     parser: Rc<dyn Parser>,
+    diagnostic_manager: RefCell<DiagnosticManager>,
 }
 
 impl Default for Compiler {
@@ -201,21 +186,44 @@ impl Default for Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
+        let diagnostic_manager = DiagnosticManager::new();
+        let reporter = DiagnosticReporter::new(diagnostic_manager.files().clone());
+        let parser = Rc::new(CodespanParser::new(reporter));
         Self {
-            parser: Rc::new(DefaultParser),
+            parser,
+            diagnostic_manager: RefCell::new(diagnostic_manager),
         }
     }
 
     pub fn with_parser(parser: Rc<dyn Parser>) -> Self {
-        Self { parser }
+        Self {
+            parser,
+            diagnostic_manager: RefCell::new(DiagnosticManager::new()),
+        }
+    }
+
+    pub fn add_source_file(&mut self, name: String, source: String) -> FileId {
+        self.diagnostic_manager.borrow_mut().add_file(name, source)
     }
 }
 
 impl CompilerTrait for Compiler {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
-        let module = self.parser.parse(program)?;
+        let mut diagnostic_manager = self.diagnostic_manager.borrow_mut();
+        let file_id =
+            diagnostic_manager.add_file(program.name().to_string(), program.source().to_string());
 
-        type_check_module(&module).map_err(|e| format!("Type error: {}", e))?;
+        let reporter = diagnostic_manager.reporter().clone();
+        drop(diagnostic_manager);
+
+        let module = self.parser.parse(program, file_id, &reporter)?;
+
+        if let Err(type_error) = type_check_module(&module, file_id) {
+            if let Err(io_err) = reporter.emit_type_error(&type_error) {
+                eprintln!("Failed to emit type error diagnostic: {}", io_err);
+            }
+            return Err("Type error".to_string());
+        }
 
         let mut compiled_program = CompiledProgram::new();
 
@@ -282,16 +290,10 @@ impl Compiler {
 
     pub fn compile_expression(ast_expr: &ast::Expression) -> Result<Box<dyn Expression>, String> {
         match ast_expr {
-            ast::Expression::StringLiteral(value) => Ok(Box::new(StringLiteralExpr {
-                value: value.clone(),
-            })),
-            ast::Expression::BooleanLiteral(value) => {
-                Ok(Box::new(BooleanLiteralExpr { value: *value }))
-            }
-            ast::Expression::Variable(name) => Ok(Box::new(VariableExpr { name: name.clone() })),
             ast::Expression::Call {
                 function,
                 arguments,
+                ..
             } => {
                 let compiled_args = arguments
                     .iter()
@@ -303,7 +305,7 @@ impl Compiler {
                     arguments: compiled_args,
                 }))
             }
-            ast::Expression::Placeholder => Ok(Box::new(PlaceholderExpr {})),
+            ast::Expression::Placeholder { .. } => Ok(Box::new(PlaceholderExpr {})),
             ast::Expression::Select(select_expression) => {
                 let compiled_clauses = select_expression
                     .clauses
@@ -324,6 +326,15 @@ impl Compiler {
                     clauses: compiled_clauses,
                 }))
             }
+            ast::Expression::Variable { name, .. } => {
+                Ok(Box::new(VariableExpr { name: name.clone() }))
+            }
+            ast::Expression::StringLiteral { value, .. } => Ok(Box::new(StringLiteralExpr {
+                value: value.clone(),
+            })),
+            ast::Expression::BooleanLiteral { value, .. } => {
+                Ok(Box::new(BooleanLiteralExpr { value: *value }))
+            }
         }
     }
 
@@ -338,6 +349,7 @@ impl Compiler {
             ast::Statement::Assignment {
                 variable,
                 expression,
+                ..
             } => {
                 let compiled_expression = Self::compile_expression(expression)?;
                 Ok(Box::new(AssignmentExpr {
@@ -348,6 +360,7 @@ impl Compiler {
             ast::Statement::VariableAssignment {
                 variable,
                 expression,
+                ..
             } => {
                 let compiled_expression = Self::compile_expression(expression)?;
                 Ok(Box::new(VariableAssignmentExpr {
@@ -355,7 +368,9 @@ impl Compiler {
                     expression: compiled_expression,
                 }))
             }
-            ast::Statement::If { condition, body } => {
+            ast::Statement::If {
+                condition, body, ..
+            } => {
                 let compiled_condition = Self::compile_expression(condition)?;
                 let compiled_body = body
                     .iter()
@@ -366,7 +381,9 @@ impl Compiler {
                     body: compiled_body,
                 }))
             }
-            ast::Statement::While { condition, body } => {
+            ast::Statement::While {
+                condition, body, ..
+            } => {
                 let compiled_condition = Self::compile_expression(condition)?;
 
                 let mut compiled_body = Vec::new();
@@ -415,7 +432,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_compile_string_literal() {
-        let ast_expr = AstExpression::StringLiteral("Hello".to_string());
+        let ast_expr = AstExpression::StringLiteral {
+            value: "Hello".to_string(),
+            span: crate::types::Span::dummy(),
+        };
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
         let runtime = Rc::new(Runtime::new());
@@ -430,7 +450,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_compile_injection() {
-        let ast_expr = AstExpression::StringLiteral("Test injection".to_string());
+        let ast_expr = AstExpression::StringLiteral {
+            value: "Test injection".to_string(),
+            span: crate::types::Span::dummy(),
+        };
         let ast_stmt = AstStatement::Injection(ast_expr);
         let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
 
@@ -449,7 +472,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_compile_variable() {
-        let ast_expr = AstExpression::Variable("test_var".to_string());
+        let ast_expr = AstExpression::Variable {
+            name: "test_var".to_string(),
+            span: crate::types::Span::dummy(),
+        };
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
         let runtime = Rc::new(Runtime::new());

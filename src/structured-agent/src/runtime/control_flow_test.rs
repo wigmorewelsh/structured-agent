@@ -2,14 +2,14 @@ use super::*;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
-use dashmap::DashSet;
+use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
 
 #[derive(Debug)]
 struct LoggingFunction {
-    messages: DashSet<String>,
+    messages: Arc<Mutex<Vec<String>>>,
     parameters: Vec<Parameter>,
     return_type: Type,
 }
@@ -17,20 +17,18 @@ struct LoggingFunction {
 impl LoggingFunction {
     fn new() -> Self {
         Self {
-            messages: DashSet::new(),
-            parameters: vec![Parameter::new("str".to_string(), Type::string())],
+            messages: Arc::new(Mutex::new(Vec::new())),
+            parameters: vec![Parameter::new("value".to_string(), Type::string())],
             return_type: Type::unit(),
         }
     }
 
     fn clear(&self) {
-        self.messages.clear();
+        self.messages.lock().unwrap().clear();
     }
 
     fn messages_vec(&self) -> Vec<String> {
-        let mut messages: Vec<String> = self.messages.iter().map(|m| m.to_string()).collect();
-        messages.sort();
-        messages
+        self.messages.lock().unwrap().clone()
     }
 }
 
@@ -55,26 +53,25 @@ impl NativeFunction for LoggingFunction {
 
         match &args[0] {
             ExprResult::String(s) => {
-                self.messages.insert(s.clone());
+                self.messages.lock().unwrap().push(s.clone());
+                Ok(ExprResult::Unit)
             }
-            _ => return Err("Expected string argument".to_string()),
+            _ => Err("Expected string argument".to_string()),
         }
-
-        Ok(ExprResult::Unit)
     }
 }
 
 #[derive(Debug)]
 struct BooleanFunction {
-    value: bool,
+    return_value: bool,
     parameters: Vec<Parameter>,
     return_type: Type,
 }
 
 impl BooleanFunction {
-    fn new(value: bool) -> Self {
+    fn new(return_value: bool) -> Self {
         Self {
-            value,
+            return_value,
             parameters: vec![],
             return_type: Type::boolean(),
         }
@@ -100,7 +97,7 @@ impl NativeFunction for BooleanFunction {
             return Err("Expected 0 arguments".to_string());
         }
 
-        Ok(ExprResult::Boolean(self.value))
+        Ok(ExprResult::Boolean(self.return_value))
     }
 }
 
@@ -112,6 +109,8 @@ async fn test_if_statement_true_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     if true {
         log("if body executed")
@@ -124,7 +123,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
 
-    assert_eq!(messages, vec!["after if", "if body executed"]);
+    assert_eq!(messages, vec!["if body executed", "after if"]);
     assert_eq!(result, ExprResult::Unit);
 }
 
@@ -136,6 +135,8 @@ async fn test_if_statement_false_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     if false {
         log("if body not executed")
@@ -160,19 +161,21 @@ async fn test_if_statement_with_variable_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     let condition = true
     if condition {
         log("condition was true")
     }
-    log("done")
+    log("after if")
 }
 "#;
 
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
-    assert_eq!(messages, vec!["condition was true", "done"]);
+    assert_eq!(messages, vec!["condition was true", "after if"]);
     assert_eq!(result, ExprResult::Unit);
 }
 
@@ -186,18 +189,21 @@ async fn test_if_statement_with_function_condition() {
     runtime.register_native_function(bool_func.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+extern fn get_bool(): Boolean
+
 fn main(): () {
     if get_bool() {
         log("function returned true")
     }
-    log("finished")
+    log("after if")
 }
 "#;
 
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
-    assert_eq!(messages, vec!["finished", "function returned true"]);
+    assert_eq!(messages, vec!["function returned true", "after if"]);
     assert_eq!(result, ExprResult::Unit);
 }
 
@@ -209,6 +215,8 @@ async fn test_while_statement_false_condition() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     while false {
         log("never executed")
@@ -232,20 +240,22 @@ async fn test_while_statement_with_counter() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     let continue_loop = true
     while continue_loop {
         log("loop iteration")
         continue_loop = false
     }
-    log("loop finished")
+    log("after while")
 }
 "#;
 
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
-    assert_eq!(messages, vec!["loop finished", "loop iteration"]);
+    assert_eq!(messages, vec!["loop iteration", "after while"]);
     assert_eq!(result, ExprResult::Unit);
 }
 
@@ -257,6 +267,8 @@ async fn test_nested_if_statements() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     if true {
         log("outer if")
@@ -265,7 +277,7 @@ fn main(): () {
         }
         log("after inner if")
     }
-    log("done")
+    log("after outer if")
 }
 "#;
 
@@ -274,7 +286,7 @@ fn main(): () {
     let messages = logger.messages_vec();
     assert_eq!(
         messages,
-        vec!["after inner if", "done", "inner if", "outer if"]
+        vec!["outer if", "inner if", "after inner if", "after outer if"]
     );
     assert_eq!(result, ExprResult::Unit);
 }
@@ -287,6 +299,8 @@ async fn test_if_and_while_combined() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     let should_run = true
     if should_run {
@@ -307,7 +321,7 @@ fn main(): () {
     let messages = logger.messages_vec();
     assert_eq!(
         messages,
-        vec!["all done", "in loop", "loop done", "starting loop"]
+        vec!["starting loop", "in loop", "loop done", "all done"]
     );
     assert_eq!(result, ExprResult::Unit);
 }
@@ -320,6 +334,8 @@ async fn test_if_statement_non_boolean_condition_error() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     if "not a boolean" {
         log("this should not execute")
@@ -331,8 +347,8 @@ fn main(): () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    // Parser correctly rejects string literals as if conditions
-    assert!(error_message.contains("Parse error"));
+    println!("Actual error: {}", error_message);
+    assert!(error_message.contains("Type error"));
     assert_eq!(logger.messages_vec(), Vec::<String>::new());
 }
 
@@ -344,6 +360,8 @@ async fn test_while_statement_non_boolean_condition_error() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     while "not a boolean" {
         log("this should not execute")
@@ -355,7 +373,8 @@ fn main(): () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("Parse error"));
+    println!("Actual error: {}", error_message);
+    assert!(error_message.contains("Type error"));
     assert_eq!(logger.messages_vec(), Vec::<String>::new());
 }
 
@@ -367,19 +386,21 @@ async fn test_if_with_variable_assignment_in_body() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     if true {
         let message = "assigned in if"
         log(message)
     }
-    log("outside if")
+    log("after if")
 }
 "#;
 
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
-    assert_eq!(messages, vec!["assigned in if", "outside if"]);
+    assert_eq!(messages, vec!["assigned in if", "after if"]);
     assert_eq!(result, ExprResult::Unit);
 }
 
@@ -391,6 +412,8 @@ async fn test_while_with_variable_assignment_in_body() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     let run_once = true
     while run_once {
@@ -398,13 +421,13 @@ fn main(): () {
         log(message)
         run_once = false
     }
-    log("outside while")
+    log("after while")
 }
 "#;
 
     let result = runtime.run(program_source).await.unwrap();
 
     let messages = logger.messages_vec();
-    assert_eq!(messages, vec!["assigned in while", "outside while"]);
+    assert_eq!(messages, vec!["assigned in while", "after while"]);
     assert_eq!(result, ExprResult::Unit);
 }

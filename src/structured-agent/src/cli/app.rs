@@ -38,7 +38,7 @@ impl App {
                 Self::display_result(&result);
                 Ok(())
             }
-            Err(e) => Err(CliError::RuntimeError(format!("{:?}", e))),
+            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
         }
     }
 
@@ -112,17 +112,14 @@ impl App {
             crate::runtime::ExprResult::String(s) => {
                 println!("\n═══ Agent Response ═══");
 
-                // Clean up and format the response
                 let cleaned = s.trim();
 
                 if cleaned.contains('\n') {
-                    // Handle multiline responses with proper formatting
                     let mut in_code_block = false;
 
                     for line in cleaned.lines() {
                         let trimmed_line = line.trim();
 
-                        // Detect code block markers
                         if trimmed_line.starts_with("```") {
                             in_code_block = !in_code_block;
                             if in_code_block {
@@ -133,7 +130,6 @@ impl App {
                             continue;
                         }
 
-                        // Format content based on context
                         if in_code_block {
                             println!("│ {}", line);
                         } else if trimmed_line.is_empty() {

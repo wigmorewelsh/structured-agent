@@ -157,7 +157,8 @@ impl McpClient {
     }
 
     pub async fn shutdown(&self) -> std::result::Result<(), McpError> {
-        if let Some(client) = self.client.borrow().as_ref() {
+        let client_option = self.client.borrow().as_ref().cloned();
+        if let Some(client) = client_option {
             client.shut_down().await?;
         }
         Ok(())

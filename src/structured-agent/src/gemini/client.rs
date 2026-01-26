@@ -296,17 +296,15 @@ impl GeminiClient {
     }
 
     async fn get_gcloud_token(&self) -> GeminiResult<String> {
-        // Check if we have a valid cached token
         {
             let cached_token = self.cached_token.read().await;
-            if let Some(ref token_data) = *cached_token {
-                if !token_data.is_expired() {
-                    return Ok(token_data.token.clone());
-                }
+            if let Some(ref token_data) = *cached_token
+                && !token_data.is_expired()
+            {
+                return Ok(token_data.token.clone());
             }
         }
 
-        // Need to fetch a new token
         let output = tokio::process::Command::new("gcloud")
             .args(GCLOUD_AUTH_COMMAND)
             .output()
@@ -335,7 +333,6 @@ impl GeminiClient {
             ));
         }
 
-        // Cache the token (expires in 55 minutes to be safe)
         let cached_token_data = CachedToken {
             token: token.to_string(),
             expires_at: SystemTime::now() + Duration::from_secs(55 * 60),

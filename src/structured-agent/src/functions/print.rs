@@ -8,6 +8,12 @@ pub struct PrintFunction {
     return_type: Type,
 }
 
+impl Default for PrintFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PrintFunction {
     pub fn new() -> Self {
         Self {

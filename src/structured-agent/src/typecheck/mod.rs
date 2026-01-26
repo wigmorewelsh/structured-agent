@@ -12,7 +12,7 @@ pub use error::TypeError;
 
 use crate::ast::Module;
 
-pub fn type_check_module(module: &Module) -> Result<(), TypeError> {
+pub fn type_check_module(module: &Module, file_id: crate::types::FileId) -> Result<(), TypeError> {
     let mut checker = TypeChecker::new();
-    checker.check_module(module)
+    checker.check_module(module, file_id)
 }

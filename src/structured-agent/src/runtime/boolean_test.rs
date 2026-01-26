@@ -2,14 +2,14 @@ use super::*;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
-use dashmap::DashSet;
+use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
 
 #[derive(Debug)]
 struct BooleanLoggingFunction {
-    messages: DashSet<String>,
+    messages: Arc<Mutex<Vec<String>>>,
     parameters: Vec<Parameter>,
     return_type: Type,
 }
@@ -17,14 +17,14 @@ struct BooleanLoggingFunction {
 impl BooleanLoggingFunction {
     fn new() -> Self {
         Self {
-            messages: DashSet::new(),
+            messages: Arc::new(Mutex::new(Vec::new())),
             parameters: vec![Parameter::new("value".to_string(), Type::boolean())],
             return_type: Type::unit(),
         }
     }
 
     fn clear(&self) {
-        self.messages.clear();
+        self.messages.lock().unwrap().clear();
     }
 }
 
@@ -49,12 +49,11 @@ impl NativeFunction for BooleanLoggingFunction {
 
         match &args[0] {
             ExprResult::Boolean(b) => {
-                self.messages.insert(b.to_string());
+                self.messages.lock().unwrap().push(b.to_string());
+                Ok(ExprResult::Unit)
             }
-            _ => return Err("Expected boolean argument".to_string()),
+            _ => Err("Expected boolean argument".to_string()),
         }
-
-        Ok(ExprResult::Unit)
     }
 }
 
@@ -102,6 +101,8 @@ async fn test_boolean_literal_true() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log_bool(value: Boolean): ()
+
 fn main(): () {
     let result = log_bool(true)
     result!
@@ -111,11 +112,7 @@ fn main(): () {
     let result = runtime.run(program_source).await;
     let result = result.unwrap();
 
-    let messages = logger
-        .messages
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>();
+    let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["true"]);
 
     assert_eq!(result, ExprResult::Unit);
@@ -129,6 +126,8 @@ async fn test_boolean_literal_false() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log_bool(value: Boolean): ()
+
 fn main(): () {
     let result = log_bool(false)
     result!
@@ -138,11 +137,7 @@ fn main(): () {
     let result = runtime.run(program_source).await;
     let result = result.unwrap();
 
-    let messages = logger
-        .messages
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>();
+    let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["false"]);
 
     assert_eq!(result, ExprResult::Unit);
@@ -156,6 +151,8 @@ async fn test_boolean_variable_assignment() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log_bool(value: Boolean): ()
+
 fn main(): () {
     let is_complete = true
     let log_result = log_bool(is_complete)
@@ -168,11 +165,7 @@ fn main(): () {
     let result = runtime.run(program_source).await;
     let result = result.unwrap();
 
-    let messages = logger
-        .messages
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>();
+    let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages.len(), 2);
     assert!(messages.contains(&"true".to_string()));
     assert!(messages.contains(&"false".to_string()));
@@ -188,6 +181,8 @@ async fn test_boolean_function_return() {
     runtime.register_native_function(bool_fn.clone());
 
     let program_source = r#"
+extern fn get_bool(): Boolean
+
 fn check_status(): Boolean {
     let status = get_bool()
     status!
@@ -213,6 +208,8 @@ async fn test_mixed_boolean_and_string_variables() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log_bool(value: Boolean): ()
+
 fn main(): String {
     let message = "Processing complete"
     let success = true
@@ -224,11 +221,7 @@ fn main(): String {
     let result = runtime.run(program_source).await;
     let result = result.unwrap();
 
-    let messages = logger
-        .messages
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>();
+    let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["true"]);
 
     assert_eq!(

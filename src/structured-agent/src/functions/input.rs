@@ -8,6 +8,12 @@ pub struct InputFunction {
     return_type: Type,
 }
 
+impl Default for InputFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputFunction {
     pub fn new() -> Self {
         Self {

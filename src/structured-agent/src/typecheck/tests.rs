@@ -5,7 +5,11 @@ use crate::ast::{
 };
 
 fn create_test_module(definitions: Vec<Definition>) -> Module {
-    Module { definitions }
+    Module {
+        definitions,
+        span: crate::types::Span::dummy(),
+        file_id: 0,
+    }
 }
 
 fn create_test_function(
@@ -18,7 +22,11 @@ fn create_test_function(
         name: name.to_string(),
         parameters,
         return_type,
-        body: FunctionBody { statements },
+        body: FunctionBody {
+            statements,
+            span: crate::types::Span::dummy(),
+        },
+        span: crate::types::Span::dummy(),
         documentation: None,
     }
 }
@@ -27,6 +35,7 @@ fn create_parameter(name: &str, param_type: AstType) -> Parameter {
     Parameter {
         name: name.to_string(),
         param_type,
+        span: crate::types::Span::dummy(),
     }
 }
 
@@ -43,13 +52,16 @@ mod tests {
                 AstType::Named("String".to_string()),
             )],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::Variable("name".to_string()))],
+            vec![Statement::Return(Expression::Variable {
+                name: "name".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module).is_ok());
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -58,17 +70,21 @@ mod tests {
             "test",
             vec![],
             AstType::Unit,
-            vec![Statement::Return(Expression::Variable(
-                "unknown".to_string(),
-            ))],
+            vec![Statement::Return(Expression::Variable {
+                name: "unknown".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TypeError::UnknownVariable(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnknownVariable { .. }
+        ));
     }
 
     #[test]
@@ -80,7 +96,10 @@ mod tests {
                 AstType::Named("String".to_string()),
             )],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::Variable("name".to_string()))],
+            vec![Statement::Return(Expression::Variable {
+                name: "name".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -89,7 +108,11 @@ mod tests {
             AstType::Unit,
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
-                arguments: vec![Expression::StringLiteral("Alice".to_string())],
+                arguments: vec![Expression::StringLiteral {
+                    value: "Alice".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
             })],
         );
 
@@ -99,7 +122,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module).is_ok());
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -111,7 +134,10 @@ mod tests {
                 AstType::Named("String".to_string()),
             )],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::Variable("name".to_string()))],
+            vec![Statement::Return(Expression::Variable {
+                name: "name".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -120,7 +146,11 @@ mod tests {
             AstType::Unit,
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
-                arguments: vec![Expression::BooleanLiteral(true)],
+                arguments: vec![Expression::BooleanLiteral {
+                    value: true,
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
             })],
         );
 
@@ -130,7 +160,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -147,7 +177,10 @@ mod tests {
                 AstType::Named("String".to_string()),
             )],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::Variable("name".to_string()))],
+            vec![Statement::Return(Expression::Variable {
+                name: "name".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -157,6 +190,7 @@ mod tests {
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![],
+                span: crate::types::Span::dummy(),
             })],
         );
 
@@ -166,7 +200,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -176,8 +210,8 @@ mod tests {
 
     #[test]
     fn test_placeholder_arguments_are_allowed() {
-        let func = create_test_function(
-            "process",
+        let test_func = create_test_function(
+            "test",
             vec![create_parameter(
                 "data",
                 AstType::Named("String".to_string()),
@@ -191,18 +225,21 @@ mod tests {
             vec![],
             AstType::Unit,
             vec![Statement::ExpressionStatement(Expression::Call {
-                function: "process".to_string(),
-                arguments: vec![Expression::Placeholder],
+                function: "test".to_string(),
+                arguments: vec![Expression::Placeholder {
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
             })],
         );
 
         let module = create_test_module(vec![
-            Definition::Function(func),
+            Definition::Function(test_func),
             Definition::Function(main_func),
         ]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }
@@ -215,9 +252,10 @@ mod tests {
             "get_name",
             vec![],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::StringLiteral(
-                "Alice".to_string(),
-            ))],
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "Alice".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -230,9 +268,14 @@ mod tests {
                     expression: Expression::Call {
                         function: "get_name".to_string(),
                         arguments: vec![],
+                        span: crate::types::Span::dummy(),
                     },
+                    span: crate::types::Span::dummy(),
                 },
-                Statement::ExpressionStatement(Expression::Variable("name".to_string())),
+                Statement::ExpressionStatement(Expression::Variable {
+                    name: "name".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
             ],
         );
 
@@ -242,7 +285,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }
@@ -258,11 +301,19 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "flag".to_string(),
-                    expression: Expression::BooleanLiteral(true),
+                    expression: Expression::BooleanLiteral {
+                        value: true,
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
                 },
                 Statement::VariableAssignment {
                     variable: "flag".to_string(),
-                    expression: Expression::StringLiteral("hello".to_string()),
+                    expression: Expression::StringLiteral {
+                        value: "hello".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
                 },
             ],
         );
@@ -270,7 +321,7 @@ mod tests {
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -285,15 +336,19 @@ mod tests {
             vec![],
             AstType::Unit,
             vec![Statement::If {
-                condition: Expression::StringLiteral("hello".to_string()),
+                condition: Expression::StringLiteral {
+                    value: "hello".to_string(),
+                    span: crate::types::Span::dummy(),
+                },
                 body: vec![],
+                span: crate::types::Span::dummy(),
             }],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -308,15 +363,19 @@ mod tests {
             vec![],
             AstType::Unit,
             vec![Statement::While {
-                condition: Expression::StringLiteral("hello".to_string()),
+                condition: Expression::StringLiteral {
+                    value: "hello".to_string(),
+                    span: crate::types::Span::dummy(),
+                },
                 body: vec![],
+                span: crate::types::Span::dummy(),
             }],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -330,13 +389,16 @@ mod tests {
             "test",
             vec![],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::BooleanLiteral(true))],
+            vec![Statement::Return(Expression::BooleanLiteral {
+                value: true,
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -353,9 +415,10 @@ mod tests {
                 create_parameter("b", AstType::Named("String".to_string())),
             ],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::StringLiteral(
-                "result".to_string(),
-            ))],
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "result".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let concat_func = create_test_function(
@@ -365,9 +428,10 @@ mod tests {
                 create_parameter("y", AstType::Named("String".to_string())),
             ],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::StringLiteral(
-                "concatenated".to_string(),
-            ))],
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "concatenated".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -379,20 +443,45 @@ mod tests {
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "add".to_string(),
-                            arguments: vec![Expression::Placeholder, Expression::Placeholder],
+                            arguments: vec![
+                                Expression::Placeholder {
+                                    span: crate::types::Span::dummy(),
+                                },
+                                Expression::Placeholder {
+                                    span: crate::types::Span::dummy(),
+                                },
+                            ],
+                            span: crate::types::Span::dummy(),
                         },
                         result_variable: "sum".to_string(),
-                        expression_next: Expression::Variable("sum".to_string()),
+                        expression_next: Expression::Variable {
+                            name: "sum".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     },
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "concat".to_string(),
-                            arguments: vec![Expression::Placeholder, Expression::Placeholder],
+                            arguments: vec![
+                                Expression::Placeholder {
+                                    span: crate::types::Span::dummy(),
+                                },
+                                Expression::Placeholder {
+                                    span: crate::types::Span::dummy(),
+                                },
+                            ],
+                            span: crate::types::Span::dummy(),
                         },
                         result_variable: "text".to_string(),
-                        expression_next: Expression::Variable("text".to_string()),
+                        expression_next: Expression::Variable {
+                            name: "text".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     },
                 ],
+                span: crate::types::Span::dummy(),
             }))],
         );
 
@@ -403,7 +492,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module).is_ok());
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -412,16 +501,20 @@ mod tests {
             "get_string",
             vec![],
             AstType::Named("String".to_string()),
-            vec![Statement::Return(Expression::StringLiteral(
-                "text".to_string(),
-            ))],
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "text".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let get_bool_func = create_test_function(
             "get_bool",
             vec![],
             AstType::Boolean,
-            vec![Statement::Return(Expression::BooleanLiteral(true))],
+            vec![Statement::Return(Expression::BooleanLiteral {
+                value: true,
+                span: crate::types::Span::dummy(),
+            })],
         );
 
         let main_func = create_test_function(
@@ -434,19 +527,30 @@ mod tests {
                         expression_to_run: Expression::Call {
                             function: "get_string".to_string(),
                             arguments: vec![],
+                            span: crate::types::Span::dummy(),
                         },
                         result_variable: "str_result".to_string(),
-                        expression_next: Expression::Variable("str_result".to_string()),
+                        expression_next: Expression::Variable {
+                            name: "str_result".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     },
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "get_bool".to_string(),
                             arguments: vec![],
+                            span: crate::types::Span::dummy(),
                         },
                         result_variable: "bool_result".to_string(),
-                        expression_next: Expression::Variable("bool_result".to_string()),
+                        expression_next: Expression::Variable {
+                            name: "bool_result".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     },
                 ],
+                span: crate::types::Span::dummy(),
             }))],
         );
 
@@ -457,7 +561,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -480,9 +584,12 @@ mod tests {
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TypeError::UnsupportedType(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnsupportedType { .. }
+        ));
     }
 
     #[test]
@@ -500,7 +607,7 @@ mod tests {
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module).is_ok());
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -508,12 +615,13 @@ mod tests {
         use crate::ast::ExternalFunction;
 
         let ext_func = ExternalFunction {
-            name: "external_add".to_string(),
+            name: "concat".to_string(),
             parameters: vec![
                 create_parameter("a", AstType::Named("String".to_string())),
                 create_parameter("b", AstType::Named("String".to_string())),
             ],
             return_type: AstType::Named("String".to_string()),
+            span: crate::types::Span::dummy(),
         };
 
         let main_func = create_test_function(
@@ -521,11 +629,18 @@ mod tests {
             vec![],
             AstType::Unit,
             vec![Statement::ExpressionStatement(Expression::Call {
-                function: "external_add".to_string(),
+                function: "concat".to_string(),
                 arguments: vec![
-                    Expression::StringLiteral("hello".to_string()),
-                    Expression::StringLiteral("world".to_string()),
+                    Expression::StringLiteral {
+                        value: "hello".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    Expression::StringLiteral {
+                        value: "world".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
                 ],
+                span: crate::types::Span::dummy(),
             })],
         );
 
@@ -535,7 +650,7 @@ mod tests {
         ]);
         let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module).is_ok());
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -546,22 +661,36 @@ mod tests {
             AstType::Unit,
             vec![
                 Statement::If {
-                    condition: Expression::BooleanLiteral(true),
+                    condition: Expression::BooleanLiteral {
+                        value: true,
+                        span: crate::types::Span::dummy(),
+                    },
                     body: vec![Statement::Assignment {
                         variable: "inner_var".to_string(),
-                        expression: Expression::StringLiteral("hello".to_string()),
+                        expression: Expression::StringLiteral {
+                            value: "hello".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     }],
+                    span: crate::types::Span::dummy(),
                 },
-                Statement::ExpressionStatement(Expression::Variable("inner_var".to_string())),
+                Statement::ExpressionStatement(Expression::Variable {
+                    name: "inner_var".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
             ],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TypeError::UnknownVariable(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnknownVariable { .. }
+        ));
     }
 
     #[test]
@@ -572,25 +701,40 @@ mod tests {
             AstType::Named("String".to_string()),
             vec![
                 Statement::Assignment {
-                    variable: "result".to_string(),
-                    expression: Expression::StringLiteral("foo".to_string()),
+                    variable: "shared".to_string(),
+                    expression: Expression::StringLiteral {
+                        value: "foo".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
                 },
                 Statement::If {
-                    condition: Expression::BooleanLiteral(true),
+                    condition: Expression::BooleanLiteral {
+                        value: true,
+                        span: crate::types::Span::dummy(),
+                    },
                     body: vec![Statement::Assignment {
-                        variable: "result".to_string(),
-                        expression: Expression::BooleanLiteral(true), // Different type - should shadow locally
+                        variable: "shared".to_string(),
+                        expression: Expression::BooleanLiteral {
+                            value: true,
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
                     }],
+                    span: crate::types::Span::dummy(),
                 },
-                // After if block, result should still be String type from outer scope
-                Statement::Return(Expression::Variable("result".to_string())),
+                // After if block, shared should still be String type from outer scope
+                Statement::Return(Expression::Variable {
+                    name: "shared".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
             ],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);
         let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         // This should pass - the Boolean assignment in the if block should not affect outer scope
         if let Err(ref e) = result {
             println!("Error: {}", e);
@@ -608,36 +752,59 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "x".to_string(),
-                    expression: Expression::StringLiteral("outer".to_string()),
+                    expression: Expression::StringLiteral {
+                        value: "outer".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
                 },
                 Statement::If {
-                    condition: Expression::BooleanLiteral(true),
+                    condition: Expression::BooleanLiteral {
+                        value: true,
+                        span: crate::types::Span::dummy(),
+                    },
                     body: vec![
                         Statement::Assignment {
                             variable: "y".to_string(),
-                            expression: Expression::StringLiteral("middle".to_string()),
+                            expression: Expression::StringLiteral {
+                                value: "middle".to_string(),
+                                span: crate::types::Span::dummy(),
+                            },
+                            span: crate::types::Span::dummy(),
                         },
                         Statement::If {
-                            condition: Expression::BooleanLiteral(true),
+                            condition: Expression::BooleanLiteral {
+                                value: true,
+                                span: crate::types::Span::dummy(),
+                            },
                             body: vec![
                                 Statement::Assignment {
                                     variable: "z".to_string(),
-                                    expression: Expression::StringLiteral("inner".to_string()),
+                                    expression: Expression::StringLiteral {
+                                        value: "inner".to_string(),
+                                        span: crate::types::Span::dummy(),
+                                    },
+                                    span: crate::types::Span::dummy(),
                                 },
-                                // Should be able to access x from outer scope
-                                Statement::ExpressionStatement(Expression::Variable(
-                                    "x".to_string(),
-                                )),
-                                // Should be able to access y from middle scope
-                                Statement::ExpressionStatement(Expression::Variable(
-                                    "y".to_string(),
-                                )),
+                                Statement::ExpressionStatement(Expression::Variable {
+                                    name: "x".to_string(),
+                                    span: crate::types::Span::dummy(),
+                                }),
+                                Statement::ExpressionStatement(Expression::Variable {
+                                    name: "y".to_string(),
+                                    span: crate::types::Span::dummy(),
+                                }),
                             ],
+                            span: crate::types::Span::dummy(),
                         },
                         // z should not be accessible here
                     ],
+                    span: crate::types::Span::dummy(),
                 },
-                Statement::Return(Expression::Variable("x".to_string())),
+                Statement::Return(Expression::Variable {
+                    name: "x".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
             ],
         );
 
@@ -645,7 +812,7 @@ mod tests {
         let mut checker = TypeChecker::new();
 
         // This should pass with proper scope chaining
-        let result = checker.check_module(&module);
+        let result = checker.check_module(&module, 0);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }

@@ -65,6 +65,8 @@ async fn test_calling_log_should_receive_literals() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): String {
     let result = log("value1")
     result!
@@ -88,18 +90,18 @@ async fn test_variable_assignment_in_if_block() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): String {
     let val = "initial"
     log("step1")
     log(val)
-
     if true {
         log("step2")
         val = "modified"
-        log("step3")
         log(val)
+        log("step3")
     }
-
     log("step4")
     log(val)
     val!
@@ -111,25 +113,20 @@ fn main(): String {
 
     let messages = logger.messages.lock().unwrap().clone();
 
-    // Check we see all the step markers
     assert!(messages.contains(&"step1".to_string()));
     assert!(messages.contains(&"step2".to_string()));
     assert!(messages.contains(&"step3".to_string()));
     assert!(messages.contains(&"step4".to_string()));
 
-    // Check variable values
     assert!(messages.contains(&"initial".to_string()));
     assert!(messages.contains(&"modified".to_string()));
 
-    // Count how many times we see "modified" - should be 2 if scoping works
-    // (once inside if block, once after if block)
     let modified_count = messages.iter().filter(|&m| m == "modified").count();
     assert_eq!(
         modified_count, 2,
         "Should see 'modified' twice if variable assignment persists"
     );
 
-    // The function should return the modified value
     assert_eq!(result, ExprResult::String("modified".to_string()));
 }
 
@@ -141,6 +138,8 @@ async fn test_variable_assignment_in_while_loop() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): String {
     let counter = true
     let iteration = "0"
@@ -177,6 +176,8 @@ async fn test_variable_scoping_with_boolean_assignment() {
     runtime.register_native_function(logger.clone());
 
     let program_source = r#"
+extern fn log(message: String): ()
+
 fn main(): () {
     let val = true
 

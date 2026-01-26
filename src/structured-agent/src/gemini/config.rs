@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 
-// Constants for better maintainability
 const DEFAULT_PROJECT_ID: &str = "gemini-api";
 const DEFAULT_LOCATION: &str = "global";
 const DEFAULT_VERTEX_LOCATION: &str = "europe-west9";
@@ -56,7 +55,6 @@ impl GeminiConfig {
     }
 
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        // Try API key first, fall back to ADC
         if let Ok(api_key) = env::var("GEMINI_API_KEY") {
             Ok(Self {
                 project_id: DEFAULT_PROJECT_ID.to_string(),
@@ -65,14 +63,12 @@ impl GeminiConfig {
                 auth_method: AuthMethod::ApiKey(api_key),
             })
         } else {
-            // Use Application Default Credentials with Vertex AI
             let project_id = env::var("VERTEX_AI_PROJECT")
                 .or_else(|_| env::var("GOOGLE_CLOUD_PROJECT"))
                 .or_else(|_| env::var("GCP_PROJECT"))
                 .or_else(|_| {
-                    // Try to get project from gcloud config as fallback
                     std::process::Command::new("gcloud")
-                        .args(&["config", "get-value", "project"])
+                        .args(["config", "get-value", "project"])
                         .output()
                         .ok()
                         .and_then(|output| {

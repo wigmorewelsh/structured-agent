@@ -1,14 +1,26 @@
+use crate::types::{FileId, Span, Spanned};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub definitions: Vec<Definition>,
+    pub span: Span,
+    pub file_id: FileId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
+}
+
+impl Spanned for Definition {
+    fn span(&self) -> Span {
+        match self {
+            Definition::Function(f) => f.span,
+            Definition::ExternalFunction(f) => f.span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,12 +30,14 @@ pub struct Function {
     pub return_type: Type,
     pub body: FunctionBody,
     pub documentation: Option<String>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: String,
     pub param_type: Type,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +45,7 @@ pub struct ExternalFunction {
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,9 +55,16 @@ pub enum Type {
     Boolean,
 }
 
+impl Spanned for Type {
+    fn span(&self) -> Span {
+        Span::dummy()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionBody {
     pub statements: Vec<Statement>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,26 +73,45 @@ pub enum Statement {
     Assignment {
         variable: String,
         expression: Expression,
+        span: Span,
     },
     VariableAssignment {
         variable: String,
         expression: Expression,
+        span: Span,
     },
     ExpressionStatement(Expression),
     If {
         condition: Expression,
         body: Vec<Statement>,
+        span: Span,
     },
     While {
         condition: Expression,
         body: Vec<Statement>,
+        span: Span,
     },
     Return(Expression),
+}
+
+impl Spanned for Statement {
+    fn span(&self) -> Span {
+        match self {
+            Statement::Injection(expr) => expr.span(),
+            Statement::Assignment { span, .. } => *span,
+            Statement::VariableAssignment { span, .. } => *span,
+            Statement::ExpressionStatement(expr) => expr.span(),
+            Statement::If { span, .. } => *span,
+            Statement::While { span, .. } => *span,
+            Statement::Return(expr) => expr.span(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectExpression {
     pub clauses: Vec<SelectClause>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +119,7 @@ pub struct SelectClause {
     pub expression_to_run: Expression,
     pub result_variable: String,
     pub expression_next: Expression,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,12 +127,49 @@ pub enum Expression {
     Call {
         function: String,
         arguments: Vec<Expression>,
+        span: Span,
     },
-    Variable(String),
-    StringLiteral(String),
-    BooleanLiteral(bool),
-    Placeholder,
+    Variable {
+        name: String,
+        span: Span,
+    },
+    StringLiteral {
+        value: String,
+        span: Span,
+    },
+    BooleanLiteral {
+        value: bool,
+        span: Span,
+    },
+    Placeholder {
+        span: Span,
+    },
     Select(SelectExpression),
+}
+
+impl Spanned for Expression {
+    fn span(&self) -> Span {
+        match self {
+            Expression::Call { span, .. } => *span,
+            Expression::Variable { span, .. } => *span,
+            Expression::StringLiteral { span, .. } => *span,
+            Expression::BooleanLiteral { span, .. } => *span,
+            Expression::Placeholder { span } => *span,
+            Expression::Select(select) => select.span,
+        }
+    }
+}
+
+impl Spanned for SelectExpression {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl Spanned for SelectClause {
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl fmt::Display for Type {
@@ -129,24 +208,30 @@ impl fmt::Display for Statement {
             Statement::Assignment {
                 variable,
                 expression,
+                ..
             } => {
                 write!(f, "let {} = {}", variable, expression)
             }
             Statement::VariableAssignment {
                 variable,
                 expression,
+                ..
             } => {
                 write!(f, "{} = {}", variable, expression)
             }
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
-            Statement::If { condition, body } => {
+            Statement::If {
+                condition, body, ..
+            } => {
                 writeln!(f, "if {} {{", condition)?;
                 for stmt in body {
                     writeln!(f, "    {}", stmt)?;
                 }
                 write!(f, "}}")
             }
-            Statement::While { condition, body } => {
+            Statement::While {
+                condition, body, ..
+            } => {
                 writeln!(f, "while {} {{", condition)?;
                 for stmt in body {
                     writeln!(f, "    {}", stmt)?;
@@ -212,6 +297,7 @@ impl fmt::Display for Expression {
             Expression::Call {
                 function,
                 arguments,
+                ..
             } => {
                 write!(f, "{}", function)?;
                 write!(f, "(")?;
@@ -223,10 +309,10 @@ impl fmt::Display for Expression {
                 }
                 write!(f, ")")
             }
-            Expression::Variable(name) => write!(f, "{}", name),
-            Expression::StringLiteral(content) => write!(f, "\"{}\"", content),
-            Expression::BooleanLiteral(value) => write!(f, "{}", value),
-            Expression::Placeholder => write!(f, "_"),
+            Expression::Variable { name, .. } => write!(f, "{}", name),
+            Expression::StringLiteral { value, .. } => write!(f, "\"{}\"", value),
+            Expression::BooleanLiteral { value, .. } => write!(f, "{}", value),
+            Expression::Placeholder { .. } => write!(f, "_"),
             Expression::Select(select) => write!(f, "{}", select),
         }
     }

@@ -1,10 +1,14 @@
-use combine::EasyParser;
+use combine::Parser;
+use combine::stream::position;
 use std::rc::Rc;
 use std::sync::Arc;
 use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
 use structured_agent::expressions::Expression;
 use structured_agent::runtime::{Context, ExprResult, Runtime};
+use structured_agent::types::FileId;
+
+const TEST_FILE_ID: FileId = 0;
 
 #[tokio::test]
 async fn test_full_pipeline_parse_compile_execute() {
@@ -15,10 +19,27 @@ fn test_func(): () {
 "#;
 
     // Parse the code
-    let parse_result = parser::parse_program().easy_parse(code);
+    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
+    let parse_result = parser::parse_program(TEST_FILE_ID).parse(stream);
     assert!(parse_result.is_ok());
 
-    let ((functions, external_functions), _) = parse_result.unwrap();
+    let (module, _) = parse_result.unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let external_functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            _ => None,
+        })
+        .collect();
     assert_eq!(functions.len(), 1);
     assert_eq!(external_functions.len(), 0);
 
@@ -52,7 +73,24 @@ fn test(): () {
 "#;
 
     // Parse
-    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
+    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
+    let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let external_functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            _ => None,
+        })
+        .collect();
     assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
 
@@ -97,7 +135,24 @@ fn test_var_injection(): () {
 }
 "#;
 
-    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
+    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
+    let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let external_functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            _ => None,
+        })
+        .collect();
     assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
@@ -121,7 +176,24 @@ result!
 }
 "#;
 
-    let ((functions, external_functions), _) = parser::parse_program().easy_parse(code).unwrap();
+    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
+    let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
+    let functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::Function(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let external_functions: Vec<_> = module
+        .definitions
+        .iter()
+        .filter_map(|def| match def {
+            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            _ => None,
+        })
+        .collect();
     assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
 
