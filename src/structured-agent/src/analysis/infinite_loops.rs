@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
 use crate::ast::{Definition, Expression, Function, Module, Statement};
-use crate::types::FileId;
+use crate::types::{FileId, Spanned};
 use std::collections::HashMap;
 
 pub struct InfiniteLoopAnalyzer {
@@ -75,9 +75,7 @@ impl InfiniteLoopAnalyzer {
         for statement in statements {
             match statement {
                 Statement::While {
-                    condition,
-                    body,
-                    span,
+                    condition, body, ..
                 } => {
                     let is_infinite = if self.is_constant_true(condition) {
                         true
@@ -93,7 +91,7 @@ impl InfiniteLoopAnalyzer {
 
                     if is_infinite && !self.has_return_statement(body) {
                         warnings.push(Warning::PotentialInfiniteLoop {
-                            span: *span,
+                            span: condition.span(),
                             file_id,
                         });
                     }

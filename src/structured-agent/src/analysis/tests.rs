@@ -6,7 +6,7 @@ mod tests {
     use crate::ast::{
         Definition, Expression, Function, FunctionBody, Module, Parameter, Statement, Type,
     };
-    use crate::types::{FileId, Span};
+    use crate::types::Span;
 
     fn create_test_function(
         name: &str,
@@ -346,7 +346,7 @@ mod tests {
             vec![Statement::While {
                 condition: Expression::BooleanLiteral {
                     value: true,
-                    span: Span::dummy(),
+                    span: Span::new(5, 15),
                 },
                 body: vec![Statement::Injection(Expression::StringLiteral {
                     value: "forever".to_string(),
@@ -379,7 +379,7 @@ mod tests {
             vec![Statement::While {
                 condition: Expression::BooleanLiteral {
                     value: true,
-                    span: Span::dummy(),
+                    span: Span::new(10, 20),
                 },
                 body: vec![Statement::Return(Expression::StringLiteral {
                     value: "escape".to_string(),
@@ -405,7 +405,7 @@ mod tests {
             vec![Statement::While {
                 condition: Expression::Variable {
                     name: "condition".to_string(),
-                    span: Span::dummy(),
+                    span: Span::new(5, 10),
                 },
                 body: vec![Statement::Injection(Expression::StringLiteral {
                     value: "maybe".to_string(),
@@ -440,7 +440,7 @@ mod tests {
                 Statement::While {
                     condition: Expression::Variable {
                         name: "continue_loop".to_string(),
-                        span: Span::dummy(),
+                        span: Span::new(5, 10),
                     },
                     body: vec![Statement::Injection(Expression::StringLiteral {
                         value: "forever".to_string(),
@@ -458,8 +458,8 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         match &warnings[0] {
             Warning::PotentialInfiniteLoop { span, .. } => {
-                assert_eq!(span.start, 10);
-                assert_eq!(span.end, 20);
+                assert_eq!(span.start, 5);
+                assert_eq!(span.end, 10);
             }
             _ => panic!("Expected PotentialInfiniteLoop warning"),
         }
