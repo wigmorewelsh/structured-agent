@@ -1,10 +1,15 @@
+mod constant_conditions;
 mod duplicate_injections;
 mod empty_blocks;
 mod empty_functions;
 mod infinite_loops;
+mod overwritten_values;
 mod placeholder_overuse;
+mod redundant_select;
 mod unreachable_code;
+mod unused_return_values;
 mod unused_variables;
+mod variable_shadowing;
 
 #[cfg(test)]
 mod tests;
@@ -21,13 +26,33 @@ mod duplicate_injections_test;
 #[cfg(test)]
 mod placeholder_overuse_test;
 
+#[cfg(test)]
+mod redundant_select_test;
+
+#[cfg(test)]
+mod constant_conditions_test;
+
+#[cfg(test)]
+mod variable_shadowing_test;
+
+#[cfg(test)]
+mod overwritten_values_test;
+
+#[cfg(test)]
+mod unused_return_values_test;
+
+pub use constant_conditions::ConstantConditionAnalyzer;
 pub use duplicate_injections::DuplicateInjectionAnalyzer;
 pub use empty_blocks::EmptyBlockAnalyzer;
 pub use empty_functions::EmptyFunctionAnalyzer;
 pub use infinite_loops::InfiniteLoopAnalyzer;
+pub use overwritten_values::OverwrittenValueAnalyzer;
 pub use placeholder_overuse::PlaceholderOveruseAnalyzer;
+pub use redundant_select::RedundantSelectAnalyzer;
 pub use unreachable_code::ReachabilityAnalyzer;
+pub use unused_return_values::UnusedReturnValueAnalyzer;
 pub use unused_variables::UnusedVariableAnalyzer;
+pub use variable_shadowing::VariableShadowingAnalyzer;
 
 use crate::ast::Module;
 use crate::types::{FileId, Span};
@@ -69,6 +94,31 @@ pub enum Warning {
     },
     PlaceholderOveruse {
         placeholder_count: usize,
+        span: Span,
+        file_id: FileId,
+    },
+    RedundantSelect {
+        span: Span,
+        file_id: FileId,
+    },
+    ConstantCondition {
+        condition_value: bool,
+        span: Span,
+        file_id: FileId,
+    },
+    VariableShadowing {
+        name: String,
+        inner_span: Span,
+        outer_span: Span,
+        file_id: FileId,
+    },
+    OverwrittenValue {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    UnusedReturnValue {
+        function_name: String,
         span: Span,
         file_id: FileId,
     },
@@ -138,6 +188,63 @@ impl Warning {
                         "all {} arguments are placeholders",
                         placeholder_count
                     )),
+                ]),
+            Warning::RedundantSelect { span, file_id } => Diagnostic::warning()
+                .with_message("select statement with only one branch")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("consider using direct assignment instead"),
+                ]),
+            Warning::ConstantCondition {
+                condition_value,
+                span,
+                file_id,
+            } => {
+                let msg = if *condition_value {
+                    "if statement condition is always true"
+                } else {
+                    "if statement condition is always false"
+                };
+                Diagnostic::warning()
+                    .with_message("if statement has constant condition")
+                    .with_labels(vec![
+                        Label::primary(*file_id, span.to_byte_range()).with_message(msg),
+                    ])
+            }
+            Warning::VariableShadowing {
+                name,
+                inner_span,
+                outer_span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message(format!("variable `{}` shadows outer declaration", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, inner_span.to_byte_range())
+                        .with_message("inner variable declared here"),
+                    Label::secondary(*file_id, outer_span.to_byte_range())
+                        .with_message("outer variable declared here"),
+                ]),
+            Warning::OverwrittenValue {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message(format!(
+                    "value assigned to `{}` is overwritten before being read",
+                    name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range()).with_message("value never read"),
+                ]),
+            Warning::UnusedReturnValue {
+                function_name,
+                span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message(format!("return value of `{}` is ignored", function_name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("return value not used"),
                 ]),
         }
     }
