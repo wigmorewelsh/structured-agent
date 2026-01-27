@@ -303,7 +303,7 @@ combine::parser! {
         choice((
             attempt(parse_call()),
             parse_string_literal(),
-            parse_boolean_literal(),
+            attempt(parse_boolean_literal()),
             parse_variable(),
         ))
     }
@@ -1392,5 +1392,75 @@ fn nested(): String {
             },
             _ => panic!("Expected return with if-else"),
         }
+    }
+
+    #[test]
+    fn test_parse_variable_starting_with_f() {
+        let input = r#"
+fn test(): String {
+    let flag = true
+    let result = if flag { "works" } else { "nope" }
+    return result
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.name, "test");
+    }
+
+    #[test]
+    fn test_parse_variable_starting_with_t() {
+        let input = r#"
+fn test(): String {
+    let temp = false
+    let result = if temp { "yes" } else { "no" }
+    return result
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.name, "test");
+    }
+
+    #[test]
+    fn test_parse_variables_filter_and_total() {
+        let input = r#"
+fn test(): String {
+    let filter = true
+    let total = false
+    let result = if filter { "filtered" } else { "not filtered" }
+    return result
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.name, "test");
     }
 }
