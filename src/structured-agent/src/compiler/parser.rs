@@ -559,12 +559,7 @@ where
             .skip(lex_string("as"))
             .and(identifier())
             .skip(lex_string("=>"))
-            .and(choice((
-                attempt(parse_call()),
-                parse_placeholder(),
-                parse_string_literal(),
-                parse_variable(),
-            ))),
+            .and(parse_expression()),
         position(),
     )
         .map(
