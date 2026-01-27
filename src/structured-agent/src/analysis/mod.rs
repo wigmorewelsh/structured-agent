@@ -1,11 +1,31 @@
+mod duplicate_injections;
+mod empty_blocks;
+mod empty_functions;
 mod infinite_loops;
+mod placeholder_overuse;
 mod unreachable_code;
 mod unused_variables;
 
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod empty_blocks_test;
+
+#[cfg(test)]
+mod empty_functions_test;
+
+#[cfg(test)]
+mod duplicate_injections_test;
+
+#[cfg(test)]
+mod placeholder_overuse_test;
+
+pub use duplicate_injections::DuplicateInjectionAnalyzer;
+pub use empty_blocks::EmptyBlockAnalyzer;
+pub use empty_functions::EmptyFunctionAnalyzer;
 pub use infinite_loops::InfiniteLoopAnalyzer;
+pub use placeholder_overuse::PlaceholderOveruseAnalyzer;
 pub use unreachable_code::ReachabilityAnalyzer;
 pub use unused_variables::UnusedVariableAnalyzer;
 
@@ -30,6 +50,25 @@ pub enum Warning {
         file_id: FileId,
     },
     PotentialInfiniteLoop {
+        span: Span,
+        file_id: FileId,
+    },
+    EmptyBlock {
+        block_type: String,
+        span: Span,
+        file_id: FileId,
+    },
+    EmptyFunction {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    DuplicateInjection {
+        span: Span,
+        file_id: FileId,
+    },
+    PlaceholderOveruse {
+        placeholder_count: usize,
         span: Span,
         file_id: FileId,
     },
@@ -61,6 +100,44 @@ impl Warning {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("loop condition is always true"),
+                ]),
+            Warning::EmptyBlock {
+                block_type,
+                span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message(format!("empty {} block", block_type))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("block contains no statements"),
+                ]),
+            Warning::EmptyFunction {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message(format!("function `{}` has empty body", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("function contains no statements"),
+                ]),
+            Warning::DuplicateInjection { span, file_id } => Diagnostic::warning()
+                .with_message("duplicate consecutive injection")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("identical injection appears consecutively"),
+                ]),
+            Warning::PlaceholderOveruse {
+                placeholder_count,
+                span,
+                file_id,
+            } => Diagnostic::warning()
+                .with_message("function call uses only placeholders")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range()).with_message(format!(
+                        "all {} arguments are placeholders",
+                        placeholder_count
+                    )),
                 ]),
         }
     }

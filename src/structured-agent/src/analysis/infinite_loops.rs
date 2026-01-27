@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
 use crate::ast::{Definition, Expression, Function, Module, Statement};
 use crate::types::FileId;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub struct InfiniteLoopAnalyzer {
     variable_assignments: HashMap<String, bool>,

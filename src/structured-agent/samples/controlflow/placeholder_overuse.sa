@@ -1,0 +1,26 @@
+fn call_with_all_placeholders(): () {
+    process(_, _, _, _)
+}
+
+fn call_with_some_placeholders(): () {
+    process("concrete", _, "value", _)
+}
+
+fn valid_placeholder_use(): () {
+    process("arg1", _, "arg3", _)
+}
+
+fn no_placeholders(): () {
+    process("a", "b", "c", "d")
+}
+
+fn multiple_all_placeholder_calls(): () {
+    function_one(_, _)
+    function_two(_, _, _)
+    function_three(_)
+}
+
+extern fn process(a: String, b: String, c: String, d: String): ()
+extern fn function_one(x: String, y: String): ()
+extern fn function_two(a: String, b: String, c: String): ()
+extern fn function_three(z: String): ()

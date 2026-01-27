@@ -1,0 +1,13 @@
+fn do_nothing(): () {
+}
+
+fn process(): String {
+    "result"
+}
+
+fn another_empty(): Boolean {
+}
+
+fn valid_function(): () {
+    "This function does something"!
+}

@@ -1,0 +1,25 @@
+fn send_messages(): () {
+    "Hello"!
+    "Hello"!
+    "Goodbye"!
+}
+
+fn report_status(): () {
+    let status = "ready"
+    status!
+    status!
+    status!
+}
+
+fn mixed_injections(): () {
+    "message"!
+    "message"!
+    "different"!
+    "different"!
+}
+
+fn no_duplicates(): () {
+    "first"!
+    "second"!
+    "third"!
+}

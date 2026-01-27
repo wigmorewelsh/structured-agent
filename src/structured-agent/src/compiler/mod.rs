@@ -1,7 +1,8 @@
 pub mod parser;
 
 use crate::analysis::{
-    AnalysisRunner, InfiniteLoopAnalyzer, ReachabilityAnalyzer, UnusedVariableAnalyzer,
+    AnalysisRunner, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer, EmptyFunctionAnalyzer,
+    InfiniteLoopAnalyzer, PlaceholderOveruseAnalyzer, ReachabilityAnalyzer, UnusedVariableAnalyzer,
 };
 use crate::ast::{self, Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
@@ -231,7 +232,11 @@ impl CompilerTrait for Compiler {
         let mut runner = AnalysisRunner::new()
             .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
             .with_analyzer(Box::new(ReachabilityAnalyzer::new()))
-            .with_analyzer(Box::new(InfiniteLoopAnalyzer::new()));
+            .with_analyzer(Box::new(InfiniteLoopAnalyzer::new()))
+            .with_analyzer(Box::new(EmptyBlockAnalyzer::new()))
+            .with_analyzer(Box::new(EmptyFunctionAnalyzer::new()))
+            .with_analyzer(Box::new(DuplicateInjectionAnalyzer::new()))
+            .with_analyzer(Box::new(PlaceholderOveruseAnalyzer::new()));
 
         let warnings = runner.run(&module, file_id);
         for warning in &warnings {

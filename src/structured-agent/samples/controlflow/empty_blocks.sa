@@ -1,0 +1,14 @@
+fn check_conditions(): () {
+    if true {
+    }
+
+    while true {
+    }
+}
+
+fn process_data(): () {
+    let ready = true
+
+    if false {
+    }
+}
