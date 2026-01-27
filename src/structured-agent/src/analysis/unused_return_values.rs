@@ -95,6 +95,16 @@ impl UnusedReturnValueAnalyzer {
                     self.analyze_expression(&clause.expression_next);
                 }
             }
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.analyze_expression(condition);
+                self.analyze_expression(then_expr);
+                self.analyze_expression(else_expr);
+            }
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

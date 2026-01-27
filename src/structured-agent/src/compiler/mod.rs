@@ -9,7 +9,7 @@ use crate::analysis::{
 use crate::ast::{self, Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::expressions::{
-    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfExpr, InjectionExpr,
+    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfElseExpr, IfExpr, InjectionExpr,
     PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
     VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
@@ -362,6 +362,22 @@ impl Compiler {
             ast::Expression::BooleanLiteral { value, .. } => {
                 Ok(Box::new(BooleanLiteralExpr { value: *value }))
             }
+            ast::Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                let compiled_condition = Self::compile_expression(condition)?;
+                let compiled_then = Self::compile_expression(then_expr)?;
+                let compiled_else = Self::compile_expression(else_expr)?;
+
+                Ok(Box::new(IfElseExpr {
+                    condition: compiled_condition,
+                    then_expr: compiled_then,
+                    else_expr: compiled_else,
+                }))
+            }
         }
     }
 
@@ -626,5 +642,34 @@ fn main(): () {
         assert!(result.is_ok());
         let compiled_program = result.unwrap();
         assert_eq!(compiled_program.functions().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_if_else_expression_end_to_end() {
+        let program_source = r#"
+fn choose_message(ready: Boolean): String {
+    return if ready { "System ready" } else { "System not ready" }
+}
+
+fn main(): String {
+    let message = choose_message(true)
+    message!
+}
+"#;
+
+        let program = CompilationUnit::from_string(program_source.to_string());
+        let compiler = Compiler::new();
+        let compiled_program = compiler.compile_program(&program).unwrap();
+
+        assert_eq!(compiled_program.functions().len(), 2);
+        assert!(compiled_program.main_function().is_some());
+
+        let runtime = Runtime::new();
+        let result = runtime.run(program_source).await.unwrap();
+
+        match result {
+            ExprResult::String(s) => assert_eq!(s, "System ready"),
+            _ => panic!("Expected string result, got: {:?}", result),
+        }
     }
 }

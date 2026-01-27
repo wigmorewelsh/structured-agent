@@ -325,7 +325,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TypeError::TypeMismatch { .. }
+            TypeError::VariableTypeMismatch { .. }
         ));
     }
 

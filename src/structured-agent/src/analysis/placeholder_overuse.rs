@@ -40,6 +40,16 @@ impl PlaceholderOveruseAnalyzer {
                     self.analyze_expression(&clause.expression_next, file_id, warnings);
                 }
             }
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.analyze_expression(condition, file_id, warnings);
+                self.analyze_expression(then_expr, file_id, warnings);
+                self.analyze_expression(else_expr, file_id, warnings);
+            }
             _ => {}
         }
     }

@@ -352,6 +352,36 @@ impl TypeChecker {
 
                 Ok(first_type)
             }
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                span,
+            } => {
+                let condition_type = self.check_expression(condition, env, file_id)?;
+                if !matches!(condition_type, AstType::Boolean) {
+                    return Err(TypeError::TypeMismatch {
+                        expected: "Boolean".to_string(),
+                        found: format!("{}", condition_type),
+                        span: condition.span(),
+                        file_id,
+                    });
+                }
+
+                let then_type = self.check_expression(then_expr, env, file_id)?;
+                let else_type = self.check_expression(else_expr, env, file_id)?;
+
+                if !self.types_equal(&then_type, &else_type) {
+                    return Err(TypeError::TypeMismatch {
+                        expected: format!("{}", then_type),
+                        found: format!("{}", else_type),
+                        span: else_expr.span(),
+                        file_id,
+                    });
+                }
+
+                Ok(then_type)
+            }
         }
     }
 

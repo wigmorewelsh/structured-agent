@@ -26,6 +26,16 @@ impl OverwrittenValueAnalyzer {
                     Self::collect_reads_in_expression(&clause.expression_next, reads);
                 }
             }
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                Self::collect_reads_in_expression(condition, reads);
+                Self::collect_reads_in_expression(then_expr, reads);
+                Self::collect_reads_in_expression(else_expr, reads);
+            }
             _ => {}
         }
     }

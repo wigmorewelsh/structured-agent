@@ -309,15 +309,40 @@ combine::parser! {
     }
 }
 
-fn parse_expression<Input>() -> impl Parser<Input, Output = Expression>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(parse_select_expression()),
-        parse_simple_expression(),
-    ))
+combine::parser! {
+    fn parse_expression[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        choice((
+            attempt(parse_select_expression()),
+            attempt(parse_if_else_expression()),
+            parse_simple_expression(),
+        ))
+    }
+}
+
+combine::parser! {
+    fn parse_if_else_expression[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            position(),
+            lex_string("if"),
+            parse_simple_expression(),
+            between(lex_char('{'), lex_char('}'), parse_expression()),
+            lex_string("else"),
+            between(lex_char('{'), lex_char('}'), parse_expression()),
+            position(),
+        )
+            .map(
+                |(start, _, condition, then_expr, _, else_expr, end)| Expression::IfElse {
+                    condition: Box::new(condition),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
+                    span: Span::new(start, end),
+                },
+            )
+    }
 }
 
 fn parse_call<Input>() -> impl Parser<Input, Output = Expression>
@@ -1276,5 +1301,96 @@ extern fn external_multiline(
         assert_eq!(ext.parameters.len(), 2);
         assert_eq!(ext.parameters[0].name, "param1");
         assert_eq!(ext.parameters[1].name, "param2");
+    }
+
+    #[test]
+    fn test_parse_if_else_expression() {
+        let input = r#"
+fn test_if_else(): String {
+    let result = if true { "then branch" } else { "else branch" }
+    return result
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.name, "test_if_else");
+        assert_eq!(func.body.statements.len(), 2);
+
+        match &func.body.statements[0] {
+            Statement::Assignment {
+                variable,
+                expression,
+                ..
+            } => {
+                assert_eq!(variable, "result");
+                match expression {
+                    Expression::IfElse {
+                        condition,
+                        then_expr,
+                        else_expr,
+                        ..
+                    } => {
+                        match condition.as_ref() {
+                            Expression::BooleanLiteral { value, .. } => {
+                                assert_eq!(*value, true);
+                            }
+                            _ => panic!("Expected boolean literal condition"),
+                        }
+                        match then_expr.as_ref() {
+                            Expression::StringLiteral { value, .. } => {
+                                assert_eq!(value, "then branch");
+                            }
+                            _ => panic!("Expected string literal in then branch"),
+                        }
+                        match else_expr.as_ref() {
+                            Expression::StringLiteral { value, .. } => {
+                                assert_eq!(value, "else branch");
+                            }
+                            _ => panic!("Expected string literal in else branch"),
+                        }
+                    }
+                    _ => panic!("Expected if-else expression"),
+                }
+            }
+            _ => panic!("Expected assignment statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_if_else() {
+        let input = r#"
+fn nested(): String {
+    return if true { if false { "a" } else { "b" } } else { "c" }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        match &func.body.statements[0] {
+            Statement::Return(Expression::IfElse { then_expr, .. }) => match then_expr.as_ref() {
+                Expression::IfElse { .. } => {}
+                _ => panic!("Expected nested if-else"),
+            },
+            _ => panic!("Expected return with if-else"),
+        }
     }
 }

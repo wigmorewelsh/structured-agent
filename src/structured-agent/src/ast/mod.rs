@@ -145,6 +145,12 @@ pub enum Expression {
         span: Span,
     },
     Select(SelectExpression),
+    IfElse {
+        condition: Box<Expression>,
+        then_expr: Box<Expression>,
+        else_expr: Box<Expression>,
+        span: Span,
+    },
 }
 
 impl Spanned for Expression {
@@ -156,6 +162,7 @@ impl Spanned for Expression {
             Expression::BooleanLiteral { span, .. } => *span,
             Expression::Placeholder { span } => *span,
             Expression::Select(select) => select.span,
+            Expression::IfElse { span, .. } => *span,
         }
     }
 }
@@ -314,6 +321,16 @@ impl fmt::Display for Expression {
             Expression::BooleanLiteral { value, .. } => write!(f, "{}", value),
             Expression::Placeholder { .. } => write!(f, "_"),
             Expression::Select(select) => write!(f, "{}", select),
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => write!(
+                f,
+                "if {} {{ {} }} else {{ {} }}",
+                condition, then_expr, else_expr
+            ),
         }
     }
 }

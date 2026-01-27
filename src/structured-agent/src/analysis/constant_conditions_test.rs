@@ -237,4 +237,82 @@ mod tests {
 
         assert_eq!(warnings.len(), 2);
     }
+
+    #[test]
+    fn detects_constant_condition_in_if_else_expression() {
+        let func = create_test_function(
+            "test",
+            vec![Statement::Assignment {
+                variable: "result".to_string(),
+                expression: Expression::IfElse {
+                    condition: Box::new(Expression::BooleanLiteral {
+                        value: true,
+                        span: Span::dummy(),
+                    }),
+                    then_expr: Box::new(Expression::StringLiteral {
+                        value: "always this".to_string(),
+                        span: Span::dummy(),
+                    }),
+                    else_expr: Box::new(Expression::StringLiteral {
+                        value: "never this".to_string(),
+                        span: Span::dummy(),
+                    }),
+                    span: Span::dummy(),
+                },
+                span: Span::dummy(),
+            }],
+        );
+
+        let module = create_test_module(vec![Definition::Function(func)]);
+        let mut analyzer = ConstantConditionAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(
+            warnings[0],
+            Warning::ConstantCondition {
+                condition_value: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn detects_constant_condition_in_nested_if_else() {
+        let func = create_test_function(
+            "test",
+            vec![Statement::Return(Expression::IfElse {
+                condition: Box::new(Expression::BooleanLiteral {
+                    value: false,
+                    span: Span::dummy(),
+                }),
+                then_expr: Box::new(Expression::StringLiteral {
+                    value: "outer then".to_string(),
+                    span: Span::dummy(),
+                }),
+                else_expr: Box::new(Expression::IfElse {
+                    condition: Box::new(Expression::BooleanLiteral {
+                        value: true,
+                        span: Span::dummy(),
+                    }),
+                    then_expr: Box::new(Expression::StringLiteral {
+                        value: "inner then".to_string(),
+                        span: Span::dummy(),
+                    }),
+                    else_expr: Box::new(Expression::StringLiteral {
+                        value: "inner else".to_string(),
+                        span: Span::dummy(),
+                    }),
+                    span: Span::dummy(),
+                }),
+                span: Span::dummy(),
+            })],
+        );
+
+        let module = create_test_module(vec![Definition::Function(func)]);
+        let mut analyzer = ConstantConditionAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 2);
+    }
 }

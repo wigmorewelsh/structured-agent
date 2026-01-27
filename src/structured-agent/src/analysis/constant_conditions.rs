@@ -50,6 +50,55 @@ impl ConstantConditionAnalyzer {
         }
     }
 
+    fn analyze_expression(
+        &self,
+        expr: &Expression,
+        file_id: FileId,
+        variable_values: &HashMap<String, bool>,
+        warnings: &mut Vec<Warning>,
+    ) {
+        match expr {
+            Expression::Call { arguments, .. } => {
+                for arg in arguments {
+                    self.analyze_expression(arg, file_id, variable_values, warnings);
+                }
+            }
+            Expression::Select(select_expr) => {
+                for clause in &select_expr.clauses {
+                    self.analyze_expression(
+                        &clause.expression_to_run,
+                        file_id,
+                        variable_values,
+                        warnings,
+                    );
+                    self.analyze_expression(
+                        &clause.expression_next,
+                        file_id,
+                        variable_values,
+                        warnings,
+                    );
+                }
+            }
+            Expression::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                if let Some(value) = self.is_constant_condition(condition, variable_values) {
+                    warnings.push(Warning::ConstantCondition {
+                        condition_value: value,
+                        span: condition.span(),
+                        file_id,
+                    });
+                }
+                self.analyze_expression(then_expr, file_id, variable_values, warnings);
+                self.analyze_expression(else_expr, file_id, variable_values, warnings);
+            }
+            _ => {}
+        }
+    }
+
     fn analyze_statement(
         &self,
         stmt: &Statement,
@@ -78,7 +127,21 @@ impl ConstantConditionAnalyzer {
                     self.analyze_statement(stmt, file_id, variable_values, warnings);
                 }
             }
-            _ => {}
+            Statement::Assignment { expression, .. } => {
+                self.analyze_expression(expression, file_id, variable_values, warnings);
+            }
+            Statement::VariableAssignment { expression, .. } => {
+                self.analyze_expression(expression, file_id, variable_values, warnings);
+            }
+            Statement::Injection(expr) => {
+                self.analyze_expression(expr, file_id, variable_values, warnings);
+            }
+            Statement::ExpressionStatement(expr) => {
+                self.analyze_expression(expr, file_id, variable_values, warnings);
+            }
+            Statement::Return(expr) => {
+                self.analyze_expression(expr, file_id, variable_values, warnings);
+            }
         }
     }
 }
