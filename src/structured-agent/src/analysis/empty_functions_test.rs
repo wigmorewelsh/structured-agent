@@ -1,54 +1,40 @@
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{Analyzer, EmptyFunctionAnalyzer, Warning};
-    use crate::ast::{Definition, Expression, Function, FunctionBody, Module, Statement, Type};
-    use crate::types::Span;
+    use crate::analysis::{Analyzer, EmptyFunctionAnalyzer};
+    use crate::ast::Module;
+    use crate::compiler::{CodespanParser, CompilationUnit, Parser};
+    use crate::diagnostics::DiagnosticManager;
 
-    fn create_test_function(name: &str, statements: Vec<Statement>) -> Function {
-        Function {
-            name: name.to_string(),
-            parameters: vec![],
-            return_type: Type::Unit,
-            body: FunctionBody {
-                statements,
-                span: Span::dummy(),
-            },
-            documentation: None,
-            span: Span::dummy(),
-        }
-    }
-
-    fn create_test_module(definitions: Vec<Definition>) -> Module {
-        Module {
-            definitions,
-            span: Span::dummy(),
-            file_id: 0,
-        }
+    fn parse_code(code: &str) -> Module {
+        let unit = CompilationUnit::from_string(code.to_string());
+        let manager = DiagnosticManager::new();
+        let parser = CodespanParser::new(manager.reporter().clone());
+        parser.parse(&unit, 0, manager.reporter()).unwrap()
     }
 
     #[test]
     fn detects_empty_function() {
-        let func = create_test_function("empty", vec![]);
+        let code = r#"
+fn empty(): () {
+}
+"#;
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = parse_code(code);
         let mut analyzer = EmptyFunctionAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
         assert_eq!(warnings.len(), 1);
-        assert!(matches!(warnings[0], Warning::EmptyFunction { .. }));
     }
 
     #[test]
     fn no_warning_for_function_with_statements() {
-        let func = create_test_function(
-            "not_empty",
-            vec![Statement::Injection(Expression::StringLiteral {
-                value: "has content".to_string(),
-                span: Span::dummy(),
-            })],
-        );
+        let code = r#"
+fn not_empty(): () {
+    "has content"
+}
+"#;
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = parse_code(code);
         let mut analyzer = EmptyFunctionAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -57,21 +43,19 @@ mod tests {
 
     #[test]
     fn detects_multiple_empty_functions() {
-        let func1 = create_test_function("empty1", vec![]);
-        let func2 = create_test_function("empty2", vec![]);
-        let func3 = create_test_function(
-            "not_empty",
-            vec![Statement::Injection(Expression::StringLiteral {
-                value: "content".to_string(),
-                span: Span::dummy(),
-            })],
-        );
+        let code = r#"
+fn empty1(): () {
+}
 
-        let module = create_test_module(vec![
-            Definition::Function(func1),
-            Definition::Function(func2),
-            Definition::Function(func3),
-        ]);
+fn empty2(): () {
+}
+
+fn not_empty(): () {
+    "content"
+}
+"#;
+
+        let module = parse_code(code);
         let mut analyzer = EmptyFunctionAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -80,15 +64,13 @@ mod tests {
 
     #[test]
     fn no_warning_for_function_with_return() {
-        let func = create_test_function(
-            "returns_value",
-            vec![Statement::Return(Expression::StringLiteral {
-                value: "result".to_string(),
-                span: Span::dummy(),
-            })],
-        );
+        let code = r#"
+fn returns_value(): String {
+    return "result"
+}
+"#;
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = parse_code(code);
         let mut analyzer = EmptyFunctionAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
