@@ -197,7 +197,7 @@ where
     choice((
         lex_string("()").map(|_| Type::Unit),
         lex_string("Boolean").map(|_| Type::Boolean),
-        identifier().map(Type::Named),
+        lex_string("String").map(|_| Type::String),
     ))
 }
 
@@ -809,7 +809,7 @@ and multiple lines
     #[test]
     fn test_parse_simple_function() {
         let input = r#"
-fn analyze_code(context: Context, code: String): Analysis {
+fn analyze_code(context: String, code: String): String {
     "Analyze the following code for potential bugs"!
     "Focus on edge cases and error handling"!
     code!
@@ -837,13 +837,13 @@ fn analyze_code(context: Context, code: String): Analysis {
     #[test]
     fn test_complete_example_from_ideas() {
         let input = r#"
-fn analyze_code(context: Context, code: String): Analysis {
+fn analyze_code(context: String, code: String): String {
     "Analyze the following code for potential bugs"!
     "Focus on edge cases and error handling"!
     code!
 }
 
-fn suggest_fix(context: Context, analysis: Analysis): CodeFix {
+fn suggest_fix(context: String, analysis: String): String {
     "Given this analysis, suggest a fix"!
     analysis!
 }
@@ -1071,7 +1071,7 @@ fn test_function(): () {
     #[test]
     fn test_parse_select_statement() {
         let input = r#"
-fn calculator_agent(ctx: Context, request: String): i32 {
+fn calculator_agent(ctx: String, request: String): String {
     "You are a calculator. Use the tools provided."!
     request!
 
@@ -1140,7 +1140,7 @@ fn calculator_agent(ctx: Context, request: String): i32 {
         let input = r#"
 # This function analyzes code for bugs
 # It focuses on edge cases and error handling
-fn analyze_code(context: Context, code: String): Analysis {
+fn analyze_code(context: String, code: String): String {
     let analysis = run_analysis(code)
     analysis
 }
@@ -1246,9 +1246,9 @@ fn documented_function(): () {
         let input = r#"
 fn multiline_function(
     first_param: String,
-    second_param: Context,
-    third_param: Analysis
-): Result {
+    second_param: String,
+    third_param: String
+): String {
     "Process data"!
 }
 "#;
@@ -1277,7 +1277,7 @@ fn multiline_function(
 extern fn external_multiline(
     param1: String,
     param2: String
-): Result
+): String
 "#;
         let stream = Stream::with_positioner(input, IndexPositioner::default());
 

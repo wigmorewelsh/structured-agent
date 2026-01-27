@@ -84,15 +84,7 @@ impl TypeChecker {
         file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
-            AstType::Named(name) => match name.as_str() {
-                "String" | "Boolean" | "Context" => Ok(()),
-                _ => Err(TypeError::UnsupportedType {
-                    type_name: name.clone(),
-                    span,
-                    file_id,
-                }),
-            },
-            AstType::Unit | AstType::Boolean => Ok(()),
+            AstType::Unit | AstType::Boolean | AstType::String => Ok(()),
         }
     }
 
@@ -294,7 +286,7 @@ impl TypeChecker {
                         file_id,
                     })
             }
-            Expression::StringLiteral { .. } => Ok(AstType::Named("String".to_string())),
+            Expression::StringLiteral { .. } => Ok(AstType::String),
             Expression::BooleanLiteral { .. } => Ok(AstType::Boolean),
             Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
                 expected: "concrete type".to_string(),
@@ -386,12 +378,7 @@ impl TypeChecker {
     }
 
     fn types_equal(&self, type1: &AstType, type2: &AstType) -> bool {
-        match (type1, type2) {
-            (AstType::Named(name1), AstType::Named(name2)) => name1 == name2,
-            (AstType::Unit, AstType::Unit) => true,
-            (AstType::Boolean, AstType::Boolean) => true,
-            _ => false,
-        }
+        type1 == type2
     }
 }
 

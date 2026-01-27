@@ -102,24 +102,6 @@ fn main(): () {
     }
 
     #[test]
-    fn test_type_checker_integration_context_parameter() {
-        let code = r#"
-fn analyze(ctx: Context, input: String): Boolean {
-    return true
-}
-
-fn main(): () {
-}
-"#;
-
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
-
-        assert!(result.is_ok(), "Context parameter should be supported");
-    }
-
-    #[test]
     fn test_type_checker_integration_select_statement() {
         let code = r#"
 fn get_string(): String {
@@ -201,21 +183,5 @@ fn main(): () {
             result.is_ok(),
             "External function should work with type checking"
         );
-    }
-
-    #[test]
-    fn test_type_checker_integration_unsupported_type() {
-        let code = r#"
-fn process(data: CustomType): () {
-}
-"#;
-
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
-
-        assert!(result.is_err(), "Unsupported custom type should fail");
-        let err = result.unwrap_err();
-        assert!(err.contains("Type error"));
     }
 }

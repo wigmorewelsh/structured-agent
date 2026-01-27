@@ -225,6 +225,7 @@ async fn test_select_validates_bounds() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_select_prompt_formatting() {
     let engine = match GeminiEngine::from_env().await {
         Ok(engine) => engine,

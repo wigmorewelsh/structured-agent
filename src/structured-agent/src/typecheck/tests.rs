@@ -47,11 +47,8 @@ mod tests {
     fn test_valid_function_with_string_parameter() {
         let func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Named("String".to_string()),
-            )],
-            AstType::Named("String".to_string()),
+            vec![create_parameter("name", AstType::String)],
+            AstType::String,
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -91,11 +88,8 @@ mod tests {
     fn test_function_call_with_correct_arguments() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Named("String".to_string()),
-            )],
-            AstType::Named("String".to_string()),
+            vec![create_parameter("name", AstType::String)],
+            AstType::String,
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -129,11 +123,8 @@ mod tests {
     fn test_function_call_with_wrong_argument_type() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Named("String".to_string()),
-            )],
-            AstType::Named("String".to_string()),
+            vec![create_parameter("name", AstType::String)],
+            AstType::String,
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -172,11 +163,8 @@ mod tests {
     fn test_function_call_with_wrong_argument_count() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Named("String".to_string()),
-            )],
-            AstType::Named("String".to_string()),
+            vec![create_parameter("name", AstType::String)],
+            AstType::String,
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -212,10 +200,7 @@ mod tests {
     fn test_placeholder_arguments_are_allowed() {
         let test_func = create_test_function(
             "test",
-            vec![create_parameter(
-                "data",
-                AstType::Named("String".to_string()),
-            )],
+            vec![create_parameter("data", AstType::String)],
             AstType::Unit,
             vec![],
         );
@@ -251,7 +236,7 @@ mod tests {
         let get_name_func = create_test_function(
             "get_name",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::StringLiteral {
                 value: "Alice".to_string(),
                 span: crate::types::Span::dummy(),
@@ -388,7 +373,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::BooleanLiteral {
                 value: true,
                 span: crate::types::Span::dummy(),
@@ -411,10 +396,10 @@ mod tests {
         let add_func = create_test_function(
             "add",
             vec![
-                create_parameter("a", AstType::Named("String".to_string())),
-                create_parameter("b", AstType::Named("String".to_string())),
+                create_parameter("a", AstType::String),
+                create_parameter("b", AstType::String),
             ],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::StringLiteral {
                 value: "result".to_string(),
                 span: crate::types::Span::dummy(),
@@ -424,10 +409,10 @@ mod tests {
         let concat_func = create_test_function(
             "concat",
             vec![
-                create_parameter("x", AstType::Named("String".to_string())),
-                create_parameter("y", AstType::Named("String".to_string())),
+                create_parameter("value2", AstType::String),
+                create_parameter("value1", AstType::String),
             ],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::StringLiteral {
                 value: "concatenated".to_string(),
                 span: crate::types::Span::dummy(),
@@ -437,7 +422,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::Select(SelectExpression {
                 clauses: vec![
                     SelectClause {
@@ -500,7 +485,7 @@ mod tests {
         let get_string_func = create_test_function(
             "get_string",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::StringLiteral {
                 value: "text".to_string(),
                 span: crate::types::Span::dummy(),
@@ -520,7 +505,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![Statement::Return(Expression::Select(SelectExpression {
                 clauses: vec![
                     SelectClause {
@@ -570,57 +555,16 @@ mod tests {
     }
 
     #[test]
-    fn test_unsupported_type_error() {
-        let func = create_test_function(
-            "test",
-            vec![create_parameter(
-                "x",
-                AstType::Named("CustomType".to_string()),
-            )],
-            AstType::Unit,
-            vec![],
-        );
-
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
-
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnsupportedType { .. }
-        ));
-    }
-
-    #[test]
-    fn test_context_type_is_supported() {
-        let func = create_test_function(
-            "test",
-            vec![create_parameter(
-                "ctx",
-                AstType::Named("Context".to_string()),
-            )],
-            AstType::Unit,
-            vec![],
-        );
-
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
-
-        assert!(checker.check_module(&module, 0).is_ok());
-    }
-
-    #[test]
     fn test_external_function_type_checking() {
         use crate::ast::ExternalFunction;
 
         let ext_func = ExternalFunction {
             name: "concat".to_string(),
             parameters: vec![
-                create_parameter("a", AstType::Named("String".to_string())),
-                create_parameter("b", AstType::Named("String".to_string())),
+                create_parameter("value1", AstType::String),
+                create_parameter("id", AstType::String),
             ],
-            return_type: AstType::Named("String".to_string()),
+            return_type: AstType::String,
             span: crate::types::Span::dummy(),
         };
 
@@ -698,7 +642,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![
                 Statement::Assignment {
                     variable: "shared".to_string(),
@@ -748,7 +692,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Named("String".to_string()),
+            AstType::String,
             vec![
                 Statement::Assignment {
                     variable: "x".to_string(),

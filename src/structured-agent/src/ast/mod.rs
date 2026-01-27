@@ -50,9 +50,9 @@ pub struct ExternalFunction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Named(String),
     Unit,
     Boolean,
+    String,
 }
 
 impl Spanned for Type {
@@ -182,9 +182,9 @@ impl Spanned for SelectClause {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Named(name) => write!(f, "{}", name),
             Type::Unit => write!(f, "()"),
             Type::Boolean => write!(f, "Boolean"),
+            Type::String => write!(f, "String"),
         }
     }
 }

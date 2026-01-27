@@ -24,14 +24,9 @@ use std::rc::Rc;
 
 fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
     match ast_type {
-        ast::Type::Named(name) => match name.as_str() {
-            "String" => Type::string(),
-            "Boolean" => Type::boolean(),
-            "()" => Type::unit(),
-            _ => Type::custom(name.clone()),
-        },
         ast::Type::Unit => Type::unit(),
         ast::Type::Boolean => Type::boolean(),
+        ast::Type::String => Type::string(),
     }
 }
 
