@@ -14,6 +14,7 @@ impl EmptyBlockAnalyzer {
             Statement::If {
                 condition: _,
                 body,
+                else_body,
                 span,
             } => {
                 if body.is_empty() {
@@ -25,6 +26,19 @@ impl EmptyBlockAnalyzer {
                 }
                 for stmt in body {
                     self.analyze_statement(stmt, file_id, warnings);
+                }
+
+                if let Some(else_stmts) = else_body {
+                    if else_stmts.is_empty() {
+                        warnings.push(Warning::EmptyBlock {
+                            block_type: "else".to_string(),
+                            span: *span,
+                            file_id,
+                        });
+                    }
+                    for stmt in else_stmts {
+                        self.analyze_statement(stmt, file_id, warnings);
+                    }
                 }
             }
             Statement::While {

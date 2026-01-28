@@ -326,6 +326,7 @@ mod tests {
                     span: crate::types::Span::dummy(),
                 },
                 body: vec![],
+                else_body: None,
                 span: crate::types::Span::dummy(),
             }],
         );
@@ -617,6 +618,7 @@ mod tests {
                         },
                         span: crate::types::Span::dummy(),
                     }],
+                    else_body: None,
                     span: crate::types::Span::dummy(),
                 },
                 Statement::ExpressionStatement(Expression::Variable {
@@ -665,6 +667,7 @@ mod tests {
                         },
                         span: crate::types::Span::dummy(),
                     }],
+                    else_body: None,
                     span: crate::types::Span::dummy(),
                 },
                 // After if block, shared should still be String type from outer scope
@@ -693,63 +696,73 @@ mod tests {
             "test",
             vec![],
             AstType::String,
-            vec![
-                Statement::Assignment {
-                    variable: "x".to_string(),
-                    expression: Expression::StringLiteral {
-                        value: "outer".to_string(),
-                        span: crate::types::Span::dummy(),
-                    },
+            vec![Statement::If {
+                condition: Expression::BooleanLiteral {
+                    value: true,
                     span: crate::types::Span::dummy(),
                 },
-                Statement::If {
-                    condition: Expression::BooleanLiteral {
-                        value: true,
-                        span: crate::types::Span::dummy(),
-                    },
-                    body: vec![
-                        Statement::Assignment {
-                            variable: "y".to_string(),
-                            expression: Expression::StringLiteral {
-                                value: "middle".to_string(),
-                                span: crate::types::Span::dummy(),
-                            },
+                body: vec![
+                    Statement::Assignment {
+                        variable: "x".to_string(),
+                        expression: Expression::StringLiteral {
+                            value: "outer".to_string(),
                             span: crate::types::Span::dummy(),
                         },
-                        Statement::If {
-                            condition: Expression::BooleanLiteral {
-                                value: true,
-                                span: crate::types::Span::dummy(),
-                            },
-                            body: vec![
-                                Statement::Assignment {
-                                    variable: "z".to_string(),
-                                    expression: Expression::StringLiteral {
-                                        value: "inner".to_string(),
-                                        span: crate::types::Span::dummy(),
-                                    },
+                        span: crate::types::Span::dummy(),
+                    },
+                    Statement::If {
+                        condition: Expression::BooleanLiteral {
+                            value: true,
+                            span: crate::types::Span::dummy(),
+                        },
+                        body: vec![
+                            Statement::Assignment {
+                                variable: "y".to_string(),
+                                expression: Expression::StringLiteral {
+                                    value: "middle".to_string(),
                                     span: crate::types::Span::dummy(),
                                 },
-                                Statement::ExpressionStatement(Expression::Variable {
-                                    name: "x".to_string(),
+                                span: crate::types::Span::dummy(),
+                            },
+                            Statement::If {
+                                condition: Expression::BooleanLiteral {
+                                    value: true,
                                     span: crate::types::Span::dummy(),
-                                }),
-                                Statement::ExpressionStatement(Expression::Variable {
-                                    name: "y".to_string(),
-                                    span: crate::types::Span::dummy(),
-                                }),
-                            ],
-                            span: crate::types::Span::dummy(),
-                        },
-                        // z should not be accessible here
-                    ],
-                    span: crate::types::Span::dummy(),
-                },
-                Statement::Return(Expression::Variable {
-                    name: "x".to_string(),
-                    span: crate::types::Span::dummy(),
-                }),
-            ],
+                                },
+                                body: vec![
+                                    Statement::Assignment {
+                                        variable: "z".to_string(),
+                                        expression: Expression::StringLiteral {
+                                            value: "inner".to_string(),
+                                            span: crate::types::Span::dummy(),
+                                        },
+                                        span: crate::types::Span::dummy(),
+                                    },
+                                    Statement::ExpressionStatement(Expression::Variable {
+                                        name: "x".to_string(),
+                                        span: crate::types::Span::dummy(),
+                                    }),
+                                    Statement::ExpressionStatement(Expression::Variable {
+                                        name: "y".to_string(),
+                                        span: crate::types::Span::dummy(),
+                                    }),
+                                ],
+                                else_body: None,
+                                span: crate::types::Span::dummy(),
+                            },
+                            // z should not be accessible here
+                        ],
+                        else_body: None,
+                        span: crate::types::Span::dummy(),
+                    },
+                    Statement::Return(Expression::Variable {
+                        name: "x".to_string(),
+                        span: crate::types::Span::dummy(),
+                    }),
+                ],
+                else_body: None,
+                span: crate::types::Span::dummy(),
+            }],
         );
 
         let module = create_test_module(vec![Definition::Function(func)]);

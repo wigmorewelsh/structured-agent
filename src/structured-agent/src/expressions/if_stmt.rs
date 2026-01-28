@@ -8,6 +8,7 @@ use std::sync::Arc;
 pub struct IfExpr {
     pub condition: Box<dyn Expression>,
     pub body: Vec<Box<dyn Expression>>,
+    pub else_body: Option<Vec<Box<dyn Expression>>>,
 }
 
 #[async_trait(?Send)]
@@ -32,6 +33,20 @@ impl Expression for IfExpr {
                     return Ok(ExprResult::Unit);
                 }
             }
+        } else if let Some(else_body) = &self.else_body {
+            let child_context = Arc::new(Context::create_child(
+                context.clone(),
+                false,
+                context.runtime_rc(),
+            ));
+
+            for statement in else_body {
+                statement.evaluate(child_context.clone()).await?;
+
+                if child_context.has_return_value() {
+                    return Ok(ExprResult::Unit);
+                }
+            }
         }
         Ok(ExprResult::Unit)
     }
@@ -48,6 +63,10 @@ impl Expression for IfExpr {
         Box::new(IfExpr {
             condition: self.condition.clone_box(),
             body: self.body.iter().map(|expr| expr.clone_box()).collect(),
+            else_body: self
+                .else_body
+                .as_ref()
+                .map(|v| v.iter().map(|e| e.clone_box()).collect()),
         })
     }
 }
@@ -68,7 +87,11 @@ mod tests {
             }),
         }) as Box<dyn Expression>];
 
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         let runtime = Rc::new(Runtime::new());
         let context = Arc::new(Context::with_runtime(runtime));
@@ -87,7 +110,11 @@ mod tests {
             }),
         }) as Box<dyn Expression>];
 
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         let runtime = Rc::new(Runtime::new());
         let context = Arc::new(Context::with_runtime(runtime));
@@ -104,7 +131,11 @@ mod tests {
         });
         let body = vec![];
 
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         let runtime = Rc::new(Runtime::new());
         let context = Arc::new(Context::with_runtime(runtime));
@@ -121,7 +152,11 @@ mod tests {
     fn test_if_return_type() {
         let condition = Box::new(BooleanLiteralExpr { value: true });
         let body = vec![];
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         assert_eq!(if_expr.return_type().name(), "()");
     }
@@ -138,7 +173,11 @@ mod tests {
             }),
         }) as Box<dyn Expression>];
 
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         let runtime = Rc::new(Runtime::new());
         let context = Arc::new(Context::with_runtime(runtime));
@@ -168,6 +207,7 @@ mod tests {
                     value: "inner if executed".to_string(),
                 }),
             }) as Box<dyn Expression>],
+            else_body: None,
         };
 
         let outer_if = IfExpr {
@@ -180,6 +220,7 @@ mod tests {
                 }) as Box<dyn Expression>,
                 Box::new(inner_if) as Box<dyn Expression>,
             ],
+            else_body: None,
         };
 
         let runtime = Rc::new(Runtime::new());
@@ -209,7 +250,11 @@ mod tests {
             }) as Box<dyn Expression>,
         ];
 
-        let if_expr = IfExpr { condition, body };
+        let if_expr = IfExpr {
+            condition,
+            body,
+            else_body: None,
+        };
 
         let runtime = Rc::new(Runtime::new());
         let context = Arc::new(Context::with_runtime(runtime));

@@ -99,7 +99,7 @@ mod tests {
             "test",
             vec![Parameter {
                 name: "param".to_string(),
-                param_type: Type::Named("String".to_string()),
+                param_type: Type::String,
                 span: Span::new(10, 15),
             }],
             Type::Unit,
@@ -128,7 +128,7 @@ mod tests {
             "test",
             vec![Parameter {
                 name: "param".to_string(),
-                param_type: Type::Named("String".to_string()),
+                param_type: Type::String,
                 span: Span::dummy(),
             }],
             Type::Unit,
@@ -169,6 +169,7 @@ mod tests {
                         name: "used".to_string(),
                         span: Span::dummy(),
                     })],
+                    else_body: None,
                     span: Span::dummy(),
                 },
             ],

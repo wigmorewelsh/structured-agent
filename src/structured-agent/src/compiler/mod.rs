@@ -37,10 +37,6 @@ pub struct CompilationUnit {
 }
 
 impl CompilationUnit {
-    pub fn new(name: String, source: String) -> Self {
-        Self { name, source }
-    }
-
     pub fn from_string(source: String) -> Self {
         Self {
             name: "main".to_string(),
@@ -155,10 +151,6 @@ impl CompiledProgram {
         self.external_functions.insert(name, external_function);
     }
 
-    pub fn get_function(&self, name: &str) -> Option<&FunctionExpr> {
-        self.functions.get(name)
-    }
-
     pub fn main_function(&self) -> Option<&FunctionExpr> {
         self.main_function
             .as_ref()
@@ -194,17 +186,6 @@ impl Compiler {
             parser,
             diagnostic_manager: RefCell::new(diagnostic_manager),
         }
-    }
-
-    pub fn with_parser(parser: Rc<dyn Parser>) -> Self {
-        Self {
-            parser,
-            diagnostic_manager: RefCell::new(DiagnosticManager::new()),
-        }
-    }
-
-    pub fn add_source_file(&mut self, name: String, source: String) -> FileId {
-        self.diagnostic_manager.borrow_mut().add_file(name, source)
     }
 }
 
@@ -407,16 +388,29 @@ impl Compiler {
                 }))
             }
             ast::Statement::If {
-                condition, body, ..
+                condition,
+                body,
+                else_body,
+                ..
             } => {
                 let compiled_condition = Self::compile_expression(condition)?;
                 let compiled_body = body
                     .iter()
                     .map(|stmt| Self::compile_statement(stmt))
                     .collect::<Result<Vec<_>, String>>()?;
+                let compiled_else = match else_body {
+                    Some(else_stmts) => Some(
+                        else_stmts
+                            .iter()
+                            .map(|stmt| Self::compile_statement(stmt))
+                            .collect::<Result<Vec<_>, String>>()?,
+                    ),
+                    None => None,
+                };
                 Ok(Box::new(IfExpr {
                     condition: compiled_condition,
                     body: compiled_body,
+                    else_body: compiled_else,
                 }))
             }
             ast::Statement::While {

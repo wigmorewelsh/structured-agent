@@ -80,8 +80,8 @@ impl TypeChecker {
     fn validate_type(
         &self,
         ast_type: &AstType,
-        span: Span,
-        file_id: FileId,
+        _span: Span,
+        _file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
             AstType::Unit | AstType::Boolean | AstType::String => Ok(()),
@@ -126,7 +126,7 @@ impl TypeChecker {
             Statement::Assignment {
                 variable,
                 expression,
-                span,
+                span: _,
             } => {
                 let expr_type = self.check_expression(expression, &env, file_id)?;
                 env.declare_variable(variable.clone(), expr_type, expression.span());
@@ -167,6 +167,7 @@ impl TypeChecker {
                 condition,
                 body,
                 span: _,
+                ..
             } => {
                 let cond_type = self.check_expression(condition, &env, file_id)?;
                 if !matches!(cond_type, AstType::Boolean) {
@@ -348,7 +349,7 @@ impl TypeChecker {
                 condition,
                 then_expr,
                 else_expr,
-                span,
+                span: _,
             } => {
                 let condition_type = self.check_expression(condition, env, file_id)?;
                 if !matches!(condition_type, AstType::Boolean) {

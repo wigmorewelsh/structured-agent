@@ -586,13 +586,21 @@ where
             lex_char('}'),
             many(statement().skip(skip_spaces())),
         ),
+        optional(lex_string("else").skip(skip_spaces()).with(between(
+            lex_char('{'),
+            lex_char('}'),
+            many(statement().skip(skip_spaces())),
+        ))),
         position(),
     )
-        .map(|(start, _, condition, body, end)| Statement::If {
-            condition,
-            body,
-            span: Span::new(start, end),
-        })
+        .map(
+            |(start, _, condition, body, else_body, end)| Statement::If {
+                condition,
+                body,
+                else_body,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_while_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -1457,5 +1465,61 @@ fn test(): String {
         };
 
         assert_eq!(func.name, "test");
+    }
+
+    #[test]
+    fn test_parse_if_else_statement() {
+        let input = r#"
+fn test_if_else_stmt(): () {
+    if true { "then"! } else { "else"! }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.body.statements.len(), 1);
+
+        match &func.body.statements[0] {
+            Statement::If {
+                condition,
+                body,
+                else_body,
+                ..
+            } => {
+                match condition {
+                    Expression::BooleanLiteral { value, .. } => {
+                        assert_eq!(*value, true);
+                    }
+                    _ => panic!("Expected boolean literal condition"),
+                }
+
+                assert_eq!(body.len(), 1);
+                match &body[0] {
+                    Statement::Injection(Expression::StringLiteral { value, .. }) => {
+                        assert_eq!(value, "then");
+                    }
+                    _ => panic!("Expected injection with string literal in then branch"),
+                }
+
+                assert!(else_body.is_some());
+                let else_body = else_body.as_ref().unwrap();
+                assert_eq!(else_body.len(), 1);
+                match &else_body[0] {
+                    Statement::Injection(Expression::StringLiteral { value, .. }) => {
+                        assert_eq!(value, "else");
+                    }
+                    _ => panic!("Expected injection with string literal in else branch"),
+                }
+            }
+            _ => panic!("Expected if statement"),
+        }
     }
 }

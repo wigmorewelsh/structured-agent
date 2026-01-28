@@ -34,4 +34,3 @@ pub use variable::VariableExpr;
 pub use variable_assignment::VariableAssignmentExpr;
 pub use while_stmt::WhileExpr;
 
-pub use crate::types::Expression;

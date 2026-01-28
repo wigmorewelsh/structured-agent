@@ -84,6 +84,7 @@ pub enum Statement {
     If {
         condition: Expression,
         body: Vec<Statement>,
+        else_body: Option<Vec<Statement>>,
         span: Span,
     },
     While {
@@ -228,13 +229,24 @@ impl fmt::Display for Statement {
             }
             Statement::ExpressionStatement(expr) => write!(f, "{}", expr),
             Statement::If {
-                condition, body, ..
+                condition,
+                body,
+                else_body,
+                ..
             } => {
                 writeln!(f, "if {} {{", condition)?;
                 for stmt in body {
                     writeln!(f, "    {}", stmt)?;
                 }
-                write!(f, "}}")
+                if let Some(else_stmts) = else_body {
+                    writeln!(f, "}} else {{")?;
+                    for stmt in else_stmts {
+                        writeln!(f, "    {}", stmt)?;
+                    }
+                    write!(f, "}}")
+                } else {
+                    write!(f, "}}")
+                }
             }
             Statement::While {
                 condition, body, ..
