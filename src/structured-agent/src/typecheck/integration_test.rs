@@ -184,4 +184,35 @@ fn main(): () {
             "External function should work with type checking"
         );
     }
+
+    #[test]
+    fn test_type_checker_integration_if_else_else_branch_type_error() {
+        let code = r#"
+fn main(): () {
+    if true {
+    } else {
+        if "not a boolean" {
+        }
+    }
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_program(&unit);
+
+        if result.is_ok() {
+            println!("Expected error but compilation succeeded");
+        }
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+
+        assert!(
+            result.is_err(),
+            "If/else else-branch type error should fail compilation"
+        );
+        let err = result.unwrap_err();
+        assert!(err.contains("Type error"));
+    }
 }

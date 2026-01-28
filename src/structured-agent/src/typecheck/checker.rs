@@ -166,8 +166,8 @@ impl TypeChecker {
             Statement::If {
                 condition,
                 body,
+                else_body,
                 span: _,
-                ..
             } => {
                 let cond_type = self.check_expression(condition, &env, file_id)?;
                 if !matches!(cond_type, AstType::Boolean) {
@@ -179,10 +179,18 @@ impl TypeChecker {
                     });
                 }
 
-                let mut child_env = env.create_child();
+                let mut then_env = env.create_child();
                 for stmt in body {
-                    child_env = self.check_statement(stmt, child_env, function_name, file_id)?;
+                    then_env = self.check_statement(stmt, then_env, function_name, file_id)?;
                 }
+
+                if let Some(else_stmts) = else_body {
+                    let mut else_env = env.create_child();
+                    for stmt in else_stmts {
+                        else_env = self.check_statement(stmt, else_env, function_name, file_id)?;
+                    }
+                }
+
                 Ok(env)
             }
             Statement::While {
