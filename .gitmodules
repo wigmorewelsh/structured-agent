@@ -1,0 +1,3 @@
+[submodule "src/structured-agent-zed/tree-sitter-structured-agent"]
+	path = src/structured-agent-zed/tree-sitter-structured-agent
+	url = https://github.com/wigmorewelsh/tree-sitter-structured-agent.git
