@@ -36,7 +36,7 @@ impl ModelName {
 
 impl Default for ModelName {
     fn default() -> Self {
-        Self::Gemini25Flash
+        Self::Gemini25FlashLite
     }
 }
 
@@ -242,7 +242,7 @@ impl GenerationConfig {
     }
 
     pub fn without_thinking(mut self) -> Self {
-        self.thinking_config = Some(ThinkingConfig::minimal());
+        self.thinking_config = Some(ThinkingConfig::disabled());
         self
     }
 }
