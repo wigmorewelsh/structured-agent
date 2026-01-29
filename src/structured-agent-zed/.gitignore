@@ -2,5 +2,5 @@ node_modules/
 target/
 *.log
 .DS_Store
-tree-sitter-structured-agent/
+
 grammars/

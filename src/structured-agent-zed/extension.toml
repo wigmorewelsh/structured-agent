@@ -4,8 +4,8 @@ description = "Language support for Structured Agent language"
 version = "0.1.0"
 schema_version = 1
 authors = ["Structured Agent Contributors"]
-repository = "https://github.com/your-repo/structured-agent-zed"
+repository = "https://github.com/wigmorewelsh/structured-agent"
 
 [grammars.structured_agent]
-repository = "file:///Users/timwigmore-welsh/Projects/scratch/src/structured-agent-zed/tree-sitter-structured-agent"
-rev = "841085a0c7000f83ee18e1a94ee9e2e973e8c3ef"
+repository = "https://github.com/wigmorewelsh/tree-sitter-structured-agent"
+rev = "3739a2ae523f1613cc21c0b2bb41e34dd095c4aa"
