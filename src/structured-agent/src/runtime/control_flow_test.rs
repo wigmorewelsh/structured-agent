@@ -431,3 +431,33 @@ fn main(): () {
     assert_eq!(messages, vec!["assigned in while", "after while"]);
     assert_eq!(result, ExprResult::Unit);
 }
+
+#[tokio::test]
+async fn test_else_branch_type_checking() {
+    let logger = Arc::new(LoggingFunction::new());
+
+    let mut runtime = Runtime::new();
+    runtime.register_native_function(logger.clone());
+
+    let program_source = r#"
+extern fn log(message: String): ()
+
+fn main(): () {
+    if true {
+        log("if branch ok")
+    } else {
+        if "not a boolean" {
+            log("bad")
+        }
+    }
+}
+"#;
+
+    let result = runtime.run(program_source).await;
+
+    assert!(result.is_err());
+    let error_message = format!("{:?}", result.unwrap_err());
+    println!("Actual error: {}", error_message);
+    assert!(error_message.contains("Type error"));
+    assert_eq!(logger.messages_vec(), Vec::<String>::new());
+}
