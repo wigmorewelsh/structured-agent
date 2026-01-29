@@ -1,18 +1,18 @@
 ; Keywords
-"fn" @keyword
-"extern" @keyword
-"let" @keyword
-"if" @keyword
-"while" @keyword
-"return" @keyword
-"select" @keyword
-"as" @keyword
+( "fn"
+  "extern"
+  "let"
+  "if"
+  "else"
+  "while"
+  "return"
+  "select"
+  "as") @keyword
 
-; Built-in types
-"String" @type.builtin
-"Boolean" @type.builtin
-"i32" @type.builtin
-"Context" @type.builtin
+; Built-in types recognized by the parser
+( (type
+    (identifier) @type.builtin)
+  (#any-of? @type.builtin "String" "Boolean"))
 
 ; Unit type
 (unit_type) @type
@@ -30,8 +30,7 @@
 
 ; Parameters in function declarations
 (parameter
-  name: (identifier) @variable.parameter
-  type: (type) @type)
+  name: (identifier) @variable.parameter)
 
 ; String literals
 (string_literal) @string
@@ -40,39 +39,25 @@
 (escape_sequence) @string.escape
 
 ; Boolean literals
-"true" @constant.builtin.boolean
-"false" @constant.builtin.boolean
+(boolean_literal) @boolean
 
 ; Placeholder
-(placeholder) @variable.special
+(placeholder) @constant.builtin
 
 ; Comments
 (comment) @comment
 
 ; Operators
-"=" @operator
-"+" @operator
-"-" @operator
-"*" @operator
-"/" @operator
-"==" @operator
-"!=" @operator
-"<" @operator
-">" @operator
-"<=" @operator
-">=" @operator
-"!" @operator
-"=>" @operator
+("=" "=>" "!") @operator
 
 ; Punctuation
-"(" @punctuation.bracket
-")" @punctuation.bracket
-"{" @punctuation.bracket
-"}" @punctuation.bracket
-"," @punctuation.delimiter
-":" @punctuation.delimiter
-"->" @punctuation.delimiter
-";" @punctuation.delimiter
+( "("
+  ")"
+  "{"
+  "}") @punctuation.bracket
+
+( ","
+  ":") @punctuation.delimiter
 
 ; Variable declarations
 (let_declaration
@@ -86,5 +71,5 @@
 (select_clause
   binding: (identifier) @variable)
 
-; General identifiers (catch-all for remaining identifiers)
+; Fallback for identifiers
 (identifier) @variable
