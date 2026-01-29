@@ -8,4 +8,4 @@ repository = "https://github.com/wigmorewelsh/structured-agent"
 
 [grammars.structured_agent]
 repository = "https://github.com/wigmorewelsh/tree-sitter-structured-agent"
-rev = "489a9c0173f29c71bac84079ffcd137d8b652c79"
+rev = "cd0dc3f9c1eb91b054917816d10df148a1dce80e"
