@@ -65,6 +65,8 @@ impl Expression for CallExpr {
             context.runtime_rc(),
         ));
 
+        function_context.add_event(format!("## {}", self.function));
+
         for (i, param) in parameters.iter().enumerate() {
             let param_name = &param.name;
             function_context.declare_variable(param_name.clone(), args[i].clone());

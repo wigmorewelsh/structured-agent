@@ -28,6 +28,10 @@ impl Expression for VariableExpr {
     fn clone_box(&self) -> Box<dyn Expression> {
         Box::new(self.clone())
     }
+
+    fn name(&self) -> Option<&str> {
+        Some(self.name.as_str())
+    }
 }
 
 #[cfg(test)]

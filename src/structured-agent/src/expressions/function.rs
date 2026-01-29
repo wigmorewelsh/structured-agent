@@ -79,6 +79,10 @@ impl Expression for FunctionExpr {
     fn documentation(&self) -> Option<&str> {
         self.documentation.as_deref()
     }
+
+    fn name(&self) -> Option<&str> {
+        Some(self.name.as_str())
+    }
 }
 
 #[async_trait(?Send)]

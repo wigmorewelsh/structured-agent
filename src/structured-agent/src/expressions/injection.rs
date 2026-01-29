@@ -16,15 +16,24 @@ impl std::fmt::Debug for InjectionExpr {
     }
 }
 
+fn to_event(message: String, name: Option<&str>) -> String {
+    if let Some(name) = name {
+        format!("<{}>\n{}\n</{}>", name, message, name)
+    } else {
+        message
+    }
+}
+
 #[async_trait(?Send)]
 impl Expression for InjectionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+        let name = self.inner.name();
         let result = self.inner.evaluate(context.clone()).await?;
 
         match &result {
-            ExprResult::String(s) => context.add_event(s.clone()),
+            ExprResult::String(s) => context.add_event(to_event(s.clone(), name.clone())),
             ExprResult::Unit => {}
-            ExprResult::Boolean(b) => context.add_event(b.to_string()),
+            ExprResult::Boolean(b) => context.add_event(to_event(b.to_string(), name.clone())),
         }
 
         Ok(result)

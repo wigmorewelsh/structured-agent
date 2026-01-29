@@ -155,6 +155,9 @@ pub trait Expression: std::fmt::Debug {
     fn documentation(&self) -> Option<&str> {
         None
     }
+    fn name(&self) -> Option<&str> {
+        None
+    }
 }
 
 #[async_trait(?Send)]
