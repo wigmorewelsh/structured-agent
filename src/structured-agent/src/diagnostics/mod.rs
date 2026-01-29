@@ -5,16 +5,6 @@ pub use reporter::DiagnosticReporter;
 use crate::types::{FileId, SourceFiles};
 use codespan_reporting::diagnostic::Diagnostic;
 
-pub trait DiagnosticEmitter {
-    fn emit_diagnostic(&self, diagnostic: &Diagnostic<FileId>) -> Result<(), std::io::Error>;
-    fn emit_parse_error(
-        &self,
-        file_id: FileId,
-        error: &str,
-        span: Option<(usize, usize)>,
-    ) -> Result<(), std::io::Error>;
-}
-
 pub struct DiagnosticManager {
     files: SourceFiles,
     reporter: DiagnosticReporter,

@@ -4,8 +4,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
-use structured_agent::expressions::Expression;
 use structured_agent::runtime::{Context, ExprResult, Runtime};
+use structured_agent::types::Expression;
 use structured_agent::types::FileId;
 
 const TEST_FILE_ID: FileId = 0;

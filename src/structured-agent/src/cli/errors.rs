@@ -7,7 +7,6 @@ pub enum CliError {
     IoError(io::Error),
     McpError(String),
     RuntimeError(String),
-    NoProgram,
 }
 
 impl fmt::Display for CliError {
@@ -15,10 +14,6 @@ impl fmt::Display for CliError {
         match self {
             CliError::IoError(e) => write!(f, "File I/O error: {}", e),
             CliError::McpError(e) => write!(f, "MCP connection error: {}", e),
-            CliError::NoProgram => write!(
-                f,
-                "No program specified. Use --file or --inline to provide a program."
-            ),
             CliError::RuntimeError(e) => {
                 if e.contains("ExecutionError") && e.contains("Parse error at line") {
                     if let Some(start) = e.find("Parse error at line") {

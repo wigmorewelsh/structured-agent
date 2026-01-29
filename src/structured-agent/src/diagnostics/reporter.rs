@@ -43,22 +43,6 @@ impl DiagnosticReporter {
         self.emit_diagnostic(&diagnostic)
     }
 
-    pub fn emit_parse_error_with_span(
-        &self,
-        file_id: FileId,
-        error: &str,
-        span: crate::types::Span,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let diagnostic = Diagnostic::error()
-            .with_message("parse error")
-            .with_labels(vec![
-                codespan_reporting::diagnostic::Label::primary(file_id, span.to_byte_range())
-                    .with_message(error),
-            ]);
-
-        self.emit_diagnostic(&diagnostic)
-    }
-
     pub fn emit_diagnostic(
         &self,
         diagnostic: &Diagnostic<FileId>,
@@ -72,14 +56,6 @@ impl DiagnosticReporter {
             diagnostic,
         )
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-    }
-
-    pub fn files(&self) -> &SourceFiles {
-        &self.files
-    }
-
-    pub fn files_mut(&mut self) -> &mut SourceFiles {
-        &mut self.files
     }
 }
 
