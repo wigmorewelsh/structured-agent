@@ -1,5 +1,7 @@
+
 ; Keywords
-( "fn"
+[
+  "fn"
   "extern"
   "let"
   "if"
@@ -7,69 +9,63 @@
   "while"
   "return"
   "select"
-  "as") @keyword
+  "as"
+] @keyword
 
-; Built-in types recognized by the parser
-( (type
-    (identifier) @type.builtin)
-  (#any-of? @type.builtin "String" "Boolean"))
+; Punctuation
+[
+  "("
+  ")"
+  "{"
+  "}"
+] @punctuation.bracket
 
-; Unit type
-(unit_type) @type
+[
+  ":"
+  ","
+] @punctuation.delimiter
 
-; Function declarations
+; Operators
+[
+  "="
+  "=>"
+  "!"
+] @operator
+
+; Literals
+(string_literal) @string
+(escape_sequence) @string.escape
+(boolean_literal) @constant.builtin.boolean
+(placeholder) @constant.builtin
+
+; Comments
+(comment) @comment
+
+; Types
+(type) @type.builtin
+
+; Functions
 (function_declaration
   name: (identifier) @function)
 
 (external_function_declaration
   name: (identifier) @function)
 
-; Function calls
-(function_call
-  function: (identifier) @function.call)
+; (function_call
+;   name: (identifier) @function.call)
 
-; Parameters in function declarations
+; Variables and Parameters
 (parameter
   name: (identifier) @variable.parameter)
 
-; String literals
-(string_literal) @string
-
-; Escape sequences in strings
-(escape_sequence) @string.escape
-
-; Boolean literals
-(boolean_literal) @boolean
-
-; Placeholder
-(placeholder) @constant.builtin
-
-; Comments
-(comment) @comment
-
-; Operators
-("=" "=>" "!") @operator
-
-; Punctuation
-( "("
-  ")"
-  "{"
-  "}") @punctuation.bracket
-
-( ","
-  ":") @punctuation.delimiter
-
-; Variable declarations
 (let_declaration
   name: (identifier) @variable)
 
-; Variable assignments
 (variable_assignment
   name: (identifier) @variable)
 
-; Select bindings
 (select_clause
   binding: (identifier) @variable)
 
-; Fallback for identifiers
+; Fallback for any other identifiers
 (identifier) @variable
