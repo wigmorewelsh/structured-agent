@@ -57,7 +57,10 @@ fn test_assignment(): () {
     assert!(execution_result.is_ok());
 
     assert_eq!(context.events_count(), 1);
-    assert_eq!(context.get_event(0).unwrap().message, "Hello, World!");
+    assert_eq!(
+        context.get_event(0).unwrap().message,
+        "<message>\nHello, World!\n</message>"
+    );
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
@@ -98,8 +101,14 @@ fn test_var_assignment(): () {
     assert!(result.is_ok());
 
     assert_eq!(context.events_count(), 2);
-    assert_eq!(context.get_event(0).unwrap().message, "Hello");
-    assert_eq!(context.get_event(1).unwrap().message, "Alice");
+    assert_eq!(
+        context.get_event(0).unwrap().message,
+        "<greeting>\nHello\n</greeting>"
+    );
+    assert_eq!(
+        context.get_event(1).unwrap().message,
+        "<name>\nAlice\n</name>"
+    );
 
     assert!(context.get_variable("greeting").is_some());
     assert!(context.get_variable("name").is_some());

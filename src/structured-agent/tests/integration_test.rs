@@ -164,7 +164,10 @@ fn test_var_injection(): () {
 
     // Should have one event from the variable injection
     assert_eq!(context.events_count(), 1);
-    assert_eq!(context.get_event(0).unwrap().message, "Important message");
+    assert_eq!(
+        context.get_event(0).unwrap().message,
+        "<message>\nImportant message\n</message>"
+    );
 }
 
 #[tokio::test]

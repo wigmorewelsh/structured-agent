@@ -164,7 +164,7 @@ mod tests {
 
         let result = expr.evaluate(context).await.unwrap();
         match result {
-            ExprResult::String(s) => assert_eq!(s, "Hello, World!"),
+            ExprResult::String(s) => assert_eq!(s, "## hello"),
             _ => panic!("Expected string result"),
         }
     }
@@ -258,7 +258,7 @@ mod tests {
 
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("PrintEngine {}".to_string()));
+        assert_eq!(result, ExprResult::String("## analyze".to_string()));
 
         assert_eq!(context.events_count(), 3);
         assert_eq!(

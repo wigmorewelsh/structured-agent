@@ -619,8 +619,8 @@ fn main(): String {
         let result = runtime.run(program_source).await.unwrap();
 
         match result {
-            ExprResult::String(s) => assert_eq!(s, "Adding numbers"),
-            _ => panic!("Expected string result"),
+            ExprResult::String(s) => assert_eq!(s, "<result>\n## calculator\n</result>"),
+            _ => panic!("Expected string result, got: {:?}", result),
         }
     }
 
@@ -682,7 +682,7 @@ fn main(): String {
         let result = runtime.run(program_source).await.unwrap();
 
         match result {
-            ExprResult::String(s) => assert_eq!(s, "System ready"),
+            ExprResult::String(s) => assert_eq!(s, "<message>\nSystem ready\n</message>"),
             _ => panic!("Expected string result, got: {:?}", result),
         }
     }

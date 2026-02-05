@@ -127,7 +127,10 @@ fn main(): String {
         "Should see 'modified' twice if variable assignment persists"
     );
 
-    assert_eq!(result, ExprResult::String("modified".to_string()));
+    assert_eq!(
+        result,
+        ExprResult::String("<val>\nmodified\n</val>".to_string())
+    );
 }
 
 #[tokio::test]
@@ -165,7 +168,10 @@ fn main(): String {
     assert!(messages.contains(&"1".to_string())); // Modified value after loop
 
     // The function should return the modified value from inside the loop
-    assert_eq!(result, ExprResult::String("1".to_string()));
+    assert_eq!(
+        result,
+        ExprResult::String("<iteration>\n1\n</iteration>".to_string())
+    );
 }
 
 #[tokio::test]

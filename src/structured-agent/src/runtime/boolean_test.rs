@@ -226,6 +226,6 @@ fn main(): String {
 
     assert_eq!(
         result,
-        ExprResult::String("Processing complete".to_string())
+        ExprResult::String("<message>\nProcessing complete\n</message>".to_string())
     );
 }
