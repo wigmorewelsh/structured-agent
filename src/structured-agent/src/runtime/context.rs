@@ -1,4 +1,5 @@
 use crate::runtime::Runtime;
+use arrow::array::ListArray;
 use dashmap::DashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -158,9 +159,11 @@ impl Context {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprResult {
-    String(String),
     Unit,
+    String(String),
     Boolean(bool),
+    List(Arc<ListArray>),
+    Option(Option<Box<ExprResult>>),
 }
 
 impl ExprResult {
@@ -175,6 +178,13 @@ impl ExprResult {
         match self {
             ExprResult::Boolean(b) => Ok(*b),
             _ => Err("Expected boolean result".to_string()),
+        }
+    }
+
+    pub fn as_list(&self) -> Result<&Arc<ListArray>, String> {
+        match self {
+            ExprResult::List(list) => Ok(list),
+            _ => Err("Expected list result".to_string()),
         }
     }
 }

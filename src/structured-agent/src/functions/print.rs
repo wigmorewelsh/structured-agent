@@ -1,5 +1,6 @@
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
+use arrow::array::Array;
 use async_trait::async_trait;
 
 #[derive(Debug)]
@@ -42,12 +43,36 @@ impl NativeFunction for PrintFunction {
             return Err(format!("print expects 1 argument, got {}", args.len()));
         }
 
-        let value = match &args[0] {
-            ExprResult::String(s) => s.clone(),
-            ExprResult::Boolean(b) => b.to_string(),
-            ExprResult::Unit => "()".to_string(),
-        };
+        fn format_expr_result(result: &ExprResult) -> String {
+            match result {
+                ExprResult::String(s) => s.clone(),
+                ExprResult::Boolean(b) => b.to_string(),
+                ExprResult::Unit => "()".to_string(),
+                ExprResult::List(list) => {
+                    if list.len() == 0 {
+                        "[]".to_string()
+                    } else {
+                        let values = list.value(0);
+                        if let Some(string_array) =
+                            values.as_any().downcast_ref::<arrow::array::StringArray>()
+                        {
+                            let items: Vec<String> = (0..string_array.len())
+                                .map(|i| format!("\"{}\"", string_array.value(i)))
+                                .collect();
+                            format!("[{}]", items.join(", "))
+                        } else {
+                            "[]".to_string()
+                        }
+                    }
+                }
+                ExprResult::Option(opt) => match opt {
+                    Some(inner) => format!("Some({})", format_expr_result(inner)),
+                    None => "None".to_string(),
+                },
+            }
+        }
 
+        let value = format_expr_result(&args[0]);
         println!("{}", value);
         Ok(ExprResult::Unit)
     }

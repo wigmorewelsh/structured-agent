@@ -1,5 +1,6 @@
 use crate::runtime::{Context, ExprResult};
 use crate::types::{Expression, Type};
+use arrow::array::Array;
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
@@ -30,10 +31,42 @@ impl Expression for InjectionExpr {
         let name = self.inner.name();
         let result = self.inner.evaluate(context.clone()).await?;
 
+        fn format_expr_result(result: &ExprResult) -> String {
+            match result {
+                ExprResult::String(s) => s.clone(),
+                ExprResult::Unit => "()".to_string(),
+                ExprResult::Boolean(b) => b.to_string(),
+                ExprResult::List(list) => {
+                    if list.len() == 0 {
+                        "[]".to_string()
+                    } else {
+                        let values = list.value(0);
+                        if let Some(string_array) =
+                            values.as_any().downcast_ref::<arrow::array::StringArray>()
+                        {
+                            let items: Vec<String> = (0..string_array.len())
+                                .map(|i| format!("\"{}\"", string_array.value(i)))
+                                .collect();
+                            format!("[{}]", items.join(", "))
+                        } else {
+                            "[]".to_string()
+                        }
+                    }
+                }
+                ExprResult::Option(opt) => match opt {
+                    Some(inner) => format!("Some({})", format_expr_result(inner)),
+                    None => "None".to_string(),
+                },
+            }
+        }
+
         match &result {
             ExprResult::String(s) => context.add_event(to_event(s.clone(), name.clone())),
             ExprResult::Unit => {}
-            ExprResult::Boolean(b) => context.add_event(to_event(b.to_string(), name.clone())),
+            _ => {
+                let formatted = format_expr_result(&result);
+                context.add_event(to_event(formatted, name.clone()))
+            }
         }
 
         Ok(result)

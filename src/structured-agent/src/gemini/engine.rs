@@ -1,13 +1,13 @@
 use crate::gemini::error::GeminiResult;
 use crate::gemini::types::GenerationConfig;
-use crate::gemini::types::JsonSchema;
-use crate::gemini::types::JsonSchemaProperty;
+use crate::gemini::types::JsonSchemaBuilder;
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
 use crate::runtime::ExprResult;
 use crate::types::LanguageEngine;
 use crate::types::Type;
 use async_trait::async_trait;
+use schemars::schema::SchemaObject;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
@@ -16,16 +16,6 @@ const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
 #[derive(Serialize, Deserialize)]
 struct SelectionResponse {
     selection: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct StringResponse {
-    value: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BooleanResponse {
-    value: bool,
 }
 
 pub struct GeminiEngine {
@@ -57,6 +47,17 @@ impl GeminiEngine {
         self
     }
 
+    fn build_value_schema(value_type: &Type) -> Result<SchemaObject, String> {
+        match value_type {
+            Type::String => Ok(JsonSchemaBuilder::string()),
+            Type::Boolean => Ok(JsonSchemaBuilder::boolean()),
+            Type::List(_) => Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string())),
+            Type::Option(inner_type) => Self::build_value_schema(inner_type),
+            Type::Unit => Err("Unit type cannot be used in schema".to_string()),
+            Type::Custom(_) => Err(format!("Unsupported type: {}", value_type.name())),
+        }
+    }
+
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
         let events: Vec<_> = context.iter_all_events().collect();
 
@@ -67,6 +68,75 @@ impl GeminiEngine {
                 .iter()
                 .map(|event| ChatMessage::system(&event.message))
                 .collect()
+        }
+    }
+
+    fn parse_json_value(
+        json_value: serde_json::Value,
+        value_type: &Type,
+    ) -> Result<ExprResult, String> {
+        match value_type {
+            Type::String => {
+                if let Some(s) = json_value.as_str() {
+                    Ok(ExprResult::String(s.to_string()))
+                } else {
+                    Err("Expected string value".to_string())
+                }
+            }
+            Type::Boolean => {
+                if let Some(b) = json_value.as_bool() {
+                    Ok(ExprResult::Boolean(b))
+                } else {
+                    Err("Expected boolean value".to_string())
+                }
+            }
+            Type::List(_) => {
+                let items: Vec<String> = if json_value.is_array() {
+                    json_value
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                } else {
+                    return Err("Expected array value".to_string());
+                };
+
+                let mut builder =
+                    arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+                let values_builder = builder.values();
+                for item in &items {
+                    values_builder.append_value(item);
+                }
+                builder.append(true);
+                Ok(ExprResult::List(std::sync::Arc::new(builder.finish())))
+            }
+            Type::Option(inner_type) => {
+                if json_value.is_null() {
+                    Ok(ExprResult::Option(None))
+                } else {
+                    let inner_result = Self::parse_json_value(json_value, inner_type)?;
+                    Ok(ExprResult::Option(Some(Box::new(inner_result))))
+                }
+            }
+            _ => Err(format!("Unsupported type: {}", value_type.name())),
+        }
+    }
+
+    fn parse_typed_response(response_text: &str, return_type: &Type) -> Result<ExprResult, String> {
+        let response_json: serde_json::Value = serde_json::from_str(response_text)
+            .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
+
+        let value_field = response_json
+            .get("value")
+            .ok_or_else(|| "Missing 'value' field in response".to_string())?;
+
+        match return_type {
+            Type::String | Type::Boolean | Type::List(_) => {
+                Self::parse_json_value(value_field.clone(), return_type)
+            }
+            Type::Option(_) => Self::parse_json_value(value_field.clone(), return_type),
+            Type::Unit | Type::Custom(_) => unreachable!(),
         }
     }
 }
@@ -99,20 +169,20 @@ impl LanguageEngine for GeminiEngine {
             return Ok(ExprResult::Unit);
         }
 
-        let (schema, temperature) = match return_type {
-            Type::String => (
-                JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
-                0.7,
-            ),
-            Type::Boolean => (
-                JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
-                0.0,
-            ),
-            Type::Unit => unreachable!("Unit type handled above"),
-            Type::Custom(_) => {
-                return Err(format!("Unsupported return type: {}", return_type.name()));
-            }
+        let value_schema = Self::build_value_schema(return_type)?;
+        let is_required = !matches!(return_type, Type::Option(_));
+        let temperature = if matches!(return_type, Type::Boolean) {
+            0.0
+        } else {
+            0.7
         };
+
+        let schema = JsonSchemaBuilder::with_property(
+            JsonSchemaBuilder::object(),
+            "value",
+            value_schema,
+            is_required,
+        );
 
         let mut chat_messages = self.build_context_messages(context);
         let prompt = format!("Generate a response of type '{}'", return_type.name());
@@ -134,19 +204,7 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        match return_type {
-            Type::String => {
-                let string_response: StringResponse = serde_json::from_str(&response_text)
-                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
-                Ok(ExprResult::String(string_response.value))
-            }
-            Type::Boolean => {
-                let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
-                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
-                Ok(ExprResult::Boolean(boolean_response.value))
-            }
-            Type::Unit | Type::Custom(_) => unreachable!(),
-        }
+        Self::parse_typed_response(&response_text, return_type)
     }
 
     async fn select(&self, context: &Context, options: &[String]) -> Result<usize, String> {
@@ -166,7 +224,7 @@ impl LanguageEngine for GeminiEngine {
             options.len() - 1
         };
 
-        let schema = JsonSchema::integer_selection(max_index as u32);
+        let schema = JsonSchemaBuilder::integer_selection(max_index as u32);
 
         let generation_config = GenerationConfig::new()
             .with_temperature(0.0)
@@ -220,20 +278,20 @@ impl LanguageEngine for GeminiEngine {
             return Ok(ExprResult::Unit);
         }
 
-        let (schema, temperature) = match param_type {
-            Type::String => (
-                JsonSchema::object().with_property("value", JsonSchemaProperty::string(), true),
-                0.7,
-            ),
-            Type::Boolean => (
-                JsonSchema::object().with_property("value", JsonSchemaProperty::boolean(), true),
-                0.0,
-            ),
-            Type::Unit => unreachable!("Unit type handled above"),
-            Type::Custom(_) => {
-                return Err(format!("Unsupported parameter type: {}", param_type.name()));
-            }
+        let value_schema = Self::build_value_schema(param_type)?;
+        let is_required = !matches!(param_type, Type::Option(_));
+        let temperature = if matches!(param_type, Type::Boolean) {
+            0.0
+        } else {
+            0.7
         };
+
+        let schema = JsonSchemaBuilder::with_property(
+            JsonSchemaBuilder::object(),
+            "value",
+            value_schema,
+            is_required,
+        );
 
         let mut chat_messages = self.build_context_messages(context);
         let prompt = format!(
@@ -259,18 +317,6 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        match param_type {
-            Type::String => {
-                let string_response: StringResponse = serde_json::from_str(&response_text)
-                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
-                Ok(ExprResult::String(string_response.value))
-            }
-            Type::Boolean => {
-                let boolean_response: BooleanResponse = serde_json::from_str(&response_text)
-                    .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
-                Ok(ExprResult::Boolean(boolean_response.value))
-            }
-            Type::Unit | Type::Custom(_) => unreachable!(),
-        }
+        Self::parse_typed_response(&response_text, param_type)
     }
 }

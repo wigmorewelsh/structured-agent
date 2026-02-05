@@ -80,11 +80,13 @@ impl TypeChecker {
     fn validate_type(
         &self,
         ast_type: &AstType,
-        _span: Span,
-        _file_id: FileId,
+        span: Span,
+        file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
             AstType::Unit | AstType::Boolean | AstType::String => Ok(()),
+            AstType::List(inner) => self.validate_type(inner, span, file_id),
+            AstType::Option(inner) => self.validate_type(inner, span, file_id),
         }
     }
 
@@ -297,6 +299,32 @@ impl TypeChecker {
             }
             Expression::StringLiteral { .. } => Ok(AstType::String),
             Expression::BooleanLiteral { .. } => Ok(AstType::Boolean),
+            Expression::ListLiteral { elements, span } => {
+                if elements.is_empty() {
+                    return Err(TypeError::TypeMismatch {
+                        expected: "non-empty list or type annotation".to_string(),
+                        found: "empty list".to_string(),
+                        span: *span,
+                        file_id,
+                    });
+                }
+
+                let first_type = self.check_expression(&elements[0], env, file_id)?;
+
+                for (_i, elem) in elements.iter().enumerate().skip(1) {
+                    let elem_type = self.check_expression(elem, env, file_id)?;
+                    if !self.types_equal(&first_type, &elem_type) {
+                        return Err(TypeError::TypeMismatch {
+                            expected: format!("{}", first_type),
+                            found: format!("{}", elem_type),
+                            span: elem.span(),
+                            file_id,
+                        });
+                    }
+                }
+
+                Ok(AstType::List(Box::new(first_type)))
+            }
             Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
                 expected: "concrete type".to_string(),
                 found: "placeholder".to_string(),

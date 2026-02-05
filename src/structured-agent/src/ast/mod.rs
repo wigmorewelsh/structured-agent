@@ -53,6 +53,8 @@ pub enum Type {
     Unit,
     Boolean,
     String,
+    List(Box<Type>),
+    Option(Box<Type>),
 }
 
 impl Spanned for Type {
@@ -142,6 +144,10 @@ pub enum Expression {
         value: bool,
         span: Span,
     },
+    ListLiteral {
+        elements: Vec<Expression>,
+        span: Span,
+    },
     Placeholder {
         span: Span,
     },
@@ -161,6 +167,7 @@ impl Spanned for Expression {
             Expression::Variable { span, .. } => *span,
             Expression::StringLiteral { span, .. } => *span,
             Expression::BooleanLiteral { span, .. } => *span,
+            Expression::ListLiteral { span, .. } => *span,
             Expression::Placeholder { span } => *span,
             Expression::Select(select) => select.span,
             Expression::IfElse { span, .. } => *span,
@@ -186,6 +193,8 @@ impl fmt::Display for Type {
             Type::Unit => write!(f, "()"),
             Type::Boolean => write!(f, "Boolean"),
             Type::String => write!(f, "String"),
+            Type::List(inner) => write!(f, "List<{}>", inner),
+            Type::Option(inner) => write!(f, "Option<{}>", inner),
         }
     }
 }
@@ -331,6 +340,16 @@ impl fmt::Display for Expression {
             Expression::Variable { name, .. } => write!(f, "{}", name),
             Expression::StringLiteral { value, .. } => write!(f, "\"{}\"", value),
             Expression::BooleanLiteral { value, .. } => write!(f, "{}", value),
+            Expression::ListLiteral { elements, .. } => {
+                write!(f, "[")?;
+                for (i, elem) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, "]")
+            }
             Expression::Placeholder { .. } => write!(f, "_"),
             Expression::Select(select) => write!(f, "{}", select),
             Expression::IfElse {

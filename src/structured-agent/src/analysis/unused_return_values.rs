@@ -108,6 +108,7 @@ impl UnusedReturnValueAnalyzer {
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
+            | Expression::ListLiteral { .. }
             | Expression::Placeholder { .. } => {}
         }
     }

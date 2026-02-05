@@ -10,7 +10,7 @@ use crate::ast::{self, Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfElseExpr, IfExpr, InjectionExpr,
-    PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
+    ListLiteralExpr, PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
     VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
 use crate::typecheck::type_check_module;
@@ -27,6 +27,8 @@ fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
         ast::Type::Unit => Type::unit(),
         ast::Type::Boolean => Type::boolean(),
         ast::Type::String => Type::string(),
+        ast::Type::List(inner) => Type::list(convert_ast_type_to_type(inner)),
+        ast::Type::Option(inner) => Type::option(convert_ast_type_to_type(inner)),
     }
 }
 
@@ -337,6 +339,29 @@ impl Compiler {
             })),
             ast::Expression::BooleanLiteral { value, .. } => {
                 Ok(Box::new(BooleanLiteralExpr { value: *value }))
+            }
+            ast::Expression::ListLiteral { elements, .. } => {
+                if elements.is_empty() {
+                    return Err("Cannot infer type of empty list literal".to_string());
+                }
+
+                let compiled_elements: Vec<Box<dyn Expression>> = elements
+                    .iter()
+                    .map(|elem| Self::compile_expression(elem))
+                    .collect::<Result<Vec<_>, String>>()?;
+
+                let element_type = compiled_elements[0].return_type();
+
+                for elem in &compiled_elements {
+                    if elem.return_type() != element_type {
+                        return Err("All list elements must have the same type".to_string());
+                    }
+                }
+
+                Ok(Box::new(ListLiteralExpr {
+                    elements: compiled_elements,
+                    element_type,
+                }))
             }
             ast::Expression::IfElse {
                 condition,

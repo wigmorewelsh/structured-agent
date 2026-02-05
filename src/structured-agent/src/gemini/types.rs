@@ -1,6 +1,7 @@
+use schemars::schema::{InstanceType, Schema, SchemaObject, SingleOrVec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ModelName {
@@ -376,94 +377,69 @@ pub struct Content {
     pub parts: Vec<Part>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JsonSchema {
-    #[serde(rename = "type")]
-    pub schema_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<HashMap<String, JsonSchemaProperty>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<Vec<String>>,
-}
+pub type JsonSchema = SchemaObject;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JsonSchemaProperty {
-    #[serde(rename = "type")]
-    pub property_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub minimum: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub maximum: Option<u32>,
-}
+pub struct JsonSchemaBuilder;
 
-impl JsonSchema {
-    pub fn integer_selection(max_value: u32) -> Self {
-        let mut properties = HashMap::new();
-        properties.insert(
-            "selection".to_string(),
-            JsonSchemaProperty {
-                property_type: "integer".to_string(),
-                minimum: Some(0),
-                maximum: Some(max_value),
-            },
-        );
+impl JsonSchemaBuilder {
+    pub fn integer_selection(max_value: u32) -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Object)));
 
-        Self {
-            schema_type: "object".to_string(),
-            properties: Some(properties),
-            required: Some(vec!["selection".to_string()]),
-        }
+        let mut properties = BTreeMap::new();
+        let mut selection_schema = SchemaObject::default();
+        selection_schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Integer)));
+        let number_validation = selection_schema.number();
+        number_validation.minimum = Some(0.0);
+        number_validation.maximum = Some(max_value as f64);
+        properties.insert("selection".to_string(), Schema::Object(selection_schema));
+
+        let object_validation = schema.object();
+        object_validation.properties = properties;
+        object_validation.required.insert("selection".to_string());
+        schema
     }
 
-    pub fn object() -> Self {
-        Self {
-            schema_type: "object".to_string(),
-            properties: Some(HashMap::new()),
-            required: None,
-        }
+    pub fn object() -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Object)));
+        schema
     }
 
     pub fn with_property(
-        mut self,
+        mut schema: SchemaObject,
         name: &str,
-        property_schema: JsonSchemaProperty,
+        property_schema: SchemaObject,
         required: bool,
-    ) -> Self {
-        if self.properties.is_none() {
-            self.properties = Some(HashMap::new());
-        }
-
-        self.properties
-            .as_mut()
-            .unwrap()
-            .insert(name.to_string(), property_schema);
-
+    ) -> SchemaObject {
+        let object_validation = schema.object();
+        object_validation
+            .properties
+            .insert(name.to_string(), Schema::Object(property_schema));
         if required {
-            if self.required.is_none() {
-                self.required = Some(Vec::new());
-            }
-            self.required.as_mut().unwrap().push(name.to_string());
+            object_validation.required.insert(name.to_string());
         }
-
-        self
-    }
-}
-
-impl JsonSchemaProperty {
-    pub fn string() -> Self {
-        Self {
-            property_type: "string".to_string(),
-            minimum: None,
-            maximum: None,
-        }
+        schema
     }
 
-    pub fn boolean() -> Self {
-        Self {
-            property_type: "boolean".to_string(),
-            minimum: None,
-            maximum: None,
-        }
+    pub fn string() -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::String)));
+        schema
+    }
+
+    pub fn boolean() -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Boolean)));
+        schema
+    }
+
+    pub fn array(items: SchemaObject) -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Array)));
+        let array_validation = schema.array();
+        array_validation.items = Some(SingleOrVec::Single(Box::new(Schema::Object(items))));
+        schema
     }
 }
 

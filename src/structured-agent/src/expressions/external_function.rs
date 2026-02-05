@@ -1,6 +1,7 @@
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
 use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
+use arrow::array::Array;
 use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
@@ -44,14 +45,40 @@ impl Expression for ExternalFunctionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let mut arguments = json!({});
 
+        fn expr_result_to_json(value: &ExprResult) -> serde_json::Value {
+            match value {
+                ExprResult::String(s) => json!(s),
+                ExprResult::Unit => json!(null),
+                ExprResult::Boolean(b) => json!(b),
+                ExprResult::List(list) => {
+                    if list.len() == 0 {
+                        json!([])
+                    } else {
+                        let values = list.value(0);
+                        let mut items = Vec::new();
+                        if let Some(string_array) =
+                            values.as_any().downcast_ref::<arrow::array::StringArray>()
+                        {
+                            for i in 0..string_array.len() {
+                                items.push(json!(string_array.value(i)));
+                            }
+                        }
+                        json!(items)
+                    }
+                }
+                ExprResult::Option(opt) => match opt {
+                    Some(inner) => json!({
+                        "some": expr_result_to_json(inner)
+                    }),
+                    None => json!(null),
+                },
+            }
+        }
+
         for param in &self.parameters {
             let param_name = &param.name;
             if let Some(value) = context.get_variable(param_name) {
-                let json_value = match value {
-                    ExprResult::String(s) => json!(s),
-                    ExprResult::Unit => json!(null),
-                    ExprResult::Boolean(b) => json!(b),
-                };
+                let json_value = expr_result_to_json(&value);
                 arguments[param_name] = json_value;
             }
         }

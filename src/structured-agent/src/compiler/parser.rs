@@ -189,16 +189,34 @@ where
         })
 }
 
-fn parse_type<Input>() -> impl Parser<Input, Output = Type>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        lex_string("()").map(|_| Type::Unit),
-        lex_string("Boolean").map(|_| Type::Boolean),
-        lex_string("String").map(|_| Type::String),
-    ))
+combine::parser! {
+    fn parse_type[Input]()(Input) -> Type
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        choice((
+            attempt(
+                (
+                    lex_string("List"),
+                    lex_char('<'),
+                    parse_type(),
+                    lex_char('>'),
+                )
+                    .map(|(_, _, inner, _)| Type::List(Box::new(inner))),
+            ),
+            attempt(
+                (
+                    lex_string("Option"),
+                    lex_char('<'),
+                    parse_type(),
+                    lex_char('>'),
+                )
+                    .map(|(_, _, inner, _)| Type::Option(Box::new(inner))),
+            ),
+            lex_string("()").map(|_| Type::Unit),
+            lex_string("Boolean").map(|_| Type::Boolean),
+            lex_string("String").map(|_| Type::String),
+        ))
+    }
 }
 
 fn parse_function_body<Input>() -> impl Parser<Input, Output = FunctionBody>
@@ -303,6 +321,7 @@ combine::parser! {
         choice((
             attempt(parse_call()),
             parse_string_literal(),
+            attempt(parse_list_literal()),
             attempt(parse_boolean_literal()),
             parse_variable(),
         ))
@@ -501,6 +520,27 @@ where
                 span: Span::new(start, end),
             }),
     ))
+}
+
+fn parse_list_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        between(
+            lex_char('['),
+            char(']'),
+            sep_by(parse_simple_expression(), lex_char(',')),
+        ),
+        position(),
+    )
+        .skip(skip_spaces())
+        .map(|(start, elements, end)| Expression::ListLiteral {
+            elements,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_select<Input>() -> impl Parser<Input, Output = Statement>
@@ -1520,6 +1560,109 @@ fn test_if_else_stmt(): () {
                 }
             }
             _ => panic!("Expected if statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_literal() {
+        let input = r#"
+            fn test(): List<String> {
+                let items = ["apple", "banana", "cherry"]
+                items
+            }
+        "#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID)
+            .parse(stream)
+            .map(|(module, _)| module);
+
+        assert!(result.is_ok());
+        let module = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        if let Definition::Function(func) = &module.definitions[0] {
+            assert_eq!(func.name, "test");
+            assert_eq!(func.body.statements.len(), 2);
+
+            if let Statement::Assignment { expression, .. } = &func.body.statements[0] {
+                if let Expression::ListLiteral { elements, .. } = expression {
+                    assert_eq!(elements.len(), 3);
+                    if let Expression::StringLiteral { value, .. } = &elements[0] {
+                        assert_eq!(value, "apple");
+                    } else {
+                        panic!("Expected string literal");
+                    }
+                } else {
+                    panic!("Expected list literal");
+                }
+            } else {
+                panic!("Expected assignment");
+            }
+        } else {
+            panic!("Expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_list_literal() {
+        let input = r#"
+            fn test(): List<String> {
+                []
+            }
+        "#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID)
+            .parse(stream)
+            .map(|(module, _)| module);
+
+        assert!(result.is_ok());
+        let module = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        if let Definition::Function(func) = &module.definitions[0] {
+            assert_eq!(func.body.statements.len(), 1);
+            if let Statement::ExpressionStatement(Expression::ListLiteral { elements, .. }) =
+                &func.body.statements[0]
+            {
+                assert_eq!(elements.len(), 0);
+            } else {
+                panic!("Expected list literal expression");
+            }
+        } else {
+            panic!("Expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_option_type() {
+        let input = r#"
+            extern fn get_first(items: List<String>): Option<String>
+        "#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID)
+            .parse(stream)
+            .map(|(module, _)| module);
+
+        assert!(result.is_ok());
+        let module = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        if let Definition::ExternalFunction(func) = &module.definitions[0] {
+            assert_eq!(func.name, "get_first");
+            assert_eq!(func.parameters.len(), 1);
+            assert!(matches!(
+                func.parameters[0].param_type,
+                Type::List(ref inner) if matches!(**inner, Type::String)
+            ));
+            assert!(matches!(
+                func.return_type,
+                Type::Option(ref inner) if matches!(**inner, Type::String)
+            ));
+        } else {
+            panic!("Expected external function definition");
         }
     }
 }

@@ -61,6 +61,8 @@ pub enum Type {
     String,
     Boolean,
     Unit,
+    List(Box<Type>),
+    Option(Box<Type>),
     Custom(String),
 }
 
@@ -95,11 +97,21 @@ impl Type {
         Self::Custom(name)
     }
 
+    pub fn list(inner: Type) -> Self {
+        Self::List(Box::new(inner))
+    }
+
+    pub fn option(inner: Type) -> Self {
+        Self::Option(Box::new(inner))
+    }
+
     pub fn name(&self) -> String {
         match self {
             Type::String => "String".to_string(),
             Type::Boolean => "Boolean".to_string(),
             Type::Unit => "()".to_string(),
+            Type::List(inner) => format!("List<{}>", inner.name()),
+            Type::Option(inner) => format!("Option<{}>", inner.name()),
             Type::Custom(name) => name.clone(),
         }
     }
@@ -210,6 +222,11 @@ impl LanguageEngine for PrintEngine {
             }
             Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
             Type::Unit => Ok(crate::runtime::ExprResult::Unit),
+            Type::List(_) => {
+                let value = self.untyped(context).await;
+                Ok(crate::runtime::ExprResult::String(value))
+            }
+            Type::Option(_) => Ok(crate::runtime::ExprResult::Option(None)),
             Type::Custom(_) => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExprResult::String(value))
@@ -237,6 +254,11 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExprResult::String(value))
             }
             Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
+            Type::List(_) => {
+                let value = self.untyped(context).await;
+                Ok(crate::runtime::ExprResult::String(value))
+            }
+            Type::Option(_) => Ok(crate::runtime::ExprResult::Option(None)),
             Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExprResult::String(format!(
                 "PrintEngine: {} ({})",
                 param_name,

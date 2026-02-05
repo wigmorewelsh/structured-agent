@@ -3,7 +3,6 @@ pub mod reporter;
 pub use reporter::DiagnosticReporter;
 
 use crate::types::{FileId, SourceFiles};
-use codespan_reporting::diagnostic::Diagnostic;
 
 pub struct DiagnosticManager {
     files: SourceFiles,

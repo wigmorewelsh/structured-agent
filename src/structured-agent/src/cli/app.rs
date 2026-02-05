@@ -150,6 +150,20 @@ impl App {
             crate::runtime::ExprResult::Boolean(b) => {
                 println!("Result: {}", b);
             }
+            crate::runtime::ExprResult::List(list) => {
+                use arrow::array::Array;
+                println!("Result: List[{}]", list.len());
+            }
+            crate::runtime::ExprResult::Option(opt) => match opt {
+                Some(inner) => {
+                    print!("Result: Some(");
+                    Self::display_result(inner);
+                    println!(")");
+                }
+                None => {
+                    println!("Result: None");
+                }
+            },
         }
     }
 }
