@@ -3,6 +3,7 @@ use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
+use tracing::info;
 
 pub struct SelectClauseExpr {
     pub expression_to_run: Box<dyn Expression>,
@@ -60,6 +61,14 @@ impl Expression for SelectExpr {
             .await?;
 
         let selected_clause = &self.clauses[selected_index];
+
+        if let Some(name) = selected_clause.expression_to_run.name() {
+            info!(
+                selected_function = %name,
+                clause_index = selected_index,
+                "select_clause"
+            );
+        }
 
         let select_context = Arc::new(Context::create_child(
             context.clone(),

@@ -187,4 +187,14 @@ impl ExprResult {
             _ => Err("Expected list result".to_string()),
         }
     }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            ExprResult::Unit => "Unit",
+            ExprResult::String(_) => "String",
+            ExprResult::Boolean(_) => "Boolean",
+            ExprResult::List(_) => "List",
+            ExprResult::Option(_) => "Option",
+        }
+    }
 }

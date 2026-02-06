@@ -23,3 +23,5 @@ rust-mcp-sdk = "0.8.1"
 dashmap = "6.1.0"
 arrow = { version = "57.2.0", default-features = false }
 schemars = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }

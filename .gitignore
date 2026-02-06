@@ -146,3 +146,4 @@ media/
 src/structured-agent/execution-slides.pdf
 .agent_sessions.db
 .env.development
+docs/eval/

@@ -6,6 +6,7 @@ use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
+use tracing::{Level, info, span};
 
 pub struct CallExpr {
     pub function: String,
@@ -24,6 +25,14 @@ impl std::fmt::Debug for CallExpr {
 #[async_trait(?Send)]
 impl Expression for CallExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+        let span = span!(
+            Level::INFO,
+            "function_call",
+            function = %self.function,
+            arg_count = self.arguments.len()
+        );
+        let _enter = span.enter();
+
         let function_info = context
             .runtime()
             .get_function(&self.function)
@@ -53,6 +62,13 @@ impl Expression for CallExpr {
                     .fill_parameter(&context, param_name, param_type)
                     .await?;
 
+                info!(
+                    function = %self.function,
+                    parameter = %param_name,
+                    param_type = %param_type.name(),
+                    "placeholder_filled"
+                );
+
                 args.push(value);
             } else {
                 args.push(arg.evaluate(context.clone()).await?);
@@ -78,6 +94,12 @@ impl Expression for CallExpr {
             .expect("Function not found");
 
         let result = function_info.evaluate(function_context).await?;
+
+        info!(
+            function = %self.function,
+            result_type = %result.type_name(),
+            "function_result"
+        );
 
         Ok(result)
     }
@@ -272,6 +294,86 @@ mod tests {
         assert_eq!(
             context.get_event(2).unwrap().message,
             "Provide actionable feedback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tracing_instrumentation() {
+        use std::sync::{Arc as StdArc, Mutex};
+        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+        #[derive(Clone)]
+        struct TestLayer {
+            events: StdArc<Mutex<Vec<String>>>,
+        }
+
+        impl<S> tracing_subscriber::Layer<S> for TestLayer
+        where
+            S: tracing::Subscriber,
+        {
+            fn on_event(
+                &self,
+                event: &tracing::Event<'_>,
+                _ctx: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                let mut visitor = EventVisitor {
+                    message: String::new(),
+                };
+                event.record(&mut visitor);
+                self.events.lock().unwrap().push(visitor.message);
+            }
+        }
+
+        struct EventVisitor {
+            message: String,
+        }
+
+        impl tracing::field::Visit for EventVisitor {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if !self.message.is_empty() {
+                    self.message.push_str(", ");
+                }
+                self.message
+                    .push_str(&format!("{}={:?}", field.name(), value));
+            }
+        }
+
+        let events = StdArc::new(Mutex::new(Vec::new()));
+        let test_layer = TestLayer {
+            events: events.clone(),
+        };
+
+        let _guard = tracing_subscriber::registry()
+            .with(test_layer)
+            .set_default();
+
+        let mut runtime = Runtime::new();
+        let function_info = FunctionExpr {
+            name: "test_func".to_string(),
+            parameters: vec![],
+            return_type: Type::string(),
+            body: vec![Box::new(StringLiteralExpr {
+                value: "result".to_string(),
+            })],
+            documentation: None,
+        };
+        runtime.register_function(function_info);
+
+        let runtime = Rc::new(runtime);
+        let context = Arc::new(Context::with_runtime(runtime));
+
+        let expr = CallExpr {
+            function: "test_func".to_string(),
+            arguments: vec![],
+        };
+
+        let _result = expr.evaluate(context).await.unwrap();
+
+        let recorded_events = events.lock().unwrap();
+        assert!(
+            recorded_events
+                .iter()
+                .any(|e| e.contains("function_result"))
         );
     }
 }

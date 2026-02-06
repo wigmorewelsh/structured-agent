@@ -4,6 +4,7 @@ use arrow::array::Array;
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
+use tracing::info;
 
 pub struct InjectionExpr {
     pub inner: Box<dyn Expression>,
@@ -61,11 +62,15 @@ impl Expression for InjectionExpr {
         }
 
         match &result {
-            ExprResult::String(s) => context.add_event(to_event(s.clone(), name.clone())),
             ExprResult::Unit => {}
             _ => {
                 let formatted = format_expr_result(&result);
-                context.add_event(to_event(formatted, name.clone()))
+                context.add_event(to_event(formatted, name.clone()));
+                info!(
+                    name = ?name,
+                    value_type = %result.type_name(),
+                    "injection"
+                );
             }
         }
 
