@@ -61,6 +61,7 @@ local_settings.py
 
 # Agent logs
 logs/
+acp-logs/
 db.sqlite3
 db.sqlite3-journal
 

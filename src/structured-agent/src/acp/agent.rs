@@ -111,7 +111,9 @@ impl Agent {
         let handle = tokio::task::spawn_local(async move {
             let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
 
-            let log_dir = std::path::PathBuf::from("acp-logs");
+            let log_dir = dirs::home_dir()
+                .map(|home| home.join(".structured-agent").join("acp-logs"))
+                .unwrap_or_else(|| std::path::PathBuf::from("acp-logs"));
             let _ = std::fs::create_dir_all(&log_dir);
             let log_path = log_dir.join(format!("session-{}.log", session_id.0));
 
