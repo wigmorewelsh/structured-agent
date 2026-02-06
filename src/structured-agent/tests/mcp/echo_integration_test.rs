@@ -10,7 +10,7 @@ async fn test_mcp_client_basic_creation() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/fixtures/mcp_echo_server.py".to_string(),
+            "../../tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await;
@@ -30,7 +30,7 @@ async fn test_runtime_with_mcp_client() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/fixtures/mcp_echo_server.py".to_string(),
+            "../../tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
@@ -89,7 +89,7 @@ async fn test_mcp_echo_integration_full_pipeline() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/fixtures/mcp_echo_server.py".to_string(),
+            "../../tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
@@ -133,7 +133,7 @@ async fn test_mcp_complete_integration_workflow() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/fixtures/mcp_echo_server.py".to_string(),
+            "../../tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
