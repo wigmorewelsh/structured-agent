@@ -9,7 +9,6 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use super::agent::Agent;
 use crate::cli::config::Config;
-use crate::runtime::{Runtime, load_program};
 
 const ACP_INTERNAL_ERROR: i32 = -32603;
 
@@ -34,21 +33,14 @@ impl AcpServer {
     }
 
     async fn create_agent(&self, session_id: acp::SessionId) -> Result<Agent, acp::Error> {
-        let program = load_program(&self.config.program_source).map_err(|e| {
-            acp::Error::new(ACP_INTERNAL_ERROR, format!("Failed to read file: {}", e))
-        })?;
-
-        let runtime = Runtime::builder()
-            .from_config(&self.config)
-            .await
-            .map_err(|e| acp::Error::new(ACP_INTERNAL_ERROR, e))?;
-
-        let mut agent = Agent::new(
-            runtime,
-            program,
+        let mut agent = Agent::from_config(
+            &self.config,
+            &self.config.program_source,
             session_id.clone(),
             self.session_update_tx.clone(),
-        );
+        )
+        .await
+        .map_err(|e| acp::Error::new(ACP_INTERNAL_ERROR, e))?;
 
         agent
             .start()
@@ -98,15 +90,27 @@ impl acp::Agent for AcpServer {
     async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
         let prompt_content = format!("{:?}", args.prompt);
 
-        let agents = self.agents.borrow();
-        let agent = agents
-            .get(&args.session_id.0.to_string())
-            .ok_or_else(|| acp::Error::new(ACP_INTERNAL_ERROR, "Agent not found"))?;
+        let prompt_tx = {
+            let agents = self.agents.borrow();
+            let agent = agents
+                .get(&args.session_id.0.to_string())
+                .ok_or_else(|| acp::Error::new(ACP_INTERNAL_ERROR, "Agent not found"))?;
+            agent.prompt_channel()
+        };
 
-        agent
-            .send_prompt(prompt_content)
+        let (response_tx, response_rx) = oneshot::channel();
+        let message = super::agent::PromptMessage {
+            content: prompt_content,
+            response_tx,
+        };
+
+        prompt_tx
+            .send(message)
+            .map_err(|_| acp::Error::new(ACP_INTERNAL_ERROR, "Agent cancelled"))?;
+
+        response_rx
             .await
-            .map_err(|e| acp::Error::new(ACP_INTERNAL_ERROR, e.to_string()))?;
+            .map_err(|_| acp::Error::new(ACP_INTERNAL_ERROR, "Agent cancelled"))?;
 
         Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
     }

@@ -1,9 +1,12 @@
-use crate::runtime::{ExprResult, Runtime, RuntimeError};
+use crate::cli::config::Config;
+use crate::runtime::{ExprResult, Runtime, RuntimeError, load_program};
 use agent_client_protocol as acp;
 use std::rc::Rc;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use super::functions::ReceiveFunction;
 use super::tracing::SessionTracingLayer;
 
 pub struct Agent {
@@ -47,13 +50,39 @@ impl From<RuntimeError> for AgentError {
 }
 
 impl Agent {
+    pub async fn from_config(
+        config: &Config,
+        program_source: &crate::cli::config::ProgramSource,
+        session_id: acp::SessionId,
+        update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<Self, String> {
+        let program =
+            load_program(program_source).map_err(|e| format!("Failed to load program: {}", e))?;
+
+        let mut runtime = Runtime::builder().from_config(config).await?;
+
+        let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
+        runtime.register_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
+
+        Ok(Self {
+            runtime: Rc::new(runtime),
+            program,
+            session_id,
+            update_tx,
+            prompt_tx,
+            task_handle: None,
+        })
+    }
+
     pub fn new(
-        runtime: Runtime,
+        mut runtime: Runtime,
         program: String,
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Self {
-        let (prompt_tx, _prompt_rx) = mpsc::unbounded_channel();
+        let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
+
+        runtime.register_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
 
         Self {
             runtime: Rc::new(runtime),
