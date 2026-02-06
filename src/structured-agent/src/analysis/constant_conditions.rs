@@ -22,7 +22,7 @@ impl ConstantConditionAnalyzer {
         }
     }
 
-    fn collect_assignments(&self, statements: &[Statement], values: &mut HashMap<String, bool>) {
+    fn collect_assignments(statements: &[Statement], values: &mut HashMap<String, bool>) {
         for stmt in statements {
             match stmt {
                 Statement::Assignment {
@@ -40,10 +40,10 @@ impl ConstantConditionAnalyzer {
                     values.remove(variable);
                 }
                 Statement::If { body, .. } => {
-                    self.collect_assignments(body, values);
+                    Self::collect_assignments(body, values);
                 }
                 Statement::While { body, .. } => {
-                    self.collect_assignments(body, values);
+                    Self::collect_assignments(body, values);
                 }
                 _ => {}
             }
@@ -163,7 +163,7 @@ impl Analyzer for ConstantConditionAnalyzer {
         for definition in &module.definitions {
             if let Definition::Function(func) = definition {
                 let mut variable_values = HashMap::new();
-                self.collect_assignments(&func.body.statements, &mut variable_values);
+                Self::collect_assignments(&func.body.statements, &mut variable_values);
 
                 for statement in &func.body.statements {
                     self.analyze_statement(statement, file_id, &variable_values, &mut warnings);

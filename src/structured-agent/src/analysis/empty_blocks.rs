@@ -9,7 +9,7 @@ impl EmptyBlockAnalyzer {
         Self
     }
 
-    fn analyze_statement(&self, stmt: &Statement, file_id: FileId, warnings: &mut Vec<Warning>) {
+    fn analyze_statement(stmt: &Statement, file_id: FileId, warnings: &mut Vec<Warning>) {
         match stmt {
             Statement::If {
                 condition: _,
@@ -25,7 +25,7 @@ impl EmptyBlockAnalyzer {
                     });
                 }
                 for stmt in body {
-                    self.analyze_statement(stmt, file_id, warnings);
+                    Self::analyze_statement(stmt, file_id, warnings);
                 }
 
                 if let Some(else_stmts) = else_body {
@@ -37,7 +37,7 @@ impl EmptyBlockAnalyzer {
                         });
                     }
                     for stmt in else_stmts {
-                        self.analyze_statement(stmt, file_id, warnings);
+                        Self::analyze_statement(stmt, file_id, warnings);
                     }
                 }
             }
@@ -54,7 +54,7 @@ impl EmptyBlockAnalyzer {
                     });
                 }
                 for stmt in body {
-                    self.analyze_statement(stmt, file_id, warnings);
+                    Self::analyze_statement(stmt, file_id, warnings);
                 }
             }
             _ => {}
@@ -79,7 +79,7 @@ impl Analyzer for EmptyBlockAnalyzer {
         for definition in &module.definitions {
             if let Definition::Function(func) = definition {
                 for statement in &func.body.statements {
-                    self.analyze_statement(statement, file_id, &mut warnings);
+                    Self::analyze_statement(statement, file_id, &mut warnings);
                 }
             }
         }

@@ -1,6 +1,8 @@
-use crate::cli::config::McpServerConfig;
+use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr};
+use crate::functions::{InputFunction, PrintFunction};
+use crate::gemini::GeminiEngine;
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExprResult};
 use crate::types::{
@@ -106,6 +108,30 @@ impl RuntimeBuilder {
         let name = native_function.name().to_string();
         self.function_registry.insert(name, native_function);
         self
+    }
+
+    pub async fn from_config(mut self, config: &Config) -> Result<Runtime, String> {
+        self = self.with_mcp_server_configs(&config.mcp_servers).await?;
+
+        let engine: Rc<dyn LanguageEngine> = match &config.engine {
+            EngineType::Print => Rc::new(crate::types::PrintEngine {}),
+            EngineType::Gemini => match GeminiEngine::from_env().await {
+                Ok(gemini) => Rc::new(gemini),
+                Err(e) => {
+                    return Err(format!("Failed to initialize Gemini engine: {}", e));
+                }
+            },
+        };
+
+        self = self.with_engine(engine);
+
+        if config.with_default_functions {
+            self = self
+                .with_native_function(Arc::new(InputFunction::new()))
+                .with_native_function(Arc::new(PrintFunction::new()));
+        }
+
+        Ok(self.build())
     }
 
     pub fn build(self) -> Runtime {
@@ -285,5 +311,12 @@ impl Clone for Runtime {
             compiler: self.compiler.clone(),
             mcp_clients: self.mcp_clients.clone(),
         }
+    }
+}
+
+pub fn load_program(source: &ProgramSource) -> Result<String, std::io::Error> {
+    match source {
+        ProgramSource::Inline(code) => Ok(code.clone()),
+        ProgramSource::File(path) => std::fs::read_to_string(path),
     }
 }

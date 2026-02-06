@@ -1,15 +1,13 @@
 use agent_client_protocol as acp;
 use async_trait::async_trait;
 use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::cli::config::{Config, EngineType, ProgramSource};
-use crate::functions::{InputFunction, PrintFunction};
-use crate::gemini::GeminiEngine;
-use crate::runtime::{ExprResult, Runtime};
-use crate::types::LanguageEngine;
+use crate::cli::config::Config;
+use crate::runtime::{ExprResult, Runtime, load_program};
+
+const ACP_INTERNAL_ERROR: i32 = -32603;
 
 pub struct StructuredAgent {
     config: Arc<Config>,
@@ -29,69 +27,22 @@ impl StructuredAgent {
         }
     }
 
-    async fn load_program(&self) -> Result<String, acp::Error> {
-        match &self.config.program_source {
-            ProgramSource::Inline(code) => Ok(code.clone()),
-            ProgramSource::File(path) => std::fs::read_to_string(path)
-                .map_err(|e| acp::Error::new(-32603, format!("Failed to read file: {}", e))),
-        }
-    }
-
-    async fn build_runtime(&self) -> Result<Runtime, acp::Error> {
-        let mut runtime_builder = Runtime::builder();
-
-        runtime_builder = runtime_builder
-            .with_mcp_server_configs(&self.config.mcp_servers)
-            .await
-            .map_err(|e| acp::Error::new(-32603, e))?;
-
-        let engine: Rc<dyn LanguageEngine> = match &self.config.engine {
-            EngineType::Print => Rc::new(crate::types::PrintEngine {}),
-            EngineType::Gemini => match GeminiEngine::from_env().await {
-                Ok(gemini) => Rc::new(gemini),
-                Err(e) => {
-                    return Err(acp::Error::new(
-                        -32603,
-                        format!("Failed to initialize Gemini engine: {}", e),
-                    ));
-                }
-            },
-        };
-
-        runtime_builder = runtime_builder.with_engine(engine);
-
-        if self.config.with_default_functions {
-            runtime_builder = runtime_builder
-                .with_native_function(Arc::new(InputFunction::new()))
-                .with_native_function(Arc::new(PrintFunction::new()));
-        }
-
-        Ok(runtime_builder.build())
-    }
-
     async fn execute_program(&self, _session_id: &acp::SessionId) -> Result<String, acp::Error> {
-        let program = self.load_program().await?;
-        let runtime = self.build_runtime().await?;
+        let program = load_program(&self.config.program_source).map_err(|e| {
+            acp::Error::new(ACP_INTERNAL_ERROR, format!("Failed to read file: {}", e))
+        })?;
+
+        let runtime = Runtime::builder()
+            .from_config(&self.config)
+            .await
+            .map_err(|e| acp::Error::new(ACP_INTERNAL_ERROR, e))?;
 
         match runtime.run(&program).await {
-            Ok(result) => Ok(self.format_result(&result)),
-            Err(e) => Err(acp::Error::new(-32603, format!("Runtime error: {}", e))),
-        }
-    }
-
-    fn format_result(&self, result: &ExprResult) -> String {
-        match result {
-            ExprResult::String(s) => s.clone(),
-            ExprResult::Unit => "(no output)".to_string(),
-            ExprResult::Boolean(b) => b.to_string(),
-            ExprResult::List(list) => {
-                use arrow::array::Array;
-                format!("List[{}]", list.len())
-            }
-            ExprResult::Option(opt) => match opt {
-                Some(inner) => format!("Some({})", self.format_result(inner)),
-                None => "None".to_string(),
-            },
+            Ok(result) => Ok(format_result(&result)),
+            Err(e) => Err(acp::Error::new(
+                ACP_INTERNAL_ERROR,
+                format!("Runtime error: {}", e),
+            )),
         }
     }
 
@@ -155,5 +106,21 @@ impl acp::Agent for StructuredAgent {
 
     async fn cancel(&self, _args: acp::CancelNotification) -> Result<(), acp::Error> {
         Ok(())
+    }
+}
+
+fn format_result(result: &ExprResult) -> String {
+    match result {
+        ExprResult::String(s) => s.clone(),
+        ExprResult::Unit => "(no output)".to_string(),
+        ExprResult::Boolean(b) => b.to_string(),
+        ExprResult::List(list) => {
+            use arrow::array::Array;
+            format!("List[{}]", list.len())
+        }
+        ExprResult::Option(opt) => match opt {
+            Some(inner) => format!("Some({})", format_result(inner)),
+            None => "None".to_string(),
+        },
     }
 }

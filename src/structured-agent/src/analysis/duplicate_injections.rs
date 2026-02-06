@@ -25,25 +25,20 @@ impl DuplicateInjectionAnalyzer {
         }
     }
 
-    fn analyze_statements(
-        &self,
-        statements: &[Statement],
-        file_id: FileId,
-        warnings: &mut Vec<Warning>,
-    ) {
+    fn analyze_statements(statements: &[Statement], file_id: FileId, warnings: &mut Vec<Warning>) {
         let mut last_injection: Option<InjectionValue> = None;
 
         for stmt in statements {
             match stmt {
                 Statement::Injection(value) => {
                     if let Some(current_value) = Self::extract_injection_value(value) {
-                        if let Some(last_value) = &last_injection {
-                            if *last_value == current_value {
-                                warnings.push(Warning::DuplicateInjection {
-                                    span: value.span(),
-                                    file_id,
-                                });
-                            }
+                        if let Some(last_value) = &last_injection
+                            && *last_value == current_value
+                        {
+                            warnings.push(Warning::DuplicateInjection {
+                                span: value.span(),
+                                file_id,
+                            });
                         }
                         last_injection = Some(current_value);
                     } else {
@@ -52,7 +47,7 @@ impl DuplicateInjectionAnalyzer {
                 }
                 Statement::If { body, .. } | Statement::While { body, .. } => {
                     last_injection = None;
-                    self.analyze_statements(body, file_id, warnings);
+                    Self::analyze_statements(body, file_id, warnings);
                 }
                 _ => {}
             }
@@ -76,7 +71,7 @@ impl Analyzer for DuplicateInjectionAnalyzer {
 
         for definition in &module.definitions {
             if let Definition::Function(func) = definition {
-                self.analyze_statements(&func.body.statements, file_id, &mut warnings);
+                Self::analyze_statements(&func.body.statements, file_id, &mut warnings);
             }
         }
 
