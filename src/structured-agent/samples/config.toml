@@ -1,4 +1,4 @@
-file = "samples/hello.sa"
+file = "hello.sa"
 engine = "print"
 with_default_functions = true
 

@@ -1,4 +1,5 @@
 use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, FileConfig, RunArgs};
+use std::env;
 use std::fs;
 use std::process;
 
@@ -99,13 +100,41 @@ impl Config {
     }
 
     fn load_file_config(path: &std::path::Path) -> FileConfig {
-        let content = fs::read_to_string(path).unwrap_or_else(|e| {
-            eprintln!("Error reading config file '{}': {}", path.display(), e);
+        let absolute_path = path.canonicalize().unwrap_or_else(|e| {
+            eprintln!(
+                "Error resolving config file path '{}': {}",
+                path.display(),
+                e
+            );
+            process::exit(1);
+        });
+
+        if let Some(parent) = absolute_path.parent() {
+            if let Err(e) = env::set_current_dir(parent) {
+                eprintln!(
+                    "Error changing to config directory '{}': {}",
+                    parent.display(),
+                    e
+                );
+                process::exit(1);
+            }
+        }
+
+        let content = fs::read_to_string(&absolute_path).unwrap_or_else(|e| {
+            eprintln!(
+                "Error reading config file '{}': {}",
+                absolute_path.display(),
+                e
+            );
             process::exit(1);
         });
 
         toml::from_str(&content).unwrap_or_else(|e| {
-            eprintln!("Error parsing config file '{}': {}", path.display(), e);
+            eprintln!(
+                "Error parsing config file '{}': {}",
+                absolute_path.display(),
+                e
+            );
             process::exit(1);
         })
     }
