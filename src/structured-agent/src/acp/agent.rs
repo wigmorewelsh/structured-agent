@@ -1,126 +1,128 @@
+use crate::runtime::{ExprResult, Runtime, RuntimeError};
 use agent_client_protocol as acp;
-use async_trait::async_trait;
-use std::cell::Cell;
-use std::sync::Arc;
+use std::rc::Rc;
 use tokio::sync::{mpsc, oneshot};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::cli::config::Config;
-use crate::runtime::{ExprResult, Runtime, load_program};
+use super::tracing::SessionTracingLayer;
 
-const ACP_INTERNAL_ERROR: i32 = -32603;
-
-pub struct StructuredAgent {
-    config: Arc<Config>,
-    session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
-    next_session_id: Cell<u64>,
+pub struct Agent {
+    runtime: Rc<Runtime>,
+    program: String,
+    session_id: acp::SessionId,
+    update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    prompt_tx: mpsc::UnboundedSender<PromptMessage>,
+    task_handle: Option<tokio::task::JoinHandle<Result<ExprResult, AgentError>>>,
 }
 
-impl StructuredAgent {
+#[derive(Debug)]
+pub struct PromptMessage {
+    pub content: String,
+    pub response_tx: oneshot::Sender<()>,
+}
+
+#[derive(Debug)]
+pub enum AgentError {
+    RuntimeError(RuntimeError),
+    Cancelled,
+    AlreadyRunning,
+}
+
+impl std::fmt::Display for AgentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentError::RuntimeError(e) => write!(f, "Runtime error: {}", e),
+            AgentError::Cancelled => write!(f, "Session cancelled"),
+            AgentError::AlreadyRunning => write!(f, "Session is already running"),
+        }
+    }
+}
+
+impl std::error::Error for AgentError {}
+
+impl From<RuntimeError> for AgentError {
+    fn from(error: RuntimeError) -> Self {
+        AgentError::RuntimeError(error)
+    }
+}
+
+impl Agent {
     pub fn new(
-        config: Config,
-        session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
-    ) -> Self {
-        Self {
-            config: Arc::new(config),
-            session_update_tx,
-            next_session_id: Cell::new(0),
-        }
-    }
-
-    async fn execute_program(&self, _session_id: &acp::SessionId) -> Result<String, acp::Error> {
-        let program = load_program(&self.config.program_source).map_err(|e| {
-            acp::Error::new(ACP_INTERNAL_ERROR, format!("Failed to read file: {}", e))
-        })?;
-
-        let runtime = Runtime::builder()
-            .from_config(&self.config)
-            .await
-            .map_err(|e| acp::Error::new(ACP_INTERNAL_ERROR, e))?;
-
-        match runtime.run(&program).await {
-            Ok(result) => Ok(format_result(&result)),
-            Err(e) => Err(acp::Error::new(
-                ACP_INTERNAL_ERROR,
-                format!("Runtime error: {}", e),
-            )),
-        }
-    }
-
-    async fn send_update(
-        &self,
+        runtime: Runtime,
+        program: String,
         session_id: acp::SessionId,
-        content: String,
-    ) -> Result<(), acp::Error> {
-        let (tx, rx) = oneshot::channel();
-        self.session_update_tx
-            .send((
-                acp::SessionNotification::new(
-                    session_id,
-                    acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                        acp::ContentBlock::Text(acp::TextContent::new(content)),
-                    )),
-                ),
-                tx,
-            ))
-            .map_err(|_| acp::Error::internal_error())?;
-        rx.await.map_err(|_| acp::Error::internal_error())?;
-        Ok(())
-    }
-}
+        update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Self {
+        let (prompt_tx, _prompt_rx) = mpsc::unbounded_channel();
 
-#[async_trait(?Send)]
-impl acp::Agent for StructuredAgent {
-    async fn initialize(
-        &self,
-        _args: acp::InitializeRequest,
-    ) -> Result<acp::InitializeResponse, acp::Error> {
-        Ok(
-            acp::InitializeResponse::new(acp::ProtocolVersion::V1).agent_info(
-                acp::Implementation::new("structured-agent", "0.1.0").title("Structured Agent"),
-            ),
-        )
-    }
-
-    async fn authenticate(
-        &self,
-        _args: acp::AuthenticateRequest,
-    ) -> Result<acp::AuthenticateResponse, acp::Error> {
-        Ok(acp::AuthenticateResponse::default())
-    }
-
-    async fn new_session(
-        &self,
-        _args: acp::NewSessionRequest,
-    ) -> Result<acp::NewSessionResponse, acp::Error> {
-        let session_id = self.next_session_id.get();
-        self.next_session_id.set(session_id + 1);
-        Ok(acp::NewSessionResponse::new(session_id.to_string()))
-    }
-
-    async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
-        let result = self.execute_program(&args.session_id).await?;
-        self.send_update(args.session_id, result).await?;
-
-        Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
-    }
-
-    async fn cancel(&self, _args: acp::CancelNotification) -> Result<(), acp::Error> {
-        Ok(())
-    }
-}
-
-fn format_result(result: &ExprResult) -> String {
-    match result {
-        ExprResult::String(s) => s.clone(),
-        ExprResult::Unit => "(no output)".to_string(),
-        ExprResult::Boolean(b) => b.to_string(),
-        ExprResult::List(list) => {
-            use arrow::array::Array;
-            format!("List[{}]", list.len())
+        Self {
+            runtime: Rc::new(runtime),
+            program,
+            session_id,
+            update_tx,
+            prompt_tx,
+            task_handle: None,
         }
-        ExprResult::Option(opt) => match opt {
-            Some(inner) => format!("Some({})", format_result(inner)),
-            None => "None".to_string(),
-        },
+    }
+
+    pub fn start(&mut self) -> Result<(), AgentError> {
+        if self.task_handle.is_some() {
+            return Err(AgentError::AlreadyRunning);
+        }
+
+        let runtime = self.runtime.clone();
+        let program = self.program.clone();
+        let session_id = self.session_id.clone();
+        let update_tx = self.update_tx.clone();
+
+        let handle = tokio::task::spawn_local(async move {
+            let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
+
+            let session_span = tracing::info_span!(
+                "session",
+                session_id = %session_id.0
+            );
+
+            let _guard = tracing_subscriber::registry()
+                .with(tracing_layer)
+                .set_default();
+
+            let _span_guard = session_span.enter();
+
+            runtime.run(&program).await.map_err(Into::into)
+        });
+
+        self.task_handle = Some(handle);
+        Ok(())
+    }
+
+    pub async fn send_prompt(&self, content: String) -> Result<(), AgentError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        let message = PromptMessage {
+            content,
+            response_tx,
+        };
+
+        self.prompt_tx
+            .send(message)
+            .map_err(|_| AgentError::Cancelled)?;
+
+        response_rx.await.map_err(|_| AgentError::Cancelled)?;
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn prompt_channel(&self) -> mpsc::UnboundedSender<PromptMessage> {
+        self.prompt_tx.clone()
+    }
+
+    #[allow(dead_code)]
+    pub async fn wait(mut self) -> Result<ExprResult, AgentError> {
+        if let Some(handle) = self.task_handle.take() {
+            handle.await.map_err(|_| AgentError::Cancelled)?
+        } else {
+            Err(AgentError::Cancelled)
+        }
     }
 }

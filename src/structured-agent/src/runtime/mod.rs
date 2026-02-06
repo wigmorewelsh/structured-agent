@@ -14,4 +14,4 @@ mod boolean_test;
 mod control_flow_test;
 
 pub use context::{Context, ExprResult};
-pub use engine::{Runtime, load_program};
+pub use engine::{Runtime, RuntimeError, load_program};

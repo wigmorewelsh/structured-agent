@@ -215,14 +215,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_tools_with_invalid_server() {
-        let mut client = McpClient::new_stdio("echo", vec![]).await.unwrap();
+        let client = McpClient::new_stdio("echo", vec![]).await.unwrap();
         let result = client.list_tools().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_call_tool_with_invalid_server() {
-        let mut client = McpClient::new_stdio("echo", vec![]).await.unwrap();
+        let client = McpClient::new_stdio("echo", vec![]).await.unwrap();
         let result = client.call_tool("test_tool", json!({"arg": "value"})).await;
         assert!(result.is_err());
     }
