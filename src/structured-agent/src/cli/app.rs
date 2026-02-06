@@ -25,19 +25,30 @@ impl App {
         println!("Initializing structured agent runtime...");
 
         let runtime = Runtime::builder()
+            .with_program(program.clone())
             .from_config(&config)
             .await
             .map_err(CliError::RuntimeError)?;
 
-        println!("Executing program...");
-
-        match runtime.run(&program).await {
-            Ok(result) => {
-                println!("Program executed successfully");
-                Self::display_result(&result);
-                Ok(())
+        if config.check_only {
+            println!("Running checks...");
+            match runtime.check() {
+                Ok(_) => {
+                    println!("All checks passed");
+                    Ok(())
+                }
+                Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
             }
-            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+        } else {
+            println!("Executing program...");
+            match runtime.run(&program).await {
+                Ok(result) => {
+                    println!("Program executed successfully");
+                    Self::display_result(&result);
+                    Ok(())
+                }
+                Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+            }
         }
     }
 
@@ -123,6 +134,7 @@ mod tests {
             engine: EngineType::Print,
             with_default_functions: true,
             acp_mode: false,
+            check_only: false,
         };
 
         let runtime = Runtime::builder().from_config(&config).await.unwrap();
@@ -142,6 +154,7 @@ mod tests {
             engine: EngineType::Print,
             with_default_functions: false,
             acp_mode: false,
+            check_only: false,
         };
 
         let runtime = Runtime::builder().from_config(&config).await.unwrap();

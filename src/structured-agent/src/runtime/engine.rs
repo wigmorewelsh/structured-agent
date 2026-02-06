@@ -18,6 +18,7 @@ pub struct Runtime {
     language_engine: Rc<dyn LanguageEngine>,
     compiler: Rc<dyn CompilerTrait>,
     mcp_clients: Vec<Rc<McpClient>>,
+    compiled_program: Option<String>,
 }
 
 pub struct RuntimeBuilder {
@@ -26,6 +27,7 @@ pub struct RuntimeBuilder {
     language_engine: Option<Rc<dyn LanguageEngine>>,
     compiler: Option<Rc<dyn CompilerTrait>>,
     mcp_clients: Vec<McpClient>,
+    program_source: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -61,6 +63,7 @@ impl RuntimeBuilder {
             language_engine: None,
             compiler: None,
             mcp_clients: Vec::new(),
+            program_source: None,
         }
     }
 
@@ -76,6 +79,11 @@ impl RuntimeBuilder {
 
     pub fn with_mcp_client(mut self, client: McpClient) -> Self {
         self.mcp_clients.push(client);
+        self
+    }
+
+    pub fn with_program(mut self, program_source: String) -> Self {
+        self.program_source = Some(program_source);
         self
     }
 
@@ -150,6 +158,7 @@ impl RuntimeBuilder {
                 .unwrap_or_else(|| Rc::new(crate::types::PrintEngine {})),
             compiler: self.compiler.unwrap_or_else(|| Rc::new(Compiler::new())),
             mcp_clients: self.mcp_clients.into_iter().map(Rc::new).collect(),
+            compiled_program: self.program_source,
         }
     }
 }
@@ -203,6 +212,20 @@ impl Runtime {
         self.compiler.as_ref()
     }
 
+    pub fn check(&self) -> Result<(), RuntimeError> {
+        if let Some(program_source) = &self.compiled_program {
+            let program = CompilationUnit::from_string(program_source.clone());
+            self.compiler
+                .compile_program(&program)
+                .map_err(RuntimeError::ExecutionError)?;
+            Ok(())
+        } else {
+            Err(RuntimeError::ExecutionError(
+                "No program provided to runtime".to_string(),
+            ))
+        }
+    }
+
     pub async fn run(&self, program_source: &str) -> Result<ExprResult, RuntimeError> {
         let program = CompilationUnit::from_string(program_source.to_string());
         let compiled_program = self
@@ -216,6 +239,7 @@ impl Runtime {
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             mcp_clients: self.mcp_clients.clone(),
+            compiled_program: self.compiled_program.clone(),
         };
 
         for function in compiled_program.functions().values() {
@@ -252,6 +276,7 @@ impl Runtime {
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             mcp_clients: self.mcp_clients.clone(),
+            compiled_program: self.compiled_program.clone(),
         }
     }
 
@@ -310,6 +335,7 @@ impl Clone for Runtime {
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             mcp_clients: self.mcp_clients.clone(),
+            compiled_program: self.compiled_program.clone(),
         }
     }
 }

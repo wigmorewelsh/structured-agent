@@ -8,6 +8,7 @@ pub struct Config {
     pub engine: EngineType,
     pub with_default_functions: bool,
     pub acp_mode: bool,
+    pub check_only: bool,
 }
 
 #[derive(Debug)]
@@ -35,6 +36,7 @@ impl Config {
         let engine = Self::parse_engine(matches);
         let with_default_functions = matches.get_flag("with-default-functions");
         let acp_mode = matches.get_flag("acp");
+        let check_only = matches.get_flag("check");
 
         Config {
             program_source,
@@ -42,6 +44,7 @@ impl Config {
             engine,
             with_default_functions,
             acp_mode,
+            check_only,
         }
     }
 

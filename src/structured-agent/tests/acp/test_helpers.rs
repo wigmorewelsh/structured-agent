@@ -27,6 +27,7 @@ impl TestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             acp_mode: true,
+            check_only: false,
         };
 
         Self::from_config(config).await
@@ -118,6 +119,7 @@ impl TracingTestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             acp_mode: true,
+            check_only: false,
         };
 
         Self::from_config(config).await

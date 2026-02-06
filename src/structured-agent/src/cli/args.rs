@@ -50,4 +50,10 @@ pub fn build_cli() -> Command {
                 .help("Include default functions (input, print)")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("check")
+                .long("check")
+                .help("Parse, typecheck and run analyzers without executing the program")
+                .action(clap::ArgAction::SetTrue),
+        )
 }
