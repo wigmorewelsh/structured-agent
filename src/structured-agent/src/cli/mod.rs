@@ -4,5 +4,5 @@ pub mod config;
 mod errors;
 
 pub use app::App;
-pub use args::build_cli;
-pub use config::Config;
+pub use args::Args;
+pub use config::{Config, Mode};

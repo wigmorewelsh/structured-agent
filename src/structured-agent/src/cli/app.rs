@@ -1,5 +1,5 @@
 use crate::acp;
-use crate::cli::config::Config;
+use crate::cli::config::{Config, Mode};
 use crate::cli::errors::CliError;
 use crate::runtime::{Runtime, load_program};
 
@@ -7,10 +7,14 @@ pub struct App;
 
 impl App {
     pub async fn run(config: Config) -> Result<(), CliError> {
-        if config.acp_mode {
-            return Self::run_acp_mode(config).await;
+        match config.mode {
+            Mode::Acp => Self::run_acp_mode(config).await,
+            Mode::Check => Self::run_check_mode(config).await,
+            Mode::Run => Self::run_execute_mode(config).await,
         }
+    }
 
+    async fn run_execute_mode(config: Config) -> Result<(), CliError> {
         println!("{}", config.describe_source());
 
         let program = load_program(&config.program_source).map_err(CliError::from)?;
@@ -29,25 +33,43 @@ impl App {
             .await
             .map_err(CliError::RuntimeError)?;
 
-        if config.check_only {
-            println!("Running checks...");
-            match runtime.check() {
-                Ok(_) => {
-                    println!("All checks passed");
-                    Ok(())
-                }
-                Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+        println!("Executing program...");
+        match runtime.run().await {
+            Ok(result) => {
+                println!("Program executed successfully");
+                Self::display_result(&result);
+                Ok(())
             }
-        } else {
-            println!("Executing program...");
-            match runtime.run().await {
-                Ok(result) => {
-                    println!("Program executed successfully");
-                    Self::display_result(&result);
-                    Ok(())
-                }
-                Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+        }
+    }
+
+    async fn run_check_mode(config: Config) -> Result<(), CliError> {
+        println!("{}", config.describe_source());
+
+        let program = load_program(&config.program_source).map_err(CliError::from)?;
+
+        if !config.mcp_servers.is_empty() {
+            println!("MCP servers configured: {}", config.mcp_servers.len());
+            for server in &config.mcp_servers {
+                println!("  - {} {}", server.command, server.args.join(" "));
             }
+        }
+
+        println!("Initializing structured agent runtime...");
+
+        let runtime = Runtime::builder(program.clone())
+            .from_config(&config)
+            .await
+            .map_err(CliError::RuntimeError)?;
+
+        println!("Running checks...");
+        match runtime.check() {
+            Ok(_) => {
+                println!("All checks passed");
+                Ok(())
+            }
+            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
         }
     }
 
@@ -132,8 +154,7 @@ mod tests {
             mcp_servers: vec![],
             engine: EngineType::Print,
             with_default_functions: true,
-            acp_mode: false,
-            check_only: false,
+            mode: Mode::Run,
         };
 
         let program = load_program(&config.program_source).unwrap();
@@ -156,8 +177,7 @@ mod tests {
             mcp_servers: vec![],
             engine: EngineType::Print,
             with_default_functions: false,
-            acp_mode: false,
-            check_only: false,
+            mode: Mode::Run,
         };
 
         let program = load_program(&config.program_source).unwrap();

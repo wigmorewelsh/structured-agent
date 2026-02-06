@@ -12,7 +12,8 @@ mod runtime;
 mod typecheck;
 mod types;
 
-use cli::{App, Config, build_cli};
+use clap::Parser;
+use cli::{App, Args, Config};
 use std::process;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -23,8 +24,8 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let matches = build_cli().get_matches();
-    let config = Config::from_matches(&matches);
+    let args = Args::parse();
+    let config = Config::from_args(args);
 
     if let Err(e) = App::run(config).await {
         eprintln!("Error: {}", e);

@@ -1,59 +1,126 @@
-use clap::{Arg, Command};
+use clap::{Parser, Subcommand};
+use serde::Deserialize;
+use std::path::PathBuf;
 
-pub fn build_cli() -> Command {
-    Command::new("structured-agent")
-        .version("0.1.0")
-        .about("A structured agent runtime with MCP support")
-        .arg(
-            Arg::new("file")
-                .short('f')
-                .long("file")
-                .value_name("FILE")
-                .help("Program file to execute")
-                .conflicts_with("inline"),
-        )
-        .arg(
-            Arg::new("inline")
-                .short('i')
-                .long("inline")
-                .value_name("CODE")
-                .help("Inline program code to execute")
-                .conflicts_with("file"),
-        )
-        .arg(
-            Arg::new("acp")
-                .long("acp")
-                .help("Run as ACP (Agent Client Protocol) server")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("mcp-server")
-                .short('m')
-                .long("mcp-server")
-                .value_name("COMMAND")
-                .help("MCP server command (format: 'command arg1 arg2')")
-                .action(clap::ArgAction::Append),
-        )
-        .arg(
-            Arg::new("engine")
-                .short('e')
-                .long("engine")
-                .value_name("ENGINE")
-                .help(
-                    "Language engine to use: 'print' for console output, 'gemini' for AI responses",
-                )
-                .default_value("print"),
-        )
-        .arg(
-            Arg::new("with-default-functions")
-                .long("with-default-functions")
-                .help("Include default functions (input, print)")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("check")
-                .long("check")
-                .help("Parse, typecheck and run analyzers without executing the program")
-                .action(clap::ArgAction::SetTrue),
-        )
+#[derive(Parser, Debug)]
+#[command(name = "structured-agent")]
+#[command(version = "0.1.0")]
+#[command(about = "A structured agent runtime with MCP support")]
+pub struct Args {
+    #[command(subcommand)]
+    pub command: Command,
+
+    #[arg(
+        short = 'c',
+        long,
+        global = true,
+        value_name = "FILE",
+        help = "Path to configuration file (TOML format)"
+    )]
+    pub config: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    #[command(about = "Run a program")]
+    Run(RunArgs),
+
+    #[command(about = "Parse and typecheck a program without executing")]
+    Check(CheckArgs),
+
+    #[command(about = "Run as ACP (Agent Client Protocol) server")]
+    Acp(AcpArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct RunArgs {
+    #[arg(short = 'f', long, value_name = "FILE", conflicts_with = "inline")]
+    pub file: Option<String>,
+
+    #[arg(short = 'i', long, value_name = "CODE", conflicts_with = "file")]
+    pub inline: Option<String>,
+
+    #[arg(
+        short = 'm',
+        long,
+        value_name = "COMMAND",
+        help = "MCP server command (format: 'command arg1 arg2')"
+    )]
+    pub mcp_server: Vec<String>,
+
+    #[arg(
+        short = 'e',
+        long,
+        value_name = "ENGINE",
+        default_value = "print",
+        help = "Language engine to use: 'print' for console output, 'gemini' for AI responses"
+    )]
+    pub engine: String,
+
+    #[arg(long, help = "Include default functions (input, print)")]
+    pub with_default_functions: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct CheckArgs {
+    #[arg(short = 'f', long, value_name = "FILE", conflicts_with = "inline")]
+    pub file: Option<String>,
+
+    #[arg(short = 'i', long, value_name = "CODE", conflicts_with = "file")]
+    pub inline: Option<String>,
+
+    #[arg(
+        short = 'm',
+        long,
+        value_name = "COMMAND",
+        help = "MCP server command (format: 'command arg1 arg2')"
+    )]
+    pub mcp_server: Vec<String>,
+
+    #[arg(long, help = "Include default functions (input, print)")]
+    pub with_default_functions: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct AcpArgs {
+    #[arg(short = 'f', long, value_name = "FILE", conflicts_with = "inline")]
+    pub file: Option<String>,
+
+    #[arg(short = 'i', long, value_name = "CODE", conflicts_with = "file")]
+    pub inline: Option<String>,
+
+    #[arg(
+        short = 'm',
+        long,
+        value_name = "COMMAND",
+        help = "MCP server command (format: 'command arg1 arg2')"
+    )]
+    pub mcp_server: Vec<String>,
+
+    #[arg(
+        short = 'e',
+        long,
+        value_name = "ENGINE",
+        default_value = "print",
+        help = "Language engine to use: 'print' for console output, 'gemini' for AI responses"
+    )]
+    pub engine: String,
+
+    #[arg(long, help = "Include default functions (input, print)")]
+    pub with_default_functions: bool,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct FileConfig {
+    pub file: Option<String>,
+    pub inline: Option<String>,
+    pub mcp_server: Option<Vec<McpServerEntry>>,
+    pub engine: Option<String>,
+    pub with_default_functions: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct McpServerEntry {
+    pub command: String,
+    pub args: Vec<String>,
 }

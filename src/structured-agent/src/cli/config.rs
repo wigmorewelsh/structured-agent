@@ -1,4 +1,5 @@
-use clap::ArgMatches;
+use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, FileConfig, RunArgs};
+use std::fs;
 use std::process;
 
 #[derive(Debug)]
@@ -7,8 +8,14 @@ pub struct Config {
     pub mcp_servers: Vec<McpServerConfig>,
     pub engine: EngineType,
     pub with_default_functions: bool,
-    pub acp_mode: bool,
-    pub check_only: bool,
+    pub mode: Mode,
+}
+
+#[derive(Debug)]
+pub enum Mode {
+    Run,
+    Check,
+    Acp,
 }
 
 #[derive(Debug)]
@@ -30,28 +37,91 @@ pub struct McpServerConfig {
 }
 
 impl Config {
-    pub fn from_matches(matches: &ArgMatches) -> Self {
-        let program_source = Self::parse_program_source(matches);
-        let mcp_servers = Self::parse_mcp_servers(matches);
-        let engine = Self::parse_engine(matches);
-        let with_default_functions = matches.get_flag("with-default-functions");
-        let acp_mode = matches.get_flag("acp");
-        let check_only = matches.get_flag("check");
+    pub fn from_args(args: Args) -> Self {
+        let file_config = args
+            .config
+            .as_ref()
+            .map(|path| Self::load_file_config(path))
+            .unwrap_or_default();
+
+        match args.command {
+            Command::Run(run_args) => Self::from_run_args(run_args, &file_config),
+            Command::Check(check_args) => Self::from_check_args(check_args, &file_config),
+            Command::Acp(acp_args) => Self::from_acp_args(acp_args, &file_config),
+        }
+    }
+
+    fn from_run_args(args: RunArgs, file_config: &FileConfig) -> Self {
+        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
+        let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
+        let engine = Self::merge_engine(&args.engine, file_config);
+        let with_default_functions =
+            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
 
         Config {
             program_source,
             mcp_servers,
             engine,
             with_default_functions,
-            acp_mode,
-            check_only,
+            mode: Mode::Run,
         }
     }
 
-    fn parse_program_source(matches: &ArgMatches) -> ProgramSource {
-        if let Some(inline_code) = matches.get_one::<String>("inline") {
+    fn from_check_args(args: CheckArgs, file_config: &FileConfig) -> Self {
+        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
+        let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
+        let with_default_functions =
+            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+
+        Config {
+            program_source,
+            mcp_servers,
+            engine: EngineType::Print,
+            with_default_functions,
+            mode: Mode::Check,
+        }
+    }
+
+    fn from_acp_args(args: AcpArgs, file_config: &FileConfig) -> Self {
+        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
+        let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
+        let engine = Self::merge_engine(&args.engine, file_config);
+        let with_default_functions =
+            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+
+        Config {
+            program_source,
+            mcp_servers,
+            engine,
+            with_default_functions,
+            mode: Mode::Acp,
+        }
+    }
+
+    fn load_file_config(path: &std::path::Path) -> FileConfig {
+        let content = fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!("Error reading config file '{}': {}", path.display(), e);
+            process::exit(1);
+        });
+
+        toml::from_str(&content).unwrap_or_else(|e| {
+            eprintln!("Error parsing config file '{}': {}", path.display(), e);
+            process::exit(1);
+        })
+    }
+
+    fn merge_program_source(
+        file: &Option<String>,
+        inline: &Option<String>,
+        file_config: &FileConfig,
+    ) -> ProgramSource {
+        if let Some(inline_code) = inline {
             ProgramSource::Inline(inline_code.clone())
-        } else if let Some(file_path) = matches.get_one::<String>("file") {
+        } else if let Some(file_path) = file {
+            ProgramSource::File(file_path.clone())
+        } else if let Some(inline_code) = &file_config.inline {
+            ProgramSource::Inline(inline_code.clone())
+        } else if let Some(file_path) = &file_config.file {
             ProgramSource::File(file_path.clone())
         } else {
             eprintln!("Error: No program specified. Use --file or --inline to provide a program.");
@@ -59,11 +129,23 @@ impl Config {
         }
     }
 
-    fn parse_mcp_servers(matches: &ArgMatches) -> Vec<McpServerConfig> {
-        matches
-            .get_many::<String>("mcp-server")
-            .map(|servers| servers.map(|s| Self::parse_mcp_server_config(s)).collect())
-            .unwrap_or_default()
+    fn merge_mcp_servers(mcp_server: &[String], file_config: &FileConfig) -> Vec<McpServerConfig> {
+        if !mcp_server.is_empty() {
+            mcp_server
+                .iter()
+                .map(|s| Self::parse_mcp_server_config(s))
+                .collect()
+        } else if let Some(servers) = &file_config.mcp_server {
+            servers
+                .iter()
+                .map(|entry| McpServerConfig {
+                    command: entry.command.clone(),
+                    args: entry.args.clone(),
+                })
+                .collect()
+        } else {
+            vec![]
+        }
     }
 
     fn parse_mcp_server_config(server_spec: &str) -> McpServerConfig {
@@ -79,12 +161,16 @@ impl Config {
         }
     }
 
-    fn parse_engine(matches: &ArgMatches) -> EngineType {
-        match matches
-            .get_one::<String>("engine")
-            .map(|s| s.as_str())
-            .unwrap_or("print")
-        {
+    fn merge_engine(engine: &str, file_config: &FileConfig) -> EngineType {
+        let engine_str = if engine != "print" {
+            engine
+        } else if let Some(engine) = &file_config.engine {
+            engine
+        } else {
+            "print"
+        };
+
+        match engine_str {
             "gemini" => EngineType::Gemini,
             _ => EngineType::Print,
         }
