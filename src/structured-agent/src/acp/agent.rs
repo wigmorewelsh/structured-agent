@@ -2,10 +2,11 @@ use crate::cli::config::Config;
 use crate::compiler::CompilationUnit;
 use crate::runtime::{ExprResult, Runtime, RuntimeError, load_program};
 use agent_client_protocol as acp;
+use std::fs::OpenOptions;
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use super::functions::ReceiveFunction;
 use super::tracing::SessionTracingLayer;
@@ -62,10 +63,10 @@ impl Agent {
 
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
 
-        let mut builder = Runtime::builder(program.clone())
-            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
-
-        let runtime = builder.from_config(config).await?;
+        let runtime = Runtime::builder(program.clone())
+            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)))
+            .from_config(config)
+            .await?;
 
         Ok(Self {
             runtime: Rc::new(runtime),
@@ -110,14 +111,37 @@ impl Agent {
         let handle = tokio::task::spawn_local(async move {
             let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
 
+            let log_dir = std::path::PathBuf::from("acp-logs");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_path = log_dir.join(format!("session-{}.log", session_id.0));
+
+            let file_layer =
+                if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                    Some(
+                        fmt::layer()
+                            .with_writer(Arc::new(file))
+                            .with_ansi(false)
+                            .with_target(true)
+                            .with_thread_ids(true)
+                            .with_line_number(true),
+                    )
+                } else {
+                    eprintln!("Failed to create log file at {:?}", log_path);
+                    None
+                };
+
             let session_span = tracing::info_span!(
                 "session",
                 session_id = %session_id.0
             );
 
-            let _guard = tracing_subscriber::registry()
-                .with(tracing_layer)
-                .set_default();
+            let registry = tracing_subscriber::registry().with(tracing_layer);
+
+            let _guard = if let Some(file_layer) = file_layer {
+                registry.with(file_layer).set_default()
+            } else {
+                registry.set_default()
+            };
 
             let _span_guard = session_span.enter();
 
