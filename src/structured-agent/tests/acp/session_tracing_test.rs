@@ -1,9 +1,4 @@
-mod acp_test_helpers;
-
-use acp_test_helpers::{TracingTestAgent, run_local};
-use agent_client_protocol as acp;
-use std::sync::Arc;
-use structured_agent::runtime::Runtime;
+use super::test_helpers::{TestAgent, run_local};
 
 #[tokio::test]
 async fn test_session_starts_and_runs() {
@@ -16,16 +11,16 @@ async fn test_session_starts_and_runs() {
     "#;
 
     run_local(|| async {
-        let agent = TracingTestAgent::from_program(program).await;
-        let (_result, updates) = agent.wait().await;
+        let agent = TestAgent::with_tracing(program).await;
+        let (_result, updates) = agent.wait_with_updates().await;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         assert!(!updates.is_empty(), "Should have captured tracing updates");
         let all_updates = updates.join("\n");
         assert!(
-            all_updates.contains("function_call") || all_updates.contains("session"),
-            "Should contain function call or session span: {}",
+            all_updates.contains("result") || all_updates.contains("function=\"print\""),
+            "Should contain result or function print: {}",
             all_updates
         );
     })
@@ -51,32 +46,14 @@ async fn test_multiple_sessions_independent_tracing() {
     "#;
 
     run_local(|| async {
-        let runtime1 = Runtime::builder()
-            .with_native_function(Arc::new(structured_agent::functions::PrintFunction::new()))
-            .build();
+        let agent1 = TestAgent::with_tracing(program1).await;
 
-        let runtime2 = Runtime::builder()
-            .with_native_function(Arc::new(structured_agent::functions::PrintFunction::new()))
-            .build();
+        let agent2 = TestAgent::with_tracing(program2).await;
 
-        let agent1 = TracingTestAgent::from_runtime(
-            runtime1,
-            program1,
-            acp::SessionId::new("session-1".to_string()),
-        )
-        .await;
+        let result1 = agent1.wait_with_updates();
+        let result2 = agent2.wait_with_updates();
 
-        let agent2 = TracingTestAgent::from_runtime(
-            runtime2,
-            program2,
-            acp::SessionId::new("session-2".to_string()),
-        )
-        .await;
-
-        let result1 = agent1.wait();
-        let result2 = agent2.wait();
-
-        let ((res1, updates1), (res2, updates2)) = tokio::join!(result1, result2);
+        let ((_res1, updates1), (_res2, updates2)) = tokio::join!(result1, result2);
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 

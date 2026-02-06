@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::process;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub program_source: ProgramSource,
     pub mcp_servers: Vec<McpServerConfig>,
@@ -12,26 +12,26 @@ pub struct Config {
     pub mode: Mode,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Mode {
     Run,
     Check,
     Acp,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProgramSource {
     File(String),
     Inline(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EngineType {
     Print,
     Gemini,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct McpServerConfig {
     pub command: String,
     pub args: Vec<String>,

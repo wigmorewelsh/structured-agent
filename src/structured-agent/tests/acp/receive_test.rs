@@ -1,6 +1,4 @@
-mod acp_test_helpers;
-
-use acp_test_helpers::{TestAgent, run_local};
+use super::test_helpers::{TestAgent, run_local};
 
 #[tokio::test]
 async fn test_receive_function_gets_prompt() {
