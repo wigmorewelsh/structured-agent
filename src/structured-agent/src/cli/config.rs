@@ -7,6 +7,7 @@ pub struct Config {
     pub mcp_servers: Vec<McpServerConfig>,
     pub engine: EngineType,
     pub with_default_functions: bool,
+    pub acp_mode: bool,
 }
 
 #[derive(Debug)]
@@ -33,12 +34,14 @@ impl Config {
         let mcp_servers = Self::parse_mcp_servers(matches);
         let engine = Self::parse_engine(matches);
         let with_default_functions = matches.get_flag("with-default-functions");
+        let acp_mode = matches.get_flag("acp");
 
         Config {
             program_source,
             mcp_servers,
             engine,
             with_default_functions,
+            acp_mode,
         }
     }
 

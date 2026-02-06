@@ -1,8 +1,8 @@
+use crate::acp;
 use crate::cli::config::{Config, EngineType, ProgramSource};
 use crate::cli::errors::CliError;
 use crate::functions::{InputFunction, PrintFunction};
 use crate::gemini::GeminiEngine;
-use crate::mcp::McpClient;
 use crate::runtime::Runtime;
 use crate::types::LanguageEngine;
 use std::fs;
@@ -13,6 +13,10 @@ pub struct App;
 
 impl App {
     pub async fn run(config: Config) -> Result<(), CliError> {
+        if config.acp_mode {
+            return Self::run_acp_mode(config).await;
+        }
+
         println!("{}", config.describe_source());
 
         let program = Self::load_program(&config.program_source)?;
@@ -26,9 +30,7 @@ impl App {
 
         println!("Initializing structured agent runtime...");
 
-        let mcp_clients = Self::create_mcp_clients(&config.mcp_servers).await?;
-        let runtime =
-            Self::build_runtime(mcp_clients, &config.engine, config.with_default_functions).await?;
+        let runtime = Self::build_runtime(&config).await?;
 
         println!("Executing program...");
 
@@ -42,6 +44,12 @@ impl App {
         }
     }
 
+    async fn run_acp_mode(config: Config) -> Result<(), CliError> {
+        acp::run_acp_server(config)
+            .await
+            .map_err(|e| CliError::RuntimeError(format!("ACP server error: {}", e)))
+    }
+
     fn load_program(source: &ProgramSource) -> Result<String, CliError> {
         match source {
             ProgramSource::Inline(code) => Ok(code.clone()),
@@ -49,41 +57,15 @@ impl App {
         }
     }
 
-    async fn create_mcp_clients(
-        server_configs: &[crate::cli::config::McpServerConfig],
-    ) -> Result<Vec<McpClient>, CliError> {
-        let mut clients = Vec::new();
-
-        for config in server_configs {
-            match McpClient::new_stdio(&config.command, config.args.clone()).await {
-                Ok(client) => {
-                    println!("Connected to MCP server: {}", config.command);
-                    clients.push(client);
-                }
-                Err(e) => {
-                    return Err(CliError::McpError(format!(
-                        "Failed to connect to MCP server '{}': {}",
-                        config.command, e
-                    )));
-                }
-            }
-        }
-
-        Ok(clients)
-    }
-
-    async fn build_runtime(
-        mcp_clients: Vec<McpClient>,
-        engine_type: &EngineType,
-        with_default_functions: bool,
-    ) -> Result<Runtime, CliError> {
+    async fn build_runtime(config: &Config) -> Result<Runtime, CliError> {
         let mut runtime_builder = Runtime::builder();
 
-        for client in mcp_clients {
-            runtime_builder = runtime_builder.with_mcp_client(client);
-        }
+        runtime_builder = runtime_builder
+            .with_mcp_server_configs(&config.mcp_servers)
+            .await
+            .map_err(CliError::McpError)?;
 
-        let engine: Rc<dyn LanguageEngine> = match engine_type {
+        let engine: Rc<dyn LanguageEngine> = match &config.engine {
             EngineType::Print => Rc::new(crate::types::PrintEngine {}),
             EngineType::Gemini => match GeminiEngine::from_env().await {
                 Ok(gemini) => Rc::new(gemini),
@@ -98,7 +80,7 @@ impl App {
 
         runtime_builder = runtime_builder.with_engine(engine);
 
-        if with_default_functions {
+        if config.with_default_functions {
             runtime_builder = runtime_builder
                 .with_native_function(Arc::new(InputFunction::new()))
                 .with_native_function(Arc::new(PrintFunction::new()));
@@ -171,13 +153,19 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::config::EngineType;
+    use crate::cli::config::{EngineType, ProgramSource};
 
     #[tokio::test]
     async fn test_build_runtime_with_default_functions() {
-        let runtime = App::build_runtime(vec![], &EngineType::Print, true)
-            .await
-            .unwrap();
+        let config = Config {
+            program_source: ProgramSource::Inline("fn main(): () {}".to_string()),
+            mcp_servers: vec![],
+            engine: EngineType::Print,
+            with_default_functions: true,
+            acp_mode: false,
+        };
+
+        let runtime = App::build_runtime(&config).await.unwrap();
 
         let functions = runtime.list_functions();
         assert!(functions.contains(&"input"));
@@ -186,9 +174,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_runtime_without_default_functions() {
-        let runtime = App::build_runtime(vec![], &EngineType::Print, false)
-            .await
-            .unwrap();
+        let config = Config {
+            program_source: ProgramSource::Inline("fn main(): () {}".to_string()),
+            mcp_servers: vec![],
+            engine: EngineType::Print,
+            with_default_functions: false,
+            acp_mode: false,
+        };
+
+        let runtime = App::build_runtime(&config).await.unwrap();
 
         let functions = runtime.list_functions();
         assert!(!functions.contains(&"input"));

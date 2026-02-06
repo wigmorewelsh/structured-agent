@@ -1,6 +1,6 @@
 mod app;
 mod args;
-mod config;
+pub mod config;
 mod errors;
 
 pub use app::App;

@@ -1,3 +1,4 @@
+mod acp;
 mod analysis;
 mod ast;
 mod cli;

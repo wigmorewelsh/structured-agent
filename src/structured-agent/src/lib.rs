@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod analysis;
 pub mod ast;
 pub mod cli;

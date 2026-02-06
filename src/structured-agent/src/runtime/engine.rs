@@ -1,3 +1,4 @@
+use crate::cli::config::McpServerConfig;
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr};
 use crate::mcp::McpClient;
@@ -79,6 +80,26 @@ impl RuntimeBuilder {
     pub fn with_mcp_clients(mut self, clients: Vec<McpClient>) -> Self {
         self.mcp_clients.extend(clients);
         self
+    }
+
+    pub async fn with_mcp_server_configs(
+        mut self,
+        configs: &[McpServerConfig],
+    ) -> Result<Self, String> {
+        for config in configs {
+            match McpClient::new_stdio(&config.command, config.args.clone()).await {
+                Ok(client) => {
+                    self.mcp_clients.push(client);
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to connect to MCP server '{}': {}",
+                        config.command, e
+                    ));
+                }
+            }
+        }
+        Ok(self)
     }
 
     pub fn with_native_function(mut self, native_function: Arc<dyn NativeFunction>) -> Self {

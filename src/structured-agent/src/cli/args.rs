@@ -21,6 +21,12 @@ pub fn build_cli() -> Command {
                 .conflicts_with("file"),
         )
         .arg(
+            Arg::new("acp")
+                .long("acp")
+                .help("Run as ACP (Agent Client Protocol) server")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("mcp-server")
                 .short('m')
                 .long("mcp-server")
