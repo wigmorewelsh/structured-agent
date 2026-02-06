@@ -9,10 +9,10 @@ members = [
 [workspace.package]
 edition = "2021"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+# [profile.release]
+# opt-level = 3
+# lto = true
+# codegen-units = 1
 
 [profile.dev]
 opt-level = 0

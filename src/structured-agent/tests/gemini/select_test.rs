@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::gemini::GeminiEngine;
 use structured_agent::runtime::{Context, Runtime};
 use structured_agent::types::LanguageEngine;
@@ -14,7 +15,8 @@ async fn test_select_with_simple_options() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event("Choose your favorite color".to_string());
 
@@ -46,7 +48,8 @@ async fn test_select_with_numbered_options() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event("Pick the correct mathematical operation for 2 + 2".to_string());
 
@@ -79,7 +82,8 @@ async fn test_select_with_single_option() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec!["Only choice".to_string()];
@@ -105,7 +109,8 @@ async fn test_select_with_contextual_decision() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event("The weather is very hot today".to_string());
     context.add_event("You need to choose appropriate clothing".to_string());
@@ -138,7 +143,8 @@ async fn test_select_with_mathematical_context() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event("Calculate the derivative of x^2".to_string());
 
@@ -171,7 +177,8 @@ async fn test_select_with_many_options() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event("Choose the programming language known for memory safety".to_string());
 
@@ -208,7 +215,8 @@ async fn test_select_validates_bounds() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec!["Option A".to_string(), "Option B".to_string()];
@@ -235,7 +243,8 @@ async fn test_select_prompt_formatting() {
         }
     };
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
     let options = vec!["First".to_string(), "Second".to_string()];
 

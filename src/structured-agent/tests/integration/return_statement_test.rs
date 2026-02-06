@@ -1,3 +1,4 @@
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::{ExprResult, Runtime};
 
 #[tokio::test]
@@ -8,8 +9,9 @@ async fn test_return_statement_with_expression() {
         }
     "#;
 
-    let runtime = Runtime::new();
-    let result = runtime.run(program_source).await;
+    let program = CompilationUnit::from_string(program_source.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
 
     match result {
         Ok(ExprResult::String(s)) => {
@@ -37,8 +39,9 @@ async fn test_return_statement_end_to_end() {
         }
     "#;
 
-    let runtime = Runtime::new();
-    let result = runtime.run(program_source).await;
+    let program = CompilationUnit::from_string(program_source.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
 
     match result {
         Ok(ExprResult::String(s)) => {
@@ -67,8 +70,9 @@ async fn test_return_in_nested_scope() {
         }
     "#;
 
-    let runtime = Runtime::new();
-    let result = runtime.run(program_source).await;
+    let program = CompilationUnit::from_string(program_source.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
 
     match result {
         Ok(ExprResult::String(s)) => {

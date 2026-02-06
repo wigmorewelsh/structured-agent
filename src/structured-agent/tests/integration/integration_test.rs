@@ -2,8 +2,8 @@ use combine::Parser;
 use combine::stream::position;
 use std::rc::Rc;
 use std::sync::Arc;
-use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
+use structured_agent::compiler::{CompilationUnit, Compiler};
 use structured_agent::runtime::{Context, ExprResult, Runtime};
 use structured_agent::types::Expression;
 use structured_agent::types::FileId;
@@ -53,7 +53,8 @@ fn test_func(): () {
     let compiled_function = compilation_result.unwrap();
 
     // Test that the function can be executed
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let execution_result = compiled_function.evaluate(context.clone()).await;
     assert!(execution_result.is_ok());
@@ -95,7 +96,8 @@ fn test(): () {
     let function = &functions[0];
 
     // Test individual statement compilation and execution
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
 
     // First statement: string injection
@@ -157,7 +159,8 @@ fn test_var_injection(): () {
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
@@ -204,7 +207,8 @@ result!
     let stmt1 = &function.body.statements[0];
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let result = compiled_stmt1.evaluate(context.clone()).await.unwrap();
 

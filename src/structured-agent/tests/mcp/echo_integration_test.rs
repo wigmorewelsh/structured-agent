@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use structured_agent::compiler::Compiler;
+use structured_agent::compiler::{CompilationUnit, Compiler};
 use structured_agent::mcp::McpClient;
 use structured_agent::runtime::Runtime;
 
@@ -10,7 +10,7 @@ async fn test_mcp_client_basic_creation() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/mcp/mcp_echo_server.py".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await;
@@ -30,27 +30,27 @@ async fn test_runtime_with_mcp_client() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/mcp/mcp_echo_server.py".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
     .unwrap();
 
-    let runtime = Runtime::builder()
-        .with_compiler(Rc::new(Compiler::new()))
-        .with_mcp_client(mcp_client)
-        .build();
-
-    println!("Runtime created successfully with MCP client");
-
-    // Test a simple program without external functions first
     let simple_program = r#"
 fn main(): () {
     "Hello World"!
 }
 "#;
 
-    let result = runtime.run(simple_program).await;
+    let program = CompilationUnit::from_string(simple_program.to_string());
+    let runtime = Runtime::builder(program)
+        .with_compiler(Rc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    println!("Runtime created successfully with MCP client");
+
+    let result = runtime.run().await;
     assert!(
         result.is_ok(),
         "Simple program execution failed: {:?}",
@@ -69,11 +69,12 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder()
+    let program = CompilationUnit::from_string(program_with_extern.to_string());
+    let runtime = Runtime::builder(program)
         .with_compiler(Rc::new(Compiler::new()))
         .build();
 
-    let result = runtime.run(program_with_extern).await;
+    let result = runtime.run().await;
     assert!(
         result.is_ok(),
         "Program with extern function failed to parse: {:?}",
@@ -89,16 +90,11 @@ async fn test_mcp_echo_integration_full_pipeline() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/mcp/mcp_echo_server.py".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
     .unwrap();
-
-    let runtime = Runtime::builder()
-        .with_compiler(Rc::new(Compiler::new()))
-        .with_mcp_client(mcp_client)
-        .build();
 
     let program_with_extern_call = r#"
 extern fn echo(message: String): String
@@ -109,7 +105,13 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_with_extern_call).await;
+    let program = CompilationUnit::from_string(program_with_extern_call.to_string());
+    let runtime = Runtime::builder(program)
+        .with_compiler(Rc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
     assert!(
         result.is_ok(),
         "MCP integration test failed: {:?}",
@@ -133,16 +135,11 @@ async fn test_mcp_complete_integration_workflow() {
         vec![
             "run".to_string(),
             "python".to_string(),
-            "../../tests/mcp/mcp_echo_server.py".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
         ],
     )
     .await
     .unwrap();
-
-    let runtime = Runtime::builder()
-        .with_compiler(Rc::new(Compiler::new()))
-        .with_mcp_client(mcp_client)
-        .build();
 
     // Test program that declares an external function and calls it
     let complete_program = r#"
@@ -156,7 +153,13 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(complete_program).await;
+    let program = CompilationUnit::from_string(complete_program.to_string());
+    let runtime = Runtime::builder(program)
+        .with_compiler(Rc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
     assert!(
         result.is_ok(),
         "Complete MCP integration test failed: {:?}",

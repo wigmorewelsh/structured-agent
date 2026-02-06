@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::expressions::{
     CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr, SelectClauseExpr, SelectExpr,
     StringLiteralExpr, VariableExpr,
@@ -86,7 +87,8 @@ async fn test_function_call_tracing() {
         .with(test_layer)
         .set_default();
 
-    let mut runtime = Runtime::new();
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let mut runtime = Runtime::builder(empty_program).build();
     let function_info = FunctionExpr {
         name: "greet".to_string(),
         parameters: vec![],
@@ -132,7 +134,8 @@ async fn test_injection_tracing() {
         .with(test_layer)
         .set_default();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
 
     let expr = InjectionExpr {
@@ -160,7 +163,8 @@ async fn test_select_tracing() {
         .with(test_layer)
         .set_default();
 
-    let mut runtime = Runtime::new();
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let mut runtime = Runtime::builder(empty_program).build();
 
     let function_info = FunctionExpr {
         name: "option_one".to_string(),
@@ -215,7 +219,8 @@ async fn test_placeholder_filling_tracing() {
         .with(test_layer)
         .set_default();
 
-    let mut runtime = Runtime::new();
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let mut runtime = Runtime::builder(empty_program).build();
 
     let function_info = FunctionExpr {
         name: "process".to_string(),

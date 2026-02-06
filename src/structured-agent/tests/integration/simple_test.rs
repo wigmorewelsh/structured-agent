@@ -1,3 +1,4 @@
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::{ExprResult, Runtime};
 
 #[tokio::test]
@@ -8,8 +9,9 @@ async fn test_simple_function_call() {
         }
     "#;
 
-    let runtime = Runtime::new();
-    let result = runtime.run(program_source).await;
+    let program = CompilationUnit::from_string(program_source.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
 
     match result {
         Ok(ExprResult::String(s)) => {
@@ -35,12 +37,13 @@ async fn test_simple_return_statement() {
         }
     "#;
 
-    let runtime = Runtime::new();
-    let result = runtime.run(program_source).await;
+    let program = CompilationUnit::from_string(program_source.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
 
     match result {
         Ok(ExprResult::String(s)) => {
-            println!("Return success: {}", s);
+            println!("Success: {}", s);
             assert_eq!(s, "returned_value");
         }
         Ok(other) => {

@@ -2,8 +2,8 @@ use combine::Parser;
 use combine::stream::position;
 use std::rc::Rc;
 use std::sync::Arc;
-use structured_agent::compiler::Compiler;
 use structured_agent::compiler::parser;
+use structured_agent::compiler::{CompilationUnit, Compiler};
 use structured_agent::runtime::{Context, ExprResult, Runtime};
 use structured_agent::types::Expression;
 use structured_agent::types::FileId;
@@ -51,7 +51,8 @@ fn test_assignment(): () {
     assert!(compilation_result.is_ok());
     let compiled_function = compilation_result.unwrap();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let execution_result = compiled_function.evaluate(context.clone()).await;
     assert!(execution_result.is_ok());
@@ -95,7 +96,8 @@ fn test_var_assignment(): () {
     let function = functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
@@ -144,7 +146,8 @@ fn test_return(): () {
     let function = &functions[0];
     let compiled_function = Compiler::compile_function(function).unwrap();
 
-    let runtime = Rc::new(Runtime::new());
+    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
+    let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
     let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
