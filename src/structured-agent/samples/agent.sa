@@ -1,5 +1,4 @@
 extern fn receive(): String
-extern fn print(): String
 
 fn answer_question(question: String): String {
     "answer the following question"!
@@ -9,7 +8,6 @@ fn answer_question(question: String): String {
 fn main(): () {
     while true {
         let question = receive()
-        response = answer_question(question)
-        print(response)
+        answer_question(question)
     }
 }
