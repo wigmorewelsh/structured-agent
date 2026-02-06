@@ -21,6 +21,7 @@ use combine::stream::{easy, position};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use tracing::{debug, error, info, warn};
 
 fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
     match ast_type {
@@ -97,6 +98,7 @@ impl Parser for CodespanParser {
         file_id: FileId,
         _diagnostic_reporter: &DiagnosticReporter,
     ) -> Result<Module, String> {
+        debug!("Parsing source code");
         let input = program.source();
         let stream = easy::Stream(position::Stream::with_positioner(
             input,
@@ -106,10 +108,17 @@ impl Parser for CodespanParser {
         let result = parser::parse_program(file_id).parse(stream);
 
         match result {
-            Ok((module, _)) => Ok(module),
+            Ok((module, _)) => {
+                debug!(
+                    "Parser succeeded, found {} definitions",
+                    module.definitions.len()
+                );
+                Ok(module)
+            }
             Err(e) => {
                 let error_str = format!("{}", e);
                 let byte_offset = e.position;
+                error!("Parser error at position {}: {}", byte_offset, error_str);
 
                 let clean_message = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
 
@@ -218,6 +227,9 @@ impl Compiler {
 
 impl CompilerTrait for Compiler {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
+        debug!("Compiling program: {}", program.name());
+        debug!("Source length: {} bytes", program.source().len());
+
         let mut diagnostic_manager = self.diagnostic_manager.borrow_mut();
         let file_id =
             diagnostic_manager.add_file(program.name().to_string(), program.source().to_string());
@@ -225,14 +237,28 @@ impl CompilerTrait for Compiler {
         let reporter = diagnostic_manager.reporter().clone();
         drop(diagnostic_manager);
 
-        let module = self.parser.parse(program, file_id, &reporter)?;
+        debug!("Starting parser");
+        let module = match self.parser.parse(program, file_id, &reporter) {
+            Ok(m) => {
+                debug!("Parsing completed successfully");
+                debug!("Found {} definitions", m.definitions.len());
+                m
+            }
+            Err(e) => {
+                error!("Parsing failed: {}", e);
+                return Err(e);
+            }
+        };
 
+        debug!("Starting type checking");
         if let Err(type_error) = type_check_module(&module, file_id) {
+            error!("Type checking failed: {}", type_error);
             if let Err(io_err) = reporter.emit_type_error(&type_error) {
                 eprintln!("Failed to emit type error diagnostic: {}", io_err);
             }
             return Err(format!("Type error: {}", type_error));
         }
+        debug!("Type checking completed successfully");
 
         let mut runner = AnalysisRunner::new()
             .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
@@ -248,8 +274,13 @@ impl CompilerTrait for Compiler {
             .with_analyzer(Box::new(OverwrittenValueAnalyzer::new()))
             .with_analyzer(Box::new(UnusedReturnValueAnalyzer::new()));
 
+        debug!("Running analysis");
         let warnings = runner.run(&module, file_id);
+        if !warnings.is_empty() {
+            warn!("Analysis found {} warnings", warnings.len());
+        }
         for warning in &warnings {
+            debug!("Warning: {:?}", warning);
             if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
                 eprintln!("Failed to emit warning diagnostic: {}", io_err);
             }
@@ -258,20 +289,43 @@ impl CompilerTrait for Compiler {
         let mut compiled_program =
             CompiledProgram::new().with_source_path(program.path().map(String::from));
 
+        debug!("Compiling definitions");
         for definition in module.definitions {
             match definition {
                 Definition::Function(ast_function) => {
-                    let compiled_function = self.compile_function(&ast_function)?;
-                    compiled_program.add_function(compiled_function);
+                    debug!("Compiling function: {}", ast_function.name);
+                    match self.compile_function(&ast_function) {
+                        Ok(compiled_function) => {
+                            compiled_program.add_function(compiled_function);
+                        }
+                        Err(e) => {
+                            error!("Failed to compile function {}: {}", ast_function.name, e);
+                            return Err(e);
+                        }
+                    }
                 }
                 Definition::ExternalFunction(ast_external_function) => {
-                    let compiled_external_function =
-                        Self::compile_external_function(&ast_external_function)?;
-                    compiled_program.add_external_function(compiled_external_function);
+                    debug!(
+                        "Compiling external function: {}",
+                        ast_external_function.name
+                    );
+                    match Self::compile_external_function(&ast_external_function) {
+                        Ok(compiled_external_function) => {
+                            compiled_program.add_external_function(compiled_external_function);
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to compile external function {}: {}",
+                                ast_external_function.name, e
+                            );
+                            return Err(e);
+                        }
+                    }
                 }
             }
         }
 
+        debug!("Compilation completed successfully");
         Ok(compiled_program)
     }
 

@@ -11,6 +11,7 @@ use crate::types::{
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
 pub struct Runtime {
     function_registry: HashMap<String, Rc<dyn ExecutableFunction>>,
@@ -203,17 +204,40 @@ impl Runtime {
     }
 
     pub fn check(&self) -> Result<(), RuntimeError> {
-        self.compiler
-            .compile_program(&self.compiled_program)
-            .map_err(RuntimeError::ExecutionError)?;
-        Ok(())
+        debug!("Starting program check");
+        match self.compiler.compile_program(&self.compiled_program) {
+            Ok(_) => {
+                debug!("Program check completed successfully");
+                Ok(())
+            }
+            Err(e) => {
+                error!("Program check failed: {}", e);
+                Err(RuntimeError::ExecutionError(e))
+            }
+        }
     }
 
     pub async fn run(&self) -> Result<ExprResult, RuntimeError> {
-        let compiled_program = self
-            .compiler
-            .compile_program(&self.compiled_program)
-            .map_err(RuntimeError::ExecutionError)?;
+        debug!("Starting program execution");
+
+        let compiled_program = match self.compiler.compile_program(&self.compiled_program) {
+            Ok(program) => {
+                debug!("Program compiled successfully");
+                debug!(
+                    "Functions: {:?}",
+                    program.functions().keys().collect::<Vec<_>>()
+                );
+                debug!(
+                    "External functions: {:?}",
+                    program.external_functions().keys().collect::<Vec<_>>()
+                );
+                program
+            }
+            Err(e) => {
+                error!("Compilation failed: {}", e);
+                return Err(RuntimeError::ExecutionError(e));
+            }
+        };
 
         let mut runtime = Runtime {
             function_registry: self.function_registry.clone(),
@@ -225,17 +249,34 @@ impl Runtime {
         };
 
         for function in compiled_program.functions().values() {
+            debug!("Registering function: {}", function.name);
             runtime.register_function(function.clone());
         }
         for external_function in compiled_program.external_functions().values() {
+            debug!("Registering external function: {}", external_function.name);
             runtime.register_external_function(external_function.clone());
         }
 
-        runtime.map_mcp_tools_to_external_functions().await?;
+        if let Err(e) = runtime.map_mcp_tools_to_external_functions().await {
+            error!("Failed to map MCP tools: {:?}", e);
+            return Err(e);
+        }
 
         if let Some(main_function) = compiled_program.main_function() {
-            runtime.run_expression(main_function).await
+            debug!("Executing main function");
+            match runtime.run_expression(main_function).await {
+                Ok(result) => {
+                    debug!("Program execution completed successfully");
+                    debug!("Result type: {}", result.type_name());
+                    Ok(result)
+                }
+                Err(e) => {
+                    error!("Runtime execution failed: {:?}", e);
+                    Err(e)
+                }
+            }
         } else {
+            error!("No main function found in program");
             Err(RuntimeError::FunctionNotFound("main".to_string()))
         }
     }
@@ -244,11 +285,18 @@ impl Runtime {
         &self,
         program: &dyn crate::types::Expression,
     ) -> Result<ExprResult, RuntimeError> {
+        debug!("Running expression");
         let initial_context = Arc::new(Context::with_runtime(Rc::new(self.create_runtime_ref())));
-        program
-            .evaluate(initial_context)
-            .await
-            .map_err(RuntimeError::ExecutionError)
+        match program.evaluate(initial_context).await {
+            Ok(result) => {
+                debug!("Expression evaluated successfully");
+                Ok(result)
+            }
+            Err(e) => {
+                error!("Expression evaluation failed: {}", e);
+                Err(RuntimeError::ExecutionError(e))
+            }
+        }
     }
 
     fn create_runtime_ref(&self) -> Runtime {

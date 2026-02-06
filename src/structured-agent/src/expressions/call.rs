@@ -6,7 +6,7 @@ use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
-use tracing::{Level, info, span};
+use tracing::{Level, debug, info, span};
 
 pub struct CallExpr {
     pub function: String,
@@ -26,7 +26,7 @@ impl std::fmt::Debug for CallExpr {
 impl Expression for CallExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
         let span = span!(
-            Level::INFO,
+            Level::DEBUG,
             "function_call",
             function = %self.function,
             arg_count = self.arguments.len()
@@ -62,7 +62,7 @@ impl Expression for CallExpr {
                     .fill_parameter(&context, param_name, param_type)
                     .await?;
 
-                info!(
+                debug!(
                     function = %self.function,
                     parameter = %param_name,
                     param_type = %param_type.name(),
@@ -95,9 +95,22 @@ impl Expression for CallExpr {
 
         let result = function_info.evaluate(function_context).await?;
 
+        let result_display = match &result {
+            ExprResult::String(s) => s.clone(),
+            ExprResult::Boolean(b) => b.to_string(),
+            ExprResult::Unit => "()".to_string(),
+            _ => format!("{:?}", result),
+        };
+
         info!(
+            "<result function=\"{}\">\n{}\n</result>",
+            self.function, result_display
+        );
+
+        debug!(
             function = %self.function,
             result_type = %result.type_name(),
+            result_value = ?result,
             "function_result"
         );
 

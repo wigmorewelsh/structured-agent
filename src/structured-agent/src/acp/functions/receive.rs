@@ -4,6 +4,7 @@ use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
+use tracing::{debug, error, info};
 
 #[derive(Debug)]
 pub struct ReceiveFunction {
@@ -38,18 +39,28 @@ impl NativeFunction for ReceiveFunction {
 
     async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
         if !args.is_empty() {
+            error!(
+                "receive called with wrong number of arguments: {}",
+                args.len()
+            );
             return Err(format!("receive expects 0 arguments, got {}", args.len()));
         }
 
+        debug!("receive() called, waiting for prompt");
         let mut rx = self.prompt_rx.lock().await;
 
         match rx.recv().await {
             Some(message) => {
+                debug!("Received prompt: {}", message.content);
                 let content = message.content.clone();
                 let _ = message.response_tx.send(());
+                debug!("Prompt response sent");
                 Ok(ExprResult::String(content))
             }
-            None => Err("Prompt channel closed".to_string()),
+            None => {
+                error!("Prompt channel closed");
+                Err("Prompt channel closed".to_string())
+            }
         }
     }
 }

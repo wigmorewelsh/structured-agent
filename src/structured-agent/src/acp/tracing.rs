@@ -23,7 +23,7 @@ impl SessionTracingLayer {
         let notification = acp::SessionNotification::new(
             self.session_id.clone(),
             acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
-                acp::TextContent::new(message),
+                acp::TextContent::new(format!("{}\n\n", message)),
             ))),
         );
 
@@ -59,6 +59,13 @@ where
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
+        let metadata = event.metadata();
+        let target = metadata.target();
+
+        if target.starts_with("reqwest") || target.starts_with("hyper") {
+            return;
+        }
+
         let mut visitor = EventVisitor {
             message: String::new(),
         };
