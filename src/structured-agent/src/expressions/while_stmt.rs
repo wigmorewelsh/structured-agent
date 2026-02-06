@@ -69,12 +69,18 @@ impl Expression for WhileExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::{
         AssignmentExpr, BooleanLiteralExpr, InjectionExpr, StringLiteralExpr,
         VariableAssignmentExpr, VariableExpr,
     };
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_while_false_condition() {
@@ -87,7 +93,7 @@ mod tests {
 
         let while_expr = WhileExpr { condition, body };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = while_expr.evaluate(context.clone()).await.unwrap();
 
@@ -104,7 +110,7 @@ mod tests {
 
         let while_expr = WhileExpr { condition, body };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = while_expr.evaluate(context).await;
 
@@ -117,7 +123,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_while_with_variable_condition() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable("should_continue".to_string(), ExprResult::Boolean(true));
 
@@ -150,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_while_variable_scoping() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(
@@ -196,7 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_nested_while_statements() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable("outer_continue".to_string(), ExprResult::Boolean(true));
         context.declare_variable("inner_continue".to_string(), ExprResult::Boolean(true));
@@ -244,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_while_can_access_parent_variables() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(

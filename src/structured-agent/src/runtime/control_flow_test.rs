@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::CompilationUnit;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
@@ -6,6 +7,10 @@ use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
+
+fn program(source: &str) -> CompilationUnit {
+    CompilationUnit::from_string(source.to_string())
+}
 
 #[derive(Debug)]
 struct LoggingFunction {
@@ -105,9 +110,6 @@ impl NativeFunction for BooleanFunction {
 async fn test_if_statement_true_condition() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -119,7 +121,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
 
@@ -130,9 +136,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_if_statement_false_condition() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -145,7 +148,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
 
@@ -156,9 +163,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_if_statement_with_variable_condition() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -172,7 +176,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["condition was true", "after if"]);
@@ -183,10 +191,6 @@ fn main(): () {
 async fn test_if_statement_with_function_condition() {
     let logger = Arc::new(LoggingFunction::new());
     let bool_func = Arc::new(BooleanFunction::new(true));
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-    runtime.register_native_function(bool_func.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -200,7 +204,12 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .with_native_function(bool_func.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["function returned true", "after if"]);
@@ -210,9 +219,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_while_statement_false_condition() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -225,7 +231,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["after while"]);
@@ -235,9 +245,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_while_statement_with_counter() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -252,7 +259,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["loop iteration", "after while"]);
@@ -262,9 +273,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_nested_if_statements() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -281,7 +289,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(
@@ -294,9 +306,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_if_and_while_combined() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -316,7 +325,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(
@@ -330,9 +343,6 @@ fn main(): () {
 async fn test_if_statement_non_boolean_condition_error() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -343,7 +353,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
@@ -356,9 +370,6 @@ fn main(): () {
 async fn test_while_statement_non_boolean_condition_error() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -369,7 +380,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
@@ -381,9 +396,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_if_with_variable_assignment_in_body() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -397,7 +409,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in if", "after if"]);
@@ -407,9 +423,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_while_with_variable_assignment_in_body() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -425,7 +438,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await.unwrap();
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await.unwrap();
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in while", "after while"]);
@@ -435,9 +452,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_else_branch_type_checking() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -453,7 +467,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());

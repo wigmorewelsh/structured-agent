@@ -1,10 +1,15 @@
 use super::*;
+use crate::compiler::CompilationUnit;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
 use std::sync::Arc;
 use tokio;
+
+fn program(source: &str) -> CompilationUnit {
+    CompilationUnit::from_string(source.to_string())
+}
 
 #[derive(Debug)]
 struct TestExternFunction {
@@ -54,9 +59,6 @@ impl NativeFunction for TestExternFunction {
 async fn test_function_call_with_assignment() {
     let extern_fn = Arc::new(TestExternFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(extern_fn.clone());
-
     let program_source = r#"
 extern fn to_call(): ()
 
@@ -69,7 +71,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(extern_fn.clone())
+        .build();
+
+    let result = runtime.run().await;
     assert!(result.is_ok());
     assert_eq!(extern_fn.get_call_count(), 1);
 }
@@ -77,9 +83,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_function_call_with_prompt_result() {
     let extern_fn = Arc::new(TestExternFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(extern_fn.clone());
 
     let program_source = r#"
 extern fn to_call(): ()
@@ -93,7 +96,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(extern_fn.clone())
+        .build();
+
+    let result = runtime.run().await;
     assert!(result.is_ok());
     assert_eq!(extern_fn.get_call_count(), 1);
 }
@@ -101,9 +108,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_function_call_ignore_result() {
     let extern_fn = Arc::new(TestExternFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(extern_fn.clone());
 
     let program_source = r#"
 extern fn to_call(): ()
@@ -117,7 +121,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(extern_fn.clone())
+        .build();
+
+    let result = runtime.run().await;
     assert!(result.is_ok());
     assert_eq!(extern_fn.get_call_count(), 1);
 }

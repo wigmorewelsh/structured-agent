@@ -46,9 +46,15 @@ impl Expression for IfElseExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::{BooleanLiteralExpr, StringLiteralExpr};
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_if_else_true_condition() {
@@ -66,7 +72,7 @@ mod tests {
             else_expr,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_else_expr.evaluate(context).await.unwrap();
 
@@ -89,7 +95,7 @@ mod tests {
             else_expr,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_else_expr.evaluate(context).await.unwrap();
 
@@ -114,7 +120,7 @@ mod tests {
             else_expr,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_else_expr.evaluate(context).await;
 
@@ -164,7 +170,7 @@ mod tests {
             }),
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = outer_if_else.evaluate(context).await.unwrap();
 
@@ -189,7 +195,7 @@ mod tests {
             else_expr,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(

@@ -1,4 +1,5 @@
 use crate::cli::config::Config;
+use crate::compiler::CompilationUnit;
 use crate::runtime::{ExprResult, Runtime, RuntimeError, load_program};
 use agent_client_protocol as acp;
 use std::rc::Rc;
@@ -11,7 +12,7 @@ use super::tracing::SessionTracingLayer;
 
 pub struct Agent {
     runtime: Rc<Runtime>,
-    program: String,
+    program: CompilationUnit,
     session_id: acp::SessionId,
     update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     prompt_tx: mpsc::UnboundedSender<PromptMessage>,
@@ -59,10 +60,12 @@ impl Agent {
         let program =
             load_program(program_source).map_err(|e| format!("Failed to load program: {}", e))?;
 
-        let mut runtime = Runtime::builder().from_config(config).await?;
-
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
-        runtime.register_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
+
+        let mut builder = Runtime::builder(program.clone())
+            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
+
+        let runtime = builder.from_config(config).await?;
 
         Ok(Self {
             runtime: Rc::new(runtime),
@@ -75,14 +78,15 @@ impl Agent {
     }
 
     pub fn new(
-        mut runtime: Runtime,
-        program: String,
+        program: CompilationUnit,
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Self {
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
 
-        runtime.register_native_function(Arc::new(ReceiveFunction::new(prompt_rx)));
+        let runtime = Runtime::builder(program.clone())
+            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)))
+            .build();
 
         Self {
             runtime: Rc::new(runtime),
@@ -100,7 +104,6 @@ impl Agent {
         }
 
         let runtime = self.runtime.clone();
-        let program = self.program.clone();
         let session_id = self.session_id.clone();
         let update_tx = self.update_tx.clone();
 
@@ -118,7 +121,7 @@ impl Agent {
 
             let _span_guard = session_span.enter();
 
-            runtime.run(&program).await.map_err(Into::into)
+            runtime.run().await.map_err(Into::into)
         });
 
         self.task_handle = Some(handle);

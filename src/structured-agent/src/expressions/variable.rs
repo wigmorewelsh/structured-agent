@@ -37,12 +37,18 @@ impl Expression for VariableExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
+
     #[tokio::test]
     async fn test_variable_found() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
@@ -63,7 +69,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_variable_not_found() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let expr = VariableExpr {
             name: "unknown_var".to_string(),
@@ -96,7 +102,7 @@ mod tests {
 
         let cloned = expr.clone_box();
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result1 = expr.evaluate(context.clone()).await;
         let result2 = cloned.evaluate(context.clone()).await;

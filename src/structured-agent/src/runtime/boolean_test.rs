@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::CompilationUnit;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
@@ -6,6 +7,10 @@ use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
+
+fn program(source: &str) -> CompilationUnit {
+    CompilationUnit::from_string(source.to_string())
+}
 
 #[derive(Debug)]
 struct BooleanLoggingFunction {
@@ -97,9 +102,6 @@ impl NativeFunction for BooleanReturnFunction {
 async fn test_boolean_literal_true() {
     let logger = Arc::new(BooleanLoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log_bool(value: Boolean): ()
 
@@ -109,7 +111,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -122,9 +128,6 @@ fn main(): () {
 async fn test_boolean_literal_false() {
     let logger = Arc::new(BooleanLoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log_bool(value: Boolean): ()
 
@@ -134,7 +137,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -146,9 +153,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_boolean_variable_assignment() {
     let logger = Arc::new(BooleanLoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log_bool(value: Boolean): ()
@@ -162,7 +166,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -176,9 +184,6 @@ fn main(): () {
 #[tokio::test]
 async fn test_boolean_function_return() {
     let bool_fn = Arc::new(BooleanReturnFunction::new(true));
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(bool_fn.clone());
 
     let program_source = r#"
 extern fn get_bool(): Boolean
@@ -194,7 +199,11 @@ fn main(): String {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(bool_fn.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     assert_eq!(result, ExprResult::String("Function completed".to_string()));
@@ -203,9 +212,6 @@ fn main(): String {
 #[tokio::test]
 async fn test_mixed_boolean_and_string_variables() {
     let logger = Arc::new(BooleanLoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log_bool(value: Boolean): ()
@@ -218,7 +224,11 @@ fn main(): String {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();

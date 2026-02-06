@@ -31,14 +31,20 @@ impl Expression for BooleanLiteralExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_boolean_literal_true_evaluation() {
         let expr = BooleanLiteralExpr { value: true };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
@@ -52,7 +58,7 @@ mod tests {
     async fn test_boolean_literal_false_evaluation() {
         let expr = BooleanLiteralExpr { value: false };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
@@ -75,7 +81,7 @@ mod tests {
         let expr = BooleanLiteralExpr { value: true };
 
         let cloned = expr.clone_box();
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result1 = expr.evaluate(context.clone()).await.unwrap();

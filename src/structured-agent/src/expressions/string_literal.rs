@@ -31,8 +31,14 @@ impl Expression for StringLiteralExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_string_literal_evaluation() {
@@ -40,7 +46,7 @@ mod tests {
             value: "Hello, world!".to_string(),
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
@@ -67,7 +73,7 @@ mod tests {
         };
 
         let cloned = expr.clone_box();
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result1 = expr.evaluate(context.clone()).await.unwrap();

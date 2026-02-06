@@ -90,9 +90,15 @@ impl NativeFunctionExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::runtime::{Context, Runtime};
     use crate::types::{NativeFunction, Type};
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[derive(Debug)]
     struct TestNativeFunctionWithDocs {
@@ -196,7 +202,7 @@ mod tests {
         let native_func = Arc::new(TestNativeFunctionWithDocs::new());
         let expr = NativeFunctionExpr::new(native_func);
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result = expr.evaluate(context).await.unwrap();

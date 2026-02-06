@@ -62,10 +62,16 @@ impl Expression for ListLiteralExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::StringLiteralExpr;
     use crate::runtime::Runtime;
     use arrow::array::Array;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_empty_list_evaluation() {
@@ -74,7 +80,7 @@ mod tests {
             element_type: Type::string(),
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
@@ -100,7 +106,7 @@ mod tests {
             element_type: Type::string(),
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 

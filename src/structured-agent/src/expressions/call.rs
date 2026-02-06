@@ -123,9 +123,16 @@ impl Expression for CallExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::{FunctionExpr, StringLiteralExpr};
     use crate::runtime::Runtime;
+    use crate::types::{Parameter, Type};
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_unknown_method() {
@@ -134,7 +141,7 @@ mod tests {
             arguments: vec![],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await;
 
@@ -163,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_call_with_registry() {
-        let mut runtime = Runtime::new();
+        let mut runtime = test_runtime();
 
         let function_info = FunctionExpr {
             name: "hello".to_string(),
@@ -198,7 +205,7 @@ mod tests {
             arguments: vec![],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await;
 
@@ -210,7 +217,7 @@ mod tests {
     async fn test_placeholder_parameter_population() {
         use crate::expressions::{InjectionExpr, PlaceholderExpr};
 
-        let mut runtime = Runtime::new();
+        let mut runtime = test_runtime();
 
         let function_info = FunctionExpr {
             name: "process".to_string(),
@@ -255,7 +262,7 @@ mod tests {
     async fn test_placeholder_with_multiple_context_events() {
         use crate::expressions::PlaceholderExpr;
 
-        let mut runtime = Runtime::new();
+        let mut runtime = test_runtime();
 
         let function_info = FunctionExpr {
             name: "analyze".to_string(),
@@ -347,7 +354,7 @@ mod tests {
             .with(test_layer)
             .set_default();
 
-        let mut runtime = Runtime::new();
+        let mut runtime = test_runtime();
         let function_info = FunctionExpr {
             name: "test_func".to_string(),
             parameters: vec![],

@@ -24,8 +24,7 @@ impl App {
 
         println!("Initializing structured agent runtime...");
 
-        let runtime = Runtime::builder()
-            .with_program(program.clone())
+        let runtime = Runtime::builder(program.clone())
             .from_config(&config)
             .await
             .map_err(CliError::RuntimeError)?;
@@ -41,7 +40,7 @@ impl App {
             }
         } else {
             println!("Executing program...");
-            match runtime.run(&program).await {
+            match runtime.run().await {
                 Ok(result) => {
                     println!("Program executed successfully");
                     Self::display_result(&result);
@@ -137,7 +136,11 @@ mod tests {
             check_only: false,
         };
 
-        let runtime = Runtime::builder().from_config(&config).await.unwrap();
+        let program = load_program(&config.program_source).unwrap();
+        let runtime = Runtime::builder(program)
+            .from_config(&config)
+            .await
+            .unwrap();
 
         let functions = runtime.list_functions();
         assert!(functions.contains(&"input"));
@@ -157,7 +160,11 @@ mod tests {
             check_only: false,
         };
 
-        let runtime = Runtime::builder().from_config(&config).await.unwrap();
+        let program = load_program(&config.program_source).unwrap();
+        let runtime = Runtime::builder(program)
+            .from_config(&config)
+            .await
+            .unwrap();
 
         let functions = runtime.list_functions();
         assert!(!functions.contains(&"input"));

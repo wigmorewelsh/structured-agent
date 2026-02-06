@@ -1,10 +1,20 @@
 use super::*;
+use crate::compiler::CompilationUnit;
 use crate::runtime::ExprResult;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use tokio;
+
+fn program(source: &str) -> CompilationUnit {
+    CompilationUnit::from_string(source.to_string())
+}
+
+fn test_runtime() -> Runtime {
+    let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
+    Runtime::builder(dummy_program).build()
+}
 
 #[derive(Debug)]
 struct LoggingFunction {
@@ -61,9 +71,6 @@ impl NativeFunction for LoggingFunction {
 async fn test_calling_log_should_receive_literals() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -73,7 +80,11 @@ fn main(): String {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -85,9 +96,6 @@ fn main(): String {
 #[tokio::test]
 async fn test_variable_assignment_in_if_block() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -108,7 +116,11 @@ fn main(): String {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -137,9 +149,6 @@ fn main(): String {
 async fn test_variable_assignment_in_while_loop() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -158,7 +167,11 @@ fn main(): String {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     let result = result.unwrap();
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -177,9 +190,6 @@ fn main(): String {
 #[tokio::test]
 async fn test_variable_scoping_with_boolean_assignment() {
     let logger = Arc::new(LoggingFunction::new());
-
-    let mut runtime = Runtime::new();
-    runtime.register_native_function(logger.clone());
 
     let program_source = r#"
 extern fn log(message: String): ()
@@ -203,7 +213,11 @@ fn main(): () {
 }
 "#;
 
-    let result = runtime.run(program_source).await;
+    let runtime = Runtime::builder(program(program_source))
+        .with_native_function(logger.clone())
+        .build();
+
+    let result = runtime.run().await;
     assert!(result.is_ok());
 
     let messages = logger.messages.lock().unwrap().clone();
@@ -221,7 +235,7 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_context_assign_variable_directly() {
-    let runtime = Rc::new(Runtime::new());
+    let runtime = Rc::new(test_runtime());
     let context = Arc::new(Context::with_runtime(runtime));
 
     context.declare_variable(
@@ -251,7 +265,7 @@ async fn test_variable_assignment_expr_directly() {
     use crate::expressions::{StringLiteralExpr, VariableAssignmentExpr};
     use crate::types::Expression;
 
-    let runtime = Rc::new(Runtime::new());
+    let runtime = Rc::new(test_runtime());
     let context = Arc::new(Context::with_runtime(runtime));
 
     context.declare_variable(

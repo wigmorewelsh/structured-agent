@@ -29,12 +29,18 @@ impl Expression for PlaceholderExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::runtime::Runtime;
     use std::rc::Rc;
 
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
+
     #[tokio::test]
     async fn test_placeholder_evaluation_fails() {
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let expr = PlaceholderExpr {};
 

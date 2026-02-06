@@ -113,15 +113,21 @@ impl Expression for SelectExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::{StringLiteralExpr, VariableExpr};
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_empty_select() {
         let select_expr = SelectExpr { clauses: vec![] };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = select_expr.evaluate(context).await;
 
@@ -149,7 +155,7 @@ mod tests {
             clauses: vec![clause],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = select_expr.evaluate(context).await.unwrap();
 
@@ -195,7 +201,7 @@ mod tests {
             clauses: vec![clause],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = select_expr.evaluate(context.clone()).await.unwrap();
 
@@ -223,7 +229,7 @@ mod tests {
             clauses: vec![clause],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(
@@ -318,7 +324,7 @@ mod tests {
             clauses: vec![clause],
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result = select_expr.evaluate(context).await.unwrap();

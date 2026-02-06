@@ -37,9 +37,15 @@ impl Expression for AssignmentExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::StringLiteralExpr;
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_assignment_evaluation() {
@@ -50,7 +56,7 @@ mod tests {
             }),
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context.clone()).await.unwrap();
 
@@ -88,7 +94,7 @@ mod tests {
         };
 
         let cloned = expr.clone_box();
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result1 = expr.evaluate(context.clone()).await.unwrap();

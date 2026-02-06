@@ -74,9 +74,15 @@ impl Expression for IfExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::{BooleanLiteralExpr, InjectionExpr, StringLiteralExpr};
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_if_true_condition() {
@@ -93,7 +99,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
@@ -116,7 +122,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
@@ -137,7 +143,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_expr.evaluate(context).await;
 
@@ -179,7 +185,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(
@@ -223,7 +229,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = outer_if.evaluate(context.clone()).await.unwrap();
 
@@ -256,7 +262,7 @@ mod tests {
             else_body: None,
         };
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         context.declare_variable(

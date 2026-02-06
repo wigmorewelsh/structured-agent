@@ -36,6 +36,7 @@ fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
 pub struct CompilationUnit {
     source: String,
     name: String,
+    path: Option<String>,
 }
 
 impl CompilationUnit {
@@ -43,6 +44,15 @@ impl CompilationUnit {
         Self {
             name: "main".to_string(),
             source,
+            path: None,
+        }
+    }
+
+    pub fn from_file(path: String, source: String) -> Self {
+        Self {
+            name: path.clone(),
+            source,
+            path: Some(path),
         }
     }
 
@@ -52,6 +62,10 @@ impl CompilationUnit {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
     }
 }
 
@@ -123,6 +137,7 @@ pub struct CompiledProgram {
     functions: HashMap<String, FunctionExpr>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     main_function: Option<String>,
+    source_path: Option<String>,
 }
 
 impl Default for CompiledProgram {
@@ -137,7 +152,17 @@ impl CompiledProgram {
             functions: HashMap::new(),
             external_functions: HashMap::new(),
             main_function: None,
+            source_path: None,
         }
+    }
+
+    pub fn with_source_path(mut self, path: Option<String>) -> Self {
+        self.source_path = path;
+        self
+    }
+
+    pub fn source_path(&self) -> Option<&str> {
+        self.source_path.as_deref()
     }
 
     pub fn add_function(&mut self, function: FunctionExpr) {
@@ -230,7 +255,8 @@ impl CompilerTrait for Compiler {
             }
         }
 
-        let mut compiled_program = CompiledProgram::new();
+        let mut compiled_program =
+            CompiledProgram::new().with_source_path(program.path().map(String::from));
 
         for definition in module.definitions {
             match definition {
@@ -495,7 +521,8 @@ mod tests {
         };
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
-        let runtime = Rc::new(Runtime::new());
+        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        let runtime = Rc::new(Runtime::builder(dummy_program).build());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = compiled.evaluate(context).await.unwrap();
 
@@ -514,7 +541,8 @@ mod tests {
         let ast_stmt = AstStatement::Injection(ast_expr);
         let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
 
-        let runtime = Rc::new(Runtime::new());
+        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        let runtime = Rc::new(Runtime::builder(dummy_program).build());
         let context = Arc::new(Context::with_runtime(runtime));
         let result = compiled.evaluate(context.clone()).await.unwrap();
 
@@ -535,7 +563,8 @@ mod tests {
         };
         let compiled = Compiler::compile_expression(&ast_expr).unwrap();
 
-        let runtime = Rc::new(Runtime::new());
+        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        let runtime = Rc::new(Runtime::builder(dummy_program).build());
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
@@ -574,8 +603,8 @@ fn main(): String {
         assert_eq!(compiled_program.functions().len(), 2);
         assert!(compiled_program.main_function().is_some());
 
-        let runtime = Runtime::new();
-        let result = runtime.run(program_source).await.unwrap();
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "Test completed"),
@@ -615,8 +644,8 @@ fn main(): String {
         assert_eq!(compiled_program.functions().len(), 4);
         assert!(compiled_program.main_function().is_some());
 
-        let runtime = Runtime::new();
-        let result = runtime.run(program_source).await.unwrap();
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "<result>\n## calculator\n</result>"),
@@ -678,8 +707,8 @@ fn main(): String {
         assert_eq!(compiled_program.functions().len(), 2);
         assert!(compiled_program.main_function().is_some());
 
-        let runtime = Runtime::new();
-        let result = runtime.run(program_source).await.unwrap();
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
 
         match result {
             ExprResult::String(s) => assert_eq!(s, "<message>\nSystem ready\n</message>"),

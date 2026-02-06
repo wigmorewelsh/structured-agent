@@ -53,9 +53,15 @@ impl Expression for ReturnExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::CompilationUnit;
     use crate::expressions::StringLiteralExpr;
     use crate::runtime::Runtime;
     use std::rc::Rc;
+
+    fn test_runtime() -> Runtime {
+        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
+        Runtime::builder(program).build()
+    }
 
     #[tokio::test]
     async fn test_return_sets_function_level_variable() {
@@ -63,7 +69,7 @@ mod tests {
             value: "test_value".to_string(),
         }));
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
         let result = return_expr.evaluate(context.clone()).await.unwrap();
@@ -81,7 +87,7 @@ mod tests {
             value: "nested_return".to_string(),
         }));
 
-        let runtime = Rc::new(Runtime::new());
+        let runtime = Rc::new(test_runtime());
         let function_context = Arc::new(Context::with_runtime(runtime.clone()));
         let nested_context = Arc::new(Context::create_child(
             function_context.clone(),

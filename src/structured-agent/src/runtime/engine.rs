@@ -18,7 +18,7 @@ pub struct Runtime {
     language_engine: Rc<dyn LanguageEngine>,
     compiler: Rc<dyn CompilerTrait>,
     mcp_clients: Vec<Rc<McpClient>>,
-    compiled_program: Option<String>,
+    compiled_program: CompilationUnit,
 }
 
 pub struct RuntimeBuilder {
@@ -27,7 +27,7 @@ pub struct RuntimeBuilder {
     language_engine: Option<Rc<dyn LanguageEngine>>,
     compiler: Option<Rc<dyn CompilerTrait>>,
     mcp_clients: Vec<McpClient>,
-    program_source: Option<String>,
+    program_source: CompilationUnit,
 }
 
 #[derive(Debug, PartialEq)]
@@ -49,21 +49,15 @@ impl std::fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
-impl Default for RuntimeBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl RuntimeBuilder {
-    pub fn new() -> Self {
+    pub fn new(program: CompilationUnit) -> Self {
         Self {
             function_registry: HashMap::new(),
             external_function_registry: HashMap::new(),
             language_engine: None,
             compiler: None,
             mcp_clients: Vec::new(),
-            program_source: None,
+            program_source: program,
         }
     }
 
@@ -82,8 +76,8 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn with_program(mut self, program_source: String) -> Self {
-        self.program_source = Some(program_source);
+    pub fn with_program(mut self, program: CompilationUnit) -> Self {
+        self.program_source = program;
         self
     }
 
@@ -164,12 +158,8 @@ impl RuntimeBuilder {
 }
 
 impl Runtime {
-    pub fn new() -> Self {
-        RuntimeBuilder::new().build()
-    }
-
-    pub fn builder() -> RuntimeBuilder {
-        RuntimeBuilder::new()
+    pub fn builder(program: CompilationUnit) -> RuntimeBuilder {
+        RuntimeBuilder::new(program)
     }
 
     pub fn register_function(&mut self, function: FunctionExpr) {
@@ -213,24 +203,16 @@ impl Runtime {
     }
 
     pub fn check(&self) -> Result<(), RuntimeError> {
-        if let Some(program_source) = &self.compiled_program {
-            let program = CompilationUnit::from_string(program_source.clone());
-            self.compiler
-                .compile_program(&program)
-                .map_err(RuntimeError::ExecutionError)?;
-            Ok(())
-        } else {
-            Err(RuntimeError::ExecutionError(
-                "No program provided to runtime".to_string(),
-            ))
-        }
+        self.compiler
+            .compile_program(&self.compiled_program)
+            .map_err(RuntimeError::ExecutionError)?;
+        Ok(())
     }
 
-    pub async fn run(&self, program_source: &str) -> Result<ExprResult, RuntimeError> {
-        let program = CompilationUnit::from_string(program_source.to_string());
+    pub async fn run(&self) -> Result<ExprResult, RuntimeError> {
         let compiled_program = self
             .compiler
-            .compile_program(&program)
+            .compile_program(&self.compiled_program)
             .map_err(RuntimeError::ExecutionError)?;
 
         let mut runtime = Runtime {
@@ -321,12 +303,6 @@ impl Runtime {
     }
 }
 
-impl Default for Runtime {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Clone for Runtime {
     fn clone(&self) -> Self {
         Self {
@@ -340,9 +316,12 @@ impl Clone for Runtime {
     }
 }
 
-pub fn load_program(source: &ProgramSource) -> Result<String, std::io::Error> {
+pub fn load_program(source: &ProgramSource) -> Result<CompilationUnit, std::io::Error> {
     match source {
-        ProgramSource::Inline(code) => Ok(code.clone()),
-        ProgramSource::File(path) => std::fs::read_to_string(path),
+        ProgramSource::Inline(code) => Ok(CompilationUnit::from_string(code.clone())),
+        ProgramSource::File(path) => {
+            let content = std::fs::read_to_string(path)?;
+            Ok(CompilationUnit::from_file(path.clone(), content))
+        }
     }
 }
