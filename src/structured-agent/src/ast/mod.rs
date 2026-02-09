@@ -151,6 +151,9 @@ pub enum Expression {
     Placeholder {
         span: Span,
     },
+    UnitLiteral {
+        span: Span,
+    },
     Select(SelectExpression),
     IfElse {
         condition: Box<Expression>,
@@ -169,6 +172,7 @@ impl Spanned for Expression {
             Expression::BooleanLiteral { span, .. } => *span,
             Expression::ListLiteral { span, .. } => *span,
             Expression::Placeholder { span } => *span,
+            Expression::UnitLiteral { span } => *span,
             Expression::Select(select) => select.span,
             Expression::IfElse { span, .. } => *span,
         }
@@ -351,6 +355,7 @@ impl fmt::Display for Expression {
                 write!(f, "]")
             }
             Expression::Placeholder { .. } => write!(f, "_"),
+            Expression::UnitLiteral { .. } => write!(f, "()"),
             Expression::Select(select) => write!(f, "{}", select),
             Expression::IfElse {
                 condition,

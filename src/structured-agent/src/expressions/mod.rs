@@ -13,6 +13,7 @@ pub mod return_stmt;
 pub mod select;
 
 pub mod string_literal;
+pub mod unit_literal;
 pub mod variable;
 pub mod variable_assignment;
 pub mod while_stmt;
@@ -32,6 +33,7 @@ pub use return_stmt::ReturnExpr;
 pub use select::{SelectClauseExpr, SelectExpr};
 
 pub use string_literal::StringLiteralExpr;
+pub use unit_literal::UnitLiteralExpr;
 pub use variable::VariableExpr;
 pub use variable_assignment::VariableAssignmentExpr;
 pub use while_stmt::WhileExpr;

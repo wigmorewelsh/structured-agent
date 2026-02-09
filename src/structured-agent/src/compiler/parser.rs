@@ -337,6 +337,7 @@ combine::parser! {
             attempt(parse_call()),
             parse_string_literal(),
             attempt(parse_list_literal()),
+            attempt(parse_unit_literal()),
             attempt(parse_boolean_literal()),
             parse_variable(),
         ))
@@ -535,6 +536,18 @@ where
                 span: Span::new(start, end),
             }),
     ))
+}
+
+fn parse_unit_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (position(), string("()"), position())
+        .skip(skip_spaces())
+        .map(|(start, _, end)| Expression::UnitLiteral {
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_list_literal<Input>() -> impl Parser<Input, Output = Expression>
@@ -1287,6 +1300,45 @@ fn documented_function(): () {
                 assert_eq!(value, "hello world");
             }
             _ => panic!("Expected return statement with string literal"),
+        }
+    }
+
+    #[test]
+    fn test_parse_return_with_unit_literal() {
+        let input = "return ()";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (statement, _) = statement().parse(stream).unwrap();
+        match statement {
+            Statement::Return(Expression::UnitLiteral { .. }) => {}
+            _ => panic!("Expected return statement with unit literal"),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_unit_literal_return() {
+        let input = r#"
+fn main(): () {
+    return ()
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        assert_eq!(func.name, "main");
+        assert_eq!(func.body.statements.len(), 1);
+
+        match &func.body.statements[0] {
+            Statement::Return(Expression::UnitLiteral { .. }) => {}
+            _ => panic!("Expected return statement with unit literal"),
         }
     }
 

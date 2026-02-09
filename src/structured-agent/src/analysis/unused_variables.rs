@@ -124,6 +124,7 @@ impl UnusedVariableAnalyzer {
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
             | Expression::ListLiteral { .. }
+            | Expression::UnitLiteral { .. }
             | Expression::Placeholder { .. } => {}
         }
     }

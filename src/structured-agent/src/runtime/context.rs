@@ -197,4 +197,23 @@ impl ExprResult {
             ExprResult::Option(_) => "Option",
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            ExprResult::Unit => "()".to_string(),
+            ExprResult::String(s) => s.clone(),
+            ExprResult::Boolean(b) => b.to_string(),
+            ExprResult::List(list) => format!("{:?}", list),
+            ExprResult::Option(opt) => match opt {
+                Some(value) => format!("Some({})", value.to_string()),
+                None => "None".to_string(),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for ExprResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
 }

@@ -11,7 +11,7 @@ use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::expressions::{
     AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfElseExpr, IfExpr, InjectionExpr,
     ListLiteralExpr, PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
-    VariableAssignmentExpr, VariableExpr, WhileExpr,
+    UnitLiteralExpr, VariableAssignmentExpr, VariableExpr, WhileExpr,
 };
 use crate::typecheck::type_check_module;
 use crate::types::{Expression, ExternalFunctionDefinition, FileId, Parameter, Type};
@@ -420,6 +420,7 @@ impl Compiler {
             ast::Expression::BooleanLiteral { value, .. } => {
                 Ok(Box::new(BooleanLiteralExpr { value: *value }))
             }
+            ast::Expression::UnitLiteral { .. } => Ok(Box::new(UnitLiteralExpr {})),
             ast::Expression::ListLiteral { elements, .. } => {
                 if elements.is_empty() {
                     return Err("Cannot infer type of empty list literal".to_string());
@@ -739,6 +740,20 @@ fn main(): () {
         assert!(result.is_ok());
         let compiled_program = result.unwrap();
         assert_eq!(compiled_program.functions().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_unit_literal_end_to_end() {
+        let source = r#"
+fn main(): () {
+    return ()
+}
+"#;
+        let program = CompilationUnit::from_string(source.to_string());
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
+
+        assert_eq!(result, ExprResult::Unit);
     }
 
     #[tokio::test]

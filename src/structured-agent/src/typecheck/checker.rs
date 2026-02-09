@@ -299,6 +299,7 @@ impl TypeChecker {
             }
             Expression::StringLiteral { .. } => Ok(AstType::String),
             Expression::BooleanLiteral { .. } => Ok(AstType::Boolean),
+            Expression::UnitLiteral { .. } => Ok(AstType::Unit),
             Expression::ListLiteral { elements, span } => {
                 if elements.is_empty() {
                     return Err(TypeError::TypeMismatch {
