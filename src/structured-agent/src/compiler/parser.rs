@@ -5,7 +5,7 @@ use crate::ast::{
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
-use combine::parser::repeat::{many, many1, sep_by};
+use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
 use combine::{Parser, Stream, attempt, between, optional, position};
 
@@ -52,6 +52,24 @@ where
 {
     optional(many1(comment_line()))
         .map(|comments: Option<Vec<String>>| comments.map(|lines| lines.join("\n")))
+}
+
+fn skip_spaces_and_comments<Input>() -> impl Parser<Input, Output = ()>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (skip_many(comment_line().skip(spaces())), spaces()).map(|_| ())
+}
+
+combine::parser! {
+    fn statement_with_comments[Input]()(Input) -> Statement
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        skip_spaces_and_comments()
+            .with(statement())
+            .skip(skip_spaces_and_comments())
+    }
 }
 
 fn identifier_raw<Input>() -> impl Parser<Input, Output = String>
@@ -224,15 +242,12 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        many(statement().skip(skip_spaces())),
-        position(),
-    )
-        .map(|(start, statements, end)| FunctionBody {
+    (position(), many(statement_with_comments()), position()).map(|(start, statements, end)| {
+        FunctionBody {
             statements,
             span: Span::new(start, end),
-        })
+        }
+    })
 }
 
 combine::parser! {
@@ -624,12 +639,12 @@ where
         between(
             lex_char('{'),
             lex_char('}'),
-            many(statement().skip(skip_spaces())),
+            many(statement_with_comments()),
         ),
         optional(lex_string("else").skip(skip_spaces()).with(between(
             lex_char('{'),
             lex_char('}'),
-            many(statement().skip(skip_spaces())),
+            many(statement_with_comments()),
         ))),
         position(),
     )
@@ -655,7 +670,7 @@ where
         between(
             lex_char('{'),
             lex_char('}'),
-            many(statement().skip(skip_spaces())),
+            many(statement_with_comments()),
         ),
         position(),
     )
@@ -1663,6 +1678,61 @@ fn test_if_else_stmt(): () {
             ));
         } else {
             panic!("Expected external function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_body_with_comments() {
+        let input = r#"
+fn test_function(): () {
+    # This is a comment before the first statement
+    let x = "hello"
+    # This is a comment between statements
+    x!
+    # Final comment before closing
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        if let Definition::Function(func) = &module.definitions[0] {
+            assert_eq!(func.name, "test_function");
+            assert_eq!(func.body.statements.len(), 2);
+        } else {
+            panic!("Expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_comments_in_control_flow_blocks() {
+        let input = r#"
+fn test_function(): () {
+    if true {
+        # Comment in if block
+        "inside if"!
+    }
+    while false {
+        # Comment in while block
+        "inside while"!
+    }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        if let Definition::Function(func) = &module.definitions[0] {
+            assert_eq!(func.name, "test_function");
+            assert_eq!(func.body.statements.len(), 2);
+        } else {
+            panic!("Expected function definition");
         }
     }
 }
