@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::CompilationUnit;
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Mutex;
@@ -47,15 +47,15 @@ impl NativeFunction for BooleanLoggingFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err("Expected 1 argument".to_string());
         }
 
         match &args[0] {
-            ExprResult::Boolean(b) => {
+            ExpressionValue::Boolean(b) => {
                 self.messages.lock().unwrap().push(b.to_string());
-                Ok(ExprResult::Unit)
+                Ok(ExpressionValue::Unit)
             }
             _ => Err("Expected boolean argument".to_string()),
         }
@@ -93,8 +93,8 @@ impl NativeFunction for BooleanReturnFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExprResult>) -> Result<ExprResult, String> {
-        Ok(ExprResult::Boolean(self.return_value))
+    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        Ok(ExpressionValue::Boolean(self.return_value))
     }
 }
 
@@ -121,7 +121,7 @@ fn main(): () {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["true"]);
 
-    assert_eq!(result, ExprResult::Unit);
+    assert_eq!(result, ExpressionValue::Unit);
 }
 
 #[tokio::test]
@@ -147,7 +147,7 @@ fn main(): () {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["false"]);
 
-    assert_eq!(result, ExprResult::Unit);
+    assert_eq!(result, ExpressionValue::Unit);
 }
 
 #[tokio::test]
@@ -178,7 +178,7 @@ fn main(): () {
     assert!(messages.contains(&"true".to_string()));
     assert!(messages.contains(&"false".to_string()));
 
-    assert_eq!(result, ExprResult::Unit);
+    assert_eq!(result, ExpressionValue::Unit);
 }
 
 #[tokio::test]
@@ -206,7 +206,10 @@ fn main(): String {
     let result = runtime.run().await;
     let result = result.unwrap();
 
-    assert_eq!(result, ExprResult::String("Function completed".to_string()));
+    assert_eq!(
+        result,
+        ExpressionValue::String("Function completed".to_string())
+    );
 }
 
 #[tokio::test]
@@ -236,6 +239,6 @@ fn main(): String {
 
     assert_eq!(
         result,
-        ExprResult::String("<message>\nProcessing complete\n</message>".to_string())
+        ExpressionValue::String("<message>\nProcessing complete\n</message>".to_string())
     );
 }

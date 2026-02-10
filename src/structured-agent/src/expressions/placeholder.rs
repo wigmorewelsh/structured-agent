@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -9,7 +9,7 @@ pub struct PlaceholderExpr {}
 
 #[async_trait(?Send)]
 impl Expression for PlaceholderExpr {
-    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExpressionResult, String> {
         Err("Placeholder expressions should be replaced before evaluation".to_string())
     }
 

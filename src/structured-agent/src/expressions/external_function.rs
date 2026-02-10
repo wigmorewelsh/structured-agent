@@ -1,5 +1,5 @@
 use crate::mcp::McpClient;
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
 use arrow::array::Array;
 use async_trait::async_trait;
@@ -42,15 +42,15 @@ impl Clone for ExternalFunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for ExternalFunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let mut arguments = json!({});
 
-        fn expr_result_to_json(value: &ExprResult) -> serde_json::Value {
+        fn expr_result_to_json(value: &ExpressionValue) -> serde_json::Value {
             match value {
-                ExprResult::String(s) => json!(s),
-                ExprResult::Unit => json!(null),
-                ExprResult::Boolean(b) => json!(b),
-                ExprResult::List(list) => {
+                ExpressionValue::String(s) => json!(s),
+                ExpressionValue::Unit => json!(null),
+                ExpressionValue::Boolean(b) => json!(b),
+                ExpressionValue::List(list) => {
                     if list.len() == 0 {
                         json!([])
                     } else {
@@ -66,7 +66,7 @@ impl Expression for ExternalFunctionExpr {
                         json!(items)
                     }
                 }
-                ExprResult::Option(opt) => match opt {
+                ExpressionValue::Option(opt) => match opt {
                     Some(inner) => json!({
                         "some": expr_result_to_json(inner)
                     }),
@@ -90,7 +90,7 @@ impl Expression for ExternalFunctionExpr {
             .map_err(|e| format!("MCP tool call failed: {}", e))?;
 
         if result.content.is_empty() {
-            Ok(ExprResult::Unit)
+            Ok(ExpressionResult::new(ExpressionValue::Unit))
         } else {
             if result.content.len() != 1 {
                 return Err(format!("Expected one result, got {}", result.content.len()));
@@ -100,11 +100,13 @@ impl Expression for ExternalFunctionExpr {
                     .as_text_content()
                     .map_err(|e| format!("Failed to parse text content: {}", e))?;
 
-                return Ok(ExprResult::String(text_content.text.clone()));
+                return Ok(ExpressionResult::new(ExpressionValue::String(
+                    text_content.text.clone(),
+                )));
             }
 
             let content_str = format!("{:?}", result.content);
-            Ok(ExprResult::String(content_str))
+            Ok(ExpressionResult::new(ExpressionValue::String(content_str)))
         }
     }
 

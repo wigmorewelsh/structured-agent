@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -9,8 +9,8 @@ pub struct UnitLiteralExpr {}
 
 #[async_trait(?Send)]
 impl Expression for UnitLiteralExpr {
-    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
-        Ok(ExprResult::Unit)
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExpressionResult, String> {
+        Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
     fn return_type(&self) -> Type {
@@ -46,8 +46,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::Unit => {}
+        match result.value {
+            ExpressionValue::Unit => {}
             _ => panic!("Expected unit result"),
         }
     }

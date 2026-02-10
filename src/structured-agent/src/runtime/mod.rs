@@ -13,5 +13,5 @@ mod boolean_test;
 #[cfg(test)]
 mod control_flow_test;
 
-pub use context::{Context, ExprResult};
+pub use context::{Context, ExpressionResult, ExpressionValue};
 pub use engine::{Runtime, RuntimeError, load_program};

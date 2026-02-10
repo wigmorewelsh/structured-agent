@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use structured_agent::compiler::parser;
 use structured_agent::compiler::{CompilationUnit, Compiler};
-use structured_agent::runtime::{Context, ExprResult, Runtime};
+use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::Expression;
 use structured_agent::types::FileId;
 
@@ -66,7 +66,7 @@ fn test_assignment(): () {
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
     match stored_value.unwrap() {
-        ExprResult::String(s) => assert_eq!(s, "Hello, World!"),
+        ExpressionValue::String(s) => assert_eq!(s, "Hello, World!"),
         _ => panic!("Expected string value in context"),
     }
 }
@@ -152,14 +152,14 @@ fn test_return(): () {
     let result = compiled_function.evaluate(context.clone()).await;
     assert!(result.is_ok());
 
-    match result.unwrap() {
-        ExprResult::Unit => (),
+    match result.unwrap().value {
+        ExpressionValue::Unit => (),
         _ => panic!("Expected unit result"),
     }
 
     let stored_value = context.get_variable("result").unwrap();
     match stored_value {
-        ExprResult::String(s) => assert_eq!(s, "test value"),
+        ExpressionValue::String(s) => assert_eq!(s, "test value"),
         _ => panic!("Expected string in context"),
     }
 }

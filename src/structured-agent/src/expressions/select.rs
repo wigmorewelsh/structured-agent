@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -33,7 +33,7 @@ impl std::fmt::Debug for SelectExpr {
 
 #[async_trait(?Send)]
 impl Expression for SelectExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         if self.clauses.is_empty() {
             return Err("Select statement must have at least one clause".to_string());
         }
@@ -77,7 +77,7 @@ impl Expression for SelectExpr {
             .expression_to_run
             .evaluate(select_context.clone())
             .await?;
-        select_context.declare_variable(selected_clause.result_variable.clone(), result);
+        select_context.declare_variable(selected_clause.result_variable.clone(), result.value);
 
         selected_clause
             .expression_next
@@ -157,8 +157,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = select_expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "test"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "test"),
             _ => panic!("Expected string result"),
         }
     }
@@ -203,8 +203,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = select_expr.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "assigned_value"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "assigned_value"),
             _ => panic!("Expected string result"),
         }
 
@@ -232,19 +232,19 @@ mod tests {
 
         context.declare_variable(
             "outer_var".to_string(),
-            ExprResult::String("outer_value".to_string()),
+            ExpressionValue::String("outer_value".to_string()),
         );
 
         let result = select_expr.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "scoped_value"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "scoped_value"),
             _ => panic!("Expected string result"),
         }
 
         assert_eq!(
             context.get_variable("outer_var").unwrap(),
-            ExprResult::String("outer_value".to_string())
+            ExpressionValue::String("outer_value".to_string())
         );
 
         assert!(context.get_variable("scoped_var").is_none());
@@ -327,8 +327,8 @@ mod tests {
 
         let result = select_expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "calculated_value"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "calculated_value"),
             _ => panic!("Expected string result"),
         }
     }

@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -11,8 +11,8 @@ pub struct BooleanLiteralExpr {
 
 #[async_trait(?Send)]
 impl Expression for BooleanLiteralExpr {
-    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
-        Ok(ExprResult::Boolean(self.value))
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExpressionResult, String> {
+        Ok(ExpressionResult::new(ExpressionValue::Boolean(self.value)))
     }
 
     fn return_type(&self) -> Type {
@@ -48,8 +48,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::Boolean(b) => assert_eq!(b, true),
+        match result.value {
+            ExpressionValue::Boolean(b) => assert_eq!(b, true),
             _ => panic!("Expected boolean result"),
         }
     }
@@ -62,8 +62,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::Boolean(b) => assert_eq!(b, false),
+        match result.value {
+            ExpressionValue::Boolean(b) => assert_eq!(b, false),
             _ => panic!("Expected boolean result"),
         }
     }

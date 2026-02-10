@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -12,10 +12,10 @@ pub struct AssignmentExpr {
 
 #[async_trait(?Send)]
 impl Expression for AssignmentExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        let value = self.expression.evaluate(context.clone()).await?;
-        context.declare_variable(self.variable.clone(), value);
-        Ok(ExprResult::Unit)
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+        let result = self.expression.evaluate(context.clone()).await?;
+        context.declare_variable(self.variable.clone(), result.value);
+        Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
     fn return_type(&self) -> Type {
@@ -60,14 +60,14 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::Unit => {}
+        match result.value {
+            ExpressionValue::Unit => {}
             _ => panic!("Expected unit result"),
         }
 
         assert_eq!(
             context.get_variable("test_var").unwrap(),
-            ExprResult::String("test_value".to_string())
+            ExpressionValue::String("test_value".to_string())
         );
     }
 
@@ -101,11 +101,11 @@ mod tests {
         let result2 = cloned.evaluate(context.clone()).await.unwrap();
 
         assert_eq!(result1, result2);
-        assert_eq!(result1, ExprResult::Unit);
-        assert_eq!(result2, ExprResult::Unit);
+        assert_eq!(result1.value, ExpressionValue::Unit);
+        assert_eq!(result2.value, ExpressionValue::Unit);
         assert_eq!(
             context.get_variable("var").unwrap(),
-            ExprResult::String("value".to_string())
+            ExpressionValue::String("value".to_string())
         );
     }
 }

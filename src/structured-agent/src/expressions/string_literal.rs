@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -11,8 +11,10 @@ pub struct StringLiteralExpr {
 
 #[async_trait(?Send)]
 impl Expression for StringLiteralExpr {
-    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExprResult, String> {
-        Ok(ExprResult::String(self.value.clone()))
+    async fn evaluate(&self, _context: Arc<Context>) -> Result<ExpressionResult, String> {
+        Ok(ExpressionResult::new(ExpressionValue::String(
+            self.value.clone(),
+        )))
     }
 
     fn return_type(&self) -> Type {
@@ -50,8 +52,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "Hello, world!"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "Hello, world!"),
             _ => panic!("Expected string result"),
         }
     }

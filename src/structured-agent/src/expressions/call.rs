@@ -1,5 +1,5 @@
 use crate::expressions::PlaceholderExpr;
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 #[cfg(test)]
 use crate::types::Parameter;
 use crate::types::{Expression, Type};
@@ -24,7 +24,7 @@ impl std::fmt::Debug for CallExpr {
 
 #[async_trait(?Send)]
 impl Expression for CallExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let span = span!(
             Level::DEBUG,
             "function_call",
@@ -69,7 +69,7 @@ impl Expression for CallExpr {
                     "placeholder_filled"
                 );
 
-                args.push(value);
+                args.push(ExpressionResult::new(value));
             } else {
                 args.push(arg.evaluate(context.clone()).await?);
             }
@@ -85,7 +85,7 @@ impl Expression for CallExpr {
 
         for (i, param) in parameters.iter().enumerate() {
             let param_name = &param.name;
-            function_context.declare_variable(param_name.clone(), args[i].clone());
+            function_context.declare_variable(param_name.clone(), args[i].value.clone());
         }
 
         let function_info = context
@@ -95,11 +95,11 @@ impl Expression for CallExpr {
 
         let result = function_info.evaluate(function_context).await?;
 
-        let result_display = match &result {
-            ExprResult::String(s) => s.clone(),
-            ExprResult::Boolean(b) => b.to_string(),
-            ExprResult::Unit => "()".to_string(),
-            _ => format!("{:?}", result),
+        let result_display = match &result.value {
+            ExpressionValue::String(s) => s.clone(),
+            ExpressionValue::Boolean(b) => b.to_string(),
+            ExpressionValue::Unit => "()".to_string(),
+            _ => format!("{:?}", result.value),
         };
 
         info!(
@@ -109,8 +109,8 @@ impl Expression for CallExpr {
 
         debug!(
             function = %self.function,
-            result_type = %result.type_name(),
-            result_value = ?result,
+            result_type = %result.value.type_name(),
+            result_value = ?result.value,
             "function_result"
         );
 
@@ -209,8 +209,8 @@ mod tests {
         };
 
         let result = expr.evaluate(context).await.unwrap();
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "## hello"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "## hello"),
             _ => panic!("Expected string result"),
         }
     }
@@ -261,8 +261,8 @@ mod tests {
 
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => {
+        match result.value {
+            ExpressionValue::String(s) => {
                 assert!(!s.is_empty());
             }
             _ => panic!("Expected string result"),
@@ -304,7 +304,10 @@ mod tests {
 
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("## analyze".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("## analyze".to_string())
+        );
 
         assert_eq!(context.events_count(), 3);
         assert_eq!(

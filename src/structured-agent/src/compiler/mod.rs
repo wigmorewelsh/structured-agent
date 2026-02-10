@@ -564,7 +564,7 @@ impl Compiler {
 mod tests {
     use super::{CompilationUnit, Compiler, CompilerTrait};
     use crate::ast::{Expression as AstExpression, Statement as AstStatement};
-    use crate::runtime::{Context, ExprResult, Runtime};
+    use crate::runtime::{Context, ExpressionValue, Runtime};
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -581,8 +581,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = compiled.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "Hello"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "Hello"),
             _ => panic!("Expected string result"),
         }
     }
@@ -601,8 +601,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = compiled.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "Test injection"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "Test injection"),
             _ => panic!("Expected string result"),
         }
 
@@ -623,13 +623,13 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
-            ExprResult::String("variable_value".to_string()),
+            ExpressionValue::String("variable_value".to_string()),
         );
 
         let result = compiled.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "variable_value"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "variable_value"),
             _ => panic!("Expected string result"),
         }
     }
@@ -662,7 +662,7 @@ fn main(): String {
         let result = runtime.run().await.unwrap();
 
         match result {
-            ExprResult::String(s) => assert_eq!(s, "Test completed"),
+            ExpressionValue::String(s) => assert_eq!(s, "Test completed"),
             _ => panic!("Expected string result"),
         }
     }
@@ -703,7 +703,7 @@ fn main(): String {
         let result = runtime.run().await.unwrap();
 
         match result {
-            ExprResult::String(s) => assert_eq!(s, "<result>\n## calculator\n</result>"),
+            ExpressionValue::String(s) => assert_eq!(s, "<result>\n## calculator\n</result>"),
             _ => panic!("Expected string result, got: {:?}", result),
         }
     }
@@ -753,7 +753,7 @@ fn main(): () {
         let runtime = Runtime::builder(program).build();
         let result = runtime.run().await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result, ExpressionValue::Unit);
     }
 
     #[tokio::test]
@@ -780,7 +780,7 @@ fn main(): String {
         let result = runtime.run().await.unwrap();
 
         match result {
-            ExprResult::String(s) => assert_eq!(s, "<message>\nSystem ready\n</message>"),
+            ExpressionValue::String(s) => assert_eq!(s, "<message>\nSystem ready\n</message>"),
             _ => panic!("Expected string result, got: {:?}", result),
         }
     }

@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use structured_agent::acp::agent::{Agent, PromptMessage};
 use structured_agent::cli::config::{Config, EngineType, Mode, ProgramSource};
-use structured_agent::runtime::ExprResult;
+use structured_agent::runtime::ExpressionValue;
 use tokio::sync::{mpsc, oneshot};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -103,11 +103,11 @@ impl TestAgent {
         response_rx.await.unwrap();
     }
 
-    pub async fn wait(self) -> ExprResult {
+    pub async fn wait(self) -> ExpressionValue {
         self.agent.wait().await.unwrap()
     }
 
-    pub async fn wait_with_updates(self) -> (ExprResult, Vec<String>) {
+    pub async fn wait_with_updates(self) -> (ExpressionValue, Vec<String>) {
         let result = self.agent.wait().await.unwrap();
         let updates = self
             .updates

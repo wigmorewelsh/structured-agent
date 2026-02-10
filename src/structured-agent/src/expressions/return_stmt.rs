@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -31,10 +31,10 @@ impl PartialEq for ReturnExpr {
 
 #[async_trait(?Send)]
 impl Expression for ReturnExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        let return_value = self.expression.evaluate(context.clone()).await?;
-        context.set_return_value(return_value.clone());
-        Ok(return_value)
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+        let result = self.expression.evaluate(context.clone()).await?;
+        context.set_return_value(result.value.clone());
+        Ok(result)
     }
 
     fn return_type(&self) -> Type {
@@ -74,10 +74,13 @@ mod tests {
 
         let result = return_expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("test_value".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("test_value".to_string())
+        );
         assert_eq!(
             context.get_return_value(),
-            Some(ExprResult::String("test_value".to_string()))
+            Some(ExpressionValue::String("test_value".to_string()))
         );
     }
 
@@ -97,10 +100,13 @@ mod tests {
 
         let result = return_expr.evaluate(nested_context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("nested_return".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("nested_return".to_string())
+        );
         assert_eq!(
             function_context.get_return_value(),
-            Some(ExprResult::String("nested_return".to_string()))
+            Some(ExpressionValue::String("nested_return".to_string()))
         );
         assert!(!nested_context.has_return_value());
     }

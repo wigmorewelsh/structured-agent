@@ -1,5 +1,5 @@
 use structured_agent::compiler::CompilationUnit;
-use structured_agent::runtime::{ExprResult, Runtime};
+use structured_agent::runtime::{ExpressionValue, Runtime};
 
 #[tokio::test]
 async fn test_return_statement_with_expression() {
@@ -14,7 +14,7 @@ async fn test_return_statement_with_expression() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExprResult::String(s)) => {
+        Ok(ExpressionValue::String(s)) => {
             println!("Success: {}", s);
             assert_eq!(s, "calculated_value");
         }
@@ -44,7 +44,7 @@ async fn test_return_statement_end_to_end() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExprResult::String(s)) => {
+        Ok(ExpressionValue::String(s)) => {
             println!("Success: {}", s);
             assert_eq!(s, "hello");
         }
@@ -75,7 +75,7 @@ async fn test_return_in_nested_scope() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExprResult::String(s)) => {
+        Ok(ExpressionValue::String(s)) => {
             println!("Success: {}", s);
             assert_eq!(s, "from_if_block");
         }

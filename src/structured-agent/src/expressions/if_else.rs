@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -13,9 +13,10 @@ pub struct IfElseExpr {
 
 #[async_trait(?Send)]
 impl Expression for IfElseExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let condition_result = self.condition.evaluate(context.clone()).await?;
         let condition_value = condition_result
+            .value
             .as_boolean()
             .map_err(|_| "if-else condition must be a boolean expression".to_string())?;
 
@@ -76,7 +77,10 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_else_expr.evaluate(context).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("then branch".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("then branch".to_string())
+        );
     }
 
     #[tokio::test]
@@ -99,7 +103,10 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_else_expr.evaluate(context).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("else branch".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("else branch".to_string())
+        );
     }
 
     #[tokio::test]
@@ -174,7 +181,10 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = outer_if_else.evaluate(context).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("inner else".to_string()));
+        assert_eq!(
+            result.value,
+            ExpressionValue::String("inner else".to_string())
+        );
     }
 
     #[tokio::test]
@@ -200,11 +210,11 @@ mod tests {
 
         context.declare_variable(
             "ready".to_string(),
-            ExprResult::String("success".to_string()),
+            ExpressionValue::String("success".to_string()),
         );
 
         let result = if_else_expr.evaluate(context).await.unwrap();
 
-        assert_eq!(result, ExprResult::String("success".to_string()));
+        assert_eq!(result.value, ExpressionValue::String("success".to_string()));
     }
 }

@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use arrow::array::Array;
 use async_trait::async_trait;
@@ -28,16 +28,16 @@ fn to_event(message: String, name: Option<&str>) -> String {
 
 #[async_trait(?Send)]
 impl Expression for InjectionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let name = self.inner.name();
         let result = self.inner.evaluate(context.clone()).await?;
 
-        fn format_expr_result(result: &ExprResult) -> String {
+        fn format_expr_result(result: &ExpressionValue) -> String {
             match result {
-                ExprResult::String(s) => s.clone(),
-                ExprResult::Unit => "()".to_string(),
-                ExprResult::Boolean(b) => b.to_string(),
-                ExprResult::List(list) => {
+                ExpressionValue::String(s) => s.clone(),
+                ExpressionValue::Unit => "()".to_string(),
+                ExpressionValue::Boolean(b) => b.to_string(),
+                ExpressionValue::List(list) => {
                     if list.len() == 0 {
                         "[]".to_string()
                     } else {
@@ -54,23 +54,23 @@ impl Expression for InjectionExpr {
                         }
                     }
                 }
-                ExprResult::Option(opt) => match opt {
+                ExpressionValue::Option(opt) => match opt {
                     Some(inner) => format!("Some({})", format_expr_result(inner)),
                     None => "None".to_string(),
                 },
             }
         }
 
-        match &result {
-            ExprResult::Unit => {}
+        match &result.value {
+            ExpressionValue::Unit => {}
             _ => {
-                let formatted = format_expr_result(&result);
+                let formatted = format_expr_result(&result.value);
                 let event = to_event(formatted.clone(), name.clone());
                 context.add_event(event.clone());
                 info!("{}", event);
                 debug!(
                     name = ?name,
-                    value_type = %result.type_name(),
+                    value_type = %result.value.type_name(),
                     "injection"
                 );
             }
@@ -121,8 +121,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context.clone()).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "Injected content"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "Injected content"),
             _ => panic!("Expected string result"),
         }
 

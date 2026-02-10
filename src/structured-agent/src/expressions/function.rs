@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -38,30 +38,31 @@ impl Clone for FunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for FunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        let mut last_result = ExprResult::Unit;
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+        let mut last_result = ExpressionValue::Unit;
         for statement in &self.body {
-            last_result = statement.evaluate(context.clone()).await?;
+            let result = statement.evaluate(context.clone()).await?;
+            last_result = result.value;
 
             if context.has_return_value() {
-                return Ok(context.get_return_value().unwrap());
+                return Ok(ExpressionResult::new(context.get_return_value().unwrap()));
             }
         }
 
         if context.has_events() {
             if matches!(self.return_type, Type::Unit) {
-                return Ok(ExprResult::Unit);
+                return Ok(ExpressionResult::new(ExpressionValue::Unit));
             } else {
                 let engine_response = context
                     .runtime()
                     .engine()
                     .typed(&context, &self.return_type)
                     .await?;
-                return Ok(engine_response);
+                return Ok(ExpressionResult::new(engine_response));
             }
         }
 
-        Ok(last_result)
+        Ok(ExpressionResult::new(last_result))
     }
 
     fn return_type(&self) -> Type {

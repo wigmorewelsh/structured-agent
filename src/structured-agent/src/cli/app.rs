@@ -79,9 +79,9 @@ impl App {
             .map_err(|e| CliError::RuntimeError(format!("ACP server error: {}", e)))
     }
 
-    fn display_result(result: &crate::runtime::ExprResult) {
+    fn display_result(result: &crate::runtime::ExpressionValue) {
         match result {
-            crate::runtime::ExprResult::String(s) => {
+            crate::runtime::ExpressionValue::String(s) => {
                 println!("\n═══ Agent Response ═══");
 
                 let cleaned = s.trim();
@@ -116,17 +116,17 @@ impl App {
 
                 println!("═══════════════════════");
             }
-            crate::runtime::ExprResult::Unit => {
+            crate::runtime::ExpressionValue::Unit => {
                 println!("Result: (no output)");
             }
-            crate::runtime::ExprResult::Boolean(b) => {
+            crate::runtime::ExpressionValue::Boolean(b) => {
                 println!("Result: {}", b);
             }
-            crate::runtime::ExprResult::List(list) => {
+            crate::runtime::ExpressionValue::List(list) => {
                 use arrow::array::Array;
                 println!("Result: List[{}]", list.len());
             }
-            crate::runtime::ExprResult::Option(opt) => match opt {
+            crate::runtime::ExpressionValue::Option(opt) => match opt {
                 Some(inner) => {
                     print!("Result: Some(");
                     Self::display_result(inner);

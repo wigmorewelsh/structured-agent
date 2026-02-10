@@ -4,7 +4,7 @@ use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr}
 use crate::functions::{InputFunction, PrintFunction};
 use crate::gemini::GeminiEngine;
 use crate::mcp::McpClient;
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, LanguageEngine, NativeFunction,
 };
@@ -217,7 +217,7 @@ impl Runtime {
         }
     }
 
-    pub async fn run(&self) -> Result<ExprResult, RuntimeError> {
+    pub async fn run(&self) -> Result<ExpressionValue, RuntimeError> {
         debug!("Starting program execution");
 
         let compiled_program = match self.compiler.compile_program(&self.compiled_program) {
@@ -284,13 +284,13 @@ impl Runtime {
     pub async fn run_expression(
         &self,
         program: &dyn crate::types::Expression,
-    ) -> Result<ExprResult, RuntimeError> {
+    ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Running expression");
         let initial_context = Arc::new(Context::with_runtime(Rc::new(self.create_runtime_ref())));
         match program.evaluate(initial_context).await {
             Ok(result) => {
                 debug!("Expression evaluated successfully");
-                Ok(result)
+                Ok(result.value)
             }
             Err(e) => {
                 error!("Expression evaluation failed: {}", e);

@@ -160,7 +160,7 @@ pub trait Expression: std::fmt::Debug {
     async fn evaluate(
         &self,
         context: std::sync::Arc<crate::runtime::Context>,
-    ) -> Result<crate::runtime::ExprResult, String>;
+    ) -> Result<crate::runtime::ExpressionResult, String>;
     fn return_type(&self) -> Type;
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn Expression>;
@@ -184,7 +184,7 @@ pub trait LanguageEngine {
         &self,
         context: &crate::runtime::Context,
         return_type: &Type,
-    ) -> Result<crate::runtime::ExprResult, String>;
+    ) -> Result<crate::runtime::ExpressionValue, String>;
     async fn select(
         &self,
         context: &crate::runtime::Context,
@@ -195,7 +195,7 @@ pub trait LanguageEngine {
         context: &crate::runtime::Context,
         param_name: &str,
         param_type: &Type,
-    ) -> Result<crate::runtime::ExprResult, String>;
+    ) -> Result<crate::runtime::ExpressionValue, String>;
 }
 
 pub struct PrintEngine {}
@@ -214,22 +214,22 @@ impl LanguageEngine for PrintEngine {
         &self,
         context: &crate::runtime::Context,
         return_type: &Type,
-    ) -> Result<crate::runtime::ExprResult, String> {
+    ) -> Result<crate::runtime::ExpressionValue, String> {
         match return_type {
             Type::String => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExprResult::String(value))
+                Ok(crate::runtime::ExpressionValue::String(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
-            Type::Unit => Ok(crate::runtime::ExprResult::Unit),
+            Type::Boolean => Ok(crate::runtime::ExpressionValue::Boolean(true)),
+            Type::Unit => Ok(crate::runtime::ExpressionValue::Unit),
             Type::List(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExprResult::String(value))
+                Ok(crate::runtime::ExpressionValue::String(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExprResult::Option(None)),
+            Type::Option(_) => Ok(crate::runtime::ExpressionValue::Option(None)),
             Type::Custom(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExprResult::String(value))
+                Ok(crate::runtime::ExpressionValue::String(value))
             }
         }
     }
@@ -247,19 +247,19 @@ impl LanguageEngine for PrintEngine {
         context: &crate::runtime::Context,
         param_name: &str,
         param_type: &Type,
-    ) -> Result<crate::runtime::ExprResult, String> {
+    ) -> Result<crate::runtime::ExpressionValue, String> {
         match param_type {
             Type::String => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExprResult::String(value))
+                Ok(crate::runtime::ExpressionValue::String(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExprResult::Boolean(true)),
+            Type::Boolean => Ok(crate::runtime::ExpressionValue::Boolean(true)),
             Type::List(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExprResult::String(value))
+                Ok(crate::runtime::ExpressionValue::String(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExprResult::Option(None)),
-            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExprResult::String(format!(
+            Type::Option(_) => Ok(crate::runtime::ExpressionValue::Option(None)),
+            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExpressionValue::String(format!(
                 "PrintEngine: {} ({})",
                 param_name,
                 param_type.name()
@@ -275,8 +275,8 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     fn return_type(&self) -> &Type;
     async fn execute(
         &self,
-        args: Vec<crate::runtime::ExprResult>,
-    ) -> Result<crate::runtime::ExprResult, String>;
+        args: Vec<crate::runtime::ExpressionValue>,
+    ) -> Result<crate::runtime::ExpressionValue, String>;
     fn documentation(&self) -> Option<&str> {
         None
     }

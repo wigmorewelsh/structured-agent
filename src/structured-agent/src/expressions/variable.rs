@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -11,10 +11,11 @@ pub struct VariableExpr {
 
 #[async_trait(?Send)]
 impl Expression for VariableExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        context
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+        let value = context
             .get_variable(&self.name)
-            .ok_or_else(|| format!("Variable '{}' not found", self.name))
+            .ok_or_else(|| format!("Variable '{}' not found", self.name))?;
+        Ok(ExpressionResult::new(value))
     }
 
     fn return_type(&self) -> Type {
@@ -52,7 +53,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
-            ExprResult::String("test_value".to_string()),
+            ExpressionValue::String("test_value".to_string()),
         );
 
         let expr = VariableExpr {
@@ -61,8 +62,8 @@ mod tests {
 
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::String(s) => assert_eq!(s, "test_value"),
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "test_value"),
             _ => panic!("Expected string result"),
         }
     }

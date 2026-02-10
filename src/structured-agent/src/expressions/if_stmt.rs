@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -13,9 +13,10 @@ pub struct IfExpr {
 
 #[async_trait(?Send)]
 impl Expression for IfExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let condition_result = self.condition.evaluate(context.clone()).await?;
         let condition_value = condition_result
+            .value
             .as_boolean()
             .map_err(|_| "if condition must be a boolean expression".to_string())?;
 
@@ -30,7 +31,7 @@ impl Expression for IfExpr {
                 statement.evaluate(child_context.clone()).await?;
 
                 if child_context.has_return_value() {
-                    return Ok(ExprResult::Unit);
+                    return Ok(ExpressionResult::new(ExpressionValue::Unit));
                 }
             }
         } else if let Some(else_body) = &self.else_body {
@@ -44,11 +45,11 @@ impl Expression for IfExpr {
                 statement.evaluate(child_context.clone()).await?;
 
                 if child_context.has_return_value() {
-                    return Ok(ExprResult::Unit);
+                    return Ok(ExpressionResult::new(ExpressionValue::Unit));
                 }
             }
         }
-        Ok(ExprResult::Unit)
+        Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
     fn return_type(&self) -> Type {
@@ -103,7 +104,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(context.events_count(), 0);
     }
 
@@ -126,7 +127,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = if_expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(context.events_count(), 0);
     }
 
@@ -190,15 +191,15 @@ mod tests {
 
         context.declare_variable(
             "outer_var".to_string(),
-            ExprResult::String("outer_value".to_string()),
+            ExpressionValue::String("outer_value".to_string()),
         );
 
         let result = if_expr.evaluate(context.clone()).await.unwrap();
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
 
         assert_eq!(
             context.get_variable("outer_var").unwrap(),
-            ExprResult::String("outer_value".to_string())
+            ExpressionValue::String("outer_value".to_string())
         );
 
         assert!(context.get_variable("inner_var").is_none());
@@ -233,7 +234,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = outer_if.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(context.events_count(), 0);
     }
 
@@ -267,17 +268,17 @@ mod tests {
 
         context.declare_variable(
             "parent_var".to_string(),
-            ExprResult::String("parent_value".to_string()),
+            ExpressionValue::String("parent_value".to_string()),
         );
 
         let result = if_expr.evaluate(context.clone()).await.unwrap();
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
 
         assert_eq!(context.events_count(), 0);
 
         assert_eq!(
             context.get_variable("parent_var").unwrap(),
-            ExprResult::String("parent_value".to_string())
+            ExpressionValue::String("parent_value".to_string())
         );
 
         assert!(context.get_variable("local_var").is_none());

@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{ExecutableFunction, Expression, Function, NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -27,7 +27,7 @@ impl Clone for NativeFunctionExpr {
 
 #[async_trait(?Send)]
 impl Expression for NativeFunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let mut args = Vec::new();
 
         for param in self.native_function.parameters() {
@@ -39,7 +39,8 @@ impl Expression for NativeFunctionExpr {
             }
         }
 
-        self.native_function.execute(args).await
+        let result = self.native_function.execute(args).await?;
+        Ok(ExpressionResult::new(result))
     }
 
     fn return_type(&self) -> Type {
@@ -129,9 +130,9 @@ mod tests {
 
         async fn execute(
             &self,
-            _args: Vec<crate::runtime::ExprResult>,
-        ) -> Result<crate::runtime::ExprResult, String> {
-            Ok(crate::runtime::ExprResult::String(
+            _args: Vec<crate::runtime::ExpressionValue>,
+        ) -> Result<crate::runtime::ExpressionValue, String> {
+            Ok(crate::runtime::ExpressionValue::String(
                 "test_result".to_string(),
             ))
         }
@@ -170,9 +171,9 @@ mod tests {
 
         async fn execute(
             &self,
-            _args: Vec<crate::runtime::ExprResult>,
-        ) -> Result<crate::runtime::ExprResult, String> {
-            Ok(crate::runtime::ExprResult::String(
+            _args: Vec<crate::runtime::ExpressionValue>,
+        ) -> Result<crate::runtime::ExpressionValue, String> {
+            Ok(crate::runtime::ExpressionValue::String(
                 "undocumented_result".to_string(),
             ))
         }
@@ -207,8 +208,8 @@ mod tests {
 
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            crate::runtime::ExprResult::String(s) => assert_eq!(s, "test_result"),
+        match result.value {
+            crate::runtime::ExpressionValue::String(s) => assert_eq!(s, "test_result"),
             _ => panic!("Expected string result"),
         }
 

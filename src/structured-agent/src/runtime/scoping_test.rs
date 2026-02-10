@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::CompilationUnit;
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::rc::Rc;
@@ -51,19 +51,19 @@ impl NativeFunction for LoggingFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err("Expected 1 argument".to_string());
         }
 
         match &args[0] {
-            ExprResult::String(s) => {
+            ExpressionValue::String(s) => {
                 self.messages.lock().unwrap().push(s.clone());
             }
             _ => return Err("Expected string argument".to_string()),
         }
 
-        Ok(ExprResult::Unit)
+        Ok(ExpressionValue::Unit)
     }
 }
 
@@ -90,7 +90,7 @@ fn main(): String {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["value1"]);
 
-    assert_eq!(result, ExprResult::Unit);
+    assert_eq!(result, ExpressionValue::Unit);
 }
 
 #[tokio::test]
@@ -141,7 +141,7 @@ fn main(): String {
 
     assert_eq!(
         result,
-        ExprResult::String("<val>\nmodified\n</val>".to_string())
+        ExpressionValue::String("<val>\nmodified\n</val>".to_string())
     );
 }
 
@@ -183,7 +183,7 @@ fn main(): String {
     // The function should return the modified value from inside the loop
     assert_eq!(
         result,
-        ExprResult::String("<iteration>\n1\n</iteration>".to_string())
+        ExpressionValue::String("<iteration>\n1\n</iteration>".to_string())
     );
 }
 
@@ -240,23 +240,23 @@ async fn test_context_assign_variable_directly() {
 
     context.declare_variable(
         "test_var".to_string(),
-        ExprResult::String("initial".to_string()),
+        ExpressionValue::String("initial".to_string()),
     );
 
     assert_eq!(
         context.get_variable("test_var").unwrap(),
-        ExprResult::String("initial".to_string())
+        ExpressionValue::String("initial".to_string())
     );
 
     let result = context.assign_variable(
         "test_var".to_string(),
-        ExprResult::String("modified".to_string()),
+        ExpressionValue::String("modified".to_string()),
     );
     assert!(result.is_ok(), "assign_variable should succeed");
 
     assert_eq!(
         context.get_variable("test_var").unwrap(),
-        ExprResult::String("modified".to_string())
+        ExpressionValue::String("modified".to_string())
     );
 }
 
@@ -270,7 +270,7 @@ async fn test_variable_assignment_expr_directly() {
 
     context.declare_variable(
         "test_var".to_string(),
-        ExprResult::String("initial".to_string()),
+        ExpressionValue::String("initial".to_string()),
     );
 
     let assignment = VariableAssignmentExpr {
@@ -288,6 +288,6 @@ async fn test_variable_assignment_expr_directly() {
 
     assert_eq!(
         context.get_variable("test_var").unwrap(),
-        ExprResult::String("modified".to_string())
+        ExpressionValue::String("modified".to_string())
     );
 }

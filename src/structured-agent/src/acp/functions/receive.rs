@@ -1,5 +1,5 @@
 use crate::acp::agent::PromptMessage;
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ impl NativeFunction for ReceiveFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if !args.is_empty() {
             error!(
                 "receive called with wrong number of arguments: {}",
@@ -55,7 +55,7 @@ impl NativeFunction for ReceiveFunction {
                 let content = message.content.clone();
                 let _ = message.response_tx.send(());
                 debug!("Prompt response sent");
-                Ok(ExprResult::String(content))
+                Ok(ExpressionValue::String(content))
             }
             None => {
                 error!("Prompt channel closed");
@@ -93,7 +93,7 @@ mod tests {
         tx.send(message).unwrap();
 
         let result = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result, ExprResult::String("test prompt".to_string()));
+        assert_eq!(result, ExpressionValue::String("test prompt".to_string()));
 
         assert!(response_rx.await.is_ok());
     }
@@ -116,7 +116,7 @@ mod tests {
         let receive_fn = ReceiveFunction::new(rx);
 
         let result = receive_fn
-            .execute(vec![ExprResult::String("unexpected".to_string())])
+            .execute(vec![ExpressionValue::String("unexpected".to_string())])
             .await;
         assert!(result.is_err());
         assert!(
@@ -146,11 +146,11 @@ mod tests {
         .unwrap();
 
         let result1 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result1, ExprResult::String("first".to_string()));
+        assert_eq!(result1, ExpressionValue::String("first".to_string()));
         assert!(response_rx1.await.is_ok());
 
         let result2 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result2, ExprResult::String("second".to_string()));
+        assert_eq!(result2, ExpressionValue::String("second".to_string()));
         assert!(response_rx2.await.is_ok());
     }
 }

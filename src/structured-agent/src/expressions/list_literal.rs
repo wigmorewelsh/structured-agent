@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use arrow::array::{ListBuilder, StringBuilder};
 use async_trait::async_trait;
@@ -13,7 +13,7 @@ pub struct ListLiteralExpr {
 
 #[async_trait(?Send)]
 impl Expression for ListLiteralExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let mut evaluated_elements = Vec::new();
         for elem in &self.elements {
             let result = elem.evaluate(context.clone()).await?;
@@ -26,8 +26,8 @@ impl Expression for ListLiteralExpr {
 
                 for elem in evaluated_elements {
                     let value_builder = builder.values();
-                    match elem {
-                        ExprResult::String(s) => value_builder.append_value(&s),
+                    match elem.value {
+                        ExpressionValue::String(s) => value_builder.append_value(&s),
                         _ => return Err("List element type mismatch".to_string()),
                     }
                     builder.append(true);
@@ -43,7 +43,7 @@ impl Expression for ListLiteralExpr {
             }
         };
 
-        Ok(ExprResult::List(list_array))
+        Ok(ExpressionResult::new(ExpressionValue::List(list_array)))
     }
 
     fn return_type(&self) -> Type {
@@ -84,8 +84,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::List(list) => {
+        match result.value {
+            ExpressionValue::List(list) => {
                 assert_eq!(list.len(), 0);
             }
             _ => panic!("Expected list result"),
@@ -110,8 +110,8 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         let result = expr.evaluate(context).await.unwrap();
 
-        match result {
-            ExprResult::List(list) => {
+        match result.value {
+            ExpressionValue::List(list) => {
                 assert_eq!(list.len(), 2);
             }
             _ => panic!("Expected list result"),

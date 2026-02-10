@@ -1,4 +1,4 @@
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::io::{self, Write};
@@ -36,7 +36,7 @@ impl NativeFunction for InputFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         print!("> ");
         io::stdout()
             .flush()
@@ -48,7 +48,7 @@ impl NativeFunction for InputFunction {
             .map_err(|e| format!("Failed to read input: {}", e))?;
 
         let trimmed = input.trim().to_string();
-        Ok(ExprResult::String(trimmed))
+        Ok(ExpressionValue::String(trimmed))
     }
 }
 

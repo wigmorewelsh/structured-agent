@@ -3,7 +3,7 @@ use crate::gemini::types::GenerationConfig;
 use crate::gemini::types::JsonSchemaBuilder;
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::LanguageEngine;
 use crate::types::Type;
 use async_trait::async_trait;
@@ -74,18 +74,18 @@ impl GeminiEngine {
     fn parse_json_value(
         json_value: serde_json::Value,
         value_type: &Type,
-    ) -> Result<ExprResult, String> {
+    ) -> Result<ExpressionValue, String> {
         match value_type {
             Type::String => {
                 if let Some(s) = json_value.as_str() {
-                    Ok(ExprResult::String(s.to_string()))
+                    Ok(ExpressionValue::String(s.to_string()))
                 } else {
                     Err("Expected string value".to_string())
                 }
             }
             Type::Boolean => {
                 if let Some(b) = json_value.as_bool() {
-                    Ok(ExprResult::Boolean(b))
+                    Ok(ExpressionValue::Boolean(b))
                 } else {
                     Err("Expected boolean value".to_string())
                 }
@@ -109,21 +109,24 @@ impl GeminiEngine {
                     values_builder.append_value(item);
                 }
                 builder.append(true);
-                Ok(ExprResult::List(std::sync::Arc::new(builder.finish())))
+                Ok(ExpressionValue::List(std::sync::Arc::new(builder.finish())))
             }
             Type::Option(inner_type) => {
                 if json_value.is_null() {
-                    Ok(ExprResult::Option(None))
+                    Ok(ExpressionValue::Option(None))
                 } else {
                     let inner_result = Self::parse_json_value(json_value, inner_type)?;
-                    Ok(ExprResult::Option(Some(Box::new(inner_result))))
+                    Ok(ExpressionValue::Option(Some(Box::new(inner_result))))
                 }
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }
     }
 
-    fn parse_typed_response(response_text: &str, return_type: &Type) -> Result<ExprResult, String> {
+    fn parse_typed_response(
+        response_text: &str,
+        return_type: &Type,
+    ) -> Result<ExpressionValue, String> {
         let response_json: serde_json::Value = serde_json::from_str(response_text)
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
@@ -164,9 +167,13 @@ impl LanguageEngine for GeminiEngine {
         }
     }
 
-    async fn typed(&self, context: &Context, return_type: &Type) -> Result<ExprResult, String> {
+    async fn typed(
+        &self,
+        context: &Context,
+        return_type: &Type,
+    ) -> Result<ExpressionValue, String> {
         if matches!(return_type, Type::Unit) {
-            return Ok(ExprResult::Unit);
+            return Ok(ExpressionValue::Unit);
         }
 
         let value_schema = Self::build_value_schema(return_type)?;
@@ -273,9 +280,9 @@ impl LanguageEngine for GeminiEngine {
         context: &Context,
         param_name: &str,
         param_type: &Type,
-    ) -> Result<ExprResult, String> {
+    ) -> Result<ExpressionValue, String> {
         if matches!(param_type, Type::Unit) {
-            return Ok(ExprResult::Unit);
+            return Ok(ExpressionValue::Unit);
         }
 
         let value_schema = Self::build_value_schema(param_type)?;

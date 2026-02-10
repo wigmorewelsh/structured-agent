@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::CompilationUnit;
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
@@ -44,14 +44,14 @@ impl NativeFunction for TestExternFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if !args.is_empty() {
             return Err("Expected no arguments".to_string());
         }
 
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(ExprResult::Unit)
+        Ok(ExpressionValue::Unit)
     }
 }
 

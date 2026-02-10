@@ -1,4 +1,4 @@
-use crate::runtime::{Context, ExprResult};
+use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
 use async_trait::async_trait;
 use std::any::Any;
@@ -12,10 +12,10 @@ pub struct VariableAssignmentExpr {
 
 #[async_trait(?Send)]
 impl Expression for VariableAssignmentExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExprResult, String> {
-        let value = self.expression.evaluate(context.clone()).await?;
-        context.assign_variable(self.variable.clone(), value)?;
-        Ok(ExprResult::Unit)
+    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+        let result = self.expression.evaluate(context.clone()).await?;
+        context.assign_variable(self.variable.clone(), result.value)?;
+        Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
     fn return_type(&self) -> Type {
@@ -54,7 +54,7 @@ mod tests {
 
         context.declare_variable(
             "test_var".to_string(),
-            ExprResult::String("initial".to_string()),
+            ExpressionValue::String("initial".to_string()),
         );
 
         let assignment_expr = VariableAssignmentExpr {
@@ -66,10 +66,10 @@ mod tests {
 
         let result = assignment_expr.evaluate(context.clone()).await.unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(
             context.get_variable("test_var").unwrap(),
-            ExprResult::String("updated".to_string())
+            ExpressionValue::String("updated".to_string())
         );
     }
 
@@ -101,7 +101,7 @@ mod tests {
 
         parent_context.declare_variable(
             "shared_var".to_string(),
-            ExprResult::String("parent".to_string()),
+            ExpressionValue::String("parent".to_string()),
         );
 
         let child_context = Arc::new(Context::create_child(
@@ -122,14 +122,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result, ExprResult::Unit);
+        assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(
             child_context.get_variable("shared_var").unwrap(),
-            ExprResult::String("child_updated".to_string())
+            ExpressionValue::String("child_updated".to_string())
         );
         assert_eq!(
             parent_context.get_variable("shared_var").unwrap(),
-            ExprResult::String("child_updated".to_string())
+            ExpressionValue::String("child_updated".to_string())
         );
     }
 
@@ -140,7 +140,7 @@ mod tests {
 
         parent_context.declare_variable(
             "bounded_var".to_string(),
-            ExprResult::String("parent".to_string()),
+            ExpressionValue::String("parent".to_string()),
         );
 
         let child_context = Arc::new(Context::create_child(
@@ -166,7 +166,7 @@ mod tests {
 
         assert_eq!(
             parent_context.get_variable("bounded_var").unwrap(),
-            ExprResult::String("parent".to_string())
+            ExpressionValue::String("parent".to_string())
         );
     }
 }

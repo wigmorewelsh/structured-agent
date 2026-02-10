@@ -1,4 +1,4 @@
-use crate::runtime::ExprResult;
+use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use arrow::array::{Array, ListBuilder, StringBuilder};
 use async_trait::async_trait;
@@ -42,24 +42,24 @@ impl NativeFunction for TailFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExprResult>) -> Result<ExprResult, String> {
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err(format!("tail expects 1 argument, got {}", args.len()));
         }
 
         match &args[0] {
-            ExprResult::List(list) => {
+            ExpressionValue::List(list) => {
                 if list.len() == 0 {
-                    Ok(ExprResult::Option(None))
+                    Ok(ExpressionValue::Option(None))
                 } else {
                     let values = list.value(0);
                     if values.len() <= 1 {
                         let mut builder = ListBuilder::new(StringBuilder::new());
                         builder.append(true);
                         let empty_list = Arc::new(builder.finish());
-                        Ok(ExprResult::Option(Some(Box::new(ExprResult::List(
-                            empty_list,
-                        )))))
+                        Ok(ExpressionValue::Option(Some(Box::new(
+                            ExpressionValue::List(empty_list),
+                        ))))
                     } else {
                         let string_array = values
                             .as_any()
@@ -75,9 +75,9 @@ impl NativeFunction for TailFunction {
                         builder.append(true);
 
                         let tail_list = Arc::new(builder.finish());
-                        Ok(ExprResult::Option(Some(Box::new(ExprResult::List(
-                            tail_list,
-                        )))))
+                        Ok(ExpressionValue::Option(Some(Box::new(
+                            ExpressionValue::List(tail_list),
+                        ))))
                     }
                 }
             }
@@ -117,12 +117,12 @@ mod tests {
         builder.append(true);
 
         let list_array = Arc::new(builder.finish());
-        let args = vec![ExprResult::List(list_array)];
+        let args = vec![ExpressionValue::List(list_array)];
 
         let result = tail_fn.execute(args).await.unwrap();
         match result {
-            ExprResult::Option(Some(inner)) => match *inner {
-                ExprResult::List(tail_list) => {
+            ExpressionValue::Option(Some(inner)) => match *inner {
+                ExpressionValue::List(tail_list) => {
                     assert_eq!(tail_list.len(), 1);
                     let tail_values = tail_list.value(0);
                     assert_eq!(tail_values.len(), 2);
@@ -143,12 +143,12 @@ mod tests {
         builder.append(true);
 
         let list_array = Arc::new(builder.finish());
-        let args = vec![ExprResult::List(list_array)];
+        let args = vec![ExpressionValue::List(list_array)];
 
         let result = tail_fn.execute(args).await.unwrap();
         match result {
-            ExprResult::Option(Some(inner)) => match *inner {
-                ExprResult::List(tail_list) => {
+            ExpressionValue::Option(Some(inner)) => match *inner {
+                ExpressionValue::List(tail_list) => {
                     assert_eq!(tail_list.len(), 1);
                     let tail_values = tail_list.value(0);
                     assert_eq!(tail_values.len(), 0);
@@ -165,16 +165,16 @@ mod tests {
 
         let mut builder = ListBuilder::new(StringBuilder::new());
         let list_array = Arc::new(builder.finish());
-        let args = vec![ExprResult::List(list_array)];
+        let args = vec![ExpressionValue::List(list_array)];
 
         let result = tail_fn.execute(args).await.unwrap();
-        assert!(matches!(result, ExprResult::Option(None)));
+        assert!(matches!(result, ExpressionValue::Option(None)));
     }
 
     #[tokio::test]
     async fn test_tail_function_wrong_argument_type() {
         let tail_fn = TailFunction::new();
-        let args = vec![ExprResult::String("not a list".to_string())];
+        let args = vec![ExpressionValue::String("not a list".to_string())];
 
         let result = tail_fn.execute(args).await;
         assert!(result.is_err());

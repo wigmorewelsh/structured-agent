@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use structured_agent::compiler::parser;
 use structured_agent::compiler::{CompilationUnit, Compiler};
-use structured_agent::runtime::{Context, ExprResult, Runtime};
+use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::Expression;
 use structured_agent::types::FileId;
 
@@ -105,8 +105,8 @@ fn test(): () {
     let compiled_stmt1 = Compiler::compile_statement(stmt1).unwrap();
     let result1 = compiled_stmt1.evaluate(context.clone()).await.unwrap();
 
-    match result1 {
-        ExprResult::String(s) => assert_eq!(s, "Hello world"),
+    match result1.value {
+        ExpressionValue::String(s) => assert_eq!(s, "Hello world"),
         _ => panic!("Expected string result"),
     }
 
@@ -119,8 +119,8 @@ fn test(): () {
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
     let result2 = compiled_stmt2.evaluate(context.clone()).await.unwrap();
 
-    match result2 {
-        ExprResult::Unit => {}
+    match result2.value {
+        ExpressionValue::Unit => {}
         _ => panic!("Expected Unit result from assignment"),
     }
 
@@ -212,8 +212,8 @@ result!
     let context = Arc::new(Context::with_runtime(runtime));
     let result = compiled_stmt1.evaluate(context.clone()).await.unwrap();
 
-    match result {
-        ExprResult::Unit => {}
+    match result.value {
+        ExpressionValue::Unit => {}
         _ => panic!("Expected Unit result from assignment"),
     }
 
@@ -222,8 +222,8 @@ result!
     let compiled_stmt2 = Compiler::compile_statement(stmt2).unwrap();
     let result2 = compiled_stmt2.evaluate(context.clone()).await.unwrap();
 
-    match result2 {
-        ExprResult::String(s) => assert_eq!(s, "test value"),
+    match result2.value {
+        ExpressionValue::String(s) => assert_eq!(s, "test value"),
         _ => panic!("Expected string result from injection"),
     }
 }

@@ -1,6 +1,6 @@
 use crate::cli::config::Config;
 use crate::compiler::CompilationUnit;
-use crate::runtime::{ExprResult, Runtime, RuntimeError, load_program};
+use crate::runtime::{ExpressionValue, Runtime, RuntimeError, load_program};
 use agent_client_protocol as acp;
 use std::fs::OpenOptions;
 use std::rc::Rc;
@@ -20,7 +20,7 @@ pub struct Agent {
     session_id: acp::SessionId,
     update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     prompt_tx: mpsc::UnboundedSender<PromptMessage>,
-    task_handle: Option<tokio::task::JoinHandle<Result<ExprResult, AgentError>>>,
+    task_handle: Option<tokio::task::JoinHandle<Result<ExpressionValue, AgentError>>>,
 }
 
 #[derive(Debug)]
@@ -232,7 +232,7 @@ impl Agent {
     }
 
     #[allow(dead_code)]
-    pub async fn wait(mut self) -> Result<ExprResult, AgentError> {
+    pub async fn wait(mut self) -> Result<ExpressionValue, AgentError> {
         if let Some(handle) = self.task_handle.take() {
             handle.await.map_err(|_| AgentError::Cancelled)?
         } else {
