@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum GeminiError {
@@ -9,6 +10,7 @@ pub enum GeminiError {
     InvalidInput(String),
     Timeout,
     RateLimited,
+    RateLimitedWithRetry(Duration),
     QuotaExceeded,
     ModelNotFound(String),
     Serialization(String),
@@ -27,6 +29,13 @@ impl fmt::Display for GeminiError {
             GeminiError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
             GeminiError::Timeout => write!(f, "Request timeout"),
             GeminiError::RateLimited => write!(f, "Rate limit exceeded"),
+            GeminiError::RateLimitedWithRetry(duration) => {
+                write!(
+                    f,
+                    "Rate limit exceeded, retry after {} seconds",
+                    duration.as_secs()
+                )
+            }
             GeminiError::QuotaExceeded => write!(f, "Quota exceeded"),
             GeminiError::ModelNotFound(model) => write!(f, "Model not found: {}", model),
             GeminiError::Serialization(msg) => write!(f, "Serialization error: {}", msg),

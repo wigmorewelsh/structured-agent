@@ -117,19 +117,21 @@ impl GeminiClient {
             match timeout(timeout_duration, self.chat_internal(request.clone())).await {
                 Ok(Ok(response)) => return Ok(response),
                 Ok(Err(e)) => {
-                    let should_retry = matches!(
-                        e,
-                        GeminiError::Timeout
-                            | GeminiError::Network(_)
-                            | GeminiError::ApiError {
-                                code: 500..=599,
-                                ..
-                            }
-                    );
+                    let (should_retry, custom_delay) = match &e {
+                        GeminiError::RateLimited | GeminiError::RateLimitedWithRetry(_) => {
+                            (true, self.extract_retry_delay(&e))
+                        }
+                        GeminiError::Timeout | GeminiError::Network(_) => (true, None),
+                        GeminiError::ApiError {
+                            code: 500..=599, ..
+                        } => (true, None),
+                        _ => (false, None),
+                    };
 
                     if should_retry && attempt < self.max_retries {
                         last_error = Some(e);
-                        tokio::time::sleep(retry_delay).await;
+                        let delay = custom_delay.unwrap_or(retry_delay);
+                        tokio::time::sleep(delay).await;
                         retry_delay *= 2;
                         continue;
                     }
@@ -148,6 +150,13 @@ impl GeminiClient {
         }
 
         Err(last_error.unwrap_or(GeminiError::Timeout))
+    }
+
+    fn extract_retry_delay(&self, error: &GeminiError) -> Option<Duration> {
+        match error {
+            GeminiError::RateLimitedWithRetry(duration) => Some(*duration),
+            _ => None,
+        }
     }
 
     async fn chat_internal(&self, request: ChatRequest) -> GeminiResult<GeminiResponse> {
@@ -186,12 +195,13 @@ impl GeminiClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            let headers = response.headers().clone();
             let error_text = match response.text().await {
                 Ok(text) => text,
                 Err(e) => format!("Failed to read error response: {}", e),
             };
 
-            return Err(self.map_http_error(status.as_u16(), error_text));
+            return Err(self.map_http_error(status.as_u16(), error_text, headers));
         }
 
         let response_body: Value = response
@@ -240,13 +250,34 @@ impl GeminiClient {
         serde_json::from_value(response).map_err(Into::into)
     }
 
-    fn map_http_error(&self, status_code: u16, error_message: String) -> GeminiError {
+    fn map_http_error(
+        &self,
+        status_code: u16,
+        error_message: String,
+        headers: reqwest::header::HeaderMap,
+    ) -> GeminiError {
         match status_code {
             400 => GeminiError::InvalidInput(error_message),
             401 => GeminiError::Authentication("Invalid API key".to_string()),
             403 => GeminiError::Authentication("Permission denied or quota exceeded".to_string()),
             404 => GeminiError::ModelNotFound(error_message),
-            429 => GeminiError::RateLimited,
+            429 => {
+                let retry_after = headers
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok());
+
+                let rate_limit_reset = headers
+                    .get("x-ratelimit-reset")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok());
+
+                let mut error = GeminiError::RateLimited;
+                if let Some(seconds) = retry_after.or(rate_limit_reset) {
+                    error = GeminiError::RateLimitedWithRetry(Duration::from_secs(seconds));
+                }
+                error
+            }
             500..=599 => GeminiError::ApiError {
                 code: status_code as u32,
                 message: error_message,
@@ -355,5 +386,135 @@ impl GeminiClient {
 
     pub fn is_using_api_key(&self) -> bool {
         matches!(self.config.auth_method, AuthMethod::ApiKey(_))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_http_error_rate_limit_with_retry_after() {
+        let config = GeminiConfig {
+            auth_method: AuthMethod::ApiKey("test_key".to_string()),
+            project_id: "test_project".to_string(),
+            location: "us-central1".to_string(),
+            api_endpoint: None,
+        };
+
+        let client = GeminiClient {
+            client: reqwest::Client::new(),
+            api_key: Some("test_key".to_string()),
+            base_url: DEFAULT_API_BASE.to_string(),
+            config,
+            cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
+        };
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("retry-after", "60".parse().unwrap());
+
+        let error = client.map_http_error(429, "Rate limited".to_string(), headers);
+
+        match error {
+            GeminiError::RateLimitedWithRetry(duration) => {
+                assert_eq!(duration.as_secs(), 60);
+            }
+            _ => panic!("Expected RateLimitedWithRetry error"),
+        }
+    }
+
+    #[test]
+    fn test_map_http_error_rate_limit_with_ratelimit_reset() {
+        let config = GeminiConfig {
+            auth_method: AuthMethod::ApiKey("test_key".to_string()),
+            project_id: "test_project".to_string(),
+            location: "us-central1".to_string(),
+            api_endpoint: None,
+        };
+
+        let client = GeminiClient {
+            client: reqwest::Client::new(),
+            api_key: Some("test_key".to_string()),
+            base_url: DEFAULT_API_BASE.to_string(),
+            config,
+            cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
+        };
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-ratelimit-reset", "30".parse().unwrap());
+
+        let error = client.map_http_error(429, "Rate limited".to_string(), headers);
+
+        match error {
+            GeminiError::RateLimitedWithRetry(duration) => {
+                assert_eq!(duration.as_secs(), 30);
+            }
+            _ => panic!("Expected RateLimitedWithRetry error"),
+        }
+    }
+
+    #[test]
+    fn test_map_http_error_rate_limit_without_headers() {
+        let config = GeminiConfig {
+            auth_method: AuthMethod::ApiKey("test_key".to_string()),
+            project_id: "test_project".to_string(),
+            location: "us-central1".to_string(),
+            api_endpoint: None,
+        };
+
+        let client = GeminiClient {
+            client: reqwest::Client::new(),
+            api_key: Some("test_key".to_string()),
+            base_url: DEFAULT_API_BASE.to_string(),
+            config,
+            cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
+        };
+
+        let headers = reqwest::header::HeaderMap::new();
+
+        let error = client.map_http_error(429, "Rate limited".to_string(), headers);
+
+        match error {
+            GeminiError::RateLimited => {}
+            _ => panic!("Expected RateLimited error without retry duration"),
+        }
+    }
+
+    #[test]
+    fn test_extract_retry_delay() {
+        let config = GeminiConfig {
+            auth_method: AuthMethod::ApiKey("test_key".to_string()),
+            project_id: "test_project".to_string(),
+            location: "us-central1".to_string(),
+            api_endpoint: None,
+        };
+
+        let client = GeminiClient {
+            client: reqwest::Client::new(),
+            api_key: Some("test_key".to_string()),
+            base_url: DEFAULT_API_BASE.to_string(),
+            config,
+            cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
+        };
+
+        let error_with_retry = GeminiError::RateLimitedWithRetry(Duration::from_secs(45));
+        assert_eq!(
+            client.extract_retry_delay(&error_with_retry),
+            Some(Duration::from_secs(45))
+        );
+
+        let error_without_retry = GeminiError::RateLimited;
+        assert_eq!(client.extract_retry_delay(&error_without_retry), None);
+
+        let other_error = GeminiError::Timeout;
+        assert_eq!(client.extract_retry_delay(&other_error), None);
     }
 }
