@@ -92,6 +92,17 @@ impl Expression for ExternalFunctionExpr {
         if result.content.is_empty() {
             Ok(ExprResult::Unit)
         } else {
+            if result.content.len() != 1 {
+                return Err(format!("Expected one result, got {}", result.content.len()));
+            }
+            if result.content[0].content_type() == "text" {
+                let text_content = result.content[0]
+                    .as_text_content()
+                    .map_err(|e| format!("Failed to parse text content: {}", e))?;
+
+                return Ok(ExprResult::String(text_content.text.clone()));
+            }
+
             let content_str = format!("{:?}", result.content);
             Ok(ExprResult::String(content_str))
         }

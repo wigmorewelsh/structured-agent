@@ -42,14 +42,12 @@ impl Expression for SelectExpr {
         for clause in &self.clauses {
             let description = if let Some(doc) = clause.expression_to_run.documentation() {
                 format!(
-                    "Execute function '{}' and store result as '{}': {}",
-                    clause.result_variable, clause.result_variable, doc
+                    "Function Name: '{:?}' Documentation: {}",
+                    clause.expression_to_run.name(),
+                    doc
                 )
             } else {
-                format!(
-                    "Execute function and store result as '{}'",
-                    clause.result_variable
-                )
+                format!("Function Name: '{:?}'", clause.expression_to_run.name())
             };
             clause_descriptions.push(description);
         }

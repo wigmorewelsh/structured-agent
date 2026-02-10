@@ -131,6 +131,10 @@ impl Expression for CallExpr {
             arguments: self.arguments.iter().map(|arg| arg.clone_box()).collect(),
         })
     }
+
+    fn name(&self) -> Option<&str> {
+        Some(&self.function)
+    }
 }
 
 #[cfg(test)]
