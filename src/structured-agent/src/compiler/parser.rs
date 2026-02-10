@@ -578,14 +578,19 @@ where
 {
     (
         position(),
-        lex_string("select").with(between(
+        lex_string("select").with((
             lex_char('{'),
+            skip_spaces_and_comments(),
+            sep_by(
+                parse_select_clause(),
+                lex_char(',').skip(skip_spaces_and_comments()),
+            ),
+            skip_spaces_and_comments(),
             lex_char('}'),
-            sep_by(parse_select_clause(), lex_char(',')),
         )),
         position(),
     )
-        .map(|(start, clauses, end)| {
+        .map(|(start, (_, _, clauses, _, _), end)| {
             Statement::ExpressionStatement(Expression::Select(SelectExpression {
                 clauses,
                 span: Span::new(start, end),
@@ -600,14 +605,19 @@ where
 {
     (
         position(),
-        lex_string("select").with(between(
+        lex_string("select").with((
             lex_char('{'),
+            skip_spaces_and_comments(),
+            sep_by(
+                parse_select_clause(),
+                lex_char(',').skip(skip_spaces_and_comments()),
+            ),
+            skip_spaces_and_comments(),
             lex_char('}'),
-            sep_by(parse_select_clause(), lex_char(',')),
         )),
         position(),
     )
-        .map(|(start, clauses, end)| {
+        .map(|(start, (_, _, clauses, _, _), end)| {
             Expression::Select(SelectExpression {
                 clauses,
                 span: Span::new(start, end),
@@ -1209,6 +1219,149 @@ fn calculator_agent(ctx: String, request: String): String {
             panic!("Expected call expression");
         };
         assert_eq!(function, "subtract");
+    }
+
+    #[test]
+    fn test_parse_select_with_comments() {
+        let input = r#"
+fn calculator_agent(ctx: String, request: String): String {
+    let result = select {
+        add(ctx, _, _) as sum => sum,
+        # subtract(ctx, _, _) as diff => diff,
+        multiply(ctx, _, _) as product => product
+    }
+    result
+}
+"#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        let Statement::Assignment {
+            variable,
+            expression,
+            span: _,
+        } = &func.body.statements[0]
+        else {
+            panic!("Expected assignment statement");
+        };
+        assert_eq!(variable, "result");
+
+        let Expression::Select(select_stmt) = expression else {
+            panic!("Expected select expression");
+        };
+        assert_eq!(select_stmt.clauses.len(), 2);
+
+        let first_clause = &select_stmt.clauses[0];
+        assert_eq!(first_clause.result_variable, "sum");
+
+        let Expression::Call { function, .. } = &first_clause.expression_to_run else {
+            panic!("Expected call expression");
+        };
+        assert_eq!(function, "add");
+
+        let second_clause = &select_stmt.clauses[1];
+        assert_eq!(second_clause.result_variable, "product");
+
+        let Expression::Call { function, .. } = &second_clause.expression_to_run else {
+            panic!("Expected call expression");
+        };
+        assert_eq!(function, "multiply");
+    }
+
+    #[test]
+    fn test_parse_select_with_multiple_commented_clauses() {
+        let input = r#"
+fn test_agent(ctx: String): String {
+    let result = select {
+        add(ctx, _, _) as sum => sum,
+        # subtract(ctx, _, _) as diff => diff,
+        # divide(ctx, _, _) as quotient => quotient,
+        multiply(ctx, _, _) as product => product
+    }
+    result
+}
+"#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        let Statement::Assignment {
+            variable,
+            expression,
+            span: _,
+        } = &func.body.statements[0]
+        else {
+            panic!("Expected assignment statement");
+        };
+        assert_eq!(variable, "result");
+
+        let Expression::Select(select_stmt) = expression else {
+            panic!("Expected select expression");
+        };
+        assert_eq!(select_stmt.clauses.len(), 2);
+
+        let first_clause = &select_stmt.clauses[0];
+        assert_eq!(first_clause.result_variable, "sum");
+
+        let second_clause = &select_stmt.clauses[1];
+        assert_eq!(second_clause.result_variable, "product");
+    }
+
+    #[test]
+    fn test_parse_select_with_comment_at_end() {
+        let input = r#"
+fn test_agent(ctx: String): String {
+    let result = select {
+        add(ctx, _, _) as sum => sum,
+        subtract(ctx, _, _) as diff => diff
+        # This is a trailing comment
+    }
+    result
+}
+"#;
+
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        assert_eq!(module.definitions.len(), 1);
+
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function definition"),
+        };
+
+        let Statement::Assignment {
+            variable,
+            expression,
+            span: _,
+        } = &func.body.statements[0]
+        else {
+            panic!("Expected assignment statement");
+        };
+        assert_eq!(variable, "result");
+
+        let Expression::Select(select_stmt) = expression else {
+            panic!("Expected select expression");
+        };
+        assert_eq!(select_stmt.clauses.len(), 2);
+
+        let first_clause = &select_stmt.clauses[0];
+        assert_eq!(first_clause.result_variable, "sum");
+
+        let second_clause = &select_stmt.clauses[1];
+        assert_eq!(second_clause.result_variable, "diff");
     }
 
     #[test]
