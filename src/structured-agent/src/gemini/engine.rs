@@ -225,6 +225,7 @@ impl LanguageEngine for GeminiEngine {
 
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
+            .with_top_p(0.95)
             .with_response_mime_type("application/json".to_string())
             .with_response_schema(schema)
             .with_minimal_thinking();

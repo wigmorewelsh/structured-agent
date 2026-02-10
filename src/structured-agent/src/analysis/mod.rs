@@ -7,6 +7,7 @@ mod overwritten_values;
 mod placeholder_overuse;
 mod redundant_select;
 mod unreachable_code;
+mod unused_expressions;
 mod unused_return_values;
 mod unused_variables;
 mod variable_shadowing;
@@ -39,6 +40,9 @@ mod variable_shadowing_test;
 mod overwritten_values_test;
 
 #[cfg(test)]
+mod unused_expressions_test;
+
+#[cfg(test)]
 mod unused_return_values_test;
 
 pub use constant_conditions::ConstantConditionAnalyzer;
@@ -50,6 +54,7 @@ pub use overwritten_values::OverwrittenValueAnalyzer;
 pub use placeholder_overuse::PlaceholderOveruseAnalyzer;
 pub use redundant_select::RedundantSelectAnalyzer;
 pub use unreachable_code::ReachabilityAnalyzer;
+pub use unused_expressions::UnusedExpressionAnalyzer;
 pub use unused_return_values::UnusedReturnValueAnalyzer;
 pub use unused_variables::UnusedVariableAnalyzer;
 pub use variable_shadowing::VariableShadowingAnalyzer;
@@ -119,6 +124,10 @@ pub enum Warning {
     },
     UnusedReturnValue {
         function_name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    UnusedExpression {
         span: Span,
         file_id: FileId,
     },
@@ -245,6 +254,12 @@ impl Warning {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("return value not used"),
+                ]),
+            Warning::UnusedExpression { span, file_id } => Diagnostic::warning()
+                .with_message("unused expression")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("expression result is not used; add `!` to inject it"),
                 ]),
         }
     }

@@ -4,7 +4,8 @@ use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
     EmptyFunctionAnalyzer, InfiniteLoopAnalyzer, OverwrittenValueAnalyzer,
     PlaceholderOveruseAnalyzer, ReachabilityAnalyzer, RedundantSelectAnalyzer,
-    UnusedReturnValueAnalyzer, UnusedVariableAnalyzer, VariableShadowingAnalyzer,
+    UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
+    VariableShadowingAnalyzer,
 };
 use crate::ast::{self, Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
@@ -272,7 +273,8 @@ impl CompilerTrait for Compiler {
             .with_analyzer(Box::new(ConstantConditionAnalyzer::new()))
             .with_analyzer(Box::new(VariableShadowingAnalyzer::new()))
             .with_analyzer(Box::new(OverwrittenValueAnalyzer::new()))
-            .with_analyzer(Box::new(UnusedReturnValueAnalyzer::new()));
+            .with_analyzer(Box::new(UnusedReturnValueAnalyzer::new()))
+            .with_analyzer(Box::new(UnusedExpressionAnalyzer::new()));
 
         debug!("Running analysis");
         let warnings = runner.run(&module, file_id);
