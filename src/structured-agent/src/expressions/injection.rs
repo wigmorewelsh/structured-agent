@@ -20,19 +20,22 @@ impl std::fmt::Debug for InjectionExpr {
 #[async_trait(?Send)]
 impl Expression for InjectionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
-        let name = self.inner.name();
         let result = self.inner.evaluate(context.clone()).await?;
 
         match &result.value {
             ExpressionValue::Unit => {}
             _ => {
+                let event_name = result
+                    .name
+                    .clone()
+                    .or_else(|| self.inner.name().map(|s| s.to_string()));
                 context.add_event(
                     result.value.clone(),
-                    name.map(|s| s.to_string()),
+                    event_name.clone(),
                     result.params.clone(),
                 );
                 debug!(
-                    name = ?name,
+                    name = ?event_name,
                     value_type = %result.value.type_name(),
                     "injection"
                 );

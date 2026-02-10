@@ -709,7 +709,7 @@ fn main(): String {
         match result {
             ExpressionValue::String(s) => assert_eq!(
                 s,
-                "<result>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</result>"
+                "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>"
             ),
             _ => panic!("Expected string result, got: {:?}", result),
         }
@@ -789,7 +789,7 @@ fn main(): String {
         match result {
             ExpressionValue::String(s) => assert_eq!(
                 s,
-                "<message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</message>"
+                "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>"
             ),
             _ => panic!("Expected string result, got: {:?}", result),
         }

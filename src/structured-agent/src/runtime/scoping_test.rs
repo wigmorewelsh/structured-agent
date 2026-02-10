@@ -74,7 +74,7 @@ async fn test_calling_log_should_receive_literals() {
     let program_source = r#"
 extern fn log(message: String): ()
 
-fn main(): String {
+fn main(): () {
     let result = log("value1")
     result!
 }

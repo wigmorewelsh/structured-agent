@@ -170,6 +170,7 @@ impl Context {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionResult {
+    pub name: Option<String>,
     pub params: Option<Vec<ExpressionParameter>>,
     pub value: ExpressionValue,
 }
@@ -199,6 +200,7 @@ pub enum ExpressionValue {
 impl ExpressionResult {
     pub fn new(value: ExpressionValue) -> Self {
         Self {
+            name: None,
             params: None,
             value,
         }
@@ -206,6 +208,27 @@ impl ExpressionResult {
 
     pub fn with_params(value: ExpressionValue, params: Vec<ExpressionParameter>) -> Self {
         Self {
+            name: None,
+            params: Some(params),
+            value,
+        }
+    }
+
+    pub fn with_name(value: ExpressionValue, name: String) -> Self {
+        Self {
+            name: Some(name),
+            params: None,
+            value,
+        }
+    }
+
+    pub fn with_name_and_params(
+        value: ExpressionValue,
+        name: String,
+        params: Vec<ExpressionParameter>,
+    ) -> Self {
+        Self {
+            name: Some(name),
             params: Some(params),
             value,
         }

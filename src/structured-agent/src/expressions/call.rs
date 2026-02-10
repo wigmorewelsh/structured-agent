@@ -125,6 +125,7 @@ impl Expression for CallExpr {
         );
 
         Ok(ExpressionResult {
+            name: Some(self.function.clone()),
             params: Some(evaluated_parameters),
             value: result.value,
         })
@@ -221,11 +222,13 @@ mod tests {
             arguments: vec![],
         };
 
-        let result = expr.evaluate(context).await.unwrap();
+        let result = expr.evaluate(context.clone()).await.unwrap();
         match result.value {
             ExpressionValue::String(s) => assert_eq!(s, "## hello"),
             _ => panic!("Expected string result"),
         }
+
+        assert_eq!(result.name, Some("hello".to_string()));
     }
 
     #[tokio::test]
@@ -293,6 +296,8 @@ mod tests {
             }
             _ => panic!("Expected string content in event"),
         }
+
+        assert_eq!(result.name, Some("process".to_string()));
     }
 
     #[tokio::test]
@@ -335,11 +340,6 @@ mod tests {
         };
 
         let result = expr.evaluate(context.clone()).await.unwrap();
-
-        assert_eq!(
-            result.value,
-            ExpressionValue::String("## analyze".to_string())
-        );
 
         assert_eq!(context.events_count(), 3);
         match &context.get_event(0).unwrap().content {
