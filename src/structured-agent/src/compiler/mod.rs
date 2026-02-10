@@ -703,7 +703,10 @@ fn main(): String {
         let result = runtime.run().await.unwrap();
 
         match result {
-            ExpressionValue::String(s) => assert_eq!(s, "<result>\n## calculator\n</result>"),
+            ExpressionValue::String(s) => assert_eq!(
+                s,
+                "<result>\n    <result>\n    ## calculator\n    </result>\n</result>"
+            ),
             _ => panic!("Expected string result, got: {:?}", result),
         }
     }
@@ -780,7 +783,10 @@ fn main(): String {
         let result = runtime.run().await.unwrap();
 
         match result {
-            ExpressionValue::String(s) => assert_eq!(s, "<message>\nSystem ready\n</message>"),
+            ExpressionValue::String(s) => assert_eq!(
+                s,
+                "<message>\n    <result>\n    System ready\n    </result>\n</message>"
+            ),
             _ => panic!("Expected string result, got: {:?}", result),
         }
     }

@@ -166,6 +166,13 @@ pub struct ExpressionResult {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionParameter {
     pub name: String,
+    pub value: ExpressionValue,
+}
+
+impl ExpressionParameter {
+    pub fn new(name: String, value: ExpressionValue) -> Self {
+        Self { name, value }
+    }
 }
 
 // was ExprResult is now ExpressionValue

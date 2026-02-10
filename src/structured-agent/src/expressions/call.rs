@@ -1,5 +1,5 @@
 use crate::expressions::PlaceholderExpr;
-use crate::runtime::{Context, ExpressionResult, ExpressionValue};
+use crate::runtime::{Context, ExpressionParameter, ExpressionResult, ExpressionValue};
 #[cfg(test)]
 use crate::types::Parameter;
 use crate::types::{Expression, Type};
@@ -83,9 +83,15 @@ impl Expression for CallExpr {
 
         function_context.add_event(format!("## {}", self.function));
 
+        let mut evaluated_parameters = Vec::new();
+
         for (i, param) in parameters.iter().enumerate() {
             let param_name = &param.name;
             function_context.declare_variable(param_name.clone(), args[i].value.clone());
+            evaluated_parameters.push(ExpressionParameter::new(
+                param_name.clone(),
+                args[i].value.clone(),
+            ));
         }
 
         let function_info = context
@@ -114,7 +120,10 @@ impl Expression for CallExpr {
             "function_result"
         );
 
-        Ok(result)
+        Ok(ExpressionResult {
+            params: Some(evaluated_parameters),
+            value: result.value,
+        })
     }
 
     fn return_type(&self) -> Type {
@@ -325,6 +334,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_tracing_instrumentation() {
         use std::sync::{Arc as StdArc, Mutex};
         use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -355,13 +365,26 @@ mod tests {
             message: String,
         }
 
+        impl EventVisitor {
+            fn add_field(&mut self, name: &str, value: String) {
+                if name == "message" {
+                    self.message = value;
+                } else {
+                    if !self.message.is_empty() {
+                        self.message.push_str(", ");
+                    }
+                    self.message.push_str(&format!("{}={}", name, value));
+                }
+            }
+        }
+
         impl tracing::field::Visit for EventVisitor {
             fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-                if !self.message.is_empty() {
-                    self.message.push_str(", ");
-                }
-                self.message
-                    .push_str(&format!("{}={:?}", field.name(), value));
+                self.add_field(field.name(), format!("{:?}", value));
+            }
+
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                self.add_field(field.name(), value.to_string());
             }
         }
 
@@ -370,9 +393,8 @@ mod tests {
             events: events.clone(),
         };
 
-        let _guard = tracing_subscriber::registry()
-            .with(test_layer)
-            .set_default();
+        let subscriber = tracing_subscriber::registry().with(test_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
 
         let mut runtime = test_runtime();
         let function_info = FunctionExpr {

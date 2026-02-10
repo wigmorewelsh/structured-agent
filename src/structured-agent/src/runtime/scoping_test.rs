@@ -141,7 +141,9 @@ fn main(): String {
 
     assert_eq!(
         result,
-        ExpressionValue::String("<val>\nmodified\n</val>".to_string())
+        ExpressionValue::String(
+            "<val>\n    <result>\n    modified\n    </result>\n</val>".to_string()
+        )
     );
 }
 
@@ -183,7 +185,9 @@ fn main(): String {
     // The function should return the modified value from inside the loop
     assert_eq!(
         result,
-        ExpressionValue::String("<iteration>\n1\n</iteration>".to_string())
+        ExpressionValue::String(
+            "<iteration>\n    <result>\n    1\n    </result>\n</iteration>".to_string()
+        )
     );
 }
 
