@@ -5,7 +5,7 @@ use structured_agent::expressions::{
     CallExpr, FunctionExpr, InjectionExpr, PlaceholderExpr, SelectClauseExpr, SelectExpr,
     StringLiteralExpr, VariableExpr,
 };
-use structured_agent::runtime::{Context, Runtime};
+use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::{Expression, Parameter, Type};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -236,7 +236,11 @@ async fn test_placeholder_filling_tracing() {
     let runtime = Rc::new(runtime);
     let context = Arc::new(Context::with_runtime(runtime));
 
-    context.add_event("Some context data".to_string());
+    context.add_event(
+        ExpressionValue::String("Some context data".to_string()),
+        None,
+        None,
+    );
 
     let expr = CallExpr {
         function: "process".to_string(),

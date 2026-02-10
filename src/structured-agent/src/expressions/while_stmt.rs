@@ -128,7 +128,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "should_continue".to_string(),
-            ExpressionValue::Boolean(true),
+            ExpressionResult::new(ExpressionValue::Boolean(true)),
         );
 
         let condition = Box::new(VariableExpr {
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(context.events_count(), 0);
         assert_eq!(
-            context.get_variable("should_continue").unwrap(),
+            context.get_variable("should_continue").unwrap().value,
             ExpressionValue::Boolean(false)
         );
     }
@@ -165,11 +165,11 @@ mod tests {
 
         context.declare_variable(
             "outer_var".to_string(),
-            ExpressionValue::String("outer_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("outer_value".to_string())),
         );
         context.declare_variable(
             "should_continue".to_string(),
-            ExpressionValue::Boolean(true),
+            ExpressionResult::new(ExpressionValue::Boolean(true)),
         );
 
         let condition = Box::new(VariableExpr {
@@ -195,12 +195,12 @@ mod tests {
         assert_eq!(result.value, ExpressionValue::Unit);
 
         assert_eq!(
-            context.get_variable("outer_var").unwrap(),
+            context.get_variable("outer_var").unwrap().value,
             ExpressionValue::String("outer_value".to_string())
         );
 
         assert_eq!(
-            context.get_variable("should_continue").unwrap(),
+            context.get_variable("should_continue").unwrap().value,
             ExpressionValue::Boolean(false)
         );
 
@@ -211,8 +211,14 @@ mod tests {
     async fn test_nested_while_statements() {
         let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
-        context.declare_variable("outer_continue".to_string(), ExpressionValue::Boolean(true));
-        context.declare_variable("inner_continue".to_string(), ExpressionValue::Boolean(true));
+        context.declare_variable(
+            "outer_continue".to_string(),
+            ExpressionResult::new(ExpressionValue::Boolean(true)),
+        );
+        context.declare_variable(
+            "inner_continue".to_string(),
+            ExpressionResult::new(ExpressionValue::Boolean(true)),
+        );
 
         let inner_while = WhileExpr {
             condition: Box::new(VariableExpr {
@@ -262,11 +268,11 @@ mod tests {
 
         context.declare_variable(
             "parent_var".to_string(),
-            ExpressionValue::String("parent_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("parent_value".to_string())),
         );
         context.declare_variable(
             "should_continue".to_string(),
-            ExpressionValue::Boolean(true),
+            ExpressionResult::new(ExpressionValue::Boolean(true)),
         );
 
         let condition = Box::new(VariableExpr {
@@ -299,14 +305,14 @@ mod tests {
         assert_eq!(context.events_count(), 0);
 
         assert_eq!(
-            context.get_variable("parent_var").unwrap(),
+            context.get_variable("parent_var").unwrap().value,
             ExpressionValue::String("parent_value".to_string())
         );
 
         assert!(context.get_variable("local_var").is_none());
 
         assert_eq!(
-            context.get_variable("should_continue").unwrap(),
+            context.get_variable("should_continue").unwrap().value,
             ExpressionValue::Boolean(false)
         );
     }

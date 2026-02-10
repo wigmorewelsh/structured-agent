@@ -14,7 +14,7 @@ pub struct VariableAssignmentExpr {
 impl Expression for VariableAssignmentExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let result = self.expression.evaluate(context.clone()).await?;
-        context.assign_variable(self.variable.clone(), result.value)?;
+        context.assign_variable(self.variable.clone(), result)?;
         Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
@@ -54,7 +54,7 @@ mod tests {
 
         context.declare_variable(
             "test_var".to_string(),
-            ExpressionValue::String("initial".to_string()),
+            ExpressionResult::new(ExpressionValue::String("initial".to_string())),
         );
 
         let assignment_expr = VariableAssignmentExpr {
@@ -68,7 +68,7 @@ mod tests {
 
         assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(
-            context.get_variable("test_var").unwrap(),
+            context.get_variable("test_var").unwrap().value,
             ExpressionValue::String("updated".to_string())
         );
     }
@@ -101,7 +101,7 @@ mod tests {
 
         parent_context.declare_variable(
             "shared_var".to_string(),
-            ExpressionValue::String("parent".to_string()),
+            ExpressionResult::new(ExpressionValue::String("parent".to_string())),
         );
 
         let child_context = Arc::new(Context::create_child(
@@ -124,11 +124,11 @@ mod tests {
 
         assert_eq!(result.value, ExpressionValue::Unit);
         assert_eq!(
-            child_context.get_variable("shared_var").unwrap(),
+            child_context.get_variable("shared_var").unwrap().value,
             ExpressionValue::String("child_updated".to_string())
         );
         assert_eq!(
-            parent_context.get_variable("shared_var").unwrap(),
+            parent_context.get_variable("shared_var").unwrap().value,
             ExpressionValue::String("child_updated".to_string())
         );
     }
@@ -140,7 +140,7 @@ mod tests {
 
         parent_context.declare_variable(
             "bounded_var".to_string(),
-            ExpressionValue::String("parent".to_string()),
+            ExpressionResult::new(ExpressionValue::String("parent".to_string())),
         );
 
         let child_context = Arc::new(Context::create_child(
@@ -165,7 +165,7 @@ mod tests {
         );
 
         assert_eq!(
-            parent_context.get_variable("bounded_var").unwrap(),
+            parent_context.get_variable("bounded_var").unwrap().value,
             ExpressionValue::String("parent".to_string())
         );
     }

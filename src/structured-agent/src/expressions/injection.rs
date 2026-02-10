@@ -1,10 +1,9 @@
 use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{Expression, Type};
-use arrow::array::Array;
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::debug;
 
 pub struct InjectionExpr {
     pub inner: Box<dyn Expression>,
@@ -18,64 +17,6 @@ impl std::fmt::Debug for InjectionExpr {
     }
 }
 
-fn format_expr_result(result: &ExpressionValue) -> String {
-    match result {
-        ExpressionValue::String(s) => s.clone(),
-        ExpressionValue::Unit => "()".to_string(),
-        ExpressionValue::Boolean(b) => b.to_string(),
-        ExpressionValue::List(list) => {
-            if list.len() == 0 {
-                "[]".to_string()
-            } else {
-                let values = list.value(0);
-                if let Some(string_array) =
-                    values.as_any().downcast_ref::<arrow::array::StringArray>()
-                {
-                    let items: Vec<String> = (0..string_array.len())
-                        .map(|i| format!("\"{}\"", string_array.value(i)))
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else {
-                    "[]".to_string()
-                }
-            }
-        }
-        ExpressionValue::Option(opt) => match opt {
-            Some(inner) => format!("Some({})", format_expr_result(inner)),
-            None => "None".to_string(),
-        },
-    }
-}
-
-fn to_event(
-    message: String,
-    name: Option<&str>,
-    params: Option<&Vec<crate::runtime::ExpressionParameter>>,
-) -> String {
-    if let Some(name) = name {
-        let params_xml = if let Some(params) = params {
-            let params_str = params
-                .iter()
-                .map(|p| {
-                    let value = format_expr_result(&p.value);
-                    format!("    <param name=\"{}\">{}</param>", p.name, value)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("{}\n", params_str)
-        } else {
-            String::new()
-        };
-
-        format!(
-            "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
-            name, params_xml, message, name
-        )
-    } else {
-        message
-    }
-}
-
 #[async_trait(?Send)]
 impl Expression for InjectionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
@@ -85,10 +26,11 @@ impl Expression for InjectionExpr {
         match &result.value {
             ExpressionValue::Unit => {}
             _ => {
-                let formatted = format_expr_result(&result.value);
-                let event = to_event(formatted.clone(), name, result.params.as_ref());
-                context.add_event(event.clone());
-                info!("{}", event);
+                context.add_event(
+                    result.value.clone(),
+                    name.map(|s| s.to_string()),
+                    result.params.clone(),
+                );
                 debug!(
                     name = ?name,
                     value_type = %result.value.type_name(),
@@ -148,7 +90,11 @@ mod tests {
         }
 
         assert_eq!(context.events_count(), 1);
-        assert_eq!(context.get_event(0).unwrap().message, "Injected content");
+        let event = context.get_event(0).unwrap();
+        match event.content {
+            ExpressionValue::String(s) => assert_eq!(s, "Injected content"),
+            _ => panic!("Expected string content"),
+        }
     }
 
     #[test]
@@ -184,47 +130,13 @@ mod tests {
 
         assert_eq!(result1, result2);
         assert_eq!(context.events_count(), 2);
-        assert_eq!(context.get_event(0).unwrap().message, "test content");
-        assert_eq!(context.get_event(1).unwrap().message, "test content");
-    }
-
-    #[tokio::test]
-    async fn test_injection_with_params() {
-        use crate::runtime::ExpressionParameter;
-
-        let inner = StringLiteralExpr {
-            value: "Result value".to_string(),
-        };
-
-        let expr = InjectionExpr {
-            inner: Box::new(inner),
-        };
-
-        let runtime = Rc::new(test_runtime());
-        let context = Arc::new(Context::with_runtime(runtime));
-
-        let mut mock_result = expr.evaluate(context.clone()).await.unwrap();
-        mock_result.params = Some(vec![
-            ExpressionParameter::new(
-                "input".to_string(),
-                ExpressionValue::String("test input".to_string()),
-            ),
-            ExpressionParameter::new(
-                "count".to_string(),
-                ExpressionValue::String("42".to_string()),
-            ),
-        ]);
-
-        let formatted = format_expr_result(&mock_result.value);
-        let event = to_event(
-            formatted,
-            Some("test-function"),
-            mock_result.params.as_ref(),
-        );
-
-        assert_eq!(
-            event,
-            "<test-function>\n    <param name=\"input\">test input</param>\n    <param name=\"count\">42</param>\n    <result>\n    Result value\n    </result>\n</test-function>"
-        );
+        match &context.get_event(0).unwrap().content {
+            ExpressionValue::String(s) => assert_eq!(s, "test content"),
+            _ => panic!("Expected string content"),
+        }
+        match &context.get_event(1).unwrap().content {
+            ExpressionValue::String(s) => assert_eq!(s, "test content"),
+            _ => panic!("Expected string content"),
+        }
     }
 }

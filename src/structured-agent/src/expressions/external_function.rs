@@ -77,8 +77,8 @@ impl Expression for ExternalFunctionExpr {
 
         for param in &self.parameters {
             let param_name = &param.name;
-            if let Some(value) = context.get_variable(param_name) {
-                let json_value = expr_result_to_json(&value);
+            if let Some(result) = context.get_variable(param_name) {
+                let json_value = expr_result_to_json(&result.value);
                 arguments[param_name] = json_value;
             }
         }

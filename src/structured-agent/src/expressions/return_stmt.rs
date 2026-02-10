@@ -33,7 +33,7 @@ impl PartialEq for ReturnExpr {
 impl Expression for ReturnExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let result = self.expression.evaluate(context.clone()).await?;
-        context.set_return_value(result.value.clone());
+        context.set_return_value(result.clone());
         Ok(result)
     }
 
@@ -79,8 +79,8 @@ mod tests {
             ExpressionValue::String("test_value".to_string())
         );
         assert_eq!(
-            context.get_return_value(),
-            Some(ExpressionValue::String("test_value".to_string()))
+            context.get_return_value().unwrap().value,
+            ExpressionValue::String("test_value".to_string())
         );
     }
 
@@ -105,8 +105,8 @@ mod tests {
             ExpressionValue::String("nested_return".to_string())
         );
         assert_eq!(
-            function_context.get_return_value(),
-            Some(ExpressionValue::String("nested_return".to_string()))
+            function_context.get_return_value().unwrap().value,
+            ExpressionValue::String("nested_return".to_string())
         );
         assert!(!nested_context.has_return_value());
     }

@@ -77,7 +77,7 @@ impl Expression for SelectExpr {
             .expression_to_run
             .evaluate(select_context.clone())
             .await?;
-        select_context.declare_variable(selected_clause.result_variable.clone(), result.value);
+        select_context.declare_variable(selected_clause.result_variable.clone(), result);
 
         selected_clause
             .expression_next
@@ -232,7 +232,7 @@ mod tests {
 
         context.declare_variable(
             "outer_var".to_string(),
-            ExpressionValue::String("outer_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("outer_value".to_string())),
         );
 
         let result = select_expr.evaluate(context.clone()).await.unwrap();
@@ -243,7 +243,7 @@ mod tests {
         }
 
         assert_eq!(
-            context.get_variable("outer_var").unwrap(),
+            context.get_variable("outer_var").unwrap().value,
             ExpressionValue::String("outer_value".to_string())
         );
 

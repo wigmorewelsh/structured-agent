@@ -32,8 +32,8 @@ impl Expression for NativeFunctionExpr {
 
         for param in self.native_function.parameters() {
             let param_name = &param.name;
-            if let Some(value) = context.get_variable(param_name) {
-                args.push(value.clone());
+            if let Some(result) = context.get_variable(param_name) {
+                args.push(result.value.clone());
             } else {
                 return Err(format!("Parameter '{}' not found in context", param_name));
             }

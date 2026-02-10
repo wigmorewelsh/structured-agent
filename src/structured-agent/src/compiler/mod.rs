@@ -564,7 +564,7 @@ impl Compiler {
 mod tests {
     use super::{CompilationUnit, Compiler, CompilerTrait};
     use crate::ast::{Expression as AstExpression, Statement as AstStatement};
-    use crate::runtime::{Context, ExpressionValue, Runtime};
+    use crate::runtime::{Context, ExpressionResult, ExpressionValue, Runtime};
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -607,7 +607,11 @@ mod tests {
         }
 
         assert_eq!(context.events_count(), 1);
-        assert_eq!(context.get_event(0).unwrap().message, "Test injection");
+        let event = context.get_event(0).unwrap();
+        match event.content {
+            ExpressionValue::String(s) => assert_eq!(s, "Test injection"),
+            _ => panic!("Expected string content in event"),
+        }
     }
 
     #[tokio::test]
@@ -623,7 +627,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
-            ExpressionValue::String("variable_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("variable_value".to_string())),
         );
 
         let result = compiled.evaluate(context).await.unwrap();
@@ -705,7 +709,7 @@ fn main(): String {
         match result {
             ExpressionValue::String(s) => assert_eq!(
                 s,
-                "<result>\n    <result>\n    ## calculator\n    </result>\n</result>"
+                "<result>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</result>"
             ),
             _ => panic!("Expected string result, got: {:?}", result),
         }
@@ -785,7 +789,7 @@ fn main(): String {
         match result {
             ExpressionValue::String(s) => assert_eq!(
                 s,
-                "<message>\n    <result>\n    System ready\n    </result>\n</message>"
+                "<message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</message>"
             ),
             _ => panic!("Expected string result, got: {:?}", result),
         }

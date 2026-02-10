@@ -61,7 +61,11 @@ fn test_func(): () {
 
     // Check that events were generated (injections)
     assert_eq!(context.events_count(), 1);
-    assert_eq!(context.get_event(0).unwrap().message, "Hello from function");
+    let event = context.get_event(0).unwrap();
+    match event.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Hello from function"),
+        _ => panic!("Expected string content in event"),
+    }
 }
 
 #[tokio::test]
@@ -112,7 +116,11 @@ fn test(): () {
 
     // Check event was added
     assert_eq!(context.events_count(), 1);
-    assert_eq!(context.get_event(0).unwrap().message, "Hello world");
+    let event = context.get_event(0).unwrap();
+    match event.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Hello world"),
+        _ => panic!("Expected string content in event"),
+    }
 
     // Second statement: assignment (compiles to expression evaluation)
     let stmt2 = &function.body.statements[1];
@@ -167,10 +175,12 @@ fn test_var_injection(): () {
 
     // Should have one event from the variable injection
     assert_eq!(context.events_count(), 1);
-    assert_eq!(
-        context.get_event(0).unwrap().message,
-        "<message>\nImportant message\n</message>"
-    );
+    let event = context.get_event(0).unwrap();
+    assert_eq!(event.name, Some("message".to_string()));
+    match event.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Important message"),
+        _ => panic!("Expected string content in event"),
+    }
 }
 
 #[tokio::test]

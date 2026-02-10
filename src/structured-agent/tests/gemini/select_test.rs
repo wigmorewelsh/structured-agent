@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::gemini::GeminiEngine;
-use structured_agent::runtime::{Context, Runtime};
+use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::LanguageEngine;
 use tokio;
 
@@ -18,7 +18,11 @@ async fn test_select_with_simple_options() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
-    context.add_event("Choose your favorite color".to_string());
+    context.add_event(
+        ExpressionValue::String("Choose your favorite color".to_string()),
+        None,
+        None,
+    );
 
     let options = vec!["Red".to_string(), "Blue".to_string(), "Green".to_string()];
 
@@ -51,7 +55,11 @@ async fn test_select_with_numbered_options() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
-    context.add_event("Pick the correct mathematical operation for 2 + 2".to_string());
+    context.add_event(
+        ExpressionValue::String("Pick the correct mathematical operation for 2 + 2".to_string()),
+        None,
+        None,
+    );
 
     let options = vec![
         "Addition".to_string(),
@@ -112,8 +120,16 @@ async fn test_select_with_contextual_decision() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
-    context.add_event("The weather is very hot today".to_string());
-    context.add_event("You need to choose appropriate clothing".to_string());
+    context.add_event(
+        ExpressionValue::String("The weather is very hot today".to_string()),
+        None,
+        None,
+    );
+    context.add_event(
+        ExpressionValue::String("You need to choose appropriate clothing".to_string()),
+        None,
+        None,
+    );
 
     let options = vec![
         "Heavy winter coat".to_string(),
@@ -146,7 +162,11 @@ async fn test_select_with_mathematical_context() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
-    context.add_event("Calculate the derivative of x^2".to_string());
+    context.add_event(
+        ExpressionValue::String("Calculate the derivative of x^2".to_string()),
+        None,
+        None,
+    );
 
     let options = vec![
         "2x".to_string(),
@@ -180,7 +200,13 @@ async fn test_select_with_many_options() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
-    context.add_event("Choose the programming language known for memory safety".to_string());
+    context.add_event(
+        ExpressionValue::String(
+            "Choose the programming language known for memory safety".to_string(),
+        ),
+        None,
+        None,
+    );
 
     let options = vec![
         "C".to_string(),

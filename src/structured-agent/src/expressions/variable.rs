@@ -12,10 +12,10 @@ pub struct VariableExpr {
 #[async_trait(?Send)]
 impl Expression for VariableExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
-        let value = context
+        let result = context
             .get_variable(&self.name)
             .ok_or_else(|| format!("Variable '{}' not found", self.name))?;
-        Ok(ExpressionResult::new(value))
+        Ok(result)
     }
 
     fn return_type(&self) -> Type {
@@ -53,7 +53,7 @@ mod tests {
         let context = Arc::new(Context::with_runtime(runtime));
         context.declare_variable(
             "test_var".to_string(),
-            ExpressionValue::String("test_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("test_value".to_string())),
         );
 
         let expr = VariableExpr {

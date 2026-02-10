@@ -191,14 +191,14 @@ mod tests {
 
         context.declare_variable(
             "outer_var".to_string(),
-            ExpressionValue::String("outer_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("outer_value".to_string())),
         );
 
         let result = if_expr.evaluate(context.clone()).await.unwrap();
         assert_eq!(result.value, ExpressionValue::Unit);
 
         assert_eq!(
-            context.get_variable("outer_var").unwrap(),
+            context.get_variable("outer_var").unwrap().value,
             ExpressionValue::String("outer_value".to_string())
         );
 
@@ -268,7 +268,7 @@ mod tests {
 
         context.declare_variable(
             "parent_var".to_string(),
-            ExpressionValue::String("parent_value".to_string()),
+            ExpressionResult::new(ExpressionValue::String("parent_value".to_string())),
         );
 
         let result = if_expr.evaluate(context.clone()).await.unwrap();
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(context.events_count(), 0);
 
         assert_eq!(
-            context.get_variable("parent_var").unwrap(),
+            context.get_variable("parent_var").unwrap().value,
             ExpressionValue::String("parent_value".to_string())
         );
 

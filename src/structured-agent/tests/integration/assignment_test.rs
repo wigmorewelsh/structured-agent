@@ -58,14 +58,16 @@ fn test_assignment(): () {
     assert!(execution_result.is_ok());
 
     assert_eq!(context.events_count(), 1);
-    assert_eq!(
-        context.get_event(0).unwrap().message,
-        "<message>\nHello, World!\n</message>"
-    );
+    let event = context.get_event(0).unwrap();
+    assert_eq!(event.name, Some("message".to_string()));
+    match event.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Hello, World!"),
+        _ => panic!("Expected string content in event"),
+    }
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
-    match stored_value.unwrap() {
+    match stored_value.unwrap().value {
         ExpressionValue::String(s) => assert_eq!(s, "Hello, World!"),
         _ => panic!("Expected string value in context"),
     }
@@ -103,14 +105,20 @@ fn test_var_assignment(): () {
     assert!(result.is_ok());
 
     assert_eq!(context.events_count(), 2);
-    assert_eq!(
-        context.get_event(0).unwrap().message,
-        "<greeting>\nHello\n</greeting>"
-    );
-    assert_eq!(
-        context.get_event(1).unwrap().message,
-        "<name>\nAlice\n</name>"
-    );
+
+    let event0 = context.get_event(0).unwrap();
+    assert_eq!(event0.name, Some("greeting".to_string()));
+    match event0.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Hello"),
+        _ => panic!("Expected string content in event"),
+    }
+
+    let event1 = context.get_event(1).unwrap();
+    assert_eq!(event1.name, Some("name".to_string()));
+    match event1.content {
+        ExpressionValue::String(s) => assert_eq!(s, "Alice"),
+        _ => panic!("Expected string content in event"),
+    }
 
     assert!(context.get_variable("greeting").is_some());
     assert!(context.get_variable("name").is_some());
@@ -158,7 +166,7 @@ fn test_return(): () {
     }
 
     let stored_value = context.get_variable("result").unwrap();
-    match stored_value {
+    match stored_value.value {
         ExpressionValue::String(s) => assert_eq!(s, "test value"),
         _ => panic!("Expected string in context"),
     }

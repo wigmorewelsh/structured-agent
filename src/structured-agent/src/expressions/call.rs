@@ -81,13 +81,17 @@ impl Expression for CallExpr {
             context.runtime_rc(),
         ));
 
-        function_context.add_event(format!("## {}", self.function));
+        function_context.add_event(
+            ExpressionValue::String(format!("## {}", self.function)),
+            None,
+            None,
+        );
 
         let mut evaluated_parameters = Vec::new();
 
         for (i, param) in parameters.iter().enumerate() {
             let param_name = &param.name;
-            function_context.declare_variable(param_name.clone(), args[i].value.clone());
+            function_context.declare_variable(param_name.clone(), args[i].clone());
             evaluated_parameters.push(ExpressionParameter::new(
                 param_name.clone(),
                 args[i].value.clone(),
@@ -261,7 +265,11 @@ mod tests {
         let runtime = Rc::new(runtime);
         let context = Arc::new(Context::with_runtime(runtime));
 
-        context.add_event("Please provide data for processing".to_string());
+        context.add_event(
+            ExpressionValue::String("Please provide data for processing".to_string()),
+            None,
+            None,
+        );
 
         let expr = CallExpr {
             function: "process".to_string(),
@@ -278,10 +286,13 @@ mod tests {
         }
 
         assert_eq!(context.events_count(), 1);
-        assert_eq!(
-            context.get_event(0).unwrap().message,
-            "Please provide data for processing"
-        );
+        let event = context.get_event(0).unwrap();
+        match event.content {
+            ExpressionValue::String(s) => {
+                assert_eq!(s, "Please provide data for processing")
+            }
+            _ => panic!("Expected string content in event"),
+        }
     }
 
     #[tokio::test]
@@ -302,9 +313,21 @@ mod tests {
         let runtime = Rc::new(runtime);
         let context = Arc::new(Context::with_runtime(runtime));
 
-        context.add_event("Analyze the following".to_string());
-        context.add_event("Focus on code quality".to_string());
-        context.add_event("Provide actionable feedback".to_string());
+        context.add_event(
+            ExpressionValue::String("Analyze the following".to_string()),
+            None,
+            None,
+        );
+        context.add_event(
+            ExpressionValue::String("Focus on code quality".to_string()),
+            None,
+            None,
+        );
+        context.add_event(
+            ExpressionValue::String("Provide actionable feedback".to_string()),
+            None,
+            None,
+        );
 
         let expr = CallExpr {
             function: "analyze".to_string(),
@@ -319,18 +342,18 @@ mod tests {
         );
 
         assert_eq!(context.events_count(), 3);
-        assert_eq!(
-            context.get_event(0).unwrap().message,
-            "Analyze the following"
-        );
-        assert_eq!(
-            context.get_event(1).unwrap().message,
-            "Focus on code quality"
-        );
-        assert_eq!(
-            context.get_event(2).unwrap().message,
-            "Provide actionable feedback"
-        );
+        match &context.get_event(0).unwrap().content {
+            ExpressionValue::String(s) => assert_eq!(s, "Analyze the following"),
+            _ => panic!("Expected string content"),
+        }
+        match &context.get_event(1).unwrap().content {
+            ExpressionValue::String(s) => assert_eq!(s, "Focus on code quality"),
+            _ => panic!("Expected string content"),
+        }
+        match &context.get_event(2).unwrap().content {
+            ExpressionValue::String(s) => assert_eq!(s, "Provide actionable feedback"),
+            _ => panic!("Expected string content"),
+        }
     }
 
     #[tokio::test]

@@ -45,7 +45,7 @@ impl Expression for FunctionExpr {
             last_result = result.value;
 
             if context.has_return_value() {
-                return Ok(ExpressionResult::new(context.get_return_value().unwrap()));
+                return Ok(context.get_return_value().unwrap());
             }
         }
 

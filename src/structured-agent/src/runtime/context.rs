@@ -1,5 +1,5 @@
 use crate::runtime::Runtime;
-use arrow::array::ListArray;
+use arrow::array::{Array, ListArray};
 use dashmap::DashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -7,15 +7,17 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Event {
-    pub message: String,
+    pub content: ExpressionValue,
+    pub name: Option<String>,
+    pub params: Option<Vec<ExpressionParameter>>,
 }
 
 pub struct Context {
     pub parent: Option<Arc<Context>>,
     events: RefCell<Vec<Event>>,
-    pub variables: DashMap<String, ExpressionValue>,
+    pub variables: DashMap<String, ExpressionResult>,
     pub is_scope_boundary: bool,
-    return_value: RefCell<Option<ExpressionValue>>,
+    return_value: RefCell<Option<ExpressionResult>>,
     runtime: Rc<Runtime>,
 }
 
@@ -42,8 +44,17 @@ impl Context {
         }
     }
 
-    pub fn add_event(&self, message: String) {
-        self.events.borrow_mut().push(Event { message });
+    pub fn add_event(
+        &self,
+        content: ExpressionValue,
+        name: Option<String>,
+        params: Option<Vec<ExpressionParameter>>,
+    ) {
+        self.events.borrow_mut().push(Event {
+            content,
+            name,
+            params,
+        });
     }
 
     pub fn iter_all_events(&self) -> impl Iterator<Item = Event> {
@@ -90,9 +101,9 @@ impl Context {
         self.events.borrow().last().cloned()
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<ExpressionValue> {
-        if let Some(value) = self.variables.get(name) {
-            Some(value.clone())
+    pub fn get_variable(&self, name: &str) -> Option<ExpressionResult> {
+        if let Some(result) = self.variables.get(name) {
+            Some(result.clone())
         } else if self.is_scope_boundary {
             None
         } else {
@@ -100,18 +111,18 @@ impl Context {
         }
     }
 
-    pub fn declare_variable(&self, name: String, value: ExpressionValue) {
-        self.variables.insert(name, value);
+    pub fn declare_variable(&self, name: String, result: ExpressionResult) {
+        self.variables.insert(name, result);
     }
 
-    pub fn assign_variable(&self, name: String, value: ExpressionValue) -> Result<(), String> {
+    pub fn assign_variable(&self, name: String, result: ExpressionResult) -> Result<(), String> {
         if self.variables.contains_key(&name) {
-            self.variables.insert(name, value);
+            self.variables.insert(name, result);
             Ok(())
         } else if self.is_scope_boundary {
             Err(format!("Variable '{}' not found", name))
         } else if let Some(parent) = &self.parent {
-            parent.assign_variable(name, value)
+            parent.assign_variable(name, result)
         } else {
             Err(format!("Variable '{}' not found", name))
         }
@@ -140,15 +151,15 @@ impl Context {
         self.runtime.clone()
     }
 
-    pub fn set_return_value(&self, value: ExpressionValue) {
+    pub fn set_return_value(&self, result: ExpressionResult) {
         if self.is_scope_boundary {
-            *self.return_value.borrow_mut() = Some(value);
+            *self.return_value.borrow_mut() = Some(result);
         } else if let Some(parent) = &self.parent {
-            parent.set_return_value(value);
+            parent.set_return_value(result);
         }
     }
 
-    pub fn get_return_value(&self) -> Option<ExpressionValue> {
+    pub fn get_return_value(&self) -> Option<ExpressionResult> {
         self.return_value.borrow().clone()
     }
 
@@ -241,6 +252,35 @@ impl ExpressionValue {
             ExpressionValue::List(list) => format!("{:?}", list),
             ExpressionValue::Option(opt) => match opt {
                 Some(value) => format!("Some({})", value.value_string()),
+                None => "None".to_string(),
+            },
+        }
+    }
+
+    pub fn format_for_llm(&self) -> String {
+        match self {
+            ExpressionValue::String(s) => s.clone(),
+            ExpressionValue::Unit => "()".to_string(),
+            ExpressionValue::Boolean(b) => b.to_string(),
+            ExpressionValue::List(list) => {
+                if list.len() == 0 {
+                    "[]".to_string()
+                } else {
+                    let values = list.value(0);
+                    if let Some(string_array) =
+                        values.as_any().downcast_ref::<arrow::array::StringArray>()
+                    {
+                        let items: Vec<String> = (0..string_array.len())
+                            .map(|i| format!("\"{}\"", string_array.value(i)))
+                            .collect();
+                        format!("[{}]", items.join(", "))
+                    } else {
+                        "[]".to_string()
+                    }
+                }
+            }
+            ExpressionValue::Option(opt) => match opt {
+                Some(inner) => format!("Some({})", inner.format_for_llm()),
                 None => "None".to_string(),
             },
         }

@@ -244,22 +244,22 @@ async fn test_context_assign_variable_directly() {
 
     context.declare_variable(
         "test_var".to_string(),
-        ExpressionValue::String("initial".to_string()),
+        ExpressionResult::new(ExpressionValue::String("initial".to_string())),
     );
 
     assert_eq!(
-        context.get_variable("test_var").unwrap(),
+        context.get_variable("test_var").unwrap().value,
         ExpressionValue::String("initial".to_string())
     );
 
     let result = context.assign_variable(
         "test_var".to_string(),
-        ExpressionValue::String("modified".to_string()),
+        ExpressionResult::new(ExpressionValue::String("modified".to_string())),
     );
     assert!(result.is_ok(), "assign_variable should succeed");
 
     assert_eq!(
-        context.get_variable("test_var").unwrap(),
+        context.get_variable("test_var").unwrap().value,
         ExpressionValue::String("modified".to_string())
     );
 }
@@ -274,7 +274,7 @@ async fn test_variable_assignment_expr_directly() {
 
     context.declare_variable(
         "test_var".to_string(),
-        ExpressionValue::String("initial".to_string()),
+        ExpressionResult::new(ExpressionValue::String("initial".to_string())),
     );
 
     let assignment = VariableAssignmentExpr {
@@ -291,7 +291,7 @@ async fn test_variable_assignment_expr_directly() {
     );
 
     assert_eq!(
-        context.get_variable("test_var").unwrap(),
+        context.get_variable("test_var").unwrap().value,
         ExpressionValue::String("modified".to_string())
     );
 }

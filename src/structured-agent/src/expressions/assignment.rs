@@ -14,7 +14,7 @@ pub struct AssignmentExpr {
 impl Expression for AssignmentExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let result = self.expression.evaluate(context.clone()).await?;
-        context.declare_variable(self.variable.clone(), result.value);
+        context.declare_variable(self.variable.clone(), result);
         Ok(ExpressionResult::new(ExpressionValue::Unit))
     }
 
@@ -66,7 +66,7 @@ mod tests {
         }
 
         assert_eq!(
-            context.get_variable("test_var").unwrap(),
+            context.get_variable("test_var").unwrap().value,
             ExpressionValue::String("test_value".to_string())
         );
     }
@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(result1.value, ExpressionValue::Unit);
         assert_eq!(result2.value, ExpressionValue::Unit);
         assert_eq!(
-            context.get_variable("var").unwrap(),
+            context.get_variable("var").unwrap().value,
             ExpressionValue::String("value".to_string())
         );
     }

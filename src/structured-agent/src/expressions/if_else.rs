@@ -210,7 +210,7 @@ mod tests {
 
         context.declare_variable(
             "ready".to_string(),
-            ExpressionValue::String("success".to_string()),
+            ExpressionResult::new(ExpressionValue::String("success".to_string())),
         );
 
         let result = if_else_expr.evaluate(context).await.unwrap();
