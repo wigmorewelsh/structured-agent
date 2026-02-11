@@ -22,25 +22,20 @@ impl Expression for InjectionExpr {
     async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
         let result = self.inner.evaluate(context.clone()).await?;
 
-        match &result.value {
-            ExpressionValue::Unit => {}
-            _ => {
-                let event_name = result
-                    .name
-                    .clone()
-                    .or_else(|| self.inner.name().map(|s| s.to_string()));
-                context.add_event(
-                    result.value.clone(),
-                    event_name.clone(),
-                    result.params.clone(),
-                );
-                debug!(
-                    name = ?event_name,
-                    value_type = %result.value.type_name(),
-                    "injection"
-                );
-            }
-        }
+        let event_name = result
+            .name
+            .clone()
+            .or_else(|| self.inner.name().map(|s| s.to_string()));
+        context.add_event(
+            result.value.clone(),
+            event_name.clone(),
+            result.params.clone(),
+        );
+        debug!(
+            name = ?event_name,
+            value_type = %result.value.type_name(),
+            "injection"
+        );
 
         Ok(result)
     }
