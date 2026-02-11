@@ -8,8 +8,8 @@ const TEST_FILE_ID: FileId = 0;
 #[test]
 fn test_comment_documentation_parsing() {
     let input = r#"
-# This is a documented function
-# It demonstrates multi-line comments
+## This is a documented function
+## It demonstrates multi-line comments
 fn documented_func(): () {
     "Hello"!
 }
@@ -53,7 +53,7 @@ fn undocumented_func(): () {
 #[test]
 fn test_single_line_comment_parsing() {
     let input = r#"
-# Single line doc
+## Single line doc
 fn single_doc(): () {
     "Test"!
 }
@@ -79,8 +79,8 @@ fn test_comment_display() {
     use std::fmt::Write;
 
     let input = r#"
-# This function greets users
-# It takes a name parameter
+## This function greets users
+## It takes a name parameter
 fn greet(name: String): () {
     "Hello"!
     name!
@@ -100,7 +100,7 @@ fn greet(name: String): () {
     let mut output = String::new();
     write!(&mut output, "{}", func).unwrap();
 
-    assert!(output.contains("# This function greets users"));
-    assert!(output.contains("# It takes a name parameter"));
+    assert!(output.contains("## This function greets users"));
+    assert!(output.contains("## It takes a name parameter"));
     assert!(output.contains("fn greet(name: String): ()"));
 }

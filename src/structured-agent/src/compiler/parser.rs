@@ -45,12 +45,27 @@ where
     )
 }
 
-fn parse_comments<Input>() -> impl Parser<Input, Output = Option<String>>
+fn doc_comment_line<Input>() -> impl Parser<Input, Output = String>
 where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    optional(many1(comment_line()))
+    (
+        string("##"),
+        many(satisfy(|c| c != '\n')),
+        optional(newline()),
+    )
+        .map(|(_, content, _): (&str, Vec<char>, Option<char>)| {
+            content.into_iter().collect::<String>().trim().to_string()
+        })
+}
+
+fn parse_doc_comments<Input>() -> impl Parser<Input, Output = Option<String>>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    optional(many1(doc_comment_line()))
         .map(|comments: Option<Vec<String>>| comments.map(|lines| lines.join("\n")))
 }
 
@@ -104,10 +119,13 @@ where
 {
     (
         position(),
-        skip_spaces().with(many(choice((
-            parse_function_with_docs().map(Definition::Function),
-            parse_external_function().map(Definition::ExternalFunction),
-        )))),
+        skip_spaces_and_comments().with(many(
+            choice((
+                parse_function_with_docs().map(Definition::Function),
+                parse_external_function().map(Definition::ExternalFunction),
+            ))
+            .skip(skip_spaces_and_comments()),
+        )),
         position(),
     )
         .map(move |(start, definitions, end)| Module {
@@ -151,7 +169,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (parse_comments(), parse_function()).map(|(doc, mut func)| {
+    (parse_doc_comments(), parse_function()).map(|(doc, mut func)| {
         func.documentation = doc;
         func
     })
@@ -1367,8 +1385,8 @@ fn test_agent(ctx: String): String {
     #[test]
     fn test_parse_function_with_comments() {
         let input = r#"
-# This function analyzes code for bugs
-# It focuses on edge cases and error handling
+## This function analyzes code for bugs
+## It focuses on edge cases and error handling
 fn analyze_code(context: String, code: String): String {
     let analysis = run_analysis(code)
     analysis
@@ -1421,7 +1439,7 @@ fn simple_function(): () {
     #[test]
     fn test_parse_single_line_comment() {
         let input = r#"
-# Single line documentation
+## Single line documentation
 fn documented_function(): () {
     "test"!
 }

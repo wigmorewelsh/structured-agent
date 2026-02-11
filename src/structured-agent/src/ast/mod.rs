@@ -207,7 +207,7 @@ impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(doc) = &self.documentation {
             for line in doc.lines() {
-                writeln!(f, "# {}", line)?;
+                writeln!(f, "## {}", line)?;
             }
         }
         write!(f, "fn {}(", self.name)?;
