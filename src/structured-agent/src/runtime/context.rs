@@ -160,11 +160,23 @@ impl Context {
     }
 
     pub fn get_return_value(&self) -> Option<ExpressionResult> {
-        self.return_value.borrow().clone()
+        if self.is_scope_boundary {
+            self.return_value.borrow().clone()
+        } else if let Some(parent) = &self.parent {
+            parent.get_return_value()
+        } else {
+            None
+        }
     }
 
     pub fn has_return_value(&self) -> bool {
-        self.return_value.borrow().is_some()
+        if self.is_scope_boundary {
+            self.return_value.borrow_mut().is_some()
+        } else if let Some(parent) = &self.parent {
+            parent.has_return_value()
+        } else {
+            false
+        }
     }
 }
 
