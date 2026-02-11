@@ -220,8 +220,6 @@ impl LanguageEngine for GeminiEngine {
         );
 
         let mut chat_messages = self.build_context_messages(context);
-        let prompt = format!("Generate a response of type '{}'", return_type.name());
-        chat_messages.push(ChatMessage::user(prompt));
 
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
