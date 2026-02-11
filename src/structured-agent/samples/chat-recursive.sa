@@ -1,0 +1,17 @@
+extern fn receive(): String
+
+fn answer_question(question: String): String {
+    "answer the following question"!
+    question!
+}
+
+fn main(): () {
+    let question = receive()
+
+    let answer = answer_question(question)
+
+    question!
+    answer!
+
+    return main()
+}

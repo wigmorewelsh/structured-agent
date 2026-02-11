@@ -1,0 +1,13 @@
+extern fn receive(): String
+
+fn answer_question(question: String): String {
+    "answer the following question"!
+    question!
+}
+
+fn main(): () {
+    while true {
+        let question = receive()
+        answer_question(question)
+    }
+}
