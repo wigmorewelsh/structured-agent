@@ -83,11 +83,17 @@ impl Expression for ExternalFunctionExpr {
             }
         }
 
-        let result = self
+        let result_raw = self
             .mcp_client
             .call_tool(&self.name, arguments)
             .await
-            .map_err(|e| format!("MCP tool call failed: {}", e))?;
+            .map_err(|e| format!("MCP tool call failed: {}", e));
+
+        if let Err(e) = result_raw {
+            return Ok(ExpressionResult::new(ExpressionValue::String(e)));
+        }
+
+        let result = result_raw?;
 
         if result.content.is_empty() {
             Ok(ExpressionResult::new(ExpressionValue::Unit))

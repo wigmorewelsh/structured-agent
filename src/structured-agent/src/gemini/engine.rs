@@ -329,7 +329,7 @@ impl LanguageEngine for GeminiEngine {
 
         let mut chat_messages = self.build_context_messages(context);
         let prompt = format!(
-            "Provide a value for parameter '{}' of type '{}'",
+            "Provide a value for '{}' of type '{}'",
             param_name,
             param_type.name()
         );
