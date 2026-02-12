@@ -37,7 +37,7 @@ impl ModelName {
 
 impl Default for ModelName {
     fn default() -> Self {
-        Self::Gemini25FlashLite
+        Self::Gemini25Flash
     }
 }
 
