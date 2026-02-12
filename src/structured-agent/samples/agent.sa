@@ -2,6 +2,22 @@ extern fn receive(): String
 
 extern fn read_file(path: String): String
 extern fn write_file(path: String, content: String): ()
+extern fn list_directory(path: String): String
+extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: Boolean, offset: String): String
+extern fn copy_path(source_path: String, destination_path: String): String
+extern fn execute_command(command: String): String
+
+## send messages back to the user to report results to queries
+fn print(message: String): String {
+    return message
+}
+
+## Ask user for more information if there isn't enough context
+fn ask_for_more_info(prompt: String): String {
+    print(prompt)
+    let response = receive()
+    return response
+}
 
 ## **overrides** the file path with the content, WARNING this replaces existing content!
 fn write_file_content(path: String, content: String): String {
@@ -55,6 +71,7 @@ fn summarize(): String {
     '''
     Summarize what has been done and why.
     Add a list of files changed.
+    What has been learnt that can be applied in the future.
     '''!
 }
 
@@ -62,9 +79,15 @@ fn agent_loop(): String {
     "what is the next action to perform?"!
 
     let result = select {
+        plan() as r => r,
         edit_file(_) as r => r,
         safe_read_file(_) as r => r,
-        write_file_content(_, _) as r => r
+        write_file_content(_, _) as r => r,
+        list_directory(_) as r => r,
+        grep(_, _, _, _, _) as r => r,
+        copy_path(_, _) as r => r,
+        execute_command(_) as r => r,
+        ask_for_more_info(_) as r => r
     }
 
     result!
@@ -76,6 +99,7 @@ fn agent_loop(): String {
     }
 }
 
+## use when needing to think for longer on what to do
 fn plan(): String {
     '''
     Given the task above where should I start?
@@ -85,10 +109,16 @@ fn plan(): String {
     '''!
 }
 
-fn update_history(history: String, task_summary: String): String {
-    "Update the history with whats been done in the most recent task_summary"!
-    history!
+fn update_history(task_summary: String): String {
+    '''
+    Combine the history with whats been done in the most recent task_summary
+    to create an updated record of whats been done.
+    Keep the list short but with relavant details.
+    Combine the list of lessons learnt to refer to later.
+    '''!
+
     task_summary!
+
 }
 
 fn main(): () {
@@ -97,16 +127,14 @@ fn main(): () {
     You will be asked to SELECT between tools/functions and generate content based on input.
     Youll have to decide what to use in a given context.
 
-    Assume that files already contain content and writing to the replaced the content they already contain.
-    This is a distructive change and should be done with care not to accidently replace content.
-
-    You have no access to programing languages or terminal tools.
-    That means `echo`, `sed`, `awk`, `python`, `node` etc are not avaliable.
+    Use print to respond to users queries or questions.
+    The current working directory is "/Users/timwigmore-welsh/Projects/structured-agent" youll have to prefix that to most calls to read/write/edit files.
     '''!
 
-    let history = ""
+    let history = read_file("/Users/timwigmore-welsh/Projects/structured-agent/history.md")
 
     while true {
+        history!
 
         let task = receive()
         task!
@@ -115,6 +143,7 @@ fn main(): () {
 
         let task_summary = agent_loop()
 
-        history = update_history(history, task_summary)
+        history = update_history(task_summary)
+        write_file("/Users/timwigmore-welsh/Projects/structured-agent/history.md", history)
     }
 }
