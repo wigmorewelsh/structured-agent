@@ -95,18 +95,16 @@ impl Expression for ExternalFunctionExpr {
             if result.content.len() != 1 {
                 return Err(format!("Expected one result, got {}", result.content.len()));
             }
-            if result.content[0].content_type() == "text" {
-                let text_content = result.content[0]
-                    .as_text_content()
-                    .map_err(|e| format!("Failed to parse text content: {}", e))?;
 
-                return Ok(ExpressionResult::new(ExpressionValue::String(
-                    text_content.text.clone(),
-                )));
+            match &*result.content[0] {
+                rmcp::model::RawContent::Text(text_content) => Ok(ExpressionResult::new(
+                    ExpressionValue::String(text_content.text.clone()),
+                )),
+                _ => {
+                    let content_str = format!("{:?}", result.content);
+                    Ok(ExpressionResult::new(ExpressionValue::String(content_str)))
+                }
             }
-
-            let content_str = format!("{:?}", result.content);
-            Ok(ExpressionResult::new(ExpressionValue::String(content_str)))
         }
     }
 

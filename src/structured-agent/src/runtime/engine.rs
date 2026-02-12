@@ -319,16 +319,16 @@ impl Runtime {
             })?;
 
             for tool in tools {
-                if let Some(external_fn) = self.external_function_registry.get(&tool.name) {
+                if let Some(external_fn) = self.external_function_registry.get(tool.name.as_ref()) {
                     let external_function_expr = ExternalFunctionExpr::new(
-                        tool.name.clone(),
+                        tool.name.to_string(),
                         external_fn.parameters.clone(),
                         external_fn.return_type.clone(),
                         client.clone(),
                         external_fn.documentation.clone(),
                     );
 
-                    functions_to_register.push((tool.name.clone(), external_function_expr));
+                    functions_to_register.push((tool.name.to_string(), external_function_expr));
                 }
             }
         }

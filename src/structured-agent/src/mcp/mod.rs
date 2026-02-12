@@ -1,16 +1,12 @@
-use async_trait::async_trait;
-
-use rust_mcp_sdk::error::McpSdkError;
-use rust_mcp_sdk::mcp_client::{McpClientOptions, client_runtime};
-use rust_mcp_sdk::schema::*;
-use rust_mcp_sdk::{
-    McpClient as SdkMcpClient, StdioTransport, ToMcpClientHandler, TransportOptions,
-};
+use rmcp::model::{CallToolRequestParams, Tool};
+use rmcp::{RoleClient, ServiceError, ServiceExt};
 use serde_json::Value;
-use std::cell::RefCell;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+use tokio::sync::RwLock;
+
+type RmcpClient = rmcp::service::RunningService<RoleClient, ()>;
 
 #[derive(Debug)]
 pub enum McpError {
@@ -33,25 +29,20 @@ impl fmt::Display for McpError {
 
 impl Error for McpError {}
 
-impl From<rust_mcp_sdk::TransportError> for McpError {
-    fn from(e: rust_mcp_sdk::TransportError) -> Self {
-        McpError::ConnectionError(e.to_string())
-    }
-}
-
-impl From<McpSdkError> for McpError {
-    fn from(e: McpSdkError) -> Self {
+impl From<ServiceError> for McpError {
+    fn from(e: ServiceError) -> Self {
         McpError::SdkError(e.to_string())
     }
 }
 
-pub struct StructuredAgentHandler;
-
-#[async_trait]
-impl rust_mcp_sdk::mcp_client::ClientHandler for StructuredAgentHandler {}
+impl From<std::io::Error> for McpError {
+    fn from(e: std::io::Error) -> Self {
+        McpError::ConnectionError(e.to_string())
+    }
+}
 
 pub struct McpClient {
-    client: RefCell<Option<Arc<dyn SdkMcpClient>>>,
+    client: Arc<RwLock<Option<RmcpClient>>>,
     command: String,
     args: Vec<String>,
 }
@@ -62,132 +53,112 @@ impl McpClient {
         args: Vec<String>,
     ) -> std::result::Result<Self, McpError> {
         Ok(Self {
-            client: RefCell::new(None),
+            client: Arc::new(RwLock::new(None)),
             command: command.to_string(),
             args,
         })
     }
 
     async fn ensure_connected(&self) -> std::result::Result<(), McpError> {
-        if self.client.borrow().is_none() {
+        let client_lock = self.client.read().await;
+        if client_lock.is_none() {
+            drop(client_lock);
             self.connect().await?;
         }
         Ok(())
     }
 
     async fn connect(&self) -> std::result::Result<(), McpError> {
-        let client_details = InitializeRequestParams {
-            protocol_version: LATEST_PROTOCOL_VERSION.into(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "structured-agent".into(),
-                version: "0.1.0".into(),
-                title: Some("Structured Agent MCP Client".into()),
-                description: Some("MCP client for structured agent framework".into()),
-                icons: vec![],
-                website_url: None,
-            },
-            meta: None,
-        };
+        use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+        use tokio::process::Command;
 
-        let transport = StdioTransport::create_with_server_launch(
-            &self.command,
-            self.args.clone(),
-            None,
-            TransportOptions::default(),
-        )?;
+        let transport = TokioChildProcess::new(Command::new(&self.command).configure(|cmd| {
+            for arg in &self.args {
+                cmd.arg(arg);
+            }
+        }))?;
 
-        let handler = StructuredAgentHandler;
+        let service = ()
+            .serve(transport)
+            .await
+            .map_err(|e| McpError::ConnectionError(format!("Failed to start client: {}", e)))?;
 
-        let client = client_runtime::create_client(McpClientOptions {
-            client_details,
-            transport,
-            handler: handler.to_mcp_client_handler(),
-            task_store: None,
-            server_task_store: None,
-        });
+        let mut client_lock = self.client.write().await;
+        *client_lock = Some(service);
 
-        client.clone().start().await?;
-
-        *self.client.borrow_mut() = Some(client);
         Ok(())
     }
 
     pub async fn list_tools(&self) -> std::result::Result<Vec<Tool>, McpError> {
         self.ensure_connected().await?;
 
-        let client = self
-            .client
-            .borrow()
+        let client_lock = self.client.read().await;
+        let client = client_lock
             .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?
-            .clone();
+            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?;
 
-        let response = client.request_tool_list(None).await?;
-        Ok(response.tools)
+        let tools = client
+            .list_all_tools()
+            .await
+            .map_err(|e| McpError::ProtocolError(format!("Failed to list tools: {}", e)))?;
+
+        Ok(tools)
     }
 
     pub async fn call_tool(
         &self,
         name: &str,
         arguments: Value,
-    ) -> std::result::Result<CallToolResult, McpError> {
+    ) -> std::result::Result<rmcp::model::CallToolResult, McpError> {
         self.ensure_connected().await?;
 
-        let client = self
-            .client
-            .borrow()
+        let client_lock = self.client.read().await;
+        let client = client_lock
             .as_ref()
-            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?
-            .clone();
+            .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?;
 
-        let params = CallToolRequestParams {
-            name: name.to_string(),
-            arguments: if let Value::Object(map) = arguments {
-                Some(map)
-            } else {
-                None
-            },
-            task: None,
-            meta: None,
+        let params = if let Value::Object(map) = arguments {
+            Some(map)
+        } else {
+            None
         };
-        let response = client.request_tool_call(params).await?;
+
+        let request = CallToolRequestParams {
+            name: name.to_string().into(),
+            arguments: params,
+            meta: None,
+            task: None,
+        };
+
+        let response = client
+            .call_tool(request)
+            .await
+            .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
 
         Ok(response)
     }
 
     pub async fn shutdown(&self) -> std::result::Result<(), McpError> {
-        let client_option = self.client.borrow().as_ref().cloned();
-        if let Some(client) = client_option {
-            client.shut_down().await?;
+        let mut client_lock = self.client.write().await;
+        if let Some(client) = client_lock.take() {
+            client
+                .cancel()
+                .await
+                .map_err(|e| McpError::ConnectionError(format!("Failed to shutdown: {}", e)))?;
         }
         Ok(())
     }
 }
 
-impl Drop for McpClient {
-    fn drop(&mut self) {
-        if let Some(client) = self.client.borrow_mut().take() {
-            std::mem::drop(tokio::spawn(async move {
-                let _ = client.shut_down().await;
-            }));
-        }
-    }
-}
-
-pub fn create_client_info(name: &str, version: &str) -> Implementation {
-    Implementation {
-        name: name.to_string(),
-        version: version.to_string(),
-        title: Some(format!("{} MCP Client", name)),
-        description: Some("MCP client for structured agent framework".to_string()),
-        icons: vec![],
+pub fn create_client_info(name: &str, version: &str) -> rmcp::model::Implementation {
+    rmcp::model::Implementation {
+        name: name.into(),
+        version: version.into(),
+        title: None,
+        description: None,
+        icons: None,
         website_url: None,
     }
-}
-
-pub fn default_capabilities() -> ClientCapabilities {
-    ClientCapabilities::default()
 }
 
 #[cfg(test)]
@@ -200,11 +171,6 @@ mod tests {
         let client_info = create_client_info("test-agent", "0.1.0");
         assert_eq!(client_info.name, "test-agent");
         assert_eq!(client_info.version, "0.1.0");
-    }
-
-    #[test]
-    fn test_default_capabilities() {
-        let _capabilities = default_capabilities();
     }
 
     #[tokio::test]
