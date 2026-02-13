@@ -5,11 +5,12 @@ use agent_client_protocol as acp;
 use std::fs::OpenOptions;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use super::functions::ReceiveFunction;
+use super::functions::TryReceiveFunction;
 use super::tracing::SessionTracingLayer;
 
 pub struct Agent {
@@ -75,10 +76,12 @@ impl Agent {
         };
 
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
+        let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
         debug!("Building runtime");
         let runtime = match Runtime::builder(program.clone())
-            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)))
+            .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
+            .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .from_config(config)
             .await
         {
@@ -110,9 +113,11 @@ impl Agent {
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Self {
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
+        let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
         let runtime = Runtime::builder(program.clone())
-            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)))
+            .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
+            .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .build();
 
         Self {
@@ -266,9 +271,11 @@ impl Agent {
         })?;
 
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
+        let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
         let runtime = Runtime::builder(program.clone())
-            .with_native_function(Arc::new(ReceiveFunction::new(prompt_rx)))
+            .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
+            .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .from_config(config)
             .await
             .map_err(|e| {

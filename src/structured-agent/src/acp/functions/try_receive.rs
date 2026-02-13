@@ -3,17 +3,18 @@ use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info};
 
 #[derive(Debug)]
-pub struct ReceiveFunction {
+pub struct TryReceiveFunction {
     parameters: Vec<Parameter>,
     return_type: Type,
     prompt_rx: Arc<Mutex<mpsc::UnboundedReceiver<PromptMessage>>>,
 }
 
-impl ReceiveFunction {
+impl TryReceiveFunction {
     pub fn new(prompt_rx: Arc<Mutex<mpsc::UnboundedReceiver<PromptMessage>>>) -> Self {
         Self {
             parameters: vec![],
@@ -24,7 +25,7 @@ impl ReceiveFunction {
 }
 
 #[async_trait(?Send)]
-impl NativeFunction for ReceiveFunction {
+impl NativeFunction for TryReceiveFunction {
     fn name(&self) -> &str {
         "receive"
     }
@@ -49,17 +50,21 @@ impl NativeFunction for ReceiveFunction {
         debug!("receive() called, waiting for prompt");
         let mut rx = self.prompt_rx.lock().await;
 
-        match rx.recv().await {
-            Some(message) => {
+        match rx.try_recv() {
+            Ok(message) => {
                 debug!("Received prompt: {}", message.content);
                 let content = message.content.clone();
                 let _ = message.response_tx.send(());
                 debug!("Prompt response sent");
                 Ok(ExpressionValue::String(content))
             }
-            None => {
-                error!("Prompt channel closed");
-                Err("Prompt channel closed".to_string())
+            Err(TryRecvError::Empty) => {
+                info!("No prompt received");
+                Ok(ExpressionValue::String("No prompt received".to_string()))
+            }
+            Err(TryRecvError::Disconnected) => {
+                error!("Prompt channel disconnected");
+                Err("Prompt channel disconnected".to_string())
             }
         }
     }
@@ -72,7 +77,7 @@ mod tests {
     #[tokio::test]
     async fn test_receive_function_properties() {
         let (_tx, rx) = mpsc::unbounded_channel();
-        let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         assert_eq!(receive_fn.name(), "receive");
         assert_eq!(receive_fn.parameters().len(), 0);
@@ -82,7 +87,7 @@ mod tests {
     #[tokio::test]
     async fn test_receive_function_execute() {
         let (tx, rx) = mpsc::unbounded_channel();
-        let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let message = PromptMessage {
@@ -99,21 +104,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_receive_function_channel_empty() {
+        let (_tx, rx) = mpsc::unbounded_channel();
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
+
+        let result = receive_fn.execute(vec![]).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            ExpressionValue::String("No prompt received".to_string())
+        );
+    }
+
+    #[tokio::test]
     async fn test_receive_function_channel_closed() {
         let (tx, rx) = mpsc::unbounded_channel();
-        let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         drop(tx);
 
         let result = receive_fn.execute(vec![]).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Prompt channel closed"));
+        assert!(result.unwrap_err().contains("Prompt channel disconnected"));
     }
 
     #[tokio::test]
     async fn test_receive_function_wrong_args_count() {
         let (_tx, rx) = mpsc::unbounded_channel();
-        let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         let result = receive_fn
             .execute(vec![ExpressionValue::String("unexpected".to_string())])
@@ -129,7 +147,7 @@ mod tests {
     #[tokio::test]
     async fn test_receive_multiple_prompts() {
         let (tx, rx) = mpsc::unbounded_channel();
-        let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
+        let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         let (response_tx1, response_rx1) = tokio::sync::oneshot::channel();
         tx.send(PromptMessage {
