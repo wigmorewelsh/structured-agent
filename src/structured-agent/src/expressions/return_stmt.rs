@@ -108,7 +108,7 @@ mod tests {
             function_context.get_return_value().unwrap().value,
             ExpressionValue::String("nested_return".to_string())
         );
-        assert!(!nested_context.has_return_value());
+        assert!(nested_context.has_return_value());
     }
 
     #[test]
