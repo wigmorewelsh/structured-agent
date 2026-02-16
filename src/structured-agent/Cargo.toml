@@ -3,6 +3,9 @@ name = "structured-agent"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository = "https://github.com/wigmorewelsh/structured-agent"
+description = "A structured agent for working with code and AI models"
+homepage = "https://github.com/wigmorewelsh/structured-agent"
 
 [[bin]]
 name = "structured-agent"
