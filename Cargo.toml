@@ -50,3 +50,4 @@ allow-branch = ["main", "master"]
 push = true
 tag = true
 tag-name = "{{version}}"
+publish = false
