@@ -37,3 +37,8 @@ dirs = "5.0"
 
 [dev-dependencies]
 tempfile = "3.0"
+
+[package.metadata.release]
+pre-release-replacements = [
+  {file="../../pyproject.toml", search="version = \".*\"", replace="version = \"{{version}}\"", exactly=1},
+]

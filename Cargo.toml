@@ -43,3 +43,10 @@ debug = true
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# Config for 'cargo release'
+[workspace.metadata.release]
+allow-branch = ["main", "master"]
+push = true
+tag = true
+tag-name = "{{version}}"
