@@ -91,6 +91,17 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_mcp_echo_external_function_parsing() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+    )
+    .await
+    .unwrap();
+
     let program_with_extern = r#"
 extern fn echo(message: String): String
 
@@ -102,6 +113,7 @@ fn main(): () {
     let program = CompilationUnit::from_string(program_with_extern.to_string());
     let runtime = Runtime::builder(program)
         .with_compiler(Rc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
         .build();
 
     let result = runtime.run().await;

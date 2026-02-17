@@ -27,7 +27,7 @@ impl LoggingFunction {
     fn new() -> Self {
         Self {
             messages: Arc::new(Mutex::new(Vec::new())),
-            parameters: vec![Parameter::new("str".to_string(), Type::string())],
+            parameters: vec![Parameter::new("message".to_string(), Type::string())],
             return_type: Type::unit(),
         }
     }

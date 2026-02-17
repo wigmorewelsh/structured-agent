@@ -318,18 +318,66 @@ impl Runtime {
         }
     }
 
+    fn signatures_match(
+        provider_def: &ExternalFunctionDefinition,
+        definition: &ExternalFunctionDefinition,
+    ) -> bool {
+        provider_def.parameters.len() == definition.parameters.len()
+            && provider_def.return_type == definition.return_type
+            && provider_def
+                .parameters
+                .iter()
+                .zip(&definition.parameters)
+                .all(|(provider_param, extern_param)| {
+                    provider_param.name == extern_param.name
+                        && provider_param.param_type == extern_param.param_type
+                })
+    }
+
+    fn find_matching_provider<'a>(
+        matches: &'a [(ExternalFunctionDefinition, Rc<dyn FunctionProvider>)],
+        definition: &ExternalFunctionDefinition,
+        name: &str,
+    ) -> Result<&'a Rc<dyn FunctionProvider>, RuntimeError> {
+        matches
+            .iter()
+            .find(|(provider_def, _)| Self::signatures_match(provider_def, definition))
+            .map(|(_, provider)| provider)
+            .ok_or_else(|| {
+                RuntimeError::ExecutionError(format!(
+                    "No matching provider found for extern function '{}'. Available providers have functions with this name but incompatible signatures.",
+                    name
+                ))
+            })
+    }
+
     async fn map_providers_to_functions(&mut self) -> Result<(), RuntimeError> {
-        let mut functions_to_register = Vec::new();
+        let mut provider_functions = HashMap::new();
 
         for provider in &self.providers {
-            let provider_functions = provider.list_functions().await?;
+            let available_functions = provider.list_functions().await?;
 
-            for provider_fn in provider_functions {
-                if let Some(external_fn) = self.external_function_registry.get(&provider_fn.name) {
-                    let expr = provider.create_expression(external_fn).await?;
-                    functions_to_register.push((provider_fn.name.clone(), expr));
-                }
+            for func_def in available_functions {
+                provider_functions
+                    .entry(func_def.name.clone())
+                    .or_insert_with(Vec::new)
+                    .push((func_def, provider.clone()));
             }
+        }
+
+        let mut functions_to_register = Vec::new();
+
+        for (name, definition) in &self.external_function_registry {
+            let matches = provider_functions.get(name).ok_or_else(|| {
+                RuntimeError::ExecutionError(format!(
+                    "No provider found for extern function '{}'",
+                    name
+                ))
+            })?;
+
+            let provider = Self::find_matching_provider(matches, definition, name)?;
+            let expr = provider.create_expression(definition).await?;
+            functions_to_register.push((name.clone(), expr));
         }
 
         for (name, expr) in functions_to_register {
