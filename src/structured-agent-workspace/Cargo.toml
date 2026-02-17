@@ -1,0 +1,40 @@
+[package]
+name = "structured-agent-workspace"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "structured_agent_workspace"
+path = "src/lib.rs"
+
+[[bin]]
+name = "structured-agent-workspace"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "0.15", features = ["server", "macros", "transport-io", "schemars"] }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.0"
+glob = "0.3"
+walkdir = "2.3"
+ignore = "0.4"
+thiserror = "1.0"
+schemars = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
+streaming-iterator = "0.1"
+
+[dev-dependencies]
+tempfile = "3.0"
+uuid = { version = "1.0", features = ["v4"] }
+rmcp = { version = "0.15", features = ["server", "macros", "transport-io", "schemars", "client"] }
+anyhow = "1.0"
+insta = "1.0"

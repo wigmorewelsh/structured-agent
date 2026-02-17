@@ -1,0 +1,12 @@
+---
+source: src/structured-agent-workspace/tests/workspace_integration.rs
+expression: text_str.text
+---
+1-3 function hello_world
+5-8 struct Person
+10-14 impl Person
+11-13 function Person::new
+16-19 enum Status
+21-23 trait Greet
+25-29 impl Greet for Person
+26-28 function Person::greet

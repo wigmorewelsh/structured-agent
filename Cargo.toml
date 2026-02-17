@@ -19,6 +19,7 @@ members = [
     "src/structured-agent-typecheck",
     "src/structured-agent-typed-ast",
     "src/structured-agent-zed/tree-sitter-structured-agent",
+    "src/structured-agent-workspace",
 ]
 
 [workspace.package]
