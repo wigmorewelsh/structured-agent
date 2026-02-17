@@ -3,11 +3,6 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
 
-const RUST_OUTLINE_QUERY: &str = include_str!("../queries/rust-outline.scm");
-const RUST_SYMBOL_QUERY: &str = include_str!("../queries/rust-symbol.scm");
-const PYTHON_OUTLINE_QUERY: &str = include_str!("../queries/python-outline.scm");
-const PYTHON_SYMBOL_QUERY: &str = include_str!("../queries/python-symbol.scm");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanguageType {
     Rust,
@@ -32,19 +27,11 @@ impl LanguageType {
         }
     }
 
-    fn outline_query(&self) -> &'static str {
+    fn tags_query(&self) -> &'static str {
         match self {
-            Self::Rust => RUST_OUTLINE_QUERY,
-            Self::Python => PYTHON_OUTLINE_QUERY,
+            Self::Rust => tree_sitter_rust::TAGS_QUERY,
+            Self::Python => tree_sitter_python::TAGS_QUERY,
         }
-    }
-
-    fn symbol_query(&self, symbol_name: &str) -> String {
-        let template = match self {
-            Self::Rust => RUST_SYMBOL_QUERY,
-            Self::Python => PYTHON_SYMBOL_QUERY,
-        };
-        template.replace("{symbol}", symbol_name)
     }
 }
 
@@ -89,14 +76,15 @@ impl FileParser {
 
     pub fn get_outline(&mut self, source: &str) -> Result<Vec<Symbol>> {
         let tree = self.parse(source)?;
-        let query_str = self.language_type.outline_query();
+        let query_str = self.language_type.tags_query();
         let query = Query::new(&self.language_type.language(), query_str)
-            .context("Failed to create outline query")?;
+            .context("Failed to create tags query")?;
 
         let mut cursor = QueryCursor::new();
         let source_bytes = source.as_bytes();
 
         let mut symbols = Vec::new();
+        let mut seen_definitions = std::collections::HashSet::new();
 
         let mut matches = cursor.matches(&query, tree.root_node(), source_bytes);
 
@@ -109,34 +97,45 @@ impl FileParser {
             for capture in match_.captures {
                 let capture_name = &query.capture_names()[capture.index as usize];
 
-                if capture_name.ends_with(".name") || capture_name.ends_with(".type") {
-                    name = Some(capture.node.utf8_text(source_bytes)?.to_string());
+                if capture_name.starts_with("definition.") {
                     kind = capture_name
-                        .strip_suffix(".name")
-                        .or_else(|| capture_name.strip_suffix(".type"))
+                        .strip_prefix("definition.")
                         .unwrap_or("")
                         .to_string();
-                } else if capture_name.ends_with(".trait") {
-                    trait_name = Some(capture.node.utf8_text(source_bytes)?.to_string());
-                } else if capture_name.ends_with(".def") {
                     def_node = Some(capture.node);
+                } else if capture_name.starts_with("reference.implementation") {
+                    kind = "impl".to_string();
+                    def_node = Some(capture.node);
+                    if let Some((impl_type, impl_trait)) =
+                        self.extract_impl_info(&capture.node, source_bytes)?
+                    {
+                        name = Some(impl_type.clone());
+                        if impl_trait != impl_type {
+                            trait_name = Some(impl_trait);
+                        }
+                    }
+                } else if *capture_name == "name" && !kind.is_empty() && kind != "impl" {
+                    name = Some(capture.node.utf8_text(source_bytes)?.to_string());
                 }
             }
 
             if let (Some(name_str), Some(node)) = (name, def_node) {
                 let start_pos = node.start_position();
                 let end_pos = node.end_position();
+                let key = (start_pos.row, end_pos.row, name_str.clone());
 
-                symbols.push(Symbol {
-                    name: name_str,
-                    kind,
-                    start_line: start_pos.row + 1,
-                    end_line: end_pos.row + 1,
-                    start_byte: node.start_byte(),
-                    end_byte: node.end_byte(),
-                    parent_start_line: None,
-                    trait_name,
-                });
+                if seen_definitions.insert(key) {
+                    symbols.push(Symbol {
+                        name: name_str,
+                        kind,
+                        start_line: start_pos.row + 1,
+                        end_line: end_pos.row + 1,
+                        start_byte: node.start_byte(),
+                        end_byte: node.end_byte(),
+                        parent_start_line: None,
+                        trait_name,
+                    });
+                }
             }
         }
 
@@ -162,23 +161,43 @@ impl FileParser {
         Ok(symbols)
     }
 
+    fn extract_impl_info(
+        &self,
+        impl_node: &tree_sitter::Node,
+        source_bytes: &[u8],
+    ) -> Result<Option<(String, String)>> {
+        let impl_type = if let Some(type_node) = impl_node.child_by_field_name("type") {
+            type_node.utf8_text(source_bytes).ok().map(String::from)
+        } else {
+            None
+        };
+
+        let impl_trait = if let Some(trait_node) = impl_node.child_by_field_name("trait") {
+            trait_node.utf8_text(source_bytes).ok().map(String::from)
+        } else {
+            None
+        };
+
+        if let Some(typ) = impl_type {
+            if let Some(trt) = impl_trait {
+                Ok(Some((typ, trt)))
+            } else {
+                Ok(Some((typ.clone(), typ)))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn get_symbol(&mut self, source: &str, symbol_name: &str) -> Result<Option<String>> {
-        let tree = self.parse(source)?;
-        let query_str = self.language_type.symbol_query(symbol_name);
-        let query = Query::new(&self.language_type.language(), &query_str)
-            .context("Failed to create symbol query")?;
+        let symbols = self.get_outline(source)?;
 
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-
-        let mut matches = cursor.matches(&query, tree.root_node(), source_bytes);
-
-        while let Some(match_) = matches.next() {
-            for capture in match_.captures {
-                let capture_name = &query.capture_names()[capture.index as usize];
-                if *capture_name == "definition" {
-                    let text = capture.node.utf8_text(source_bytes)?;
-                    return Ok(Some(text.to_string()));
+        for symbol in symbols {
+            if symbol.name == symbol_name {
+                let lines: Vec<&str> = source.lines().collect();
+                if symbol.start_line > 0 && symbol.end_line <= lines.len() {
+                    let symbol_text = lines[(symbol.start_line - 1)..symbol.end_line].join("\n");
+                    return Ok(Some(symbol_text));
                 }
             }
         }
