@@ -15,6 +15,9 @@ mod boolean_test;
 #[cfg(test)]
 mod control_flow_test;
 
+#[cfg(test)]
+mod signature_mismatch_test;
+
 pub use context::{Context, Event};
 pub use engine::{Runtime, RuntimeError, load_program};
 pub use native_provider::NativeFunctionProvider;

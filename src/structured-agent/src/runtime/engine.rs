@@ -344,9 +344,30 @@ impl Runtime {
             .find(|(provider_def, _)| Self::signatures_match(provider_def, definition))
             .map(|(_, provider)| provider)
             .ok_or_else(|| {
+                let expected_params = definition
+                    .parameters
+                    .iter()
+                    .map(|p| format!("{}: {:?}", p.name, p.param_type))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let available_sigs = matches
+                    .iter()
+                    .map(|(provider_def, _)| {
+                        let params = provider_def
+                            .parameters
+                            .iter()
+                            .map(|p| format!("{}: {:?}", p.name, p.param_type))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("  - fn {}({}) -> {:?}", name, params, provider_def.return_type)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
                 RuntimeError::ExecutionError(format!(
-                    "No matching provider found for extern function '{}'. Available providers have functions with this name but incompatible signatures.",
-                    name
+                    "No matching provider found for extern function '{}'.\n\nExpected signature:\n  fn {}({}) -> {:?}\n\nAvailable signatures from providers:\n{}",
+                    name, name, expected_params, definition.return_type, available_sigs
                 ))
             })
     }
