@@ -310,3 +310,14 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
         None
     }
 }
+
+#[async_trait(?Send)]
+pub trait FunctionProvider {
+    async fn list_functions(
+        &self,
+    ) -> Result<Vec<ExternalFunctionDefinition>, crate::runtime::RuntimeError>;
+    async fn create_expression(
+        &self,
+        definition: &ExternalFunctionDefinition,
+    ) -> Result<Rc<dyn ExecutableFunction>, crate::runtime::RuntimeError>;
+}

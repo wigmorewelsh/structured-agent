@@ -1,5 +1,6 @@
 mod context;
 mod engine;
+mod native_provider;
 mod types;
 
 #[cfg(test)]
@@ -16,4 +17,5 @@ mod control_flow_test;
 
 pub use context::{Context, Event};
 pub use engine::{Runtime, RuntimeError, load_program};
+pub use native_provider::NativeFunctionProvider;
 pub use types::{ExpressionParameter, ExpressionResult, ExpressionValue};

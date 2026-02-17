@@ -1,33 +1,33 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
-use crate::expressions::{ExternalFunctionExpr, FunctionExpr, NativeFunctionExpr};
+use crate::expressions::{FunctionExpr, NativeFunctionExpr};
 use crate::functions::{InputFunction, PrintFunction};
 use crate::gemini::GeminiEngine;
 use crate::mcp::McpClient;
-use crate::runtime::{Context, ExpressionResult, ExpressionValue};
+use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
 use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, LanguageEngine, NativeFunction,
+    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, LanguageEngine,
+    NativeFunction,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 
 pub struct Runtime {
     function_registry: HashMap<String, Rc<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     language_engine: Rc<dyn LanguageEngine>,
     compiler: Rc<dyn CompilerTrait>,
-    mcp_clients: Vec<Rc<McpClient>>,
+    providers: Vec<Rc<dyn FunctionProvider>>,
     compiled_program: CompilationUnit,
 }
 
 pub struct RuntimeBuilder {
-    function_registry: HashMap<String, Arc<dyn NativeFunction>>,
-    external_function_registry: HashMap<String, ExternalFunctionDefinition>,
+    providers: Vec<Rc<dyn FunctionProvider>>,
+    native_provider: NativeFunctionProvider,
     language_engine: Option<Rc<dyn LanguageEngine>>,
     compiler: Option<Rc<dyn CompilerTrait>>,
-    mcp_clients: Vec<McpClient>,
     program_source: CompilationUnit,
 }
 
@@ -53,11 +53,10 @@ impl std::error::Error for RuntimeError {}
 impl RuntimeBuilder {
     pub fn new(program: CompilationUnit) -> Self {
         Self {
-            function_registry: HashMap::new(),
-            external_function_registry: HashMap::new(),
+            providers: Vec::new(),
+            native_provider: NativeFunctionProvider::new(),
             language_engine: None,
             compiler: None,
-            mcp_clients: Vec::new(),
             program_source: program,
         }
     }
@@ -72,8 +71,18 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn with_provider(mut self, provider: Rc<dyn FunctionProvider>) -> Self {
+        self.providers.push(provider);
+        self
+    }
+
+    pub fn with_native_function(mut self, native_function: Arc<dyn NativeFunction>) -> Self {
+        self.native_provider.add_function(native_function);
+        self
+    }
+
     pub fn with_mcp_client(mut self, client: McpClient) -> Self {
-        self.mcp_clients.push(client);
+        self.providers.push(Rc::new(client));
         self
     }
 
@@ -83,7 +92,9 @@ impl RuntimeBuilder {
     }
 
     pub fn with_mcp_clients(mut self, clients: Vec<McpClient>) -> Self {
-        self.mcp_clients.extend(clients);
+        for client in clients {
+            self.providers.push(Rc::new(client));
+        }
         self
     }
 
@@ -94,7 +105,7 @@ impl RuntimeBuilder {
         for config in configs {
             match McpClient::new_stdio(&config.command, config.args.clone()).await {
                 Ok(client) => {
-                    self.mcp_clients.push(client);
+                    self.providers.push(Rc::new(client));
                 }
                 Err(e) => {
                     return Err(format!(
@@ -107,9 +118,8 @@ impl RuntimeBuilder {
         Ok(self)
     }
 
-    pub fn with_native_function(mut self, native_function: Arc<dyn NativeFunction>) -> Self {
-        let name = native_function.name().to_string();
-        self.function_registry.insert(name, native_function);
+    pub fn with_native_provider(mut self, provider: NativeFunctionProvider) -> Self {
+        self.providers.push(Rc::new(provider));
         self
     }
 
@@ -138,21 +148,25 @@ impl RuntimeBuilder {
     }
 
     pub fn build(self) -> Runtime {
+        let native_provider_rc = Rc::new(self.native_provider);
+        let mut providers = self.providers;
+        providers.push(native_provider_rc.clone());
+
         let mut function_registry = HashMap::new();
 
-        for (name, native_function) in self.function_registry {
-            let expr = NativeFunctionExpr::new(native_function);
-            function_registry.insert(name, Rc::new(expr) as Rc<dyn ExecutableFunction>);
+        for (name, native_fn) in &native_provider_rc.native_functions {
+            let expr = NativeFunctionExpr::new(native_fn.clone());
+            function_registry.insert(name.clone(), Rc::new(expr) as Rc<dyn ExecutableFunction>);
         }
 
         Runtime {
             function_registry,
-            external_function_registry: self.external_function_registry,
+            external_function_registry: HashMap::new(),
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Rc::new(crate::types::PrintEngine {})),
             compiler: self.compiler.unwrap_or_else(|| Rc::new(Compiler::new())),
-            mcp_clients: self.mcp_clients.into_iter().map(Rc::new).collect(),
+            providers,
             compiled_program: self.program_source,
         }
     }
@@ -170,12 +184,6 @@ impl Runtime {
 
     pub fn register_expression(&mut self, name: String, expression: Rc<dyn ExecutableFunction>) {
         self.function_registry.insert(name, expression);
-    }
-
-    pub fn register_native_function(&mut self, native_function: Arc<dyn NativeFunction>) {
-        let name = native_function.name().to_string();
-        let expr = NativeFunctionExpr::new(native_function);
-        self.function_registry.insert(name, Rc::new(expr));
     }
 
     pub fn get_function(&self, name: &str) -> Option<&dyn ExecutableFunction> {
@@ -244,7 +252,7 @@ impl Runtime {
             external_function_registry: self.external_function_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
-            mcp_clients: self.mcp_clients.clone(),
+            providers: self.providers.clone(),
             compiled_program: self.compiled_program.clone(),
         };
 
@@ -257,8 +265,8 @@ impl Runtime {
             runtime.register_external_function(external_function.clone());
         }
 
-        if let Err(e) = runtime.map_mcp_tools_to_external_functions().await {
-            error!("Failed to map MCP tools: {:?}", e);
+        if let Err(e) = runtime.map_providers_to_functions().await {
+            error!("Failed to map providers to functions: {:?}", e);
             return Err(e);
         }
 
@@ -305,49 +313,40 @@ impl Runtime {
             external_function_registry: self.external_function_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
-            mcp_clients: self.mcp_clients.clone(),
+            providers: self.providers.clone(),
             compiled_program: self.compiled_program.clone(),
         }
     }
 
-    async fn map_mcp_tools_to_external_functions(&mut self) -> Result<(), RuntimeError> {
+    async fn map_providers_to_functions(&mut self) -> Result<(), RuntimeError> {
         let mut functions_to_register = Vec::new();
 
-        for client in &self.mcp_clients {
-            let tools = client.list_tools().await.map_err(|e| {
-                RuntimeError::ExecutionError(format!("Failed to list MCP tools: {}", e))
-            })?;
+        for provider in &self.providers {
+            let provider_functions = provider.list_functions().await?;
 
-            for tool in tools {
-                if let Some(external_fn) = self.external_function_registry.get(tool.name.as_ref()) {
-                    let external_function_expr = ExternalFunctionExpr::new(
-                        tool.name.to_string(),
-                        external_fn.parameters.clone(),
-                        external_fn.return_type.clone(),
-                        client.clone(),
-                        external_fn.documentation.clone(),
-                    );
-
-                    functions_to_register.push((tool.name.to_string(), external_function_expr));
+            for provider_fn in provider_functions {
+                if let Some(external_fn) = self.external_function_registry.get(&provider_fn.name) {
+                    let expr = provider.create_expression(external_fn).await?;
+                    functions_to_register.push((provider_fn.name.clone(), expr));
                 }
             }
         }
 
         for (name, expr) in functions_to_register {
-            self.register_expression(name, Rc::new(expr));
+            self.register_expression(name, expr);
         }
 
         Ok(())
     }
 
     #[cfg(test)]
-    pub fn mcp_clients_count(&self) -> usize {
-        self.mcp_clients.len()
+    pub fn providers_count(&self) -> usize {
+        self.providers.len()
     }
 
     #[cfg(test)]
-    pub async fn test_map_mcp_tools_to_external_functions(&mut self) -> Result<(), RuntimeError> {
-        self.map_mcp_tools_to_external_functions().await
+    pub async fn test_map_providers_to_functions(&mut self) -> Result<(), RuntimeError> {
+        self.map_providers_to_functions().await
     }
 }
 
@@ -358,7 +357,7 @@ impl Clone for Runtime {
             external_function_registry: self.external_function_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
-            mcp_clients: self.mcp_clients.clone(),
+            providers: self.providers.clone(),
             compiled_program: self.compiled_program.clone(),
         }
     }

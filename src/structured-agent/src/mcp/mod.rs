@@ -1,8 +1,15 @@
+use crate::expressions::ExternalFunctionExpr;
+use crate::runtime::RuntimeError;
+use crate::types::{
+    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
+};
+use async_trait::async_trait;
 use rmcp::model::{CallToolRequestParams, Tool};
 use rmcp::{RoleClient, ServiceError, ServiceExt};
 use serde_json::Value;
 use std::error::Error;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -147,6 +154,64 @@ impl McpClient {
                 .map_err(|e| McpError::ConnectionError(format!("Failed to shutdown: {}", e)))?;
         }
         Ok(())
+    }
+}
+
+#[async_trait(?Send)]
+impl FunctionProvider for McpClient {
+    async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
+        let tools = self.list_tools().await.map_err(|e| {
+            RuntimeError::ExecutionError(format!("Failed to list MCP tools: {}", e))
+        })?;
+
+        let definitions = tools
+            .into_iter()
+            .map(|tool| {
+                let parameters = tool
+                    .input_schema
+                    .get("properties")
+                    .and_then(|properties| properties.as_object())
+                    .map(|obj| {
+                        obj.keys()
+                            .map(|k| Parameter::new(k.clone(), Type::string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                ExternalFunctionDefinition::new_with_docs(
+                    tool.name.to_string(),
+                    parameters,
+                    Type::string(),
+                    tool.description.map(|d| d.to_string()),
+                )
+            })
+            .collect();
+
+        Ok(definitions)
+    }
+
+    async fn create_expression(
+        &self,
+        definition: &ExternalFunctionDefinition,
+    ) -> Result<Rc<dyn ExecutableFunction>, RuntimeError> {
+        let expr = ExternalFunctionExpr::new(
+            definition.name.clone(),
+            definition.parameters.clone(),
+            definition.return_type.clone(),
+            Rc::new(self.clone()),
+            definition.documentation.clone(),
+        );
+        Ok(Rc::new(expr))
+    }
+}
+
+impl Clone for McpClient {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            command: self.command.clone(),
+            args: self.args.clone(),
+        }
     }
 }
 
