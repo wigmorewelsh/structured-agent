@@ -25,12 +25,15 @@ fn test_language_type_from_path() {
     let python_path = std::path::Path::new("test.py");
     let unknown_path = std::path::Path::new("test.txt");
 
-    assert_eq!(LanguageType::from_path(rust_path), Some(LanguageType::Rust));
     assert_eq!(
-        LanguageType::from_path(python_path),
+        LanguageType::try_from(rust_path).ok(),
+        Some(LanguageType::Rust)
+    );
+    assert_eq!(
+        LanguageType::try_from(python_path).ok(),
         Some(LanguageType::Python)
     );
-    assert_eq!(LanguageType::from_path(unknown_path), None);
+    assert!(LanguageType::try_from(unknown_path).is_err());
 }
 
 #[test]
