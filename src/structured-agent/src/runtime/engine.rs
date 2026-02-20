@@ -131,7 +131,7 @@ impl RuntimeBuilder {
 
         let engine: Rc<dyn LanguageEngine> = match &config.engine {
             EngineType::Print => Rc::new(crate::types::PrintEngine {}),
-            EngineType::Gemini(api_key) => {
+            EngineType::Gemini { api_key, model } => {
                 let gemini_config = if let Some(key) = api_key {
                     GeminiConfig::default().with_api_key_auth(key.clone())
                 } else {
@@ -140,12 +140,32 @@ impl RuntimeBuilder {
                     })?
                 };
 
-                match GeminiEngine::new(gemini_config).await {
-                    Ok(gemini) => Rc::new(gemini),
+                let mut gemini = match GeminiEngine::new(gemini_config).await {
+                    Ok(gemini) => gemini,
                     Err(e) => {
                         return Err(format!("Failed to initialize Gemini engine: {}", e));
                     }
+                };
+
+                if let Some(model_name) = model {
+                    let model_enum = match model_name.as_str() {
+                        "gemini-2.5-pro" => crate::gemini::types::ModelName::Gemini25Pro,
+                        "gemini-2.5-flash" => crate::gemini::types::ModelName::Gemini25Flash,
+                        "gemini-2.5-flash-lite" => {
+                            crate::gemini::types::ModelName::Gemini25FlashLite
+                        }
+                        "gemini-3-flash-preview" => {
+                            crate::gemini::types::ModelName::Gemini3FlashPreview
+                        }
+                        "gemini-3-pro-preview" => {
+                            crate::gemini::types::ModelName::Gemini3ProPreview
+                        }
+                        custom => crate::gemini::types::ModelName::Custom(custom.to_string()),
+                    };
+                    gemini = gemini.with_model(model_enum);
                 }
+
+                Rc::new(gemini)
             }
         };
 

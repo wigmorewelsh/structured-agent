@@ -29,7 +29,10 @@ pub enum ProgramSource {
 #[derive(Debug, Clone)]
 pub enum EngineType {
     Print,
-    Gemini(Option<String>),
+    Gemini {
+        api_key: Option<String>,
+        model: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +62,10 @@ impl Config {
         let gemini_api_key = args
             .gemini_api_key
             .or_else(|| file_config.gemini_api_key.clone());
-        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key);
+        let gemini_model = args
+            .gemini_model
+            .or_else(|| file_config.gemini_model.clone());
+        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key, gemini_model);
         let with_default_functions =
             args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
@@ -99,7 +105,10 @@ impl Config {
         let gemini_api_key = args
             .gemini_api_key
             .or_else(|| file_config.gemini_api_key.clone());
-        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key);
+        let gemini_model = args
+            .gemini_model
+            .or_else(|| file_config.gemini_model.clone());
+        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key, gemini_model);
         let with_default_functions =
             args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
@@ -206,7 +215,12 @@ impl Config {
         }
     }
 
-    fn merge_engine(engine: &str, file_config: &FileConfig, api_key: Option<String>) -> EngineType {
+    fn merge_engine(
+        engine: &str,
+        file_config: &FileConfig,
+        api_key: Option<String>,
+        model: Option<String>,
+    ) -> EngineType {
         let engine_str = if engine != "print" {
             engine
         } else if let Some(engine) = &file_config.engine {
@@ -216,7 +230,7 @@ impl Config {
         };
 
         match engine_str {
-            "gemini" => EngineType::Gemini(api_key),
+            "gemini" => EngineType::Gemini { api_key, model },
             _ => EngineType::Print,
         }
     }

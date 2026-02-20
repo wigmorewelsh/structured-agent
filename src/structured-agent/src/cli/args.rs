@@ -68,6 +68,13 @@ pub struct RunArgs {
 
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "MODEL",
+        help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
+    )]
+    pub gemini_model: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -132,6 +139,13 @@ pub struct AcpArgs {
 
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "MODEL",
+        help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
+    )]
+    pub gemini_model: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -143,6 +157,7 @@ pub struct FileConfig {
     pub with_default_functions: Option<bool>,
     pub with_unstable_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
+    pub gemini_model: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
