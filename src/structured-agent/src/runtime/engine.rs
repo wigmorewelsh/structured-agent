@@ -2,7 +2,7 @@ use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::{FunctionExpr, NativeFunctionExpr};
 use crate::functions::{InputFunction, PrintFunction};
-use crate::gemini::GeminiEngine;
+use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
 use crate::types::{
@@ -128,12 +128,22 @@ impl RuntimeBuilder {
 
         let engine: Rc<dyn LanguageEngine> = match &config.engine {
             EngineType::Print => Rc::new(crate::types::PrintEngine {}),
-            EngineType::Gemini => match GeminiEngine::from_env().await {
-                Ok(gemini) => Rc::new(gemini),
-                Err(e) => {
-                    return Err(format!("Failed to initialize Gemini engine: {}", e));
+            EngineType::Gemini(api_key) => {
+                let gemini_config = if let Some(key) = api_key {
+                    GeminiConfig::default().with_api_key_auth(key.clone())
+                } else {
+                    GeminiConfig::from_env().map_err(|e| {
+                        format!("Failed to load Gemini config from environment: {}", e)
+                    })?
+                };
+
+                match GeminiEngine::new(gemini_config).await {
+                    Ok(gemini) => Rc::new(gemini),
+                    Err(e) => {
+                        return Err(format!("Failed to initialize Gemini engine: {}", e));
+                    }
                 }
-            },
+            }
         };
 
         self = self.with_engine(engine);
