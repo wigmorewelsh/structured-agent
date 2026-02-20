@@ -128,10 +128,10 @@ fn main(): () {
     Youll have to decide what to use in a given context.
 
     Use print to respond to users queries or questions.
-    The current working directory is "/Users/timwigmore-welsh/Projects/structured-agent" youll have to prefix that to most calls to read/write/edit files.
+    The current working directory is "<<placeholder>>" youll have to prefix that to most calls to read/write/edit files.
     '''!
 
-    let history = read_file("/Users/timwigmore-welsh/Projects/structured-agent/history.md")
+    let history = read_file("<<placeholder>>/history.md")
 
     while true {
         history!
@@ -144,6 +144,6 @@ fn main(): () {
         let task_summary = agent_loop()
 
         history = update_history(task_summary)
-        write_file("/Users/timwigmore-welsh/Projects/structured-agent/history.md", history)
+        write_file("<<placeholder>>/history.md", history)
     }
 }
