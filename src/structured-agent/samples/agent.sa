@@ -1,4 +1,10 @@
 extern fn receive(): String
+extern fn head(list: List<String>): Option<String>
+extern fn tail(list: List<String>): Option<List<String>>
+extern fn is_some(option: Option<String>): Boolean
+extern fn some_value(option: Option<String>): String
+extern fn is_some_list(option: Option<List<String>>): Boolean
+extern fn some_value_list(option: Option<List<String>>): List<String>
 
 extern fn read_file(path: String): String
 extern fn write_file(path: String, content: String): ()
@@ -75,6 +81,42 @@ fn summarize(): String {
     '''!
 }
 
+fn plan_sub_tasks(): List<String> {
+    "create sub tasks"!
+}
+
+fn summarize_sub_task(summary: String): String {
+    "Summarize the sub-task that was completed:"!
+    summary!
+}
+
+fn sub_tasks(): String {
+    let plan = plan_sub_tasks()
+    let result = ""
+    let remaining = plan
+    let continue_loop = true
+
+    while continue_loop {
+        let next_option = head(remaining)
+        if is_some(next_option) {
+            let sub_task = some_value(next_option)
+            sub_task!
+            let summary = agent_loop()
+            result = summarize_sub_task(summary)
+
+            let tail_option = tail(remaining)
+            if is_some_list(tail_option) {
+                remaining = some_value_list(tail_option)
+            } else {
+                continue_loop = false
+            }
+        } else {
+            continue_loop = false
+        }
+    }
+    return result
+}
+
 fn agent_loop(): String {
     "what is the next action to perform?"!
 
@@ -87,7 +129,8 @@ fn agent_loop(): String {
         grep(_, _, _, _, _) as r => r,
         copy_path(_, _) as r => r,
         execute_command(_) as r => r,
-        ask_for_more_info(_) as r => r
+        ask_for_more_info(_) as r => r,
+        sub_tasks() as r => r
     }
 
     result!

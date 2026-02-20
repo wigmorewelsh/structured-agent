@@ -1,6 +1,6 @@
 extern fn fetch(url: String): String
 extern fn websearch(query: String): String
-extern fn print(message: String): Unit
+extern fn print(message: String): ()
 extern fn input(): String
 
 fn select_best_profile_url(author_name: String, search_results: String): String {
