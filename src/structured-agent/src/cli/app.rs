@@ -154,6 +154,7 @@ mod tests {
             mcp_servers: vec![],
             engine: EngineType::Print,
             with_default_functions: true,
+            with_unstable_functions: false,
             mode: Mode::Run,
         };
 
@@ -177,6 +178,7 @@ mod tests {
             mcp_servers: vec![],
             engine: EngineType::Print,
             with_default_functions: false,
+            with_unstable_functions: false,
             mode: Mode::Run,
         };
 

@@ -60,6 +60,12 @@ pub struct RunArgs {
     #[arg(long, help = "Include default functions (input, print)")]
     pub with_default_functions: bool,
 
+    #[arg(
+        long,
+        help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
+    )]
+    pub with_unstable_functions: bool,
+
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
 }
@@ -82,6 +88,12 @@ pub struct CheckArgs {
 
     #[arg(long, help = "Include default functions (input, print)")]
     pub with_default_functions: bool,
+
+    #[arg(
+        long,
+        help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
+    )]
+    pub with_unstable_functions: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -112,6 +124,12 @@ pub struct AcpArgs {
     #[arg(long, help = "Include default functions (input, print)")]
     pub with_default_functions: bool,
 
+    #[arg(
+        long,
+        help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
+    )]
+    pub with_unstable_functions: bool,
+
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
 }
@@ -123,6 +141,7 @@ pub struct FileConfig {
     pub mcp_server: Option<Vec<McpServerEntry>>,
     pub engine: Option<String>,
     pub with_default_functions: Option<bool>,
+    pub with_unstable_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
 }
 

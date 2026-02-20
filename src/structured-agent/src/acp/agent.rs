@@ -325,6 +325,7 @@ mod tests {
                     engine: EngineType::Print,
                     mcp_servers: vec![],
                     with_default_functions: false,
+                    with_unstable_functions: false,
                     mode: Mode::Acp,
                 };
 

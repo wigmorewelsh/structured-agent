@@ -9,6 +9,7 @@ pub struct Config {
     pub mcp_servers: Vec<McpServerConfig>,
     pub engine: EngineType,
     pub with_default_functions: bool,
+    pub with_unstable_functions: bool,
     pub mode: Mode,
 }
 
@@ -61,12 +62,15 @@ impl Config {
         let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key);
         let with_default_functions =
             args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+        let with_unstable_functions =
+            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
 
         Config {
             program_source,
             mcp_servers,
             engine,
             with_default_functions,
+            with_unstable_functions,
             mode: Mode::Run,
         }
     }
@@ -76,12 +80,15 @@ impl Config {
         let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
         let with_default_functions =
             args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+        let with_unstable_functions =
+            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
 
         Config {
             program_source,
             mcp_servers,
             engine: EngineType::Print,
             with_default_functions,
+            with_unstable_functions,
             mode: Mode::Check,
         }
     }
@@ -95,12 +102,15 @@ impl Config {
         let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key);
         let with_default_functions =
             args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+        let with_unstable_functions =
+            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
 
         Config {
             program_source,
             mcp_servers,
             engine,
             with_default_functions,
+            with_unstable_functions,
             mode: Mode::Acp,
         }
     }

@@ -1,9 +1,10 @@
-pub mod head;
 pub mod input;
 pub mod print;
-pub mod tail;
+pub mod unstable;
 
-pub use head::HeadFunction;
 pub use input::InputFunction;
 pub use print::PrintFunction;
-pub use tail::TailFunction;
+pub use unstable::{
+    HeadFunction, IsSomeFunction, IsSomeListFunction, SomeValueFunction, SomeValueListFunction,
+    TailFunction,
+};

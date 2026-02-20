@@ -27,6 +27,7 @@ impl TestAgent {
             engine: EngineType::Print,
             mcp_servers: vec![],
             with_default_functions: true,
+            with_unstable_functions: false,
             mode: Mode::Acp,
         };
 
@@ -43,6 +44,7 @@ impl TestAgent {
             engine: EngineType::Print,
             mcp_servers: vec![],
             with_default_functions: true,
+            with_unstable_functions: false,
             mode: Mode::Acp,
         };
 
