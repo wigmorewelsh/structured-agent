@@ -63,14 +63,14 @@ mod compilation_tests {
     fn compile_and_check(code: &str, expected: &str) {
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
     fn compile_and_check_named(code: &str, function_name: &str, expected: &str) {
         let module = parse_code(code);
         let func = get_function(&module, function_name);
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
@@ -584,7 +584,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -608,7 +608,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -632,7 +632,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -657,7 +657,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -683,7 +683,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -707,7 +707,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -737,7 +737,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -762,7 +762,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -789,7 +789,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -811,7 +811,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -836,7 +836,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -858,7 +858,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -879,7 +879,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
         let runtime = Rc::new(Runtime::builder(program).build());
@@ -908,7 +908,7 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let test_func = get_function(&module, "test");
-        let test_compiled = BytecodeCompiler::compile_function(test_func).unwrap();
+        let test_compiled = BytecodeCompiler::compile_to_bytecode(test_func).unwrap();
 
         let program = CompilationUnit::from_string(code.to_string());
         let compiler = crate::compiler::Compiler::new();

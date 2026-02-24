@@ -1,3 +1,4 @@
+pub mod expression_compiler;
 pub mod parser;
 
 use crate::analysis::{
@@ -7,32 +8,21 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{self, Definition, Module};
+use crate::ast::{Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
-use crate::expressions::{
-    AssignmentExpr, BooleanLiteralExpr, CallExpr, FunctionExpr, IfElseExpr, IfExpr, InjectionExpr,
-    ListLiteralExpr, PlaceholderExpr, ReturnExpr, SelectClauseExpr, SelectExpr, StringLiteralExpr,
-    UnitLiteralExpr, VariableAssignmentExpr, VariableExpr, WhileExpr,
-};
+use crate::expressions::FunctionExpr;
 use crate::typecheck::type_check_module;
-use crate::types::{Expression, ExternalFunctionDefinition, FileId, Parameter, Type};
+use crate::types::{ExternalFunctionDefinition, FileId};
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
-fn convert_ast_type_to_type(ast_type: &ast::Type) -> Type {
-    match ast_type {
-        ast::Type::Unit => Type::unit(),
-        ast::Type::Boolean => Type::boolean(),
-        ast::Type::String => Type::string(),
-        ast::Type::List(inner) => Type::list(convert_ast_type_to_type(inner)),
-        ast::Type::Option(inner) => Type::option(convert_ast_type_to_type(inner)),
-    }
-}
+use crate::bytecode::BytecodeCompiler;
+use expression_compiler::{ExpressionCompiler, compile_external_function};
 
 #[derive(Debug, Clone)]
 pub struct CompilationUnit {
@@ -139,7 +129,10 @@ impl Parser for CodespanParser {
 
 pub trait CompilerTrait {
     fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String>;
-    fn compile_function(&self, function: &ast::Function) -> Result<FunctionExpr, String>;
+}
+
+pub trait FunctionCompiler {
+    fn compile_function(ast_func: &crate::ast::Function) -> Result<FunctionExpr, String>;
 }
 
 #[derive(Debug)]
@@ -206,6 +199,7 @@ impl CompiledProgram {
 pub struct Compiler {
     parser: Rc<dyn Parser>,
     diagnostic_manager: RefCell<DiagnosticManager>,
+    use_bytecode_compiler: bool,
 }
 
 impl Default for Compiler {
@@ -216,12 +210,17 @@ impl Default for Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
+        Self::with_bytecode(false)
+    }
+
+    pub fn with_bytecode(use_bytecode: bool) -> Self {
         let diagnostic_manager = DiagnosticManager::new();
         let reporter = DiagnosticReporter::new(diagnostic_manager.files().clone());
         let parser = Rc::new(CodespanParser::new(reporter));
         Self {
             parser,
             diagnostic_manager: RefCell::new(diagnostic_manager),
+            use_bytecode_compiler: use_bytecode,
         }
     }
 }
@@ -296,22 +295,19 @@ impl CompilerTrait for Compiler {
             match definition {
                 Definition::Function(ast_function) => {
                     debug!("Compiling function: {}", ast_function.name);
-                    match self.compile_function(&ast_function) {
-                        Ok(compiled_function) => {
-                            compiled_program.add_function(compiled_function);
-                        }
-                        Err(e) => {
-                            error!("Failed to compile function {}: {}", ast_function.name, e);
-                            return Err(e);
-                        }
-                    }
+                    let func_expr = if self.use_bytecode_compiler {
+                        BytecodeCompiler::compile_function(&ast_function)?
+                    } else {
+                        ExpressionCompiler::compile_function(&ast_function)?
+                    };
+                    compiled_program.add_function(func_expr);
                 }
                 Definition::ExternalFunction(ast_external_function) => {
                     debug!(
                         "Compiling external function: {}",
                         ast_external_function.name
                     );
-                    match Self::compile_external_function(&ast_external_function) {
+                    match compile_external_function(&ast_external_function) {
                         Ok(compiled_external_function) => {
                             compiled_program.add_external_function(compiled_external_function);
                         }
@@ -330,318 +326,46 @@ impl CompilerTrait for Compiler {
         debug!("Compilation completed successfully");
         Ok(compiled_program)
     }
-
-    fn compile_function(&self, ast_func: &ast::Function) -> Result<FunctionExpr, String> {
-        let mut compiled_statements = Vec::new();
-
-        for stmt in &ast_func.body.statements {
-            let compiled_stmt = Self::compile_statement(stmt)?;
-            compiled_statements.push(compiled_stmt);
-        }
-
-        Ok(FunctionExpr {
-            name: ast_func.name.clone(),
-            parameters: ast_func
-                .parameters
-                .iter()
-                .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
-                .collect(),
-            return_type: convert_ast_type_to_type(&ast_func.return_type),
-            body: compiled_statements,
-            documentation: ast_func.documentation.clone(),
-        })
-    }
-}
-
-impl Compiler {
-    pub fn compile_function(ast_func: &ast::Function) -> Result<FunctionExpr, String> {
-        let mut compiled_statements = Vec::new();
-
-        for stmt in &ast_func.body.statements {
-            let compiled_stmt = Self::compile_statement(stmt)?;
-            compiled_statements.push(compiled_stmt);
-        }
-
-        Ok(FunctionExpr {
-            name: ast_func.name.clone(),
-            parameters: ast_func
-                .parameters
-                .iter()
-                .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
-                .collect(),
-            return_type: convert_ast_type_to_type(&ast_func.return_type),
-            body: compiled_statements,
-            documentation: ast_func.documentation.clone(),
-        })
-    }
-
-    pub fn compile_expression(ast_expr: &ast::Expression) -> Result<Box<dyn Expression>, String> {
-        match ast_expr {
-            ast::Expression::Call {
-                function,
-                arguments,
-                ..
-            } => {
-                let compiled_args = arguments
-                    .iter()
-                    .map(|arg| Self::compile_expression(arg))
-                    .collect::<Result<Vec<_>, String>>()?;
-
-                Ok(Box::new(CallExpr {
-                    function: function.clone(),
-                    arguments: compiled_args,
-                }))
-            }
-            ast::Expression::Placeholder { .. } => Ok(Box::new(PlaceholderExpr {})),
-            ast::Expression::Select(select_expression) => {
-                let compiled_clauses = select_expression
-                    .clauses
-                    .iter()
-                    .map(|clause| {
-                        let expression_to_run =
-                            Self::compile_expression(&clause.expression_to_run)?;
-                        let expression_next = Self::compile_expression(&clause.expression_next)?;
-                        Ok(SelectClauseExpr {
-                            expression_to_run,
-                            result_variable: clause.result_variable.clone(),
-                            expression_next,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, String>>()?;
-
-                Ok(Box::new(SelectExpr {
-                    clauses: compiled_clauses,
-                }))
-            }
-            ast::Expression::Variable { name, .. } => {
-                Ok(Box::new(VariableExpr { name: name.clone() }))
-            }
-            ast::Expression::StringLiteral { value, .. } => Ok(Box::new(StringLiteralExpr {
-                value: value.clone(),
-            })),
-            ast::Expression::BooleanLiteral { value, .. } => {
-                Ok(Box::new(BooleanLiteralExpr { value: *value }))
-            }
-            ast::Expression::UnitLiteral { .. } => Ok(Box::new(UnitLiteralExpr {})),
-            ast::Expression::ListLiteral { elements, .. } => {
-                if elements.is_empty() {
-                    return Err("Cannot infer type of empty list literal".to_string());
-                }
-
-                let compiled_elements: Vec<Box<dyn Expression>> = elements
-                    .iter()
-                    .map(|elem| Self::compile_expression(elem))
-                    .collect::<Result<Vec<_>, String>>()?;
-
-                let element_type = compiled_elements[0].return_type();
-
-                for elem in &compiled_elements {
-                    if elem.return_type() != element_type {
-                        return Err("All list elements must have the same type".to_string());
-                    }
-                }
-
-                Ok(Box::new(ListLiteralExpr {
-                    elements: compiled_elements,
-                    element_type,
-                }))
-            }
-            ast::Expression::IfElse {
-                condition,
-                then_expr,
-                else_expr,
-                ..
-            } => {
-                let compiled_condition = Self::compile_expression(condition)?;
-                let compiled_then = Self::compile_expression(then_expr)?;
-                let compiled_else = Self::compile_expression(else_expr)?;
-
-                Ok(Box::new(IfElseExpr {
-                    condition: compiled_condition,
-                    then_expr: compiled_then,
-                    else_expr: compiled_else,
-                }))
-            }
-        }
-    }
-
-    pub fn compile_statement(ast_stmt: &ast::Statement) -> Result<Box<dyn Expression>, String> {
-        match ast_stmt {
-            ast::Statement::Injection(expr) => {
-                let compiled_inner = Self::compile_expression(expr)?;
-                Ok(Box::new(InjectionExpr {
-                    inner: compiled_inner,
-                }))
-            }
-            ast::Statement::Assignment {
-                variable,
-                expression,
-                ..
-            } => {
-                let compiled_expression = Self::compile_expression(expression)?;
-                Ok(Box::new(AssignmentExpr {
-                    variable: variable.clone(),
-                    expression: compiled_expression,
-                }))
-            }
-            ast::Statement::VariableAssignment {
-                variable,
-                expression,
-                ..
-            } => {
-                let compiled_expression = Self::compile_expression(expression)?;
-                Ok(Box::new(VariableAssignmentExpr {
-                    variable: variable.clone(),
-                    expression: compiled_expression,
-                }))
-            }
-            ast::Statement::If {
-                condition,
-                body,
-                else_body,
-                ..
-            } => {
-                let compiled_condition = Self::compile_expression(condition)?;
-                let compiled_body = body
-                    .iter()
-                    .map(|stmt| Self::compile_statement(stmt))
-                    .collect::<Result<Vec<_>, String>>()?;
-                let compiled_else = match else_body {
-                    Some(else_stmts) => Some(
-                        else_stmts
-                            .iter()
-                            .map(|stmt| Self::compile_statement(stmt))
-                            .collect::<Result<Vec<_>, String>>()?,
-                    ),
-                    None => None,
-                };
-                Ok(Box::new(IfExpr {
-                    condition: compiled_condition,
-                    body: compiled_body,
-                    else_body: compiled_else,
-                }))
-            }
-            ast::Statement::While {
-                condition, body, ..
-            } => {
-                let compiled_condition = Self::compile_expression(condition)?;
-
-                let mut compiled_body = Vec::new();
-                for stmt in body.iter() {
-                    let compiled_stmt = Self::compile_statement(stmt)?;
-                    compiled_body.push(compiled_stmt);
-                }
-
-                Ok(Box::new(WhileExpr {
-                    condition: compiled_condition,
-                    body: compiled_body,
-                }))
-            }
-            ast::Statement::Return(expr) => {
-                let compiled_expression = Self::compile_expression(expr)?;
-                Ok(Box::new(ReturnExpr::new(compiled_expression)))
-            }
-            ast::Statement::ExpressionStatement(expr) => Self::compile_expression(expr),
-        }
-    }
-
-    pub fn compile_external_function(
-        ast_ext_func: &ast::ExternalFunction,
-    ) -> Result<ExternalFunctionDefinition, String> {
-        let parameters = ast_ext_func
-            .parameters
-            .iter()
-            .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
-            .collect();
-
-        Ok(ExternalFunctionDefinition::new(
-            ast_ext_func.name.clone(),
-            parameters,
-            convert_ast_type_to_type(&ast_ext_func.return_type),
-        ))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{CompilationUnit, Compiler, CompilerTrait};
-    use crate::ast::{Expression as AstExpression, Statement as AstStatement};
-    use crate::runtime::{Context, ExpressionResult, ExpressionValue, Runtime};
+    use crate::runtime::{ExpressionValue, Runtime};
+    use rstest::rstest;
     use std::rc::Rc;
-    use std::sync::Arc;
 
-    #[tokio::test]
-    async fn test_compile_string_literal() {
-        let ast_expr = AstExpression::StringLiteral {
-            value: "Hello".to_string(),
-            span: crate::types::Span::dummy(),
-        };
-        let compiled = Compiler::compile_expression(&ast_expr).unwrap();
+    #[derive(Debug, Clone, Copy)]
+    enum CompilerBackend {
+        Expression,
+        Bytecode,
+    }
 
-        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
-        let runtime = Rc::new(Runtime::builder(dummy_program).build());
-        let context = Arc::new(Context::with_runtime(runtime));
-        let result = compiled.evaluate(context).await.unwrap();
+    async fn run_test_with_compiler(
+        program_source: &str,
+        backend: CompilerBackend,
+        expected: &str,
+    ) {
+        let program = CompilationUnit::from_string(program_source.to_string());
+        let runtime = Runtime::builder(program)
+            .with_compiler(Rc::new(match backend {
+                CompilerBackend::Expression => Compiler::new(),
+                CompilerBackend::Bytecode => Compiler::with_bytecode(true),
+            }))
+            .build();
+        let result = runtime.run().await.unwrap();
 
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "Hello"),
-            _ => panic!("Expected string result"),
+        match result {
+            ExpressionValue::String(s) => assert_eq!(s, expected),
+            _ => panic!("Expected string result, got: {:?}", result),
         }
     }
 
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_compile_injection() {
-        let ast_expr = AstExpression::StringLiteral {
-            value: "Test injection".to_string(),
-            span: crate::types::Span::dummy(),
-        };
-        let ast_stmt = AstStatement::Injection(ast_expr);
-        let compiled = Compiler::compile_statement(&ast_stmt).unwrap();
-
-        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
-        let runtime = Rc::new(Runtime::builder(dummy_program).build());
-        let context = Arc::new(Context::with_runtime(runtime));
-        let result = compiled.evaluate(context.clone()).await.unwrap();
-
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "Test injection"),
-            _ => panic!("Expected string result"),
-        }
-
-        assert_eq!(context.events_count(), 1);
-        let event = context.get_event(0).unwrap();
-        match event.content {
-            ExpressionValue::String(s) => assert_eq!(s, "Test injection"),
-            _ => panic!("Expected string content in event"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_compile_variable() {
-        let ast_expr = AstExpression::Variable {
-            name: "test_var".to_string(),
-            span: crate::types::Span::dummy(),
-        };
-        let compiled = Compiler::compile_expression(&ast_expr).unwrap();
-
-        let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
-        let runtime = Rc::new(Runtime::builder(dummy_program).build());
-        let context = Arc::new(Context::with_runtime(runtime));
-        context.declare_variable(
-            "test_var".to_string(),
-            ExpressionResult::new(ExpressionValue::String("variable_value".to_string())),
-        );
-
-        let result = compiled.evaluate(context).await.unwrap();
-
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "variable_value"),
-            _ => panic!("Expected string result"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_new_architecture_end_to_end() {
+    async fn test_new_architecture_end_to_end(#[case] backend: CompilerBackend) {
         let program_source = r#"
 fn greet(name: String): () {
     "Hello, "!
@@ -656,25 +380,14 @@ fn main(): String {
     "Test completed"!
 }
 "#;
-
-        let program = CompilationUnit::from_string(program_source.to_string());
-        let compiler = Compiler::new();
-        let compiled_program = compiler.compile_program(&program).unwrap();
-
-        assert_eq!(compiled_program.functions().len(), 2);
-        assert!(compiled_program.main_function().is_some());
-
-        let runtime = Runtime::builder(program).build();
-        let result = runtime.run().await.unwrap();
-
-        match result {
-            ExpressionValue::String(s) => assert_eq!(s, "Test completed"),
-            _ => panic!("Expected string result"),
-        }
+        run_test_with_compiler(program_source, backend, "Test completed").await;
     }
 
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_select_statement_end_to_end() {
+    async fn test_select_statement_end_to_end(#[case] backend: CompilerBackend) {
         let program_source = r#"
 fn add(a: String, b: String): String {
     "Adding numbers"
@@ -697,24 +410,11 @@ fn main(): String {
     result!
 }
 "#;
-
-        let program = CompilationUnit::from_string(program_source.to_string());
-        let compiler = Compiler::new();
-        let compiled_program = compiler.compile_program(&program).unwrap();
-
-        assert_eq!(compiled_program.functions().len(), 4);
-        assert!(compiled_program.main_function().is_some());
-
-        let runtime = Runtime::builder(program).build();
-        let result = runtime.run().await.unwrap();
-
-        match result {
-            ExpressionValue::String(s) => assert_eq!(
-                s,
-                "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>"
-            ),
-            _ => panic!("Expected string result, got: {:?}", result),
-        }
+        run_test_with_compiler(
+            program_source,
+            backend,
+            "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>"
+        ).await;
     }
 
     #[test]
@@ -751,22 +451,69 @@ fn main(): () {
         assert_eq!(compiled_program.functions().len(), 4);
     }
 
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_unit_literal_end_to_end() {
+    async fn test_simple_function(#[case] backend: CompilerBackend) {
+        let program_source = r#"
+fn add(a: String, b: String): String {
+    return "result"
+}
+
+fn main(): String {
+    return add("1", "2")
+}
+"#;
+        run_test_with_compiler(program_source, backend, "result").await;
+    }
+
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
+    #[tokio::test]
+    async fn test_multi_function(#[case] backend: CompilerBackend) {
+        let program_source = r#"
+fn greet(name: String): () {
+    "Hello, "!
+    name!
+}
+
+fn main(): String {
+    greet("World")
+    "Done"!
+}
+"#;
+        run_test_with_compiler(program_source, backend, "Done").await;
+    }
+
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
+    #[tokio::test]
+    async fn test_unit_literal_end_to_end(#[case] backend: CompilerBackend) {
         let source = r#"
 fn main(): () {
     return ()
 }
 "#;
         let program = CompilationUnit::from_string(source.to_string());
-        let runtime = Runtime::builder(program).build();
+        let runtime = Runtime::builder(program)
+            .with_compiler(Rc::new(match backend {
+                CompilerBackend::Expression => Compiler::new(),
+                CompilerBackend::Bytecode => Compiler::with_bytecode(true),
+            }))
+            .build();
         let result = runtime.run().await.unwrap();
 
         assert_eq!(result, ExpressionValue::Unit);
     }
 
+    #[rstest]
+    #[case::expression(CompilerBackend::Expression)]
+    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_if_else_expression_end_to_end() {
+    async fn test_if_else_expression_end_to_end(#[case] backend: CompilerBackend) {
         let program_source = r#"
 fn choose_message(ready: Boolean): String {
     return if ready { "System ready" } else { "System not ready" }
@@ -777,23 +524,10 @@ fn main(): String {
     message!
 }
 "#;
-
-        let program = CompilationUnit::from_string(program_source.to_string());
-        let compiler = Compiler::new();
-        let compiled_program = compiler.compile_program(&program).unwrap();
-
-        assert_eq!(compiled_program.functions().len(), 2);
-        assert!(compiled_program.main_function().is_some());
-
-        let runtime = Runtime::builder(program).build();
-        let result = runtime.run().await.unwrap();
-
-        match result {
-            ExpressionValue::String(s) => assert_eq!(
-                s,
-                "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>"
-            ),
-            _ => panic!("Expected string result, got: {:?}", result),
-        }
+        run_test_with_compiler(
+            program_source,
+            backend,
+            "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>"
+        ).await;
     }
 }

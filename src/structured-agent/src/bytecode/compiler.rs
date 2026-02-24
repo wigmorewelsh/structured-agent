@@ -1,6 +1,8 @@
-use super::{Instruction, builder::InstructionBuilder};
+use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast::{self, Expression, Statement};
-use crate::types::Parameter;
+use crate::compiler::FunctionCompiler;
+use crate::expressions::FunctionExpr;
+use crate::types::{Expression as ExpressionTrait, Function, Parameter};
 use std::fmt;
 
 pub struct CompiledFunction {
@@ -14,7 +16,7 @@ pub struct CompiledFunction {
 pub struct BytecodeCompiler;
 
 impl BytecodeCompiler {
-    pub fn compile_function(ast_func: &ast::Function) -> Result<CompiledFunction, String> {
+    pub fn compile_to_bytecode(ast_func: &ast::Function) -> Result<CompiledFunction, String> {
         let mut builder = InstructionBuilder::new();
 
         for stmt in &ast_func.body.statements {
@@ -367,6 +369,21 @@ impl BytecodeCompiler {
 
     fn generate_param_names(count: usize) -> Vec<String> {
         (0..count).map(|i| format!("arg{}", i)).collect()
+    }
+}
+
+impl FunctionCompiler for BytecodeCompiler {
+    fn compile_function(ast_func: &ast::Function) -> Result<FunctionExpr, String> {
+        let compiled = Self::compile_to_bytecode(ast_func)?;
+        let bytecode_expr = BytecodeFunctionExpr::new(compiled);
+
+        Ok(FunctionExpr {
+            name: Function::name(&bytecode_expr).to_string(),
+            parameters: Function::parameters(&bytecode_expr).to_vec(),
+            return_type: bytecode_expr.return_type(),
+            body: vec![Box::new(bytecode_expr) as Box<dyn ExpressionTrait>],
+            documentation: ast_func.documentation.clone(),
+        })
     }
 }
 
