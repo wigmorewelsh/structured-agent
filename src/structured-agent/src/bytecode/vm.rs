@@ -1,5 +1,5 @@
 use super::{CompiledFunction, Instruction};
-use crate::runtime::{Context, ExpressionResult, ExpressionValue, Runtime};
+use crate::runtime::{Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -192,7 +192,9 @@ impl VM {
     }
 
     fn execute_ret(&self, state: &VMState, var: &str) -> Result<ExpressionResult, String> {
-        Self::read_variable(state, var)
+        let result = Self::read_variable(state, var)?;
+        state.current_context.set_return_value(result.clone());
+        Ok(result)
     }
 
     // ===== Function Call Instructions =====
@@ -228,10 +230,17 @@ impl VM {
             .take()
             .ok_or("CallInvoke without CallBegin")?;
 
-        let child_context = Arc::new(Context::with_parent(
+        let child_context = Arc::new(Context::create_child(
             state.current_context.clone(),
+            true,
             self.runtime.clone(),
         ));
+
+        child_context.add_event(
+            ExpressionValue::String(format!("## {}", pending.function_name)),
+            None,
+            None,
+        );
 
         let func = self
             .runtime
@@ -248,17 +257,29 @@ impl VM {
             ));
         }
 
+        let mut evaluated_parameters = Vec::new();
+
         for (i, (_generic_name, var_name)) in pending.arguments.iter().enumerate() {
             let value = Self::read_variable(state, &var_name)?;
             let actual_param_name = &params[i].name;
             child_context
                 .variables
-                .insert(actual_param_name.clone(), value);
+                .insert(actual_param_name.clone(), value.clone());
+            evaluated_parameters.push(ExpressionParameter::new(
+                actual_param_name.clone(),
+                value.value.clone(),
+            ));
         }
 
         let result = func.evaluate(child_context.clone()).await?;
 
-        Self::write_variable(state, dest, result);
+        let result_with_metadata = ExpressionResult {
+            name: Some(pending.function_name.clone()),
+            params: Some(evaluated_parameters),
+            value: result.value,
+        };
+
+        Self::write_variable(state, dest, result_with_metadata);
         Self::advance_pc(state);
         Ok(())
     }
@@ -407,10 +428,8 @@ impl VM {
     fn read_variable(state: &VMState, name: &str) -> Result<ExpressionResult, String> {
         state
             .current_context
-            .variables
-            .get(name)
+            .get_variable(name)
             .ok_or_else(|| format!("Variable not found: {}", name))
-            .map(|v| v.clone())
     }
 
     fn write_variable(state: &VMState, name: &str, value: ExpressionResult) {

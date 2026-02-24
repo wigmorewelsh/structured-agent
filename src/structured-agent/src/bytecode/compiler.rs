@@ -19,16 +19,28 @@ impl BytecodeCompiler {
     pub fn compile_to_bytecode(ast_func: &ast::Function) -> Result<CompiledFunction, String> {
         let mut builder = InstructionBuilder::new();
 
+        let mut has_explicit_return = false;
         for stmt in &ast_func.body.statements {
+            if matches!(stmt, Statement::Return(_)) {
+                has_explicit_return = true;
+            }
             Self::compile_statement(&mut builder, stmt)?;
         }
 
-        if ast_func.return_type == ast::Type::Unit {
-            let unit_temp = builder.next_temp();
-            builder.emit(Instruction::LdcUnit {
-                dest: unit_temp.clone(),
-            });
-            builder.emit(Instruction::Ret { var: unit_temp });
+        if !has_explicit_return {
+            let return_temp = builder.next_temp();
+            if ast_func.return_type == ast::Type::Unit {
+                builder.emit(Instruction::LdcUnit {
+                    dest: return_temp.clone(),
+                });
+            } else {
+                let return_type_str = Self::type_to_string(&ast_func.return_type);
+                builder.emit(Instruction::LlmGenerate {
+                    dest: return_temp.clone(),
+                    return_type: return_type_str,
+                });
+            }
+            builder.emit(Instruction::Ret { var: return_temp });
         }
 
         let (instructions, labels) = builder.build()?;
@@ -271,6 +283,11 @@ impl BytecodeCompiler {
                 let clause_count = select_expr.clauses.len();
                 builder.emit(Instruction::SelectBegin { clause_count });
 
+                // Declare the destination variable in parent context before creating child contexts
+                builder.emit(Instruction::Decl {
+                    name: dest_var.to_string(),
+                });
+
                 let mut clause_labels = Vec::new();
                 for i in 0..clause_count {
                     let label = format!("clause_{}_{}", i, builder.next_temp());
@@ -320,6 +337,7 @@ impl BytecodeCompiler {
                     Self::compile_expression(builder, &clause.expression_next, dest_var)?;
 
                     builder.emit(Instruction::CtxRestore);
+
                     builder.emit_br(&end_label);
                 }
 
@@ -369,6 +387,16 @@ impl BytecodeCompiler {
 
     fn generate_param_names(count: usize) -> Vec<String> {
         (0..count).map(|i| format!("arg{}", i)).collect()
+    }
+
+    fn type_to_string(ast_type: &ast::Type) -> String {
+        match ast_type {
+            ast::Type::Unit => "Unit".to_string(),
+            ast::Type::Boolean => "Boolean".to_string(),
+            ast::Type::String => "String".to_string(),
+            ast::Type::List(inner) => format!("List<{}>", Self::type_to_string(inner)),
+            ast::Type::Option(inner) => format!("Option<{}>", Self::type_to_string(inner)),
+        }
     }
 }
 

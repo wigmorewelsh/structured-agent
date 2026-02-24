@@ -49,6 +49,62 @@ mod compilation_tests {
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
     }
 
+    #[test]
+    fn test_display_choose_message_bytecode() {
+        let code = r#"
+fn choose_message(ready: Boolean): String {
+    return if ready { "System ready" } else { "System not ready" }
+}
+
+fn main(): String {
+    let message = choose_message(true)
+    message!
+}
+"#;
+        let module = parse_code(code);
+
+        for def in &module.definitions {
+            if let crate::ast::Definition::Function(func) = def {
+                let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+                println!("\n{}", compiled);
+            }
+        }
+    }
+
+    #[test]
+    fn test_display_select_bytecode() {
+        let code = r#"
+fn add(a: String, b: String): String {
+    "Adding numbers"
+}
+
+fn subtract(a: String, b: String): String {
+    "Subtracting numbers"
+}
+
+fn calculator(x: String, y: String): String {
+    let result = select {
+        add(x, y) as sum => sum,
+        subtract(x, y) as diff => diff
+    }
+    result
+}
+
+fn main(): String {
+    let result = calculator("5", "3")
+    result!
+}
+"#;
+        let module = parse_code(code);
+
+        for def in &module.definitions {
+            if let crate::ast::Definition::Function(func) = def {
+                let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+                println!("\n{}", compiled);
+            }
+        }
+    }
+
     fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
         for def in &module.definitions {
             if let crate::ast::Definition::Function(f) = def {
@@ -392,35 +448,36 @@ fn greet(name: String): () {
 ): String {
   select_start_$tmp1:
       0: select.begin 2
-      1: select.clause analyze 0
-      2: select.clause summarize 0
-      3: llm.select $tmp4
-      4: switch $tmp4, [5, 15]
+      1: decl $tmp0
+      2: select.clause analyze 0
+      3: select.clause summarize 0
+      4: llm.select $tmp4
+      5: switch $tmp4, [6, 16]
   clause_0_$tmp2:
-      5: ctx.child false
-      6: call.begin analyze
-      7: ldc.str $tmp7, "code"
-      8: call.arg arg0, $tmp7
-      9: call.invoke $tmp6
-     10: decl result
-     11: mov result, $tmp6
-     12: mov $tmp0, result
-     13: ctx.restore
-     14: br 25
+      6: ctx.child false
+      7: call.begin analyze
+      8: ldc.str $tmp7, "code"
+      9: call.arg arg0, $tmp7
+     10: call.invoke $tmp6
+     11: decl result
+     12: mov result, $tmp6
+     13: mov $tmp0, result
+     14: ctx.restore
+     15: br 26
   clause_1_$tmp3:
-     15: ctx.child false
-     16: call.begin summarize
-     17: ldc.str $tmp9, "text"
-     18: call.arg arg0, $tmp9
-     19: call.invoke $tmp8
-     20: decl summary
-     21: mov summary, $tmp8
-     22: mov $tmp0, summary
-     23: ctx.restore
-     24: br 25
+     16: ctx.child false
+     17: call.begin summarize
+     18: ldc.str $tmp9, "text"
+     19: call.arg arg0, $tmp9
+     20: call.invoke $tmp8
+     21: decl summary
+     22: mov summary, $tmp8
+     23: mov $tmp0, summary
+     24: ctx.restore
+     25: br 26
   select_end_$tmp5:
-     25: nop
-     26: ret $tmp0
+     26: nop
+     27: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -512,8 +569,6 @@ fn greet(name: String): () {
 ): () {
       0: ldc.unit $tmp0
       1: ret $tmp0
-      2: ldc.unit $tmp1
-      3: ret $tmp1
 }
 "#;
         compile_and_check(code, expected);
@@ -537,8 +592,6 @@ fn greet(name: String): () {
       3: drop $tmp0
       4: mov $tmp1, x
       5: ret $tmp1
-      6: ldc.unit $tmp2
-      7: ret $tmp2
 }
 "#;
         compile_and_check(code, expected);
