@@ -41,7 +41,10 @@ impl BytecodeCompiler {
             Statement::Injection(expr) => {
                 let dest_var = builder.next_temp();
                 Self::compile_expression(builder, expr, &dest_var)?;
-                builder.emit(Instruction::CtxEvent { var: dest_var });
+                builder.emit(Instruction::CtxEvent {
+                    var: dest_var.clone(),
+                });
+                builder.emit_drop(dest_var);
             }
 
             Statement::Assignment {
@@ -56,8 +59,9 @@ impl BytecodeCompiler {
                 });
                 builder.emit(Instruction::Mov {
                     dest: variable.clone(),
-                    src: temp_var,
+                    src: temp_var.clone(),
                 });
+                builder.emit_drop(temp_var);
             }
 
             Statement::VariableAssignment {
@@ -69,13 +73,15 @@ impl BytecodeCompiler {
                 Self::compile_expression(builder, expression, &temp_var)?;
                 builder.emit(Instruction::Mov {
                     dest: variable.clone(),
-                    src: temp_var,
+                    src: temp_var.clone(),
                 });
+                builder.emit_drop(temp_var);
             }
 
             Statement::ExpressionStatement(expr) => {
                 let temp_var = builder.next_temp();
                 Self::compile_expression(builder, expr, &temp_var)?;
+                builder.emit_drop(temp_var);
             }
 
             Statement::If {
@@ -122,9 +128,6 @@ impl BytecodeCompiler {
             Statement::While {
                 condition, body, ..
             } => {
-                let while_start = format!("while_start_{}", builder.next_temp());
-                builder.emit_label(&while_start);
-
                 let loop_start = format!("loop_start_{}", builder.next_temp());
                 let loop_end = format!("loop_end_{}", builder.next_temp());
 

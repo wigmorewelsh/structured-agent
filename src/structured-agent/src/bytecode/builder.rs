@@ -82,6 +82,10 @@ impl InstructionBuilder {
         temp
     }
 
+    pub fn emit_drop(&mut self, var: String) {
+        self.instructions.push(Instruction::Drop { name: var });
+    }
+
     pub fn build(mut self) -> Result<(Vec<Instruction>, HashMap<String, usize>), String> {
         for (position, label, kind) in self.pending_labels {
             let target = self

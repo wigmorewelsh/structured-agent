@@ -124,6 +124,7 @@ mod compilation_tests {
       0: ldc.str $tmp0, "test"
       1: decl x
       2: mov x, $tmp0
+      3: drop $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -142,6 +143,7 @@ mod compilation_tests {
 ): () {
       0: ldc.str $tmp0, "event"
       1: ctx.event $tmp0
+      2: drop $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -187,19 +189,21 @@ mod compilation_tests {
 ): () {
   if_start_$tmp0:
       0: ldc.bool $tmp1, true
-      1: brfalse $tmp1, 7
+      1: brfalse $tmp1, 8
       2: ctx.child false
       3: ldc.str $tmp4, "then"
       4: ctx.event $tmp4
-      5: ctx.restore
-      6: br 11
+      5: drop $tmp4
+      6: ctx.restore
+      7: br 13
   else_$tmp2:
-      7: ctx.child false
-      8: ldc.str $tmp5, "else"
-      9: ctx.event $tmp5
-     10: ctx.restore
+      8: ctx.child false
+      9: ldc.str $tmp5, "else"
+     10: ctx.event $tmp5
+     11: drop $tmp5
+     12: ctx.restore
   end_$tmp3:
-     11: nop
+     13: nop
 }
 "#;
         compile_and_check(code, expected);
@@ -218,17 +222,17 @@ mod compilation_tests {
         let expected = r#"fn test(
 
 ): () {
-  while_start_$tmp0:
-  loop_start_$tmp1:
-      0: ldc.bool $tmp3, true
-      1: brfalse $tmp3, 7
+  loop_start_$tmp0:
+      0: ldc.bool $tmp2, true
+      1: brfalse $tmp2, 8
       2: ctx.child false
-      3: ldc.str $tmp4, "loop"
-      4: ctx.event $tmp4
-      5: ctx.restore
-      6: br 0
-  loop_end_$tmp2:
-      7: nop
+      3: ldc.str $tmp3, "loop"
+      4: ctx.event $tmp3
+      5: drop $tmp3
+      6: ctx.restore
+      7: br 0
+  loop_end_$tmp1:
+      8: nop
 }
 "#;
         compile_and_check(code, expected);
@@ -273,8 +277,10 @@ fn greet(name: String): () {
       0: ldc.str $tmp0, "Hello"
       1: decl message
       2: mov message, $tmp0
-      3: mov $tmp1, message
-      4: ctx.event $tmp1
+      3: drop $tmp0
+      4: mov $tmp1, message
+      5: ctx.event $tmp1
+      6: drop $tmp1
 }
 "#;
         compile_and_check_named(code, "greet", expected);
@@ -299,8 +305,9 @@ fn greet(name: String): () {
       3: call.invoke $tmp0
       4: decl result
       5: mov result, $tmp0
-      6: mov $tmp2, result
-      7: ret $tmp2
+      6: drop $tmp0
+      7: mov $tmp2, result
+      8: ret $tmp2
 }
 "#;
         compile_and_check_named(code, "calculate", expected);
@@ -328,28 +335,32 @@ fn greet(name: String): () {
       0: ldc.str $tmp0, "initial"
       1: decl result
       2: mov result, $tmp0
+      3: drop $tmp0
   if_start_$tmp1:
-      3: mov $tmp2, filter
-      4: brfalse $tmp2, 15
-      5: ctx.child false
-      6: call.begin transform
-      7: mov $tmp6, items
-      8: call.arg arg0, $tmp6
-      9: call.invoke $tmp5
-     10: mov result, $tmp5
-     11: mov $tmp7, result
-     12: ctx.event $tmp7
-     13: ctx.restore
-     14: br 19
+      4: mov $tmp2, filter
+      5: brfalse $tmp2, 18
+      6: ctx.child false
+      7: call.begin transform
+      8: mov $tmp6, items
+      9: call.arg arg0, $tmp6
+     10: call.invoke $tmp5
+     11: mov result, $tmp5
+     12: drop $tmp5
+     13: mov $tmp7, result
+     14: ctx.event $tmp7
+     15: drop $tmp7
+     16: ctx.restore
+     17: br 23
   else_$tmp3:
-     15: ctx.child false
-     16: ldc.str $tmp8, "skipped"
-     17: ctx.event $tmp8
-     18: ctx.restore
+     18: ctx.child false
+     19: ldc.str $tmp8, "skipped"
+     20: ctx.event $tmp8
+     21: drop $tmp8
+     22: ctx.restore
   end_$tmp4:
-     19: nop
-     20: mov $tmp9, result
-     21: ret $tmp9
+     23: nop
+     24: mov $tmp9, result
+     25: ret $tmp9
 }
 "#;
         compile_and_check_named(code, "process_items", expected);
@@ -446,10 +457,74 @@ fn greet(name: String): () {
       0: ldc.str $tmp0, "initial"
       1: decl x
       2: mov x, $tmp0
-      3: ldc.str $tmp1, "updated"
-      4: mov x, $tmp1
-      5: mov $tmp2, x
-      6: ret $tmp2
+      3: drop $tmp0
+      4: ldc.str $tmp1, "updated"
+      5: mov x, $tmp1
+      6: drop $tmp1
+      7: mov $tmp2, x
+      8: ret $tmp2
+}
+"#;
+        compile_and_check(code, expected);
+    }
+
+    #[test]
+    fn test_compile_placeholder() {
+        let code = r#"
+            fn test(): String {
+                return foo(_)
+            }
+        "#;
+
+        let expected = r#"fn test(
+
+): String {
+      0: call.begin foo
+      1: llm.placeholder $tmp1, placeholder, Unknown
+      2: call.arg arg0, $tmp1
+      3: call.invoke $tmp0
+      4: ret $tmp0
+}
+"#;
+        compile_and_check(code, expected);
+    }
+
+    #[test]
+    fn test_compile_unit_literal() {
+        let code = r#"
+            fn test(): () {
+                return ()
+            }
+        "#;
+
+        let expected = r#"fn test(
+
+): () {
+      0: ldc.unit $tmp0
+      1: ret $tmp0
+}
+"#;
+        compile_and_check(code, expected);
+    }
+
+    #[test]
+    fn test_compile_unit_literal_in_variable() {
+        let code = r#"
+            fn test(): () {
+                let x = ()
+                return x
+            }
+        "#;
+
+        let expected = r#"fn test(
+
+): () {
+      0: ldc.unit $tmp0
+      1: decl x
+      2: mov x, $tmp0
+      3: drop $tmp0
+      4: mov $tmp1, x
+      5: ret $tmp1
 }
 "#;
         compile_and_check(code, expected);
