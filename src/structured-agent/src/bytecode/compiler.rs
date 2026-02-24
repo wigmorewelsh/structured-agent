@@ -8,6 +8,7 @@ pub struct CompiledFunction {
     pub parameters: Vec<Parameter>,
     pub return_type: crate::types::Type,
     pub instructions: Vec<Instruction>,
+    pub labels: std::collections::HashMap<String, usize>,
 }
 
 pub struct BytecodeCompiler;
@@ -20,7 +21,7 @@ impl BytecodeCompiler {
             Self::compile_statement(&mut builder, stmt)?;
         }
 
-        let instructions = builder.build()?;
+        let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
             name: ast_func.name.clone(),
@@ -31,6 +32,7 @@ impl BytecodeCompiler {
                 .collect(),
             return_type: Self::convert_type(&ast_func.return_type),
             instructions,
+            labels,
         })
     }
 
@@ -82,6 +84,9 @@ impl BytecodeCompiler {
                 else_body,
                 ..
             } => {
+                let if_start = format!("if_start_{}", builder.next_temp());
+                builder.emit_label(&if_start);
+
                 let cond_var = builder.next_temp();
                 Self::compile_expression(builder, condition, &cond_var)?;
 
@@ -111,11 +116,15 @@ impl BytecodeCompiler {
                 }
 
                 builder.emit_label(&end_label);
+                builder.emit(Instruction::Nop);
             }
 
             Statement::While {
                 condition, body, ..
             } => {
+                let while_start = format!("while_start_{}", builder.next_temp());
+                builder.emit_label(&while_start);
+
                 let loop_start = format!("loop_start_{}", builder.next_temp());
                 let loop_end = format!("loop_end_{}", builder.next_temp());
 
@@ -135,6 +144,7 @@ impl BytecodeCompiler {
                 builder.emit_br(&loop_start);
 
                 builder.emit_label(&loop_end);
+                builder.emit(Instruction::Nop);
             }
 
             Statement::Return(expr) => {
@@ -242,6 +252,9 @@ impl BytecodeCompiler {
             }
 
             Expression::Select(select_expr) => {
+                let select_start = format!("select_start_{}", builder.next_temp());
+                builder.emit_label(&select_start);
+
                 let clause_count = select_expr.clauses.len();
                 builder.emit(Instruction::SelectBegin { clause_count });
 
@@ -298,6 +311,7 @@ impl BytecodeCompiler {
                 }
 
                 builder.emit_label(&end_label);
+                builder.emit(Instruction::Nop);
             }
 
             Expression::IfElse {
@@ -321,6 +335,7 @@ impl BytecodeCompiler {
                 Self::compile_expression(builder, else_expr, dest_var)?;
 
                 builder.emit_label(&end_label);
+                builder.emit(Instruction::Nop);
             }
         }
 
@@ -355,7 +370,24 @@ impl fmt::Display for CompiledFunction {
         }
         writeln!(f, "\n): {} {{", self.return_type.name())?;
 
+        let mut label_positions: Vec<(usize, &str)> = self
+            .labels
+            .iter()
+            .map(|(name, pos)| (*pos, name.as_str()))
+            .collect();
+        label_positions.sort_by_key(|(pos, _)| *pos);
+
+        let mut label_iter = label_positions.iter().peekable();
+
         for (i, instr) in self.instructions.iter().enumerate() {
+            while let Some((pos, name)) = label_iter.peek() {
+                if *pos == i {
+                    writeln!(f, "  {}:", name)?;
+                    label_iter.next();
+                } else {
+                    break;
+                }
+            }
             writeln!(f, "    {:3}: {}", i, instr)?;
         }
 

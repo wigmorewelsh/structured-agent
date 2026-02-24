@@ -185,17 +185,21 @@ mod compilation_tests {
         let expected = r#"fn test(
 
 ): () {
-      0: ldc.bool $tmp0, true
-      1: brfalse $tmp0, 6
+  if_start_$tmp0:
+      0: ldc.bool $tmp1, true
+      1: brfalse $tmp1, 7
       2: ctx.child false
-      3: ldc.str $tmp3, "then"
-      4: ctx.event $tmp3
+      3: ldc.str $tmp4, "then"
+      4: ctx.event $tmp4
       5: ctx.restore
-      6: br 5
+      6: br 11
+  else_$tmp2:
       7: ctx.child false
-      8: ldc.str $tmp4, "else"
-      9: ctx.event $tmp4
+      8: ldc.str $tmp5, "else"
+      9: ctx.event $tmp5
      10: ctx.restore
+  end_$tmp3:
+     11: nop
 }
 "#;
         compile_and_check(code, expected);
@@ -214,13 +218,17 @@ mod compilation_tests {
         let expected = r#"fn test(
 
 ): () {
-      0: ldc.bool $tmp2, true
-      1: brfalse $tmp2, 6
+  while_start_$tmp0:
+  loop_start_$tmp1:
+      0: ldc.bool $tmp3, true
+      1: brfalse $tmp3, 7
       2: ctx.child false
-      3: ldc.str $tmp3, "loop"
-      4: ctx.event $tmp3
+      3: ldc.str $tmp4, "loop"
+      4: ctx.event $tmp4
       5: ctx.restore
-      6: br -6
+      6: br 0
+  loop_end_$tmp2:
+      7: nop
 }
 "#;
         compile_and_check(code, expected);
@@ -320,24 +328,28 @@ fn greet(name: String): () {
       0: ldc.str $tmp0, "initial"
       1: decl result
       2: mov result, $tmp0
-      3: mov $tmp1, filter
-      4: brfalse $tmp1, 11
+  if_start_$tmp1:
+      3: mov $tmp2, filter
+      4: brfalse $tmp2, 15
       5: ctx.child false
       6: call.begin transform
-      7: mov $tmp5, items
-      8: call.arg arg0, $tmp5
-      9: call.invoke $tmp4
-     10: mov result, $tmp4
-     11: mov $tmp6, result
-     12: ctx.event $tmp6
+      7: mov $tmp6, items
+      8: call.arg arg0, $tmp6
+      9: call.invoke $tmp5
+     10: mov result, $tmp5
+     11: mov $tmp7, result
+     12: ctx.event $tmp7
      13: ctx.restore
-     14: br 5
+     14: br 19
+  else_$tmp3:
      15: ctx.child false
-     16: ldc.str $tmp7, "skipped"
-     17: ctx.event $tmp7
+     16: ldc.str $tmp8, "skipped"
+     17: ctx.event $tmp8
      18: ctx.restore
-     19: mov $tmp8, result
-     20: ret $tmp8
+  end_$tmp4:
+     19: nop
+     20: mov $tmp9, result
+     21: ret $tmp9
 }
 "#;
         compile_and_check_named(code, "process_items", expected);
@@ -357,32 +369,37 @@ fn greet(name: String): () {
         let expected = r#"fn test(
 
 ): String {
+  select_start_$tmp1:
       0: select.begin 2
       1: select.clause analyze 0
       2: select.clause summarize 0
-      3: llm.select $tmp3
-      4: switch $tmp3, [1, 11]
+      3: llm.select $tmp4
+      4: switch $tmp4, [5, 15]
+  clause_0_$tmp2:
       5: ctx.child false
       6: call.begin analyze
-      7: ldc.str $tmp6, "code"
-      8: call.arg arg0, $tmp6
-      9: call.invoke $tmp5
+      7: ldc.str $tmp7, "code"
+      8: call.arg arg0, $tmp7
+      9: call.invoke $tmp6
      10: decl result
-     11: mov result, $tmp5
+     11: mov result, $tmp6
      12: mov $tmp0, result
      13: ctx.restore
-     14: br 11
+     14: br 25
+  clause_1_$tmp3:
      15: ctx.child false
      16: call.begin summarize
-     17: ldc.str $tmp8, "text"
-     18: call.arg arg0, $tmp8
-     19: call.invoke $tmp7
+     17: ldc.str $tmp9, "text"
+     18: call.arg arg0, $tmp9
+     19: call.invoke $tmp8
      20: decl summary
-     21: mov summary, $tmp7
+     21: mov summary, $tmp8
      22: mov $tmp0, summary
      23: ctx.restore
-     24: br 1
-     25: ret $tmp0
+     24: br 25
+  select_end_$tmp5:
+     25: nop
+     26: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -400,11 +417,14 @@ fn greet(name: String): () {
     x: Boolean
 ): String {
       0: mov $tmp1, x
-      1: brfalse $tmp1, 3
+      1: brfalse $tmp1, 4
       2: ldc.str $tmp0, "yes"
-      3: br 2
+      3: br 5
+  ifelse_else_$tmp2:
       4: ldc.str $tmp0, "no"
-      5: ret $tmp0
+  ifelse_end_$tmp3:
+      5: nop
+      6: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);

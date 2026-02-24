@@ -2,6 +2,9 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    /// No operation (used as jump target)
+    Nop,
+
     /// Load string constant into variable
     LdcStr { dest: String, value: String },
     /// Load boolean constant into variable
@@ -68,6 +71,8 @@ pub enum Instruction {
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Instruction::Nop => write!(f, "nop"),
+
             Instruction::LdcStr { dest, value } => {
                 write!(f, "ldc.str {}, \"{}\"", dest, value.escape_default())
             }

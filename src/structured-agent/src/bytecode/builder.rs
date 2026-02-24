@@ -82,24 +82,32 @@ impl InstructionBuilder {
         temp
     }
 
-    pub fn build(mut self) -> Result<Vec<Instruction>, String> {
+    pub fn build(mut self) -> Result<(Vec<Instruction>, HashMap<String, usize>), String> {
         for (position, label, kind) in self.pending_labels {
             let target = self
                 .labels
                 .get(&label)
                 .ok_or_else(|| format!("Undefined label: {}", label))?;
 
-            let offset = (*target as i32) - (position as i32);
+            let target_position = *target as i32;
 
             match kind {
                 PendingJumpKind::Br => {
-                    self.instructions[position] = Instruction::Br { offset };
+                    self.instructions[position] = Instruction::Br {
+                        offset: target_position,
+                    };
                 }
                 PendingJumpKind::BrFalse(var) => {
-                    self.instructions[position] = Instruction::BrFalse { var, offset };
+                    self.instructions[position] = Instruction::BrFalse {
+                        var,
+                        offset: target_position,
+                    };
                 }
                 PendingJumpKind::BrTrue(var) => {
-                    self.instructions[position] = Instruction::BrTrue { var, offset };
+                    self.instructions[position] = Instruction::BrTrue {
+                        var,
+                        offset: target_position,
+                    };
                 }
                 PendingJumpKind::SwitchCase(var, index) => {
                     if let Instruction::Switch {
@@ -108,14 +116,14 @@ impl InstructionBuilder {
                     } = &mut self.instructions[position]
                     {
                         if switch_var == &var {
-                            offsets[index] = offset;
+                            offsets[index] = target_position;
                         }
                     }
                 }
             }
         }
 
-        Ok(self.instructions)
+        Ok((self.instructions, self.labels))
     }
 }
 
