@@ -155,6 +155,7 @@ mod tests {
             engine: EngineType::Print,
             with_default_functions: true,
             with_unstable_functions: false,
+            use_bytecode_compiler: false,
             mode: Mode::Run,
         };
 
@@ -179,6 +180,7 @@ mod tests {
             engine: EngineType::Print,
             with_default_functions: false,
             with_unstable_functions: false,
+            use_bytecode_compiler: false,
             mode: Mode::Run,
         };
 

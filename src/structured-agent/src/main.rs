@@ -1,6 +1,7 @@
 mod acp;
 mod analysis;
 mod ast;
+mod bytecode;
 mod cli;
 mod compiler;
 mod diagnostics;
