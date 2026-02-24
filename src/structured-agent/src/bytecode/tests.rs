@@ -125,6 +125,8 @@ mod compilation_tests {
       1: decl x
       2: mov x, $tmp0
       3: drop $tmp0
+      4: ldc.unit $tmp1
+      5: ret $tmp1
 }
 "#;
         compile_and_check(code, expected);
@@ -144,6 +146,8 @@ mod compilation_tests {
       0: ldc.str $tmp0, "event"
       1: ctx.event $tmp0
       2: drop $tmp0
+      3: ldc.unit $tmp1
+      4: ret $tmp1
 }
 "#;
         compile_and_check(code, expected);
@@ -204,6 +208,8 @@ mod compilation_tests {
      12: ctx.restore
   end_$tmp3:
      13: nop
+     14: ldc.unit $tmp6
+     15: ret $tmp6
 }
 "#;
         compile_and_check(code, expected);
@@ -233,6 +239,8 @@ mod compilation_tests {
       7: br 0
   loop_end_$tmp1:
       8: nop
+      9: ldc.unit $tmp4
+     10: ret $tmp4
 }
 "#;
         compile_and_check(code, expected);
@@ -281,6 +289,8 @@ fn greet(name: String): () {
       4: mov $tmp1, message
       5: ctx.event $tmp1
       6: drop $tmp1
+      7: ldc.unit $tmp2
+      8: ret $tmp2
 }
 "#;
         compile_and_check_named(code, "greet", expected);
@@ -502,6 +512,8 @@ fn greet(name: String): () {
 ): () {
       0: ldc.unit $tmp0
       1: ret $tmp0
+      2: ldc.unit $tmp1
+      3: ret $tmp1
 }
 "#;
         compile_and_check(code, expected);
@@ -525,8 +537,397 @@ fn greet(name: String): () {
       3: drop $tmp0
       4: mov $tmp1, x
       5: ret $tmp1
+      6: ldc.unit $tmp2
+      7: ret $tmp2
 }
 "#;
         compile_and_check(code, expected);
+    }
+}
+
+#[cfg(test)]
+mod vm_execution_tests {
+    use crate::ast::Module;
+    use crate::bytecode::{BytecodeCompiler, VM};
+    use crate::compiler::{CodespanParser, CompilationUnit, CompilerTrait, Parser};
+    use crate::diagnostics::DiagnosticManager;
+    use crate::runtime::{Context, ExpressionValue, Runtime};
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    fn parse_code(code: &str) -> Module {
+        let unit = CompilationUnit::from_string(code.to_string());
+        let mut manager = DiagnosticManager::new();
+        let file_id = manager.add_file("test.sa".to_string(), code.to_string());
+        let parser = CodespanParser::new(manager.reporter().clone());
+        parser.parse(&unit, file_id, manager.reporter()).unwrap()
+    }
+
+    fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
+        for def in &module.definitions {
+            if let crate::ast::Definition::Function(f) = def {
+                if f.name == name {
+                    return f;
+                }
+            }
+        }
+        panic!("Function '{}' not found in module", name);
+    }
+
+    #[tokio::test]
+    async fn test_vm_string_literal() {
+        let code = r#"
+            fn test(): String {
+                return "hello"
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "hello"),
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_boolean_literal() {
+        let code = r#"
+            fn test(): Boolean {
+                return true
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::Boolean(b) => assert_eq!(b, true),
+            _ => panic!("Expected boolean value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_unit_literal() {
+        let code = r#"
+            fn test(): () {
+                return ()
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::Unit => {}
+            _ => panic!("Expected unit value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_assignment_and_variable() {
+        let code = r#"
+            fn test(): String {
+                let x = "test"
+                return x
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "test"),
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_variable_reassignment() {
+        let code = r#"
+            fn test(): String {
+                let x = "initial"
+                x = "updated"
+                return x
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "updated"),
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_if_else_expression() {
+        let code = r#"
+            fn test(x: Boolean): String {
+                return if x { "yes" } else { "no" }
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+
+        context.variables.insert(
+            "x".to_string(),
+            crate::runtime::ExpressionResult::new(ExpressionValue::Boolean(true)),
+        );
+
+        let vm = VM::new(runtime);
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "yes"),
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_context_events() {
+        let code = r#"
+            fn test(): () {
+                "event1"!
+                "event2"!
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        vm.execute(&compiled, context.clone()).await.unwrap();
+        assert_eq!(context.events_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_vm_while_loop() {
+        let code = r#"
+            fn test(): Boolean {
+                let x = false
+                while false {
+                    x = true
+                }
+                return x
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::Boolean(b) => assert_eq!(b, false),
+            _ => panic!("Expected boolean value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_nested_contexts() {
+        let code = r#"
+            fn test(): () {
+                let x = "outer"
+                if true {
+                    let y = "inner"
+                }
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        vm.execute(&compiled, context.clone()).await.unwrap();
+        assert!(context.variables.contains_key("x"));
+        assert!(!context.variables.contains_key("y"));
+    }
+
+    #[tokio::test]
+    async fn test_vm_error_variable_not_found() {
+        let code = r#"
+            fn test(): String {
+                return nonexistent
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Variable not found"));
+    }
+
+    #[tokio::test]
+    async fn test_vm_error_type_mismatch_brfalse() {
+        let code = r#"
+            fn test(): () {
+                let x = "not a boolean"
+                if x {
+                    "unreachable"!
+                }
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&compiled, context).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected boolean"));
+    }
+
+    #[tokio::test]
+    async fn test_vm_drop_removes_variable() {
+        let code = r#"
+            fn test(): () {
+                let x = "temp"
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        vm.execute(&compiled, context.clone()).await.unwrap();
+        assert!(!context.variables.contains_key("$tmp0"));
+    }
+
+    #[tokio::test]
+    async fn test_vm_decl_creates_unit_variable() {
+        let code = r#"
+            fn test(): () {
+                let x = "value"
+            }
+        "#;
+
+        let module = parse_code(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::compile_function(func).unwrap();
+
+        let program = CompilationUnit::from_string("".to_string());
+        let runtime = Rc::new(Runtime::builder(program).build());
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        vm.execute(&compiled, context.clone()).await.unwrap();
+        let x_value = context.variables.get("x").unwrap();
+        match x_value.value {
+            ExpressionValue::String(ref s) => assert_eq!(s, "value"),
+            _ => panic!("Expected string value"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vm_function_call() {
+        let code = r#"
+            fn helper(x: String): String {
+                return x
+            }
+
+            fn test(): String {
+                return helper("test_value")
+            }
+        "#;
+
+        let module = parse_code(code);
+        let test_func = get_function(&module, "test");
+        let test_compiled = BytecodeCompiler::compile_function(test_func).unwrap();
+
+        let program = CompilationUnit::from_string(code.to_string());
+        let compiler = crate::compiler::Compiler::new();
+        let compiled_program = compiler.compile_program(&program).unwrap();
+
+        let mut runtime = Runtime::builder(program.clone()).build();
+
+        for function in compiled_program.functions().values() {
+            runtime.register_function(function.clone());
+        }
+
+        let runtime = Rc::new(runtime);
+        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let vm = VM::new(runtime);
+
+        let result = vm.execute(&test_compiled, context).await.unwrap();
+        match result.value {
+            ExpressionValue::String(s) => assert_eq!(s, "test_value"),
+            _ => panic!("Expected string value"),
+        }
     }
 }

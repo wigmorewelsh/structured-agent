@@ -21,6 +21,14 @@ impl BytecodeCompiler {
             Self::compile_statement(&mut builder, stmt)?;
         }
 
+        if ast_func.return_type == ast::Type::Unit {
+            let unit_temp = builder.next_temp();
+            builder.emit(Instruction::LdcUnit {
+                dest: unit_temp.clone(),
+            });
+            builder.emit(Instruction::Ret { var: unit_temp });
+        }
+
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
