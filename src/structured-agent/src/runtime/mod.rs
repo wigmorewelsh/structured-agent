@@ -19,6 +19,6 @@ mod control_flow_test;
 mod signature_mismatch_test;
 
 pub use context::{Context, Event};
-pub use engine::{Runtime, RuntimeError, load_program};
+pub use engine::{Runtime, RuntimeBuilder, RuntimeError, load_program};
 pub use native_provider::NativeFunctionProvider;
 pub use types::{ExpressionParameter, ExpressionResult, ExpressionValue};

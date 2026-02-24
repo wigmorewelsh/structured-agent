@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod analysis;
 pub mod ast;
+pub mod bytecode;
 pub mod cli;
 pub mod compiler;
 pub mod diagnostics;
