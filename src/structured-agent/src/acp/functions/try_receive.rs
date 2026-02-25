@@ -27,7 +27,7 @@ impl TryReceiveFunction {
 #[async_trait(?Send)]
 impl NativeFunction for TryReceiveFunction {
     fn name(&self) -> &str {
-        "receive"
+        "try_receive"
     }
 
     fn parameters(&self) -> &[Parameter] {
@@ -79,7 +79,7 @@ mod tests {
         let (_tx, rx) = mpsc::unbounded_channel();
         let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
-        assert_eq!(receive_fn.name(), "receive");
+        assert_eq!(receive_fn.name(), "try_receive");
         assert_eq!(receive_fn.parameters().len(), 0);
         assert_eq!(receive_fn.return_type().name(), "String");
     }

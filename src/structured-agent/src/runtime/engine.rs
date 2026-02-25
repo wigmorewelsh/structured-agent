@@ -369,16 +369,29 @@ impl Runtime {
         provider_def: &ExternalFunctionDefinition,
         definition: &ExternalFunctionDefinition,
     ) -> bool {
-        provider_def.parameters.len() == definition.parameters.len()
-            && provider_def.return_type == definition.return_type
-            && provider_def
+        if provider_def.parameters.len() != definition.parameters.len() {
+            return false;
+        }
+
+        if provider_def.return_type != definition.return_type {
+            return false;
+        }
+
+        for extern_param in &definition.parameters {
+            let matching_provider_param = provider_def
                 .parameters
                 .iter()
-                .zip(&definition.parameters)
-                .all(|(provider_param, extern_param)| {
-                    provider_param.name == extern_param.name
-                        && provider_param.param_type == extern_param.param_type
-                })
+                .find(|p| p.name == extern_param.name);
+
+            match matching_provider_param {
+                Some(provider_param) if provider_param.param_type == extern_param.param_type => {
+                    continue;
+                }
+                _ => return false,
+            }
+        }
+
+        true
     }
 
     fn find_matching_provider<'a>(
@@ -486,5 +499,140 @@ pub fn load_program(source: &ProgramSource) -> Result<CompilationUnit, std::io::
             let content = std::fs::read_to_string(path)?;
             Ok(CompilationUnit::from_file(path.clone(), content))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ExternalFunctionDefinition, Parameter, Type};
+
+    #[test]
+    fn test_signatures_match_same_order() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("prefix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("prefix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        assert!(Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[test]
+    fn test_signatures_match_different_order() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("prefix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("prefix".to_string(), Type::string()),
+                Parameter::new("message".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        assert!(Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[test]
+    fn test_signatures_match_different_param_count() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("prefix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![Parameter::new("message".to_string(), Type::string())],
+            Type::string(),
+        );
+
+        assert!(!Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[test]
+    fn test_signatures_match_different_param_names() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("prefix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("suffix".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        assert!(!Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[test]
+    fn test_signatures_match_different_param_types() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("flag".to_string(), Type::string()),
+            ],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![
+                Parameter::new("message".to_string(), Type::string()),
+                Parameter::new("flag".to_string(), Type::boolean()),
+            ],
+            Type::string(),
+        );
+
+        assert!(!Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[test]
+    fn test_signatures_match_different_return_types() {
+        let provider_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![Parameter::new("message".to_string(), Type::string())],
+            Type::string(),
+        );
+
+        let extern_def = ExternalFunctionDefinition::new(
+            "test_func".to_string(),
+            vec![Parameter::new("message".to_string(), Type::string())],
+            Type::boolean(),
+        );
+
+        assert!(!Runtime::signatures_match(&provider_def, &extern_def));
     }
 }
