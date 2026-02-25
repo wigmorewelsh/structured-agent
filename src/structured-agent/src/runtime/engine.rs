@@ -3,7 +3,7 @@ use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
 use crate::expressions::{FunctionExpr, NativeFunctionExpr};
 use crate::functions::{
     HeadFunction, InputFunction, IsSomeFunction, IsSomeListFunction, PrintFunction,
-    SomeValueFunction, SomeValueListFunction, TailFunction,
+    SomeValueFunction, SomeValueListFunction, TailFunction, acp_shim,
 };
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
@@ -189,6 +189,12 @@ impl RuntimeBuilder {
                 .with_native_function(Arc::new(SomeValueFunction::new()))
                 .with_native_function(Arc::new(IsSomeListFunction::new()))
                 .with_native_function(Arc::new(SomeValueListFunction::new()));
+        }
+
+        if config.with_acp_functions {
+            self = self
+                .with_native_function(Arc::new(acp_shim::ReceiveFunction::new()))
+                .with_native_function(Arc::new(acp_shim::TryReceiveFunction::new()));
         }
 
         Ok(self.build())

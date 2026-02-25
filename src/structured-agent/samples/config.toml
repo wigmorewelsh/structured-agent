@@ -1,6 +1,8 @@
 file = "agent.sa"
+# file = "boolean.sa"
 engine = "gemini"
 with_default_functions = true
+with_acp_functions = true
 
 # gemini_model = "gemini-2.5-flash"
 # Available models:

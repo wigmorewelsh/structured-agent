@@ -1,3 +1,4 @@
+pub mod acp_shim;
 pub mod input;
 pub mod print;
 pub mod unstable;

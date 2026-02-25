@@ -66,6 +66,9 @@ pub struct RunArgs {
     )]
     pub with_unstable_functions: bool,
 
+    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
+    pub with_acp_functions: bool,
+
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
 
@@ -105,6 +108,9 @@ pub struct CheckArgs {
     )]
     pub with_unstable_functions: bool,
 
+    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
+    pub with_acp_functions: bool,
+
     #[arg(long, help = "Use bytecode compiler instead of expression compiler")]
     pub use_bytecode_compiler: bool,
 }
@@ -143,6 +149,9 @@ pub struct AcpArgs {
     )]
     pub with_unstable_functions: bool,
 
+    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
+    pub with_acp_functions: bool,
+
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
 
@@ -165,6 +174,7 @@ pub struct FileConfig {
     pub engine: Option<String>,
     pub with_default_functions: Option<bool>,
     pub with_unstable_functions: Option<bool>,
+    pub with_acp_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
     pub gemini_model: Option<String>,
     pub use_bytecode_compiler: Option<bool>,

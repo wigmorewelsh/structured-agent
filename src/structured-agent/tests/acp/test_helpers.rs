@@ -28,6 +28,8 @@ impl TestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             with_unstable_functions: false,
+            with_acp_functions: false,
+            use_bytecode_compiler: false,
             mode: Mode::Acp,
         };
 
@@ -45,6 +47,8 @@ impl TestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             with_unstable_functions: false,
+            with_acp_functions: false,
+            use_bytecode_compiler: false,
             mode: Mode::Acp,
         };
 

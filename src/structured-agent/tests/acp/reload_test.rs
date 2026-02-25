@@ -19,6 +19,8 @@ async fn test_reload_executes_new_code() {
             mcp_servers: vec![],
             with_default_functions: true,
             with_unstable_functions: false,
+            with_acp_functions: false,
+            use_bytecode_compiler: false,
             mode: structured_agent::cli::config::Mode::Acp,
         };
 
