@@ -63,146 +63,187 @@ impl BytecodeCompiler {
 
     fn compile_statement(builder: &mut InstructionBuilder, stmt: &Statement) -> Result<(), String> {
         match stmt {
-            Statement::Injection(expr) => {
-                let dest_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: dest_var.clone(),
-                });
-                Self::compile_expression(builder, expr, &dest_var)?;
-                builder.emit(Instruction::CtxEvent {
-                    var: dest_var.clone(),
-                });
-                builder.emit_drop(dest_var);
-            }
-
+            Statement::Injection(expr) => Self::compile_injection(builder, expr),
             Statement::Assignment {
                 variable,
                 expression,
                 ..
-            } => {
-                let temp_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: temp_var.clone(),
-                });
-                Self::compile_expression(builder, expression, &temp_var)?;
-                builder.emit(Instruction::Decl {
-                    name: variable.clone(),
-                });
-                builder.emit(Instruction::Mov {
-                    dest: variable.clone(),
-                    src: temp_var.clone(),
-                });
-                builder.emit_drop(temp_var);
-            }
-
+            } => Self::compile_assignment(builder, variable, expression),
             Statement::VariableAssignment {
                 variable,
                 expression,
                 ..
-            } => {
-                let temp_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: temp_var.clone(),
-                });
-                Self::compile_expression(builder, expression, &temp_var)?;
-                builder.emit(Instruction::Mov {
-                    dest: variable.clone(),
-                    src: temp_var.clone(),
-                });
-                builder.emit_drop(temp_var);
-            }
-
+            } => Self::compile_variable_assignment(builder, variable, expression),
             Statement::ExpressionStatement(expr) => {
-                let temp_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: temp_var.clone(),
-                });
-                Self::compile_expression(builder, expr, &temp_var)?;
-                builder.emit_drop(temp_var);
+                Self::compile_expression_statement(builder, expr)
             }
-
             Statement::If {
                 condition,
                 body,
                 else_body,
                 ..
-            } => {
-                let if_start = format!("if_start_{}", builder.next_temp());
-                builder.emit_label(&if_start);
-
-                let cond_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: cond_var.clone(),
-                });
-                Self::compile_expression(builder, condition, &cond_var)?;
-
-                let else_label = format!("else_{}", builder.next_temp());
-                let end_label = format!("end_{}", builder.next_temp());
-
-                builder.emit_brfalse(cond_var, &else_label);
-
-                builder.emit(Instruction::CtxChild {
-                    is_scope_boundary: false,
-                });
-                for stmt in body {
-                    Self::compile_statement(builder, stmt)?;
-                }
-                builder.emit(Instruction::CtxRestore);
-                builder.emit_br(&end_label);
-
-                builder.emit_label(&else_label);
-                if let Some(else_stmts) = else_body {
-                    builder.emit(Instruction::CtxChild {
-                        is_scope_boundary: false,
-                    });
-                    for stmt in else_stmts {
-                        Self::compile_statement(builder, stmt)?;
-                    }
-                    builder.emit(Instruction::CtxRestore);
-                }
-
-                builder.emit_label(&end_label);
-                builder.emit(Instruction::Nop);
-            }
-
+            } => Self::compile_if_statement(builder, condition, body, else_body.as_deref()),
             Statement::While {
                 condition, body, ..
-            } => {
-                let loop_start = format!("loop_start_{}", builder.next_temp());
-                let loop_end = format!("loop_end_{}", builder.next_temp());
+            } => Self::compile_while_statement(builder, condition, body),
+            Statement::Return(expr) => Self::compile_return_statement(builder, expr),
+        }
+    }
 
-                builder.emit_label(&loop_start);
+    fn compile_injection(
+        builder: &mut InstructionBuilder,
+        expr: &Expression,
+    ) -> Result<(), String> {
+        let dest_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: dest_var.clone(),
+        });
+        Self::compile_expression(builder, expr, &dest_var)?;
+        builder.emit(Instruction::CtxEvent {
+            var: dest_var.clone(),
+        });
+        builder.emit_drop(dest_var);
+        Ok(())
+    }
 
-                let cond_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: cond_var.clone(),
-                });
-                Self::compile_expression(builder, condition, &cond_var)?;
-                builder.emit_brfalse(cond_var, &loop_end);
+    fn compile_assignment(
+        builder: &mut InstructionBuilder,
+        variable: &str,
+        expression: &Expression,
+    ) -> Result<(), String> {
+        let temp_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: temp_var.clone(),
+        });
+        Self::compile_expression(builder, expression, &temp_var)?;
+        builder.emit(Instruction::Decl {
+            name: variable.to_string(),
+        });
+        builder.emit(Instruction::Mov {
+            dest: variable.to_string(),
+            src: temp_var.clone(),
+        });
+        builder.emit_drop(temp_var);
+        Ok(())
+    }
 
-                builder.emit(Instruction::CtxChild {
-                    is_scope_boundary: false,
-                });
-                for stmt in body {
-                    Self::compile_statement(builder, stmt)?;
-                }
-                builder.emit(Instruction::CtxRestore);
-                builder.emit_br(&loop_start);
+    fn compile_variable_assignment(
+        builder: &mut InstructionBuilder,
+        variable: &str,
+        expression: &Expression,
+    ) -> Result<(), String> {
+        let temp_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: temp_var.clone(),
+        });
+        Self::compile_expression(builder, expression, &temp_var)?;
+        builder.emit(Instruction::Mov {
+            dest: variable.to_string(),
+            src: temp_var.clone(),
+        });
+        builder.emit_drop(temp_var);
+        Ok(())
+    }
 
-                builder.emit_label(&loop_end);
-                builder.emit(Instruction::Nop);
+    fn compile_expression_statement(
+        builder: &mut InstructionBuilder,
+        expr: &Expression,
+    ) -> Result<(), String> {
+        let temp_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: temp_var.clone(),
+        });
+        Self::compile_expression(builder, expr, &temp_var)?;
+        builder.emit_drop(temp_var);
+        Ok(())
+    }
+
+    fn compile_if_statement(
+        builder: &mut InstructionBuilder,
+        condition: &Expression,
+        body: &[Statement],
+        else_body: Option<&[Statement]>,
+    ) -> Result<(), String> {
+        let if_start = format!("if_start_{}", builder.next_temp());
+        builder.emit_label(&if_start);
+
+        let cond_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: cond_var.clone(),
+        });
+        Self::compile_expression(builder, condition, &cond_var)?;
+
+        let else_label = format!("else_{}", builder.next_temp());
+        let end_label = format!("end_{}", builder.next_temp());
+
+        builder.emit_brfalse(cond_var, &else_label);
+
+        builder.emit(Instruction::CtxChild {
+            is_scope_boundary: false,
+        });
+        for stmt in body {
+            Self::compile_statement(builder, stmt)?;
+        }
+        builder.emit(Instruction::CtxRestore);
+        builder.emit_br(&end_label);
+
+        builder.emit_label(&else_label);
+        if let Some(else_stmts) = else_body {
+            builder.emit(Instruction::CtxChild {
+                is_scope_boundary: false,
+            });
+            for stmt in else_stmts {
+                Self::compile_statement(builder, stmt)?;
             }
-
-            Statement::Return(expr) => {
-                let result_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: result_var.clone(),
-                });
-                Self::compile_expression(builder, expr, &result_var)?;
-                builder.emit(Instruction::Ret { var: result_var });
-            }
+            builder.emit(Instruction::CtxRestore);
         }
 
+        builder.emit_label(&end_label);
+        builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_while_statement(
+        builder: &mut InstructionBuilder,
+        condition: &Expression,
+        body: &[Statement],
+    ) -> Result<(), String> {
+        let loop_start = format!("loop_start_{}", builder.next_temp());
+        let loop_end = format!("loop_end_{}", builder.next_temp());
+
+        builder.emit_label(&loop_start);
+
+        let cond_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: cond_var.clone(),
+        });
+        Self::compile_expression(builder, condition, &cond_var)?;
+        builder.emit_brfalse(cond_var, &loop_end);
+
+        builder.emit(Instruction::CtxChild {
+            is_scope_boundary: false,
+        });
+        for stmt in body {
+            Self::compile_statement(builder, stmt)?;
+        }
+        builder.emit(Instruction::CtxRestore);
+        builder.emit_br(&loop_start);
+
+        builder.emit_label(&loop_end);
+        builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_return_statement(
+        builder: &mut InstructionBuilder,
+        expr: &Expression,
+    ) -> Result<(), String> {
+        let result_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: result_var.clone(),
+        });
+        Self::compile_expression(builder, expr, &result_var)?;
+        builder.emit(Instruction::Ret { var: result_var });
         Ok(())
     }
 
@@ -216,199 +257,261 @@ impl BytecodeCompiler {
                 function,
                 arguments,
                 ..
-            } => {
-                builder.emit(Instruction::CallBegin {
-                    function_name: function.clone(),
-                });
-
-                for (arg_expr, param_name) in arguments
-                    .iter()
-                    .zip(Self::generate_param_names(arguments.len()))
-                {
-                    let temp_var = builder.next_temp();
-                    builder.emit(Instruction::Decl {
-                        name: temp_var.clone(),
-                    });
-                    Self::compile_expression(builder, arg_expr, &temp_var)?;
-                    builder.emit(Instruction::CallArg {
-                        param_name,
-                        var: temp_var,
-                    });
-                }
-
-                builder.emit(Instruction::CallInvoke {
-                    dest: dest_var.to_string(),
-                });
-            }
-
+            } => Self::compile_call_expression(builder, function, arguments, dest_var),
             Expression::Variable { name, .. } => {
-                builder.emit(Instruction::Mov {
-                    dest: dest_var.to_string(),
-                    src: name.clone(),
-                });
+                Self::compile_variable_expression(builder, name, dest_var)
             }
-
             Expression::StringLiteral { value, .. } => {
-                builder.emit(Instruction::LdcStr {
-                    dest: dest_var.to_string(),
-                    value: value.clone(),
-                });
+                Self::compile_string_literal(builder, value, dest_var)
             }
-
             Expression::BooleanLiteral { value, .. } => {
-                builder.emit(Instruction::LdcBool {
-                    dest: dest_var.to_string(),
-                    value: *value,
-                });
+                Self::compile_boolean_literal(builder, *value, dest_var)
             }
-
-            Expression::UnitLiteral { .. } => {
-                builder.emit(Instruction::LdcUnit {
-                    dest: dest_var.to_string(),
-                });
-            }
-
+            Expression::UnitLiteral { .. } => Self::compile_unit_literal(builder, dest_var),
             Expression::ListLiteral { elements, .. } => {
-                let element_type = "Unknown".to_string();
-                let mut temp_vars = Vec::new();
-
-                for elem in elements {
-                    let temp_var = builder.next_temp();
-                    builder.emit(Instruction::Decl {
-                        name: temp_var.clone(),
-                    });
-                    Self::compile_expression(builder, elem, &temp_var)?;
-                    temp_vars.push(temp_var);
-                }
-
-                builder.emit(Instruction::ListNew {
-                    dest: dest_var.to_string(),
-                    element_type,
-                });
-
-                for temp_var in temp_vars {
-                    builder.emit(Instruction::ListAdd {
-                        dest: dest_var.to_string(),
-                        src: temp_var,
-                    });
-                }
-
-                builder.emit(Instruction::ListFinish {
-                    dest: dest_var.to_string(),
-                });
+                Self::compile_list_literal(builder, elements, dest_var)
             }
-
-            Expression::Placeholder { .. } => {
-                builder.emit(Instruction::LlmPlaceholder {
-                    dest: dest_var.to_string(),
-                    param_name: "placeholder".to_string(),
-                    param_type: "Unknown".to_string(),
-                });
-            }
-
+            Expression::Placeholder { .. } => Self::compile_placeholder(builder, dest_var),
             Expression::Select(select_expr) => {
-                let select_start = format!("select_start_{}", builder.next_temp());
-                builder.emit_label(&select_start);
-
-                let clause_count = select_expr.clauses.len();
-                builder.emit(Instruction::SelectBegin { clause_count });
-
-                // Declare the destination variable in parent context before creating child contexts
-                builder.emit(Instruction::Decl {
-                    name: dest_var.to_string(),
-                });
-
-                let mut clause_labels = Vec::new();
-                for i in 0..clause_count {
-                    let label = format!("clause_{}_{}", i, builder.next_temp());
-                    clause_labels.push(label.clone());
-
-                    let function_name = if let Expression::Call { function, .. } =
-                        &select_expr.clauses[i].expression_to_run
-                    {
-                        function.clone()
-                    } else {
-                        "unknown".to_string()
-                    };
-
-                    builder.emit(Instruction::SelectClause {
-                        function_name,
-                        offset: 0,
-                    });
-                }
-
-                let choice_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: choice_var.clone(),
-                });
-                builder.emit(Instruction::LlmSelect {
-                    dest: choice_var.clone(),
-                });
-
-                builder.emit_switch(choice_var, clause_labels.clone());
-
-                let end_label = format!("select_end_{}", builder.next_temp());
-
-                for (i, clause) in select_expr.clauses.iter().enumerate() {
-                    builder.emit_label(&clause_labels[i]);
-
-                    builder.emit(Instruction::CtxChild {
-                        is_scope_boundary: false,
-                    });
-
-                    let temp_result = builder.next_temp();
-                    builder.emit(Instruction::Decl {
-                        name: temp_result.clone(),
-                    });
-                    Self::compile_expression(builder, &clause.expression_to_run, &temp_result)?;
-
-                    builder.emit(Instruction::Decl {
-                        name: clause.result_variable.clone(),
-                    });
-                    builder.emit(Instruction::Mov {
-                        dest: clause.result_variable.clone(),
-                        src: temp_result,
-                    });
-
-                    Self::compile_expression(builder, &clause.expression_next, dest_var)?;
-
-                    builder.emit(Instruction::CtxRestore);
-
-                    builder.emit_br(&end_label);
-                }
-
-                builder.emit_label(&end_label);
-                builder.emit(Instruction::Nop);
+                Self::compile_select_expression(builder, select_expr, dest_var)
             }
-
             Expression::IfElse {
                 condition,
                 then_expr,
                 else_expr,
                 ..
             } => {
-                let cond_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: cond_var.clone(),
-                });
-                Self::compile_expression(builder, condition, &cond_var)?;
-
-                let else_label = format!("ifelse_else_{}", builder.next_temp());
-                let end_label = format!("ifelse_end_{}", builder.next_temp());
-
-                builder.emit_brfalse(cond_var, &else_label);
-
-                Self::compile_expression(builder, then_expr, dest_var)?;
-                builder.emit_br(&end_label);
-
-                builder.emit_label(&else_label);
-                Self::compile_expression(builder, else_expr, dest_var)?;
-
-                builder.emit_label(&end_label);
-                builder.emit(Instruction::Nop);
+                Self::compile_if_else_expression(builder, condition, then_expr, else_expr, dest_var)
             }
         }
+    }
 
+    fn compile_call_expression(
+        builder: &mut InstructionBuilder,
+        function: &str,
+        arguments: &[Expression],
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::CallBegin {
+            function_name: function.to_string(),
+        });
+
+        for (arg_expr, param_name) in arguments
+            .iter()
+            .zip(Self::generate_param_names(arguments.len()))
+        {
+            let temp_var = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: temp_var.clone(),
+            });
+            Self::compile_expression(builder, arg_expr, &temp_var)?;
+            builder.emit(Instruction::CallArg {
+                param_name,
+                var: temp_var,
+            });
+        }
+
+        builder.emit(Instruction::CallInvoke {
+            dest: dest_var.to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_variable_expression(
+        builder: &mut InstructionBuilder,
+        name: &str,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::Mov {
+            dest: dest_var.to_string(),
+            src: name.to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_string_literal(
+        builder: &mut InstructionBuilder,
+        value: &str,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::LdcStr {
+            dest: dest_var.to_string(),
+            value: value.to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_boolean_literal(
+        builder: &mut InstructionBuilder,
+        value: bool,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::LdcBool {
+            dest: dest_var.to_string(),
+            value,
+        });
+        Ok(())
+    }
+
+    fn compile_unit_literal(
+        builder: &mut InstructionBuilder,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::LdcUnit {
+            dest: dest_var.to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_list_literal(
+        builder: &mut InstructionBuilder,
+        elements: &[Expression],
+        dest_var: &str,
+    ) -> Result<(), String> {
+        let element_type = "Unknown".to_string();
+        let mut temp_vars = Vec::new();
+
+        for elem in elements {
+            let temp_var = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: temp_var.clone(),
+            });
+            Self::compile_expression(builder, elem, &temp_var)?;
+            temp_vars.push(temp_var);
+        }
+
+        builder.emit(Instruction::ListNew {
+            dest: dest_var.to_string(),
+            element_type,
+        });
+
+        for temp_var in temp_vars {
+            builder.emit(Instruction::ListAdd {
+                dest: dest_var.to_string(),
+                src: temp_var,
+            });
+        }
+
+        builder.emit(Instruction::ListFinish {
+            dest: dest_var.to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_placeholder(builder: &mut InstructionBuilder, dest_var: &str) -> Result<(), String> {
+        builder.emit(Instruction::LlmPlaceholder {
+            dest: dest_var.to_string(),
+            param_name: "placeholder".to_string(),
+            param_type: "Unknown".to_string(),
+        });
+        Ok(())
+    }
+
+    fn compile_select_expression(
+        builder: &mut InstructionBuilder,
+        select_expr: &ast::SelectExpression,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        let select_start = format!("select_start_{}", builder.next_temp());
+        builder.emit_label(&select_start);
+
+        let clause_count = select_expr.clauses.len();
+        builder.emit(Instruction::SelectBegin { clause_count });
+
+        builder.emit(Instruction::Decl {
+            name: dest_var.to_string(),
+        });
+
+        let mut clause_labels = Vec::new();
+        for i in 0..clause_count {
+            let label = format!("clause_{}_{}", i, builder.next_temp());
+            clause_labels.push(label.clone());
+
+            let function_name = if let Expression::Call { function, .. } =
+                &select_expr.clauses[i].expression_to_run
+            {
+                function.clone()
+            } else {
+                "unknown".to_string()
+            };
+
+            builder.emit(Instruction::SelectClause {
+                function_name,
+                offset: 0,
+            });
+        }
+
+        let choice_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: choice_var.clone(),
+        });
+        builder.emit(Instruction::LlmSelect {
+            dest: choice_var.clone(),
+        });
+
+        builder.emit_switch(choice_var, clause_labels.clone());
+
+        let end_label = format!("select_end_{}", builder.next_temp());
+
+        for (i, clause) in select_expr.clauses.iter().enumerate() {
+            builder.emit_label(&clause_labels[i]);
+
+            builder.emit(Instruction::CtxChild {
+                is_scope_boundary: false,
+            });
+
+            let temp_result = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: temp_result.clone(),
+            });
+            Self::compile_expression(builder, &clause.expression_to_run, &temp_result)?;
+
+            builder.emit(Instruction::Decl {
+                name: clause.result_variable.clone(),
+            });
+            builder.emit(Instruction::Mov {
+                dest: clause.result_variable.clone(),
+                src: temp_result,
+            });
+
+            Self::compile_expression(builder, &clause.expression_next, dest_var)?;
+
+            builder.emit(Instruction::CtxRestore);
+
+            builder.emit_br(&end_label);
+        }
+
+        builder.emit_label(&end_label);
+        builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_if_else_expression(
+        builder: &mut InstructionBuilder,
+        condition: &Expression,
+        then_expr: &Expression,
+        else_expr: &Expression,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        let cond_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: cond_var.clone(),
+        });
+        Self::compile_expression(builder, condition, &cond_var)?;
+
+        let else_label = format!("ifelse_else_{}", builder.next_temp());
+        let end_label = format!("ifelse_end_{}", builder.next_temp());
+
+        builder.emit_brfalse(cond_var, &else_label);
+
+        Self::compile_expression(builder, then_expr, dest_var)?;
+        builder.emit_br(&end_label);
+
+        builder.emit_label(&else_label);
+        Self::compile_expression(builder, else_expr, dest_var)?;
+
+        builder.emit_label(&end_label);
+        builder.emit(Instruction::Nop);
         Ok(())
     }
 
