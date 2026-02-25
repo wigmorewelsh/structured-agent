@@ -33,12 +33,12 @@ pub enum Instruction {
     /// Pause execution for durable execution checkpoint
     Yield,
 
-    /// Begin function call setup
-    CallBegin { function_name: String },
-    /// Map parameter to variable
-    CallArg { param_name: String, var: String },
-    /// Execute function, store result in destination variable
-    CallInvoke { dest: String },
+    /// Call function with parameters and store result in destination
+    Call {
+        function_name: String,
+        params: Vec<String>,
+        dest: String,
+    },
 
     /// Inject variable's value into context events (adds Event to context)
     CtxEvent { var: String },
@@ -121,14 +121,19 @@ impl fmt::Display for Instruction {
                 write!(f, "yield")
             }
 
-            Instruction::CallBegin { function_name } => {
-                write!(f, "call.begin {}", function_name)
-            }
-            Instruction::CallArg { param_name, var } => {
-                write!(f, "call.arg {}, {}", param_name, var)
-            }
-            Instruction::CallInvoke { dest } => {
-                write!(f, "call.invoke {}", dest)
+            Instruction::Call {
+                function_name,
+                params,
+                dest,
+            } => {
+                write!(f, "call {}, [", function_name)?;
+                for (i, var) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
             }
 
             Instruction::CtxEvent { var } => {

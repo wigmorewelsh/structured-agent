@@ -292,26 +292,20 @@ impl BytecodeCompiler {
         arguments: &[Expression],
         dest_var: &str,
     ) -> Result<(), String> {
-        builder.emit(Instruction::CallBegin {
-            function_name: function.to_string(),
-        });
+        let mut params = Vec::new();
 
-        for (arg_expr, param_name) in arguments
-            .iter()
-            .zip(Self::generate_param_names(arguments.len()))
-        {
+        for arg_expr in arguments {
             let temp_var = builder.next_temp();
             builder.emit(Instruction::Decl {
                 name: temp_var.clone(),
             });
             Self::compile_expression(builder, arg_expr, &temp_var)?;
-            builder.emit(Instruction::CallArg {
-                param_name,
-                var: temp_var,
-            });
+            params.push(temp_var);
         }
 
-        builder.emit(Instruction::CallInvoke {
+        builder.emit(Instruction::Call {
+            function_name: function.to_string(),
+            params,
             dest: dest_var.to_string(),
         });
         Ok(())

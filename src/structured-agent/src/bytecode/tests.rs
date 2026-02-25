@@ -12,11 +12,13 @@ mod instruction_display_tests {
     }
 
     #[test]
-    fn test_call_begin_display() {
-        let instr = Instruction::CallBegin {
+    fn test_call_display() {
+        let instr = Instruction::Call {
             function_name: "foo".to_string(),
+            params: vec!["x".to_string(), "y".to_string()],
+            dest: "result".to_string(),
         };
-        assert_eq!(format!("{}", instr), "call.begin foo");
+        assert_eq!(format!("{}", instr), "call foo, [x, y], result");
     }
 
     #[test]
@@ -227,15 +229,12 @@ fn main(): String {
 
 ): String {
       0: decl $tmp0
-      1: call.begin foo
-      2: decl $tmp1
-      3: ldc.str $tmp1, "arg1"
-      4: call.arg arg0, $tmp1
-      5: decl $tmp2
-      6: ldc.bool $tmp2, true
-      7: call.arg arg1, $tmp2
-      8: call.invoke $tmp0
-      9: ret $tmp0
+      1: decl $tmp1
+      2: ldc.str $tmp1, "arg1"
+      3: decl $tmp2
+      4: ldc.bool $tmp2, true
+      5: call foo, [$tmp1, $tmp2], $tmp0
+      6: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -388,17 +387,15 @@ fn greet(name: String): () {
     y: Boolean
 ): String {
       0: decl $tmp0
-      1: call.begin process
-      2: decl $tmp1
-      3: mov $tmp1, x
-      4: call.arg arg0, $tmp1
-      5: call.invoke $tmp0
-      6: decl result
-      7: mov result, $tmp0
-      8: drop $tmp0
-      9: decl $tmp2
-     10: mov $tmp2, result
-     11: ret $tmp2
+      1: decl $tmp1
+      2: mov $tmp1, x
+      3: call process, [$tmp1], $tmp0
+      4: decl result
+      5: mov result, $tmp0
+      6: drop $tmp0
+      7: decl $tmp2
+      8: mov $tmp2, result
+      9: ret $tmp2
 }
 "#;
         compile_and_check_named(code, "calculate", expected);
@@ -431,34 +428,32 @@ fn greet(name: String): () {
   if_start_$tmp1:
       5: decl $tmp2
       6: mov $tmp2, filter
-      7: brfalse $tmp2, 23
+      7: brfalse $tmp2, 21
       8: ctx.child false
       9: decl $tmp5
-     10: call.begin transform
-     11: decl $tmp6
-     12: mov $tmp6, items
-     13: call.arg arg0, $tmp6
-     14: call.invoke $tmp5
-     15: mov result, $tmp5
-     16: drop $tmp5
-     17: decl $tmp7
-     18: mov $tmp7, result
-     19: ctx.event $tmp7
-     20: drop $tmp7
-     21: ctx.restore
-     22: br 29
+     10: decl $tmp6
+     11: mov $tmp6, items
+     12: call transform, [$tmp6], $tmp5
+     13: mov result, $tmp5
+     14: drop $tmp5
+     15: decl $tmp7
+     16: mov $tmp7, result
+     17: ctx.event $tmp7
+     18: drop $tmp7
+     19: ctx.restore
+     20: br 27
   else_$tmp3:
-     23: ctx.child false
-     24: decl $tmp8
-     25: ldc.str $tmp8, "skipped"
-     26: ctx.event $tmp8
-     27: drop $tmp8
-     28: ctx.restore
+     21: ctx.child false
+     22: decl $tmp8
+     23: ldc.str $tmp8, "skipped"
+     24: ctx.event $tmp8
+     25: drop $tmp8
+     26: ctx.restore
   end_$tmp4:
-     29: nop
-     30: decl $tmp9
-     31: mov $tmp9, result
-     32: ret $tmp9
+     27: nop
+     28: decl $tmp9
+     29: mov $tmp9, result
+     30: ret $tmp9
 }
 "#;
         compile_and_check_named(code, "process_items", expected);
@@ -486,36 +481,32 @@ fn greet(name: String): () {
       4: select.clause summarize 0
       5: decl $tmp4
       6: llm.select $tmp4
-      7: switch $tmp4, [8, 20]
+      7: switch $tmp4, [8, 18]
   clause_0_$tmp2:
       8: ctx.child false
       9: decl $tmp6
-     10: call.begin analyze
-     11: decl $tmp7
-     12: ldc.str $tmp7, "code"
-     13: call.arg arg0, $tmp7
-     14: call.invoke $tmp6
-     15: decl result
-     16: mov result, $tmp6
-     17: mov $tmp0, result
-     18: ctx.restore
-     19: br 32
+     10: decl $tmp7
+     11: ldc.str $tmp7, "code"
+     12: call analyze, [$tmp7], $tmp6
+     13: decl result
+     14: mov result, $tmp6
+     15: mov $tmp0, result
+     16: ctx.restore
+     17: br 28
   clause_1_$tmp3:
-     20: ctx.child false
-     21: decl $tmp8
-     22: call.begin summarize
-     23: decl $tmp9
-     24: ldc.str $tmp9, "text"
-     25: call.arg arg0, $tmp9
-     26: call.invoke $tmp8
-     27: decl summary
-     28: mov summary, $tmp8
-     29: mov $tmp0, summary
-     30: ctx.restore
-     31: br 32
+     18: ctx.child false
+     19: decl $tmp8
+     20: decl $tmp9
+     21: ldc.str $tmp9, "text"
+     22: call summarize, [$tmp9], $tmp8
+     23: decl summary
+     24: mov summary, $tmp8
+     25: mov $tmp0, summary
+     26: ctx.restore
+     27: br 28
   select_end_$tmp5:
-     32: nop
-     33: ret $tmp0
+     28: nop
+     29: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -590,12 +581,10 @@ fn greet(name: String): () {
 
 ): String {
       0: decl $tmp0
-      1: call.begin foo
-      2: decl $tmp1
-      3: llm.placeholder $tmp1, placeholder, Unknown
-      4: call.arg arg0, $tmp1
-      5: call.invoke $tmp0
-      6: ret $tmp0
+      1: decl $tmp1
+      2: llm.placeholder $tmp1, placeholder, Unknown
+      3: call foo, [$tmp1], $tmp0
+      4: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);

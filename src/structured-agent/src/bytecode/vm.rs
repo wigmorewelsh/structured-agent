@@ -6,13 +6,7 @@ use std::sync::Arc;
 pub struct VMState {
     pc: usize,
     current_context: Arc<Context>,
-    pending_call: Option<PendingCall>,
     pending_select: Option<PendingSelect>,
-}
-
-struct PendingCall {
-    function_name: String,
-    arguments: Vec<(String, String)>,
 }
 
 struct PendingSelect {
@@ -35,8 +29,7 @@ impl VM {
     ) -> Result<ExpressionResult, String> {
         let mut state = VMState {
             pc: 0,
-            current_context: context,
-            pending_call: None,
+            current_context: context.clone(),
             pending_select: None,
         };
 
@@ -71,14 +64,13 @@ impl VM {
                 }
                 Instruction::Ret { var } => return self.execute_ret(&state, var),
                 Instruction::Yield => return Err("Yield not yet implemented".to_string()),
-                Instruction::CallBegin { function_name } => {
-                    self.execute_call_begin(&mut state, function_name)
-                }
-                Instruction::CallArg { param_name, var } => {
-                    self.execute_call_arg(&mut state, param_name, var)?
-                }
-                Instruction::CallInvoke { dest } => {
-                    self.execute_call_invoke(&mut state, dest).await?
+                Instruction::Call {
+                    function_name,
+                    params,
+                    dest,
+                } => {
+                    self.execute_call(&mut state, function_name, params, dest)
+                        .await?
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(&mut state, var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
@@ -199,37 +191,13 @@ impl VM {
 
     // ===== Function Call Instructions =====
 
-    fn execute_call_begin(&self, state: &mut VMState, function_name: &str) {
-        state.pending_call = Some(PendingCall {
-            function_name: function_name.to_string(),
-            arguments: Vec::new(),
-        });
-        state.pc += 1;
-    }
-
-    fn execute_call_arg(
+    async fn execute_call(
         &self,
         state: &mut VMState,
-        param_name: &str,
-        var: &str,
+        function_name: &str,
+        params: &[String],
+        dest: &str,
     ) -> Result<(), String> {
-        if let Some(ref mut pending) = state.pending_call {
-            pending
-                .arguments
-                .push((param_name.to_string(), var.to_string()));
-        } else {
-            return Err("CallArg without CallBegin".to_string());
-        }
-        Self::advance_pc(state);
-        Ok(())
-    }
-
-    async fn execute_call_invoke(&self, state: &mut VMState, dest: &str) -> Result<(), String> {
-        let pending = state
-            .pending_call
-            .take()
-            .ok_or("CallInvoke without CallBegin")?;
-
         let child_context = Arc::new(Context::create_child(
             state.current_context.clone(),
             true,
@@ -237,31 +205,31 @@ impl VM {
         ));
 
         child_context.add_event(
-            ExpressionValue::String(format!("## {}", pending.function_name)),
+            ExpressionValue::String(format!("## {}", function_name)),
             None,
             None,
         );
 
         let func = self
             .runtime
-            .get_function(&pending.function_name)
-            .ok_or_else(|| format!("Function not found: {}", pending.function_name))?;
+            .get_function(function_name)
+            .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
-        let params = func.parameters();
-        if pending.arguments.len() != params.len() {
+        let function_params = func.parameters();
+        if params.len() != function_params.len() {
             return Err(format!(
                 "Function {} expects {} arguments, got {}",
-                pending.function_name,
-                params.len(),
-                pending.arguments.len()
+                function_name,
+                function_params.len(),
+                params.len()
             ));
         }
 
         let mut evaluated_parameters = Vec::new();
 
-        for (i, (_generic_name, var_name)) in pending.arguments.iter().enumerate() {
-            let value = Self::read_variable(state, &var_name)?;
-            let actual_param_name = &params[i].name;
+        for (i, var_name) in params.iter().enumerate() {
+            let value = Self::read_variable(state, var_name)?;
+            let actual_param_name = &function_params[i].name;
             child_context
                 .variables
                 .insert(actual_param_name.clone(), value.clone());
@@ -274,7 +242,7 @@ impl VM {
         let result = func.evaluate(child_context.clone()).await?;
 
         let result_with_metadata = ExpressionResult {
-            name: Some(pending.function_name.clone()),
+            name: Some(function_name.to_string()),
             params: Some(evaluated_parameters),
             value: result.value,
         };
