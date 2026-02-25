@@ -136,6 +136,16 @@ impl App {
                     println!("Result: None");
                 }
             },
+            crate::runtime::ExpressionValue::Metadata {
+                name,
+                documentation,
+            } => {
+                if let Some(doc) = documentation {
+                    println!("Result: Metadata({}, \"{}\")", name, doc);
+                } else {
+                    println!("Result: Metadata({})", name);
+                }
+            }
         }
     }
 }

@@ -72,6 +72,15 @@ impl Expression for ExternalFunctionExpr {
                     }),
                     None => json!(null),
                 },
+                ExpressionValue::Metadata {
+                    name,
+                    documentation,
+                } => {
+                    json!({
+                        "name": name,
+                        "documentation": documentation
+                    })
+                }
             }
         }
 

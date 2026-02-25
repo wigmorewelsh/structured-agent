@@ -28,6 +28,10 @@ pub enum ExpressionValue {
     Boolean(bool),
     List(Arc<ListArray>),
     Option(Option<Box<ExpressionValue>>),
+    Metadata {
+        name: String,
+        documentation: Option<String>,
+    },
 }
 
 impl ExpressionResult {
@@ -97,6 +101,7 @@ impl ExpressionValue {
             ExpressionValue::Boolean(_) => "Boolean",
             ExpressionValue::List(_) => "List",
             ExpressionValue::Option(_) => "Option",
+            ExpressionValue::Metadata { .. } => "Metadata",
         }
     }
 
@@ -110,6 +115,16 @@ impl ExpressionValue {
                 Some(value) => format!("Some({})", value.value_string()),
                 None => "None".to_string(),
             },
+            ExpressionValue::Metadata {
+                name,
+                documentation,
+            } => {
+                if let Some(doc) = documentation {
+                    format!("Metadata({}, \"{}\")", name, doc)
+                } else {
+                    format!("Metadata({})", name)
+                }
+            }
         }
     }
 
@@ -139,6 +154,16 @@ impl ExpressionValue {
                 Some(inner) => format!("Some({})", inner.format_for_llm()),
                 None => "None".to_string(),
             },
+            ExpressionValue::Metadata {
+                name,
+                documentation,
+            } => {
+                if let Some(doc) = documentation {
+                    format!("{}: {}", name, doc)
+                } else {
+                    name.clone()
+                }
+            }
         }
     }
 }

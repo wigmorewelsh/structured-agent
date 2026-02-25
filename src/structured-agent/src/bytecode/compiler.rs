@@ -409,15 +409,14 @@ impl BytecodeCompiler {
         let select_start = format!("select_start_{}", builder.next_temp());
         builder.emit_label(&select_start);
 
-        let clause_count = select_expr.clauses.len();
-        builder.emit(Instruction::SelectBegin { clause_count });
-
         builder.emit(Instruction::Decl {
             name: dest_var.to_string(),
         });
 
         let mut clause_labels = Vec::new();
-        for i in 0..clause_count {
+        let mut metadata_vars = Vec::new();
+
+        for i in 0..select_expr.clauses.len() {
             let label = format!("clause_{}_{}", i, builder.next_temp());
             clause_labels.push(label.clone());
 
@@ -429,10 +428,15 @@ impl BytecodeCompiler {
                 "unknown".to_string()
             };
 
-            builder.emit(Instruction::SelectClause {
-                function_name,
-                offset: 0,
+            let meta_var = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: meta_var.clone(),
             });
+            builder.emit(Instruction::MetaFunction {
+                function_name,
+                dest: meta_var.clone(),
+            });
+            metadata_vars.push(meta_var);
         }
 
         let choice_var = builder.next_temp();
@@ -440,6 +444,7 @@ impl BytecodeCompiler {
             name: choice_var.clone(),
         });
         builder.emit(Instruction::LlmSelect {
+            metadata_vars,
             dest: choice_var.clone(),
         });
 
@@ -519,10 +524,6 @@ impl BytecodeCompiler {
                 crate::types::Type::Option(Box::new(Self::convert_type(inner)))
             }
         }
-    }
-
-    fn generate_param_names(count: usize) -> Vec<String> {
-        (0..count).map(|i| format!("arg{}", i)).collect()
     }
 
     fn type_to_string(ast_type: &ast::Type) -> String {

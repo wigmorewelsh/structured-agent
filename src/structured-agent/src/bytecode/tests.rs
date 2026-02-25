@@ -475,38 +475,39 @@ fn greet(name: String): () {
 ): String {
       0: decl $tmp0
   select_start_$tmp1:
-      1: select.begin 2
-      2: decl $tmp0
-      3: select.clause analyze 0
-      4: select.clause summarize 0
-      5: decl $tmp4
-      6: llm.select $tmp4
-      7: switch $tmp4, [8, 18]
+      1: decl $tmp0
+      2: decl $tmp3
+      3: meta.function analyze, $tmp3
+      4: decl $tmp5
+      5: meta.function summarize, $tmp5
+      6: decl $tmp6
+      7: llm.select [$tmp3, $tmp5], $tmp6
+      8: switch $tmp6, [9, 19]
   clause_0_$tmp2:
-      8: ctx.child false
-      9: decl $tmp6
-     10: decl $tmp7
-     11: ldc.str $tmp7, "code"
-     12: call analyze, [$tmp7], $tmp6
-     13: decl result
-     14: mov result, $tmp6
-     15: mov $tmp0, result
-     16: ctx.restore
-     17: br 28
-  clause_1_$tmp3:
-     18: ctx.child false
-     19: decl $tmp8
-     20: decl $tmp9
-     21: ldc.str $tmp9, "text"
-     22: call summarize, [$tmp9], $tmp8
-     23: decl summary
-     24: mov summary, $tmp8
-     25: mov $tmp0, summary
-     26: ctx.restore
-     27: br 28
-  select_end_$tmp5:
-     28: nop
-     29: ret $tmp0
+      9: ctx.child false
+     10: decl $tmp8
+     11: decl $tmp9
+     12: ldc.str $tmp9, "code"
+     13: call analyze, [$tmp9], $tmp8
+     14: decl result
+     15: mov result, $tmp8
+     16: mov $tmp0, result
+     17: ctx.restore
+     18: br 29
+  clause_1_$tmp4:
+     19: ctx.child false
+     20: decl $tmp10
+     21: decl $tmp11
+     22: ldc.str $tmp11, "text"
+     23: call summarize, [$tmp11], $tmp10
+     24: decl summary
+     25: mov summary, $tmp10
+     26: mov $tmp0, summary
+     27: ctx.restore
+     28: br 29
+  select_end_$tmp7:
+     29: nop
+     30: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);

@@ -47,10 +47,8 @@ pub enum Instruction {
     /// Return to parent context
     CtxRestore,
 
-    /// Prepare select with N clauses
-    SelectBegin { clause_count: usize },
-    /// Register clause metadata for LLM
-    SelectClause { function_name: String, offset: i32 },
+    /// Get metadata for a function
+    MetaFunction { function_name: String, dest: String },
 
     /// Create new list builder
     ListNew { dest: String, element_type: String },
@@ -66,7 +64,10 @@ pub enum Instruction {
         param_type: String,
     },
     /// Await LLM clause choice, store selected index in dest
-    LlmSelect { dest: String },
+    LlmSelect {
+        metadata_vars: Vec<String>,
+        dest: String,
+    },
     /// Await LLM generation with context, store result in dest
     LlmGenerate { dest: String, return_type: String },
 }
@@ -146,14 +147,11 @@ impl fmt::Display for Instruction {
                 write!(f, "ctx.restore")
             }
 
-            Instruction::SelectBegin { clause_count } => {
-                write!(f, "select.begin {}", clause_count)
-            }
-            Instruction::SelectClause {
+            Instruction::MetaFunction {
                 function_name,
-                offset,
+                dest,
             } => {
-                write!(f, "select.clause {} {}", function_name, offset)
+                write!(f, "meta.function {}, {}", function_name, dest)
             }
 
             Instruction::ListNew { dest, element_type } => {
@@ -177,8 +175,18 @@ impl fmt::Display for Instruction {
                     dest, param_name, param_type
                 )
             }
-            Instruction::LlmSelect { dest } => {
-                write!(f, "llm.select {}", dest)
+            Instruction::LlmSelect {
+                metadata_vars,
+                dest,
+            } => {
+                write!(f, "llm.select [")?;
+                for (i, var) in metadata_vars.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
             }
             Instruction::LlmGenerate { dest, return_type } => {
                 write!(f, "llm.generate {}, {}", dest, return_type)

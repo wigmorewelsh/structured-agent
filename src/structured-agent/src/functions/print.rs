@@ -69,6 +69,16 @@ impl NativeFunction for PrintFunction {
                     Some(inner) => format!("Some({})", format_expr_result(inner)),
                     None => "None".to_string(),
                 },
+                ExpressionValue::Metadata {
+                    name,
+                    documentation,
+                } => {
+                    if let Some(doc) = documentation {
+                        format!("Metadata({}, \"{}\")", name, doc)
+                    } else {
+                        format!("Metadata({})", name)
+                    }
+                }
             }
         }
 

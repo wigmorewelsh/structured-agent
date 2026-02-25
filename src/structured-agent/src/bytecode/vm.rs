@@ -6,11 +6,6 @@ use std::sync::Arc;
 pub struct VMState {
     pc: usize,
     current_context: Arc<Context>,
-    pending_select: Option<PendingSelect>,
-}
-
-struct PendingSelect {
-    clause_descriptions: Vec<String>,
 }
 
 pub struct VM {
@@ -30,7 +25,6 @@ impl VM {
         let mut state = VMState {
             pc: 0,
             current_context: context.clone(),
-            pending_select: None,
         };
 
         loop {
@@ -77,13 +71,10 @@ impl VM {
                     self.execute_ctx_child(&mut state, *is_scope_boundary)
                 }
                 Instruction::CtxRestore => self.execute_ctx_restore(&mut state)?,
-                Instruction::SelectBegin { clause_count } => {
-                    self.execute_select_begin(&mut state, *clause_count)
-                }
-                Instruction::SelectClause {
+                Instruction::MetaFunction {
                     function_name,
-                    offset: _,
-                } => self.execute_select_clause(&mut state, function_name)?,
+                    dest,
+                } => self.execute_meta_function(&mut state, function_name, dest)?,
                 Instruction::ListNew {
                     dest,
                     element_type: _,
@@ -98,8 +89,12 @@ impl VM {
                     self.execute_llm_placeholder(&mut state, dest, param_name, param_type)
                         .await?
                 }
-                Instruction::LlmSelect { dest } => {
-                    self.execute_llm_select(&mut state, dest).await?
+                Instruction::LlmSelect {
+                    metadata_vars,
+                    dest,
+                } => {
+                    self.execute_llm_select(&mut state, metadata_vars, dest)
+                        .await?
                 }
                 Instruction::LlmGenerate { dest, return_type } => {
                     self.execute_llm_generate(&mut state, dest, return_type)
@@ -286,35 +281,25 @@ impl VM {
         Ok(())
     }
 
-    // ===== Select Instructions =====
+    // ===== Metadata Instructions =====
 
-    fn execute_select_begin(&self, state: &mut VMState, clause_count: usize) {
-        state.pending_select = Some(PendingSelect {
-            clause_descriptions: Vec::with_capacity(clause_count),
-        });
-        Self::advance_pc(state);
-    }
-
-    fn execute_select_clause(
+    fn execute_meta_function(
         &self,
         state: &mut VMState,
         function_name: &str,
+        dest: &str,
     ) -> Result<(), String> {
-        if let Some(ref mut pending) = state.pending_select {
-            let func = self.runtime.get_function(function_name);
-            let description = if let Some(f) = func {
-                if let Some(doc) = f.documentation() {
-                    format!("Function Name: '{}' Documentation: {}", function_name, doc)
-                } else {
-                    format!("Function Name: '{}'", function_name)
-                }
-            } else {
-                format!("Function Name: '{}'", function_name)
-            };
-            pending.clause_descriptions.push(description);
-        } else {
-            return Err("SelectClause without SelectBegin".to_string());
-        }
+        let func = self
+            .runtime
+            .get_function(function_name)
+            .ok_or_else(|| format!("Function not found: {}", function_name))?;
+
+        let metadata = ExpressionValue::Metadata {
+            name: function_name.to_string(),
+            documentation: func.documentation().map(|s| s.to_string()),
+        };
+
+        Self::write_variable(state, dest, ExpressionResult::new(metadata));
         Self::advance_pc(state);
         Ok(())
     }
@@ -348,17 +333,43 @@ impl VM {
         Ok(())
     }
 
-    async fn execute_llm_select(&self, state: &mut VMState, dest: &str) -> Result<(), String> {
-        let pending = state
-            .pending_select
-            .take()
-            .ok_or("LlmSelect without SelectBegin")?;
+    async fn execute_llm_select(
+        &self,
+        state: &mut VMState,
+        metadata_vars: &[String],
+        dest: &str,
+    ) -> Result<(), String> {
+        let mut descriptions = Vec::new();
+
+        for var_name in metadata_vars {
+            let value = Self::read_variable(state, var_name)?;
+            match &value.value {
+                ExpressionValue::Metadata {
+                    name,
+                    documentation,
+                } => {
+                    let description = if let Some(doc) = documentation {
+                        format!("Function Name: '{}' Documentation: {}", name, doc)
+                    } else {
+                        format!("Function Name: '{}'", name)
+                    };
+                    descriptions.push(description);
+                }
+                _ => {
+                    return Err(format!(
+                        "Expected Metadata value in variable {}, got {}",
+                        var_name,
+                        value.value.type_name()
+                    ));
+                }
+            }
+        }
 
         let selected_index = state
             .current_context
             .runtime()
             .engine()
-            .select(&state.current_context, &pending.clause_descriptions)
+            .select(&state.current_context, &descriptions)
             .await?;
 
         let result = ExpressionResult::new(ExpressionValue::String(selected_index.to_string()));
