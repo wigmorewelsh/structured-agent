@@ -29,6 +29,9 @@ impl BytecodeCompiler {
 
         if !has_explicit_return {
             let return_temp = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: return_temp.clone(),
+            });
             if ast_func.return_type == ast::Type::Unit {
                 builder.emit(Instruction::LdcUnit {
                     dest: return_temp.clone(),
@@ -62,6 +65,9 @@ impl BytecodeCompiler {
         match stmt {
             Statement::Injection(expr) => {
                 let dest_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: dest_var.clone(),
+                });
                 Self::compile_expression(builder, expr, &dest_var)?;
                 builder.emit(Instruction::CtxEvent {
                     var: dest_var.clone(),
@@ -75,6 +81,9 @@ impl BytecodeCompiler {
                 ..
             } => {
                 let temp_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: temp_var.clone(),
+                });
                 Self::compile_expression(builder, expression, &temp_var)?;
                 builder.emit(Instruction::Decl {
                     name: variable.clone(),
@@ -92,6 +101,9 @@ impl BytecodeCompiler {
                 ..
             } => {
                 let temp_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: temp_var.clone(),
+                });
                 Self::compile_expression(builder, expression, &temp_var)?;
                 builder.emit(Instruction::Mov {
                     dest: variable.clone(),
@@ -102,6 +114,9 @@ impl BytecodeCompiler {
 
             Statement::ExpressionStatement(expr) => {
                 let temp_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: temp_var.clone(),
+                });
                 Self::compile_expression(builder, expr, &temp_var)?;
                 builder.emit_drop(temp_var);
             }
@@ -116,6 +131,9 @@ impl BytecodeCompiler {
                 builder.emit_label(&if_start);
 
                 let cond_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: cond_var.clone(),
+                });
                 Self::compile_expression(builder, condition, &cond_var)?;
 
                 let else_label = format!("else_{}", builder.next_temp());
@@ -156,6 +174,9 @@ impl BytecodeCompiler {
                 builder.emit_label(&loop_start);
 
                 let cond_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: cond_var.clone(),
+                });
                 Self::compile_expression(builder, condition, &cond_var)?;
                 builder.emit_brfalse(cond_var, &loop_end);
 
@@ -174,6 +195,9 @@ impl BytecodeCompiler {
 
             Statement::Return(expr) => {
                 let result_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: result_var.clone(),
+                });
                 Self::compile_expression(builder, expr, &result_var)?;
                 builder.emit(Instruction::Ret { var: result_var });
             }
@@ -202,6 +226,9 @@ impl BytecodeCompiler {
                     .zip(Self::generate_param_names(arguments.len()))
                 {
                     let temp_var = builder.next_temp();
+                    builder.emit(Instruction::Decl {
+                        name: temp_var.clone(),
+                    });
                     Self::compile_expression(builder, arg_expr, &temp_var)?;
                     builder.emit(Instruction::CallArg {
                         param_name,
@@ -247,6 +274,9 @@ impl BytecodeCompiler {
 
                 for elem in elements {
                     let temp_var = builder.next_temp();
+                    builder.emit(Instruction::Decl {
+                        name: temp_var.clone(),
+                    });
                     Self::compile_expression(builder, elem, &temp_var)?;
                     temp_vars.push(temp_var);
                 }
@@ -308,6 +338,9 @@ impl BytecodeCompiler {
                 }
 
                 let choice_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: choice_var.clone(),
+                });
                 builder.emit(Instruction::LlmSelect {
                     dest: choice_var.clone(),
                 });
@@ -324,6 +357,9 @@ impl BytecodeCompiler {
                     });
 
                     let temp_result = builder.next_temp();
+                    builder.emit(Instruction::Decl {
+                        name: temp_result.clone(),
+                    });
                     Self::compile_expression(builder, &clause.expression_to_run, &temp_result)?;
 
                     builder.emit(Instruction::Decl {
@@ -352,6 +388,9 @@ impl BytecodeCompiler {
                 ..
             } => {
                 let cond_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: cond_var.clone(),
+                });
                 Self::compile_expression(builder, condition, &cond_var)?;
 
                 let else_label = format!("ifelse_else_{}", builder.next_temp());
