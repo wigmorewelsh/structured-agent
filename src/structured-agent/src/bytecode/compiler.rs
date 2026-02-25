@@ -444,11 +444,19 @@ impl BytecodeCompiler {
             name: choice_var.clone(),
         });
         builder.emit(Instruction::LlmSelect {
-            metadata_vars,
+            metadata_vars: metadata_vars.clone(),
             dest: choice_var.clone(),
         });
 
-        builder.emit_switch(choice_var, clause_labels.clone());
+        for meta_var in &metadata_vars {
+            builder.emit(Instruction::Drop {
+                name: meta_var.clone(),
+            });
+        }
+
+        builder.emit_switch(choice_var.clone(), clause_labels.clone());
+
+        builder.emit(Instruction::Drop { name: choice_var });
 
         let end_label = format!("select_end_{}", builder.next_temp());
 
