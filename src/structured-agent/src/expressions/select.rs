@@ -38,24 +38,26 @@ impl Expression for SelectExpr {
             return Err("Select statement must have at least one clause".to_string());
         }
 
-        let mut clause_descriptions = Vec::new();
+        let mut clause_metadata = Vec::new();
         for clause in &self.clauses {
-            let description = if let Some(doc) = clause.expression_to_run.documentation() {
-                format!(
-                    "Function Name: '{:?}' Documentation: {}",
-                    clause.expression_to_run.name(),
-                    doc
-                )
-            } else {
-                format!("Function Name: '{:?}'", clause.expression_to_run.name())
+            let metadata = ExpressionValue::Metadata {
+                name: clause
+                    .expression_to_run
+                    .name()
+                    .unwrap_or("unknown")
+                    .to_string(),
+                documentation: clause
+                    .expression_to_run
+                    .documentation()
+                    .map(|s| s.to_string()),
             };
-            clause_descriptions.push(description);
+            clause_metadata.push(metadata);
         }
 
         let selected_index = context
             .runtime()
             .engine()
-            .select(&context, &clause_descriptions)
+            .select(&context, &clause_metadata)
             .await?;
 
         let selected_clause = &self.clauses[selected_index];

@@ -241,12 +241,29 @@ impl LanguageEngine for GeminiEngine {
         Self::parse_typed_response(&response_text, return_type)
     }
 
-    async fn select(&self, context: &Context, options: &[String]) -> Result<usize, String> {
+    async fn select(
+        &self,
+        context: &Context,
+        options: &[crate::runtime::ExpressionValue],
+    ) -> Result<usize, String> {
         let mut selection_prompt =
             "SELECT: Choose one of the following options by responding with the appropriate number:\n"
                 .to_string();
         for (index, option) in options.iter().enumerate() {
-            selection_prompt.push_str(&format!("{}: {}\n", index, option));
+            let description = match option {
+                crate::runtime::ExpressionValue::Metadata {
+                    name,
+                    documentation,
+                } => {
+                    if let Some(doc) = documentation {
+                        format!("Function Name: '{}' Documentation: {}", name, doc)
+                    } else {
+                        format!("Function Name: '{}'", name)
+                    }
+                }
+                _ => option.format_for_llm(),
+            };
+            selection_prompt.push_str(&format!("{}: {}\n", index, description));
         }
 
         let mut chat_messages = self.build_context_messages(context);

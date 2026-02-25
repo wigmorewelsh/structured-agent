@@ -339,37 +339,25 @@ impl VM {
         metadata_vars: &[String],
         dest: &str,
     ) -> Result<(), String> {
-        let mut descriptions = Vec::new();
+        let mut metadata_values = Vec::new();
 
         for var_name in metadata_vars {
             let value = Self::read_variable(state, var_name)?;
-            match &value.value {
-                ExpressionValue::Metadata {
-                    name,
-                    documentation,
-                } => {
-                    let description = if let Some(doc) = documentation {
-                        format!("Function Name: '{}' Documentation: {}", name, doc)
-                    } else {
-                        format!("Function Name: '{}'", name)
-                    };
-                    descriptions.push(description);
-                }
-                _ => {
-                    return Err(format!(
-                        "Expected Metadata value in variable {}, got {}",
-                        var_name,
-                        value.value.type_name()
-                    ));
-                }
+            if !matches!(&value.value, ExpressionValue::Metadata { .. }) {
+                return Err(format!(
+                    "Expected Metadata value in variable {}, got {}",
+                    var_name,
+                    value.value.type_name()
+                ));
             }
+            metadata_values.push(value.value.clone());
         }
 
         let selected_index = state
             .current_context
             .runtime()
             .engine()
-            .select(&state.current_context, &descriptions)
+            .select(&state.current_context, &metadata_values)
             .await?;
 
         let result = ExpressionResult::new(ExpressionValue::String(selected_index.to_string()));

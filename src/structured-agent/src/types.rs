@@ -188,7 +188,7 @@ pub trait LanguageEngine {
     async fn select(
         &self,
         context: &crate::runtime::Context,
-        options: &[String],
+        options: &[crate::runtime::ExpressionValue],
     ) -> Result<usize, String>;
     async fn fill_parameter(
         &self,
@@ -266,7 +266,7 @@ impl LanguageEngine for PrintEngine {
     async fn select(
         &self,
         _context: &crate::runtime::Context,
-        _options: &[String],
+        _options: &[crate::runtime::ExpressionValue],
     ) -> Result<usize, String> {
         Ok(0)
     }
