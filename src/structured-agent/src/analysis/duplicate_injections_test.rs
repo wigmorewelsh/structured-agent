@@ -8,7 +8,7 @@ mod tests {
     fn parse_code(code: &str) -> Module {
         let unit = CompilationUnit::from_string(code.to_string());
         let manager = DiagnosticManager::new();
-        let parser = CodespanParser::new(manager.reporter().clone());
+        let parser = CodespanParser::new();
         parser.parse(&unit, 0, manager.reporter()).unwrap()
     }
 

@@ -47,7 +47,7 @@ mod compilation_tests {
         let unit = CompilationUnit::from_string(code.to_string());
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
-        let parser = CodespanParser::new(manager.reporter().clone());
+        let parser = CodespanParser::new();
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
     }
 
@@ -652,7 +652,7 @@ mod vm_execution_tests {
         let unit = CompilationUnit::from_string(code.to_string());
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
-        let parser = CodespanParser::new(manager.reporter().clone());
+        let parser = CodespanParser::new();
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
     }
 

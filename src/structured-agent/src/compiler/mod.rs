@@ -14,7 +14,6 @@ use crate::types::{ExecutableFunction, ExternalFunctionDefinition, FileId, Funct
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use tracing::{debug, error, warn};
 
@@ -58,15 +57,11 @@ impl CompilationUnit {
     }
 }
 
-pub struct CodespanParser {
-    diagnostic_reporter: DiagnosticReporter,
-}
+pub struct CodespanParser {}
 
 impl CodespanParser {
-    pub fn new(diagnostic_reporter: DiagnosticReporter) -> Self {
-        Self {
-            diagnostic_reporter,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -75,7 +70,7 @@ impl CodespanParser {
         &self,
         program: &CompilationUnit,
         file_id: FileId,
-        _diagnostic_reporter: &DiagnosticReporter,
+        diagnostic_reporter: &DiagnosticReporter,
     ) -> Result<Module, String> {
         debug!("Parsing source code");
         let input = program.source();
@@ -101,7 +96,7 @@ impl CodespanParser {
 
                 let clean_message = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
 
-                if let Err(io_err) = self.diagnostic_reporter.emit_parse_error(
+                if let Err(io_err) = diagnostic_reporter.emit_parse_error(
                     file_id,
                     &clean_message,
                     Some((byte_offset, byte_offset + 1)),
@@ -204,7 +199,6 @@ fn convert_ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
 
 pub struct Compiler {
     parser: CodespanParser,
-    diagnostic_manager: RefCell<DiagnosticManager>,
 }
 
 impl Default for Compiler {
@@ -215,13 +209,8 @@ impl Default for Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
-        let diagnostic_manager = DiagnosticManager::new();
-        let reporter = DiagnosticReporter::new(diagnostic_manager.files().clone());
-        let parser = CodespanParser::new(reporter);
-        Self {
-            parser,
-            diagnostic_manager: RefCell::new(diagnostic_manager),
-        }
+        let parser = CodespanParser::new();
+        Self { parser }
     }
 }
 
@@ -230,12 +219,11 @@ impl Compiler {
         debug!("Compiling program: {}", program.name());
         debug!("Source length: {} bytes", program.source().len());
 
-        let mut diagnostic_manager = self.diagnostic_manager.borrow_mut();
+        let mut diagnostic_manager = DiagnosticManager::new();
         let file_id =
             diagnostic_manager.add_file(program.name().to_string(), program.source().to_string());
 
         let reporter = diagnostic_manager.reporter().clone();
-        drop(diagnostic_manager);
 
         debug!("Starting parser");
         let module = match self.parser.parse(program, file_id, &reporter) {
