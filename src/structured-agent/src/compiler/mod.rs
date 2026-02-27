@@ -16,7 +16,6 @@ use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use tracing::{debug, error, warn};
 
 use crate::bytecode::BytecodeCompiler;
@@ -59,15 +58,6 @@ impl CompilationUnit {
     }
 }
 
-pub trait Parser {
-    fn parse(
-        &self,
-        program: &CompilationUnit,
-        file_id: FileId,
-        diagnostic_reporter: &DiagnosticReporter,
-    ) -> Result<Module, String>;
-}
-
 pub struct CodespanParser {
     diagnostic_reporter: DiagnosticReporter,
 }
@@ -80,8 +70,8 @@ impl CodespanParser {
     }
 }
 
-impl Parser for CodespanParser {
-    fn parse(
+impl CodespanParser {
+    pub fn parse(
         &self,
         program: &CompilationUnit,
         file_id: FileId,
@@ -123,12 +113,6 @@ impl Parser for CodespanParser {
             }
         }
     }
-}
-
-pub trait FunctionCompiler {
-    fn compile_function(
-        ast_func: &crate::ast::Function,
-    ) -> Result<Box<dyn ExecutableFunction>, String>;
 }
 
 #[derive(Debug)]
@@ -219,7 +203,7 @@ fn convert_ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
 }
 
 pub struct Compiler {
-    parser: Rc<dyn Parser>,
+    parser: CodespanParser,
     diagnostic_manager: RefCell<DiagnosticManager>,
 }
 
@@ -233,7 +217,7 @@ impl Compiler {
     pub fn new() -> Self {
         let diagnostic_manager = DiagnosticManager::new();
         let reporter = DiagnosticReporter::new(diagnostic_manager.files().clone());
-        let parser = Rc::new(CodespanParser::new(reporter));
+        let parser = CodespanParser::new(reporter);
         Self {
             parser,
             diagnostic_manager: RefCell::new(diagnostic_manager),

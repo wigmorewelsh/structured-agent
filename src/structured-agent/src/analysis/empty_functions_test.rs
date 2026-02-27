@@ -2,7 +2,7 @@
 mod tests {
     use crate::analysis::{Analyzer, EmptyFunctionAnalyzer};
     use crate::ast::Module;
-    use crate::compiler::{CodespanParser, CompilationUnit, Parser};
+    use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
 
     fn parse_code(code: &str) -> Module {

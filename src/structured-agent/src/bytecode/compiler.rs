@@ -1,6 +1,5 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast::{self, Expression, Statement};
-use crate::compiler::FunctionCompiler;
 use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
 
@@ -547,8 +546,10 @@ impl BytecodeCompiler {
     }
 }
 
-impl FunctionCompiler for BytecodeCompiler {
-    fn compile_function(ast_func: &ast::Function) -> Result<Box<dyn ExecutableFunction>, String> {
+impl BytecodeCompiler {
+    pub fn compile_function(
+        ast_func: &ast::Function,
+    ) -> Result<Box<dyn ExecutableFunction>, String> {
         let compiled = Self::compile_to_bytecode(ast_func)?;
         let bytecode_expr = BytecodeFunctionExpr::new(compiled);
         Ok(Box::new(bytecode_expr))

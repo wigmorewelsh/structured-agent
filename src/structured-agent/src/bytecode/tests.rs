@@ -40,7 +40,7 @@ mod instruction_display_tests {
 mod compilation_tests {
     use crate::ast::Module;
     use crate::bytecode::BytecodeCompiler;
-    use crate::compiler::{CodespanParser, CompilationUnit, Parser};
+    use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
 
     fn parse_code(code: &str) -> Module {
@@ -643,7 +643,7 @@ fn greet(name: String): () {
 mod vm_execution_tests {
     use crate::ast::Module;
     use crate::bytecode::{BytecodeCompiler, VM};
-    use crate::compiler::{CodespanParser, CompilationUnit, Parser};
+    use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{Context, ExpressionValue, Runtime};
     use std::sync::Arc;

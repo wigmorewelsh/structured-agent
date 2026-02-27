@@ -2,8 +2,8 @@ use combine::Parser;
 use combine::stream::position;
 use std::sync::Arc;
 use structured_agent::bytecode::BytecodeCompiler;
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::compiler::parser;
-use structured_agent::compiler::{CompilationUnit, FunctionCompiler};
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::FileId;
 
