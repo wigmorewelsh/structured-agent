@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 use structured_agent::compiler::{CompilationUnit, Compiler};
 use structured_agent::mcp::McpClient;
 use structured_agent::runtime::Runtime;
@@ -73,7 +73,7 @@ fn main(): () {
 
     let program = CompilationUnit::from_string(simple_program.to_string());
     let runtime = Runtime::builder(program)
-        .with_compiler(Rc::new(Compiler::new()))
+        .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
 
@@ -112,7 +112,7 @@ fn main(): () {
 
     let program = CompilationUnit::from_string(program_with_extern.to_string());
     let runtime = Runtime::builder(program)
-        .with_compiler(Rc::new(Compiler::new()))
+        .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
 
@@ -152,7 +152,7 @@ fn main(): String {{
 
     let program = CompilationUnit::from_string(program_with_extern_call);
     let runtime = Runtime::builder(program)
-        .with_compiler(Rc::new(Compiler::new()))
+        .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
 
@@ -211,7 +211,7 @@ fn main(): String {{
 
     let program = CompilationUnit::from_string(complete_program);
     let runtime = Runtime::builder(program)
-        .with_compiler(Rc::new(Compiler::new()))
+        .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
 
@@ -279,7 +279,7 @@ fn main(): String {{
 
     let program = CompilationUnit::from_string(program);
     let runtime = Runtime::builder(program)
-        .with_compiler(Rc::new(Compiler::new()))
+        .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
 

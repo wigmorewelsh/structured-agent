@@ -5,11 +5,10 @@ use crate::types::{
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct NativeFunctionProvider {
-    pub(crate) native_functions: HashMap<String, Arc<dyn NativeFunction>>,
+    pub(crate) native_functions: HashMap<String, Arc<dyn ExecutableFunction>>,
 }
 
 impl NativeFunctionProvider {
@@ -19,9 +18,10 @@ impl NativeFunctionProvider {
         }
     }
 
-    pub fn add_function(&mut self, native_function: Arc<dyn NativeFunction>) {
+    pub fn add_function<F: NativeFunction + 'static>(&mut self, native_function: Arc<F>) {
         let name = native_function.name().to_string();
-        self.native_functions.insert(name, native_function);
+        let expr = NativeFunctionExpr::new(native_function);
+        self.native_functions.insert(name, Arc::new(expr));
     }
 }
 
@@ -37,12 +37,12 @@ impl FunctionProvider for NativeFunctionProvider {
         let definitions = self
             .native_functions
             .values()
-            .map(|native_fn| {
+            .map(|exec_fn| {
                 ExternalFunctionDefinition::new_with_docs(
-                    native_fn.name().to_string(),
-                    native_fn.parameters().to_vec(),
-                    native_fn.return_type().clone(),
-                    native_fn.documentation().map(|s| s.to_string()),
+                    exec_fn.name().to_string(),
+                    exec_fn.parameters().to_vec(),
+                    exec_fn.function_return_type().clone(),
+                    exec_fn.documentation().map(|s| s.to_string()),
                 )
             })
             .collect();
@@ -53,15 +53,14 @@ impl FunctionProvider for NativeFunctionProvider {
         &self,
         definition: &ExternalFunctionDefinition,
     ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
-        let native_function = self.native_functions.get(&definition.name).ok_or_else(|| {
+        let exec_fn = self.native_functions.get(&definition.name).ok_or_else(|| {
             RuntimeError::FunctionNotFound(format!(
                 "Native function '{}' not found",
                 definition.name
             ))
         })?;
 
-        let expr = NativeFunctionExpr::new(native_function.clone());
-        Ok(Arc::new(expr))
+        Ok(exec_fn.clone())
     }
 }
 

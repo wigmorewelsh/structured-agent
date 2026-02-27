@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::gemini::GeminiEngine;
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
@@ -16,7 +16,7 @@ async fn test_select_with_simple_options() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::String("Choose your favorite color".to_string()),
@@ -68,7 +68,7 @@ async fn test_select_with_numbered_options() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::String("Pick the correct mathematical operation for 2 + 2".to_string()),
@@ -118,7 +118,7 @@ async fn test_select_with_single_option() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec![ExpressionValue::Metadata {
@@ -148,7 +148,7 @@ async fn test_select_with_contextual_decision() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::String("The weather is very hot today".to_string()),
@@ -199,7 +199,7 @@ async fn test_select_with_mathematical_context() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::String("Calculate the derivative of x^2".to_string()),
@@ -249,7 +249,7 @@ async fn test_select_with_many_options() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::String(
@@ -317,7 +317,7 @@ async fn test_select_validates_bounds() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec![
@@ -354,7 +354,7 @@ async fn test_select_prompt_formatting() {
     };
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
     let options = vec![
         ExpressionValue::Metadata {

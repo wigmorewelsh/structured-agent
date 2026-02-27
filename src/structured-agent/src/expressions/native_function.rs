@@ -5,11 +5,11 @@ use std::any::Any;
 
 use std::sync::Arc;
 
-pub struct NativeFunctionExpr {
-    native_function: Arc<dyn NativeFunction>,
+pub struct NativeFunctionExpr<F: NativeFunction> {
+    native_function: Arc<F>,
 }
 
-impl std::fmt::Debug for NativeFunctionExpr {
+impl<F: NativeFunction> std::fmt::Debug for NativeFunctionExpr<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeFunctionExpr")
             .field("name", &self.native_function.name())
@@ -19,14 +19,14 @@ impl std::fmt::Debug for NativeFunctionExpr {
     }
 }
 
-impl Clone for NativeFunctionExpr {
+impl<F: NativeFunction> Clone for NativeFunctionExpr<F> {
     fn clone(&self) -> Self {
         panic!("NativeFunctionExpr cannot be cloned due to boxed trait object")
     }
 }
 
 #[async_trait(?Send)]
-impl Function for NativeFunctionExpr {
+impl<F: NativeFunction + 'static> Function for NativeFunctionExpr<F> {
     fn name(&self) -> &str {
         self.native_function.name()
     }
@@ -63,16 +63,22 @@ impl Function for NativeFunctionExpr {
 }
 
 #[async_trait(?Send)]
-impl ExecutableFunction for NativeFunctionExpr {
+impl<F: NativeFunction + 'static> ExecutableFunction for NativeFunctionExpr<F> {
     fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
         panic!("NativeFunctionExpr cannot be cloned due to boxed trait object")
     }
 }
 
-impl NativeFunctionExpr {
-    pub fn new(native_function: Arc<dyn NativeFunction>) -> Self {
+impl<F: NativeFunction> NativeFunctionExpr<F> {
+    pub fn new(native_function: Arc<F>) -> Self {
         Self { native_function }
     }
+}
+
+pub fn create_native_function_expr<F: NativeFunction + 'static>(
+    native_function: Arc<F>,
+) -> Arc<dyn ExecutableFunction> {
+    Arc::new(NativeFunctionExpr::new(native_function))
 }
 
 #[cfg(test)]
@@ -81,7 +87,6 @@ mod tests {
     use crate::compiler::CompilationUnit;
     use crate::runtime::{Context, Runtime};
     use crate::types::{NativeFunction, Type};
-    use std::rc::Rc;
 
     fn test_runtime() -> Runtime {
         let program = CompilationUnit::from_string("fn main(): () {}".to_string());

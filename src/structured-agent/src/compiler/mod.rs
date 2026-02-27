@@ -125,10 +125,6 @@ impl Parser for CodespanParser {
     }
 }
 
-pub trait CompilerTrait {
-    fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String>;
-}
-
 pub trait FunctionCompiler {
     fn compile_function(
         ast_func: &crate::ast::Function,
@@ -245,8 +241,8 @@ impl Compiler {
     }
 }
 
-impl CompilerTrait for Compiler {
-    fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
+impl Compiler {
+    pub fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
         debug!("Compiling program: {}", program.name());
         debug!("Source length: {} bytes", program.source().len());
 
@@ -346,7 +342,7 @@ impl CompilerTrait for Compiler {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompilationUnit, Compiler, CompilerTrait};
+    use super::{CompilationUnit, Compiler};
     use crate::runtime::{ExpressionValue, Runtime};
 
     async fn run_test_with_compiler(program_source: &str, expected: &str) {

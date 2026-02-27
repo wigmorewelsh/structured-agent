@@ -1,4 +1,4 @@
-use structured_agent::compiler::{CompilationUnit, CompilerTrait};
+use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::Runtime;
 
 #[tokio::test]

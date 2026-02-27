@@ -9,7 +9,6 @@ use rmcp::{RoleClient, ServiceError, ServiceExt};
 use serde_json::Value;
 use std::error::Error;
 use std::fmt;
-use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

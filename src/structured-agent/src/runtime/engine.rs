@@ -1,6 +1,5 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
-use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
-use crate::expressions::NativeFunctionExpr;
+use crate::compiler::{CompilationUnit, Compiler};
 use crate::functions::{
     HeadFunction, InputFunction, IsSomeFunction, IsSomeListFunction, PrintFunction,
     SomeValueFunction, SomeValueListFunction, TailFunction, acp_shim,
@@ -13,7 +12,6 @@ use crate::types::{
     NativeFunction,
 };
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::Arc;
 use tracing::{debug, error};
 
@@ -21,7 +19,7 @@ pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     language_engine: Arc<dyn LanguageEngine>,
-    compiler: Arc<dyn CompilerTrait>,
+    compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
     compiled_program: CompilationUnit,
 }
@@ -30,7 +28,7 @@ pub struct RuntimeBuilder {
     providers: Vec<Arc<dyn FunctionProvider>>,
     native_provider: NativeFunctionProvider,
     language_engine: Option<Arc<dyn LanguageEngine>>,
-    compiler: Option<Arc<dyn CompilerTrait>>,
+    compiler: Option<Arc<Compiler>>,
     program_source: CompilationUnit,
 }
 
@@ -69,7 +67,7 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn with_compiler(mut self, compiler: Arc<dyn CompilerTrait>) -> Self {
+    pub fn with_compiler(mut self, compiler: Arc<Compiler>) -> Self {
         self.compiler = Some(compiler);
         self
     }
@@ -79,7 +77,10 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn with_native_function(mut self, native_function: Arc<dyn NativeFunction>) -> Self {
+    pub fn with_native_function<F: NativeFunction + 'static>(
+        mut self,
+        native_function: Arc<F>,
+    ) -> Self {
         self.native_provider.add_function(native_function);
         self
     }
@@ -201,12 +202,7 @@ impl RuntimeBuilder {
         let mut providers = self.providers;
         providers.push(native_provider_rc.clone());
 
-        let mut function_registry = HashMap::new();
-
-        for (name, native_fn) in &native_provider_rc.native_functions {
-            let expr = NativeFunctionExpr::new(native_fn.clone());
-            function_registry.insert(name.clone(), Arc::new(expr) as Arc<dyn ExecutableFunction>);
-        }
+        let function_registry = native_provider_rc.native_functions.clone();
 
         Runtime {
             function_registry,
@@ -256,8 +252,8 @@ impl Runtime {
         self.language_engine.as_ref()
     }
 
-    pub fn compiler(&self) -> &dyn CompilerTrait {
-        self.compiler.as_ref()
+    pub fn compiler(&self) -> &Compiler {
+        &self.compiler
     }
 
     pub fn check(&self) -> Result<(), RuntimeError> {

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
+    use crate::compiler::{CompilationUnit, Compiler};
 
     #[test]
     fn test_type_checker_integration_valid_program() {

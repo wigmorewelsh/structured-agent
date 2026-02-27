@@ -4,7 +4,7 @@ use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 #[derive(Debug)]
 pub struct ReceiveFunction {

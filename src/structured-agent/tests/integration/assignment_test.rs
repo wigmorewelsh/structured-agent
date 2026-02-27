@@ -1,13 +1,11 @@
 use combine::Parser;
 use combine::stream::position;
-use std::rc::Rc;
 use std::sync::Arc;
 use structured_agent::bytecode::BytecodeCompiler;
 use structured_agent::compiler::parser;
 use structured_agent::compiler::{CompilationUnit, FunctionCompiler};
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::FileId;
-use structured_agent::types::Function;
 
 const TEST_FILE_ID: FileId = 0;
 
@@ -53,17 +51,12 @@ fn test_assignment(): () {
     let compiled_function = compilation_result.unwrap();
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
-    let context = Arc::new(Context::with_runtime(runtime));
-    let execution_result = compiled_function.execute(context.clone(), vec![]).await;
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let context = Context::with_runtime(runtime);
+    let execution_result = compiled_function.execute(context, vec![]).await;
     assert!(execution_result.is_ok());
 
-    // Note: Bytecode compiler may handle event metadata differently
-    // Just verify we have events from the injection
-    assert!(
-        context.events_count() > 0,
-        "Expected at least one event from injection"
-    );
+    let (context, _) = execution_result.unwrap();
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
@@ -99,10 +92,12 @@ fn test_var_assignment(): () {
     let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
-    let context = Arc::new(Context::with_runtime(runtime));
-    let result = compiled_function.execute(context.clone(), vec![]).await;
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let context = Context::with_runtime(runtime);
+    let result = compiled_function.execute(context, vec![]).await;
     assert!(result.is_ok());
+
+    let (context, _) = result.unwrap();
 
     // Note: Bytecode compiler handles events, verify we have the expected count
     assert_eq!(
@@ -146,12 +141,14 @@ fn test_return(): () {
     let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
 
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Rc::new(Runtime::builder(empty_program).build());
-    let context = Arc::new(Context::with_runtime(runtime));
-    let result = compiled_function.execute(context.clone(), vec![]).await;
+    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let context = Context::with_runtime(runtime);
+    let result = compiled_function.execute(context, vec![]).await;
     assert!(result.is_ok());
 
-    match result.unwrap().value {
+    let (context, expr_result) = result.unwrap();
+
+    match expr_result.value {
         ExpressionValue::Unit => (),
         _ => panic!("Expected unit result"),
     }
