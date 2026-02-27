@@ -349,9 +349,9 @@ impl Runtime {
         program: &dyn crate::types::Function,
     ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Running expression");
-        let initial_context = Arc::new(Context::with_runtime(Rc::new(self.create_runtime_ref())));
+        let initial_context = Context::with_runtime(Arc::new(self.create_runtime_ref()));
         match program.execute(initial_context, vec![]).await {
-            Ok(result) => {
+            Ok((_context, result)) => {
                 debug!("Expression evaluated successfully");
                 Ok(result.value)
             }

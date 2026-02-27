@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
 use std::rc::Rc;
-use std::sync::Arc;
 
 pub struct ExternalFunctionExpr {
     pub name: String,
@@ -74,9 +73,9 @@ impl Function for ExternalFunctionExpr {
 
     async fn execute(
         &self,
-        context: Arc<Context>,
+        context: Context,
         args: Vec<ExpressionResult>,
-    ) -> Result<ExpressionResult, String> {
+    ) -> Result<(Context, ExpressionResult), String> {
         let mut arguments = json!({});
 
         fn expr_result_to_json(value: &ExpressionValue) -> serde_json::Value {
@@ -130,25 +129,29 @@ impl Function for ExternalFunctionExpr {
             .map_err(|e| format!("MCP tool call failed: {}", e));
 
         if let Err(e) = result_raw {
-            return Ok(ExpressionResult::new(ExpressionValue::String(e)));
+            return Ok((context, ExpressionResult::new(ExpressionValue::String(e))));
         }
 
         let result = result_raw?;
 
         if result.content.is_empty() {
-            Ok(ExpressionResult::new(ExpressionValue::Unit))
+            Ok((context, ExpressionResult::new(ExpressionValue::Unit)))
         } else {
             if result.content.len() != 1 {
                 return Err(format!("Expected one result, got {}", result.content.len()));
             }
 
             match &*result.content[0] {
-                rmcp::model::RawContent::Text(text_content) => Ok(ExpressionResult::new(
-                    ExpressionValue::String(text_content.text.clone()),
+                rmcp::model::RawContent::Text(text_content) => Ok((
+                    context,
+                    ExpressionResult::new(ExpressionValue::String(text_content.text.clone())),
                 )),
                 _ => {
                     let content_str = format!("{:?}", result.content);
-                    Ok(ExpressionResult::new(ExpressionValue::String(content_str)))
+                    Ok((
+                        context,
+                        ExpressionResult::new(ExpressionValue::String(content_str)),
+                    ))
                 }
             }
         }

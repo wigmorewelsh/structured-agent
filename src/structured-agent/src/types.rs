@@ -155,9 +155,9 @@ pub trait Function: std::fmt::Debug {
     fn function_return_type(&self) -> &Type;
     async fn execute(
         &self,
-        context: std::sync::Arc<crate::runtime::Context>,
+        context: crate::runtime::Context,
         args: Vec<crate::runtime::ExpressionResult>,
-    ) -> Result<crate::runtime::ExpressionResult, String>;
+    ) -> Result<(crate::runtime::Context, crate::runtime::ExpressionResult), String>;
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn Function>;
     fn documentation(&self) -> Option<&str> {

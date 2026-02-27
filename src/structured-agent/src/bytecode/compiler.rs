@@ -4,6 +4,7 @@ use crate::compiler::FunctionCompiler;
 use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
 
+#[derive(Clone)]
 pub struct CompiledFunction {
     pub name: String,
     pub parameters: Vec<Parameter>,

@@ -3,7 +3,6 @@ use crate::compiler::CompilationUnit;
 use crate::runtime::{ExpressionValue, Runtime, RuntimeError, load_program};
 use agent_client_protocol as acp;
 use std::fs::OpenOptions;
-use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, error, info, warn};
@@ -14,7 +13,7 @@ use super::functions::TryReceiveFunction;
 use super::tracing::SessionTracingLayer;
 
 pub struct Agent {
-    runtime: Rc<Runtime>,
+    runtime: Arc<Runtime>,
     program: CompilationUnit,
     program_source: Option<crate::cli::config::ProgramSource>,
     config: Option<Arc<Config>>,
@@ -96,7 +95,7 @@ impl Agent {
         };
 
         Ok(Self {
-            runtime: Rc::new(runtime),
+            runtime: Arc::new(runtime),
             program,
             program_source: Some(program_source.clone()),
             config: Some(Arc::new(config.clone())),
@@ -121,7 +120,7 @@ impl Agent {
             .build();
 
         Self {
-            runtime: Rc::new(runtime),
+            runtime: Arc::new(runtime),
             program,
             program_source: None,
             config: None,
@@ -284,7 +283,7 @@ impl Agent {
             })?;
 
         self.program = program;
-        self.runtime = Rc::new(runtime);
+        self.runtime = Arc::new(runtime);
         self.prompt_tx = prompt_tx;
 
         if let Some(handle) = self.task_handle.take() {

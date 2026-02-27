@@ -41,12 +41,12 @@ impl Function for NativeFunctionExpr {
 
     async fn execute(
         &self,
-        _context: Arc<Context>,
+        context: Context,
         args: Vec<ExpressionResult>,
-    ) -> Result<ExpressionResult, String> {
+    ) -> Result<(Context, ExpressionResult), String> {
         let values: Vec<ExpressionValue> = args.into_iter().map(|r| r.value).collect();
         let result = self.native_function.execute(values).await?;
-        Ok(ExpressionResult::new(result))
+        Ok((context, ExpressionResult::new(result)))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -190,10 +190,10 @@ mod tests {
         let native_func = Arc::new(TestNativeFunctionWithDocs::new());
         let expr = NativeFunctionExpr::new(native_func);
 
-        let runtime = Rc::new(test_runtime());
-        let context = Arc::new(Context::with_runtime(runtime));
+        let runtime = Arc::new(test_runtime());
+        let context = Context::with_runtime(runtime);
 
-        let result = expr.execute(context, vec![]).await.unwrap();
+        let (_context, result) = expr.execute(context, vec![]).await.unwrap();
 
         match result.value {
             crate::runtime::ExpressionValue::String(s) => assert_eq!(s, "test_result"),

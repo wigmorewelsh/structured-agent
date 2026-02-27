@@ -646,7 +646,6 @@ mod vm_execution_tests {
     use crate::compiler::{CodespanParser, CompilationUnit, CompilerTrait, Parser};
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{Context, ExpressionValue, Runtime};
-    use std::rc::Rc;
     use std::sync::Arc;
 
     fn parse_code(code: &str) -> Module {
@@ -681,11 +680,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::String(s) => assert_eq!(s, "hello"),
             _ => panic!("Expected string value"),
@@ -705,11 +704,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::Boolean(b) => assert_eq!(b, true),
             _ => panic!("Expected boolean value"),
@@ -729,11 +728,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::Unit => {}
             _ => panic!("Expected unit value"),
@@ -754,11 +753,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::String(s) => assert_eq!(s, "test"),
             _ => panic!("Expected string value"),
@@ -780,11 +779,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::String(s) => assert_eq!(s, "updated"),
             _ => panic!("Expected string value"),
@@ -804,8 +803,8 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let mut context = Context::with_runtime(runtime.clone());
 
         context.declare_variable(
             "x".to_string(),
@@ -813,7 +812,7 @@ mod vm_execution_tests {
         );
 
         let vm = VM::new(runtime);
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::String(s) => assert_eq!(s, "yes"),
             _ => panic!("Expected string value"),
@@ -834,12 +833,12 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        vm.execute(&compiled, context.clone()).await.unwrap();
-        assert_eq!(context.events_count(), 2);
+        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        assert_eq!(returned_context.events_count(), 2);
     }
 
     #[tokio::test]
@@ -859,11 +858,11 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
         match result.value {
             ExpressionValue::Boolean(b) => assert_eq!(b, false),
             _ => panic!("Expected boolean value"),
@@ -886,13 +885,13 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        vm.execute(&compiled, context.clone()).await.unwrap();
-        assert!(context.get_variable("x").is_some());
-        assert!(context.get_variable("y").is_none());
+        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        assert!(returned_context.get_variable("x").is_some());
+        assert!(returned_context.get_variable("y").is_none());
     }
 
     #[tokio::test]
@@ -908,8 +907,8 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
         let result = vm.execute(&compiled, context).await;
@@ -933,8 +932,8 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
         let result = vm.execute(&compiled, context).await;
@@ -955,12 +954,12 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        vm.execute(&compiled, context.clone()).await.unwrap();
-        assert!(context.get_variable("$tmp0").is_none());
+        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        assert!(returned_context.get_variable("$tmp0").is_none());
     }
 
     #[tokio::test]
@@ -976,12 +975,12 @@ mod vm_execution_tests {
         let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
 
         let program = CompilationUnit::from_string("".to_string());
-        let runtime = Rc::new(Runtime::builder(program).build());
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(Runtime::builder(program).build());
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        vm.execute(&compiled, context.clone()).await.unwrap();
-        let x_value = context.get_variable("x").unwrap();
+        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        let x_value = returned_context.get_variable("x").unwrap();
         match x_value.value {
             ExpressionValue::String(ref s) => assert_eq!(s, "value"),
             _ => panic!("Expected string value"),
@@ -1014,12 +1013,12 @@ mod vm_execution_tests {
             runtime.register_function(function.clone_executable());
         }
 
-        let runtime = Rc::new(runtime);
-        let context = Arc::new(Context::with_runtime(runtime.clone()));
+        let runtime = Arc::new(runtime);
+        let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
         let result = vm.execute(&test_compiled, context).await.unwrap();
-        match result.value {
+        match result.1.value {
             ExpressionValue::String(s) => assert_eq!(s, "test_value"),
             _ => panic!("Expected string value"),
         }

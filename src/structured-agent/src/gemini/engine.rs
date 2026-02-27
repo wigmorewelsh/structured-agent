@@ -219,7 +219,7 @@ impl LanguageEngine for GeminiEngine {
             is_required,
         );
 
-        let mut chat_messages = self.build_context_messages(context);
+        let chat_messages = self.build_context_messages(context);
 
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)

@@ -1,8 +1,6 @@
 use crate::runtime::Runtime;
 use crate::runtime::types::{ExpressionParameter, ExpressionResult, ExpressionValue};
-use dashmap::DashMap;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -13,51 +11,40 @@ pub struct Event {
 }
 
 pub struct Context {
-    parent: Option<Arc<Context>>,
-    events: RefCell<Vec<Event>>,
-    variables: DashMap<String, ExpressionResult>,
+    parent: Option<Box<Context>>,
+    events: Vec<Event>,
+    variables: HashMap<String, ExpressionResult>,
     is_scope_boundary: bool,
-    return_value: RefCell<Option<ExpressionResult>>,
-    runtime: Rc<Runtime>,
+    return_value: Option<ExpressionResult>,
+    runtime: Arc<Runtime>,
 }
 
 impl Context {
-    pub fn with_runtime(runtime: Rc<Runtime>) -> Self {
+    pub fn with_runtime(runtime: Arc<Runtime>) -> Self {
         Self {
             parent: None,
-            events: RefCell::new(Vec::new()),
-            variables: DashMap::new(),
+            events: Vec::new(),
+            variables: HashMap::new(),
             is_scope_boundary: true,
-            return_value: RefCell::new(None),
-            runtime,
-        }
-    }
-
-    pub fn with_parent(parent: Arc<Context>, runtime: Rc<Runtime>) -> Self {
-        Self {
-            parent: Some(parent),
-            events: RefCell::new(Vec::new()),
-            variables: DashMap::new(),
-            is_scope_boundary: false,
-            return_value: RefCell::new(None),
+            return_value: None,
             runtime,
         }
     }
 
     pub fn add_event(
-        &self,
+        &mut self,
         content: ExpressionValue,
         name: Option<String>,
         params: Option<Vec<ExpressionParameter>>,
     ) {
-        self.events.borrow_mut().push(Event {
+        self.events.push(Event {
             content,
             name,
             params,
         });
     }
 
-    pub fn iter_all_events(&self) -> impl Iterator<Item = Event> {
+    pub fn iter_all_events(&self) -> impl Iterator<Item = Event> + '_ {
         let mut all_events = Vec::new();
         let mut current_context = Some(self);
 
@@ -68,20 +55,20 @@ impl Context {
         }
 
         for ctx in context_chain.into_iter().rev() {
-            all_events.extend(ctx.events.borrow().clone());
+            all_events.extend(ctx.events.clone());
         }
 
         all_events.into_iter()
     }
 
     pub fn events_count(&self) -> usize {
-        self.events.borrow().len()
+        self.events.len()
     }
 
     pub fn has_events(&self) -> bool {
         let mut current_context = Some(self);
         while let Some(ctx) = current_context {
-            if !ctx.events.borrow().is_empty() {
+            if !ctx.events.is_empty() {
                 return true;
             }
             current_context = ctx.parent.as_deref();
@@ -90,15 +77,15 @@ impl Context {
     }
 
     pub fn has_local_events(&self) -> bool {
-        !self.events.borrow().is_empty()
+        !self.events.is_empty()
     }
 
     pub fn get_event(&self, index: usize) -> Option<Event> {
-        self.events.borrow().get(index).cloned()
+        self.events.get(index).cloned()
     }
 
     pub fn last_event(&self) -> Option<Event> {
-        self.events.borrow().last().cloned()
+        self.events.last().cloned()
     }
 
     pub fn get_variable(&self, name: &str) -> Option<ExpressionResult> {
@@ -111,65 +98,68 @@ impl Context {
         }
     }
 
-    pub fn declare_variable(&self, name: String, result: ExpressionResult) {
+    pub fn declare_variable(&mut self, name: String, result: ExpressionResult) {
         self.variables.insert(name, result);
     }
 
-    pub fn assign_variable(&self, name: String, result: ExpressionResult) -> Result<(), String> {
+    pub fn assign_variable(
+        &mut self,
+        name: String,
+        result: ExpressionResult,
+    ) -> Result<(), String> {
         if self.variables.contains_key(&name) {
             self.variables.insert(name, result);
             Ok(())
         } else if self.is_scope_boundary {
             Err(format!("Variable '{}' not found", name))
-        } else if let Some(parent) = &self.parent {
+        } else if let Some(parent) = &mut self.parent {
             parent.assign_variable(name, result)
         } else {
             Err(format!("Variable '{}' not found", name))
         }
     }
 
-    pub fn remove_variable(&self, name: &str) {
+    pub fn remove_variable(&mut self, name: &str) {
         self.variables.remove(name);
     }
 
-    pub fn parent_context(&self) -> Option<Arc<Context>> {
-        self.parent.clone()
-    }
-
-    pub fn create_child(
-        parent: Arc<Context>,
-        is_scope_boundary: bool,
-        runtime: Rc<Runtime>,
-    ) -> Self {
+    pub fn create_child(self, is_scope_boundary: bool) -> Self {
+        let runtime = self.runtime.clone();
         Self {
-            parent: Some(parent),
-            events: RefCell::new(Vec::new()),
-            variables: DashMap::new(),
+            parent: Some(Box::new(self)),
+            events: Vec::new(),
+            variables: HashMap::new(),
             is_scope_boundary,
-            return_value: RefCell::new(None),
+            return_value: None,
             runtime,
         }
+    }
+
+    pub fn restore_parent(self) -> Result<Self, String> {
+        self.parent
+            .map(|p| *p)
+            .ok_or_else(|| "No parent context to restore".to_string())
     }
 
     pub fn runtime(&self) -> &Runtime {
         &self.runtime
     }
 
-    pub fn runtime_rc(&self) -> Rc<Runtime> {
+    pub fn runtime_arc(&self) -> Arc<Runtime> {
         self.runtime.clone()
     }
 
-    pub fn set_return_value(&self, result: ExpressionResult) {
+    pub fn set_return_value(&mut self, result: ExpressionResult) {
         if self.is_scope_boundary {
-            *self.return_value.borrow_mut() = Some(result);
-        } else if let Some(parent) = &self.parent {
+            self.return_value = Some(result);
+        } else if let Some(parent) = &mut self.parent {
             parent.set_return_value(result);
         }
     }
 
     pub fn get_return_value(&self) -> Option<ExpressionResult> {
         if self.is_scope_boundary {
-            self.return_value.borrow().clone()
+            self.return_value.clone()
         } else if let Some(parent) = &self.parent {
             parent.get_return_value()
         } else {
@@ -179,11 +169,23 @@ impl Context {
 
     pub fn has_return_value(&self) -> bool {
         if self.is_scope_boundary {
-            self.return_value.borrow_mut().is_some()
+            self.return_value.is_some()
         } else if let Some(parent) = &self.parent {
             parent.has_return_value()
         } else {
             false
         }
+    }
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("events", &self.events)
+            .field("variables", &self.variables)
+            .field("is_scope_boundary", &self.is_scope_boundary)
+            .field("return_value", &self.return_value)
+            .field("runtime", &"<Runtime>")
+            .finish()
     }
 }

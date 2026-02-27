@@ -3,17 +3,14 @@ use crate::runtime::{Context, ExpressionResult};
 use crate::types::{ExecutableFunction, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
-use std::sync::Arc;
 
 pub struct BytecodeFunctionExpr {
-    compiled: Arc<CompiledFunction>,
+    compiled: CompiledFunction,
 }
 
 impl BytecodeFunctionExpr {
     pub fn new(compiled: CompiledFunction) -> Self {
-        Self {
-            compiled: Arc::new(compiled),
-        }
+        Self { compiled }
     }
 }
 
@@ -34,7 +31,7 @@ impl std::fmt::Debug for BytecodeFunctionExpr {
 impl Clone for BytecodeFunctionExpr {
     fn clone(&self) -> Self {
         BytecodeFunctionExpr {
-            compiled: Arc::clone(&self.compiled),
+            compiled: self.compiled.clone(),
         }
     }
 }
@@ -55,15 +52,18 @@ impl Function for BytecodeFunctionExpr {
 
     async fn execute(
         &self,
-        context: Arc<Context>,
+        mut context: Context,
         args: Vec<ExpressionResult>,
-    ) -> Result<ExpressionResult, String> {
+    ) -> Result<(Context, ExpressionResult), String> {
         for (i, param) in self.compiled.parameters.iter().enumerate() {
             context.declare_variable(param.name.clone(), args[i].clone());
         }
 
-        let vm = VM::new(context.runtime_rc());
-        vm.execute(&self.compiled, context).await
+        let vm = VM::new(context.runtime_arc());
+        let result = vm.execute(&self.compiled, context).await?;
+        let returned_context = result.0;
+        let returned_result = result.1;
+        Ok((returned_context, returned_result))
     }
 
     fn as_any(&self) -> &dyn Any {

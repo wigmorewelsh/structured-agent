@@ -229,8 +229,8 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_context_assign_variable_directly() {
-    let runtime = Rc::new(test_runtime());
-    let context = Arc::new(Context::with_runtime(runtime));
+    let runtime = Arc::new(test_runtime());
+    let mut context = Context::with_runtime(runtime);
 
     context.declare_variable(
         "test_var".to_string(),

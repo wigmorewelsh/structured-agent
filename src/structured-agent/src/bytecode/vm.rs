@@ -1,32 +1,28 @@
 use super::{CompiledFunction, Instruction};
 use crate::runtime::{Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime};
-use std::rc::Rc;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::info;
 
 pub struct VMState {
     pc: usize,
-    current_context: Arc<Context>,
+    context: Context,
 }
 
 pub struct VM {
-    runtime: Rc<Runtime>,
+    runtime: Arc<Runtime>,
 }
 
 impl VM {
-    pub fn new(runtime: Rc<Runtime>) -> Self {
+    pub fn new(runtime: Arc<Runtime>) -> Self {
         Self { runtime }
     }
 
     pub async fn execute(
         &self,
         function: &CompiledFunction,
-        context: Arc<Context>,
-    ) -> Result<ExpressionResult, String> {
-        let mut state = VMState {
-            pc: 0,
-            current_context: context.clone(),
-        };
+        context: Context,
+    ) -> Result<(Context, ExpressionResult), String> {
+        let mut state = VMState { pc: 0, context };
 
         loop {
             if state.pc >= function.instructions.len() {
@@ -35,131 +31,123 @@ impl VM {
 
             let instruction = &function.instructions[state.pc];
 
-            match instruction {
-                Instruction::Nop => state.pc += 1,
-                Instruction::Drop { name } => self.execute_drop(&mut state, name),
-                Instruction::LdcStr { dest, value } => {
-                    self.execute_ldc_str(&mut state, dest, value)
-                }
-                Instruction::LdcBool { dest, value } => {
-                    self.execute_ldc_bool(&mut state, dest, *value)
-                }
-                Instruction::LdcUnit { dest } => self.execute_ldc_unit(&mut state, dest),
-                Instruction::Mov { dest, src } => self.execute_mov(&mut state, dest, src)?,
-                Instruction::Decl { name } => self.execute_decl(&mut state, name),
-                Instruction::Br { offset } => state.pc = *offset as usize,
+            state = match instruction {
+                Instruction::Nop => Self::advance_pc(state),
+                Instruction::Drop { name } => self.execute_drop(state, name),
+                Instruction::LdcStr { dest, value } => self.execute_ldc_str(state, dest, value),
+                Instruction::LdcBool { dest, value } => self.execute_ldc_bool(state, dest, *value),
+                Instruction::LdcUnit { dest } => self.execute_ldc_unit(state, dest),
+                Instruction::Mov { dest, src } => self.execute_mov(state, dest, src)?,
+                Instruction::Decl { name } => self.execute_decl(state, name),
+                Instruction::Br { offset } => Self::branch(state, *offset as usize),
                 Instruction::BrFalse { var, offset } => {
-                    Self::branch_if_bool(&mut state, var, *offset, false)?
+                    Self::branch_if_bool(state, var, *offset, false)?
                 }
                 Instruction::BrTrue { var, offset } => {
-                    Self::branch_if_bool(&mut state, var, *offset, true)?
+                    Self::branch_if_bool(state, var, *offset, true)?
                 }
-                Instruction::Switch { var, offsets } => {
-                    self.execute_switch(&mut state, var, offsets)?
+                Instruction::Switch { var, offsets } => self.execute_switch(state, var, offsets)?,
+                Instruction::Ret { var } => {
+                    let (state, result) = self.execute_ret(state, var)?;
+                    return Ok((state.context, result));
                 }
-                Instruction::Ret { var } => return self.execute_ret(&state, var),
                 Instruction::Yield => return Err("Yield not yet implemented".to_string()),
                 Instruction::Call {
                     function_name,
                     params,
                     dest,
                 } => {
-                    self.execute_call(&mut state, function_name, params, dest)
+                    self.execute_call(state, function_name, params, dest)
                         .await?
                 }
-                Instruction::CtxEvent { var } => self.execute_ctx_event(&mut state, var)?,
+                Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
-                    self.execute_ctx_child(&mut state, *is_scope_boundary)
+                    self.execute_ctx_child(state, *is_scope_boundary)
                 }
-                Instruction::CtxRestore => self.execute_ctx_restore(&mut state)?,
+                Instruction::CtxRestore => self.execute_ctx_restore(state)?,
                 Instruction::MetaFunction {
                     function_name,
                     dest,
-                } => self.execute_meta_function(&mut state, function_name, dest)?,
+                } => self.execute_meta_function(state, function_name, dest)?,
                 Instruction::ListNew {
                     dest,
                     element_type: _,
-                } => self.execute_list_new(&mut state, dest),
-                Instruction::ListAdd { dest: _, src: _ } => Self::advance_pc(&mut state),
-                Instruction::ListFinish { dest: _ } => Self::advance_pc(&mut state),
+                } => self.execute_list_new(state, dest),
+                Instruction::ListAdd { dest: _, src: _ } => Self::advance_pc(state),
+                Instruction::ListFinish { dest: _ } => Self::advance_pc(state),
                 Instruction::LlmPlaceholder {
                     dest,
                     param_name,
                     param_type,
                 } => {
-                    self.execute_llm_placeholder(&mut state, dest, param_name, param_type)
+                    self.execute_llm_placeholder(state, dest, param_name, param_type)
                         .await?
                 }
                 Instruction::LlmSelect {
                     metadata_vars,
                     dest,
-                } => {
-                    self.execute_llm_select(&mut state, metadata_vars, dest)
-                        .await?
-                }
+                } => self.execute_llm_select(state, metadata_vars, dest).await?,
                 Instruction::LlmGenerate { dest, return_type } => {
-                    self.execute_llm_generate(&mut state, dest, return_type)
-                        .await?
+                    self.execute_llm_generate(state, dest, return_type).await?
                 }
-            }
+            };
         }
     }
 
-    // ===== Literal Instructions =====
-
-    fn execute_ldc_str(&self, state: &mut VMState, dest: &str, value: &str) {
+    fn execute_ldc_str(&self, mut state: VMState, dest: &str, value: &str) -> VMState {
         Self::write_variable(
-            state,
+            &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::String(value.to_string())),
         );
-        Self::advance_pc(state);
+        Self::advance_pc(state)
     }
 
-    fn execute_ldc_bool(&self, state: &mut VMState, dest: &str, value: bool) {
+    fn execute_ldc_bool(&self, mut state: VMState, dest: &str, value: bool) -> VMState {
         Self::write_variable(
-            state,
+            &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::Boolean(value)),
         );
-        Self::advance_pc(state);
+        Self::advance_pc(state)
     }
 
-    fn execute_ldc_unit(&self, state: &mut VMState, dest: &str) {
-        Self::write_variable(state, dest, ExpressionResult::new(ExpressionValue::Unit));
-        Self::advance_pc(state);
+    fn execute_ldc_unit(&self, mut state: VMState, dest: &str) -> VMState {
+        Self::write_variable(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::Unit),
+        );
+        Self::advance_pc(state)
     }
 
-    // ===== Variable Instructions =====
-
-    fn execute_mov(&self, state: &mut VMState, dest: &str, src: &str) -> Result<(), String> {
-        let value = Self::read_variable(state, src)?;
-        state
-            .current_context
-            .assign_variable(dest.to_string(), value)?;
-        Self::advance_pc(state);
-        Ok(())
+    fn execute_mov(&self, mut state: VMState, dest: &str, src: &str) -> Result<VMState, String> {
+        let value = Self::read_variable(&state, src)?;
+        state.context.assign_variable(dest.to_string(), value)?;
+        Ok(Self::advance_pc(state))
     }
 
-    fn execute_decl(&self, state: &mut VMState, name: &str) {
-        Self::write_variable(state, name, ExpressionResult::new(ExpressionValue::Unit));
-        Self::advance_pc(state);
+    fn execute_decl(&self, mut state: VMState, name: &str) -> VMState {
+        Self::write_variable(
+            &mut state,
+            name,
+            ExpressionResult::new(ExpressionValue::Unit),
+        );
+        Self::advance_pc(state)
     }
 
-    fn execute_drop(&self, state: &mut VMState, name: &str) {
-        state.current_context.remove_variable(name);
-        Self::advance_pc(state);
+    fn execute_drop(&self, mut state: VMState, name: &str) -> VMState {
+        state.context.remove_variable(name);
+        Self::advance_pc(state)
     }
-
-    // ===== Control Flow Instructions =====
 
     fn execute_switch(
         &self,
-        state: &mut VMState,
+        state: VMState,
         var: &str,
         offsets: &[i32],
-    ) -> Result<(), String> {
-        let value = Self::read_variable(state, var)?;
+    ) -> Result<VMState, String> {
+        let value = Self::read_variable(&state, var)?;
 
         let index = match &value.value {
             ExpressionValue::String(s) => s
@@ -174,40 +162,29 @@ impl VM {
         };
 
         if index < offsets.len() {
-            state.pc = offsets[index] as usize;
+            Ok(Self::branch(state, offsets[index] as usize))
         } else {
-            return Err(format!("Switch index {} out of range", index));
+            Err(format!("Switch index {} out of range", index))
         }
-        Ok(())
     }
 
-    fn execute_ret(&self, state: &VMState, var: &str) -> Result<ExpressionResult, String> {
-        let result = Self::read_variable(state, var)?;
-        state.current_context.set_return_value(result.clone());
-        Ok(result)
+    fn execute_ret(
+        &self,
+        mut state: VMState,
+        var: &str,
+    ) -> Result<(VMState, ExpressionResult), String> {
+        let result = Self::read_variable(&state, var)?;
+        state.context.set_return_value(result.clone());
+        Ok((state, result))
     }
-
-    // ===== Function Call Instructions =====
 
     async fn execute_call(
         &self,
-        state: &mut VMState,
+        mut state: VMState,
         function_name: &str,
         params: &[String],
         dest: &str,
-    ) -> Result<(), String> {
-        let child_context = Arc::new(Context::create_child(
-            state.current_context.clone(),
-            true,
-            self.runtime.clone(),
-        ));
-
-        child_context.add_event(
-            ExpressionValue::String(format!("## {}", function_name)),
-            None,
-            None,
-        );
-
+    ) -> Result<VMState, String> {
         let func = self
             .runtime
             .get_function(function_name)
@@ -217,7 +194,7 @@ impl VM {
 
         let mut args = Vec::new();
         for var_name in params.iter() {
-            let value = Self::read_variable(state, var_name)?;
+            let value = Self::read_variable(&state, var_name)?;
             args.push(value.clone());
         }
 
@@ -229,7 +206,17 @@ impl VM {
             })
             .collect();
 
-        let result = func.execute(child_context.clone(), args).await?;
+        let mut child_context = state.context.create_child(true);
+
+        child_context.add_event(
+            ExpressionValue::String(format!("## {}", function_name)),
+            None,
+            None,
+        );
+
+        let (returned_child_context, result) = func.execute(child_context, args).await?;
+
+        state.context = returned_child_context.restore_parent()?;
 
         let result_with_metadata = ExpressionResult {
             name: Some(function_name.to_string()),
@@ -249,52 +236,45 @@ impl VM {
             function_name, result_display
         );
 
-        Self::write_variable(state, dest, result_with_metadata);
-        Self::advance_pc(state);
-        Ok(())
+        Self::write_variable(&mut state, dest, result_with_metadata);
+        Ok(Self::advance_pc(state))
     }
 
-    // ===== Context Instructions =====
+    fn execute_ctx_event(&self, mut state: VMState, var: &str) -> Result<VMState, String> {
+        let expr_result = Self::read_variable(&state, var)?;
 
-    fn execute_ctx_event(&self, state: &mut VMState, var: &str) -> Result<(), String> {
-        let expr_result = Self::read_variable(state, var)?;
-
-        state.current_context.add_event(
+        state.context.add_event(
             expr_result.value.clone(),
             expr_result.name.clone(),
             expr_result.params.clone(),
         );
-        Self::advance_pc(state);
-        Ok(())
+        Ok(Self::advance_pc(state))
     }
 
-    fn execute_ctx_child(&self, state: &mut VMState, is_scope_boundary: bool) {
-        let child = Arc::new(Context::create_child(
-            state.current_context.clone(),
-            is_scope_boundary,
-            self.runtime.clone(),
-        ));
-        state.current_context = child;
-        Self::advance_pc(state);
+    fn execute_ctx_child(&self, state: VMState, is_scope_boundary: bool) -> VMState {
+        let child_context = state.context.create_child(is_scope_boundary);
+        let new_state = VMState {
+            pc: state.pc,
+            context: child_context,
+        };
+        Self::advance_pc(new_state)
     }
 
-    fn execute_ctx_restore(&self, state: &mut VMState) -> Result<(), String> {
-        state.current_context = state
-            .current_context
-            .parent_context()
-            .ok_or("No parent context to restore")?;
-        Self::advance_pc(state);
-        Ok(())
+    fn execute_ctx_restore(&self, state: VMState) -> Result<VMState, String> {
+        let parent_context = state.context.restore_parent()?;
+        let new_state = VMState {
+            pc: state.pc,
+            context: parent_context,
+        };
+        Ok(Self::advance_pc(new_state))
     }
-
-    // ===== Metadata Instructions =====
 
     fn execute_meta_function(
         &self,
-        state: &mut VMState,
+        mut state: VMState,
         function_name: &str,
         dest: &str,
-    ) -> Result<(), String> {
+    ) -> Result<VMState, String> {
         let func = self
             .runtime
             .get_function(function_name)
@@ -305,50 +285,48 @@ impl VM {
             documentation: func.documentation().map(|s| s.to_string()),
         };
 
-        Self::write_variable(state, dest, ExpressionResult::new(metadata));
-        Self::advance_pc(state);
-        Ok(())
+        Self::write_variable(&mut state, dest, ExpressionResult::new(metadata));
+        Ok(Self::advance_pc(state))
     }
 
-    // ===== List Instructions =====
-
-    fn execute_list_new(&self, state: &mut VMState, dest: &str) {
-        Self::write_variable(state, dest, ExpressionResult::new(ExpressionValue::Unit));
-        Self::advance_pc(state);
+    fn execute_list_new(&self, mut state: VMState, dest: &str) -> VMState {
+        Self::write_variable(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::Unit),
+        );
+        Self::advance_pc(state)
     }
-
-    // ===== LLM Instructions =====
 
     async fn execute_llm_placeholder(
         &self,
-        state: &mut VMState,
+        mut state: VMState,
         dest: &str,
         param_name: &str,
         param_type: &str,
-    ) -> Result<(), String> {
+    ) -> Result<VMState, String> {
         let param_type_obj = parse_type(param_type)?;
         let value = state
-            .current_context
+            .context
             .runtime()
             .engine()
-            .fill_parameter(&state.current_context, param_name, &param_type_obj)
+            .fill_parameter(&state.context, param_name, &param_type_obj)
             .await?;
 
-        Self::write_variable(state, dest, ExpressionResult::new(value));
-        Self::advance_pc(state);
-        Ok(())
+        Self::write_variable(&mut state, dest, ExpressionResult::new(value));
+        Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_select(
         &self,
-        state: &mut VMState,
+        mut state: VMState,
         metadata_vars: &[String],
         dest: &str,
-    ) -> Result<(), String> {
+    ) -> Result<VMState, String> {
         let mut metadata_values = Vec::new();
 
         for var_name in metadata_vars {
-            let value = Self::read_variable(state, var_name)?;
+            let value = Self::read_variable(&state, var_name)?;
             if !matches!(&value.value, ExpressionValue::Metadata { .. }) {
                 return Err(format!(
                     "Expected Metadata value in variable {}, got {}",
@@ -360,80 +338,75 @@ impl VM {
         }
 
         let selected_index = state
-            .current_context
+            .context
             .runtime()
             .engine()
-            .select(&state.current_context, &metadata_values)
+            .select(&state.context, &metadata_values)
             .await?;
 
         let result = ExpressionResult::new(ExpressionValue::String(selected_index.to_string()));
 
-        Self::write_variable(state, dest, result);
-        Self::advance_pc(state);
-        Ok(())
+        Self::write_variable(&mut state, dest, result);
+        Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_generate(
         &self,
-        state: &mut VMState,
+        mut state: VMState,
         dest: &str,
         return_type: &str,
-    ) -> Result<(), String> {
+    ) -> Result<VMState, String> {
         let return_type_obj = parse_type(return_type)?;
         let value = state
-            .current_context
+            .context
             .runtime()
             .engine()
-            .typed(&state.current_context, &return_type_obj)
+            .typed(&state.context, &return_type_obj)
             .await?;
 
-        Self::write_variable(state, dest, ExpressionResult::new(value));
-        Self::advance_pc(state);
-        Ok(())
+        Self::write_variable(&mut state, dest, ExpressionResult::new(value));
+        Ok(Self::advance_pc(state))
     }
 
-    // ===== Helper Methods =====
-
-    fn advance_pc(state: &mut VMState) {
+    fn advance_pc(mut state: VMState) -> VMState {
         state.pc += 1;
+        state
+    }
+
+    fn branch(mut state: VMState, offset: usize) -> VMState {
+        state.pc = offset;
+        state
     }
 
     fn read_variable(state: &VMState, name: &str) -> Result<ExpressionResult, String> {
         state
-            .current_context
+            .context
             .get_variable(name)
             .ok_or_else(|| format!("Variable not found: {}", name))
     }
 
-    fn write_variable(state: &VMState, name: &str, value: ExpressionResult) {
-        state
-            .current_context
-            .declare_variable(name.to_string(), value);
+    fn write_variable(state: &mut VMState, name: &str, value: ExpressionResult) {
+        state.context.declare_variable(name.to_string(), value);
     }
 
     fn branch_if_bool(
-        state: &mut VMState,
+        state: VMState,
         var: &str,
         offset: i32,
         expected: bool,
-    ) -> Result<(), String> {
-        let value = Self::read_variable(state, var)?;
+    ) -> Result<VMState, String> {
+        let value = Self::read_variable(&state, var)?;
 
         match &value.value {
             ExpressionValue::Boolean(b) if *b == expected => {
-                state.pc = offset as usize;
+                Ok(Self::branch(state, offset as usize))
             }
-            ExpressionValue::Boolean(_) => {
-                Self::advance_pc(state);
-            }
-            _ => {
-                return Err(format!(
-                    "Expected boolean for branch, got {:?}",
-                    value.value
-                ));
-            }
+            ExpressionValue::Boolean(_) => Ok(Self::advance_pc(state)),
+            _ => Err(format!(
+                "Expected boolean for branch, got {:?}",
+                value.value
+            )),
         }
-        Ok(())
     }
 }
 
