@@ -1,6 +1,6 @@
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionResult, ExpressionValue};
-use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
+use crate::types::{ExecutableFunction, Function, Parameter, Type};
 use arrow::array::Array;
 use async_trait::async_trait;
 use serde_json::json;
@@ -40,9 +40,43 @@ impl Clone for ExternalFunctionExpr {
     }
 }
 
+impl ExternalFunctionExpr {
+    pub fn new(
+        name: String,
+        parameters: Vec<Parameter>,
+        return_type: Type,
+        mcp_client: Rc<McpClient>,
+        documentation: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            parameters,
+            return_type,
+            mcp_client,
+            documentation,
+        }
+    }
+}
+
 #[async_trait(?Send)]
-impl Expression for ExternalFunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
+impl Function for ExternalFunctionExpr {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn parameters(&self) -> &[Parameter] {
+        &self.parameters
+    }
+
+    fn function_return_type(&self) -> &Type {
+        &self.return_type
+    }
+
+    async fn execute(
+        &self,
+        context: Arc<Context>,
+        args: Vec<ExpressionResult>,
+    ) -> Result<ExpressionResult, String> {
         let mut arguments = json!({});
 
         fn expr_result_to_json(value: &ExpressionValue) -> serde_json::Value {
@@ -84,12 +118,9 @@ impl Expression for ExternalFunctionExpr {
             }
         }
 
-        for param in &self.parameters {
-            let param_name = &param.name;
-            if let Some(result) = context.get_variable(param_name) {
-                let json_value = expr_result_to_json(&result.value);
-                arguments[param_name] = json_value;
-            }
+        for (i, param) in self.parameters.iter().enumerate() {
+            let json_value = expr_result_to_json(&args[i].value);
+            arguments[&param.name] = json_value;
         }
 
         let result_raw = self
@@ -123,57 +154,16 @@ impl Expression for ExternalFunctionExpr {
         }
     }
 
-    fn return_type(&self) -> Type {
-        self.return_type.clone()
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn clone_box(&self) -> Box<dyn Expression> {
+    fn clone_box(&self) -> Box<dyn Function> {
         Box::new(self.clone())
     }
 
     fn documentation(&self) -> Option<&str> {
         self.documentation.as_deref()
-    }
-
-    fn name(&self) -> Option<&str> {
-        Some(self.name.as_str())
-    }
-}
-
-impl ExternalFunctionExpr {
-    pub fn new(
-        name: String,
-        parameters: Vec<Parameter>,
-        return_type: Type,
-        mcp_client: Rc<McpClient>,
-        documentation: Option<String>,
-    ) -> Self {
-        Self {
-            name,
-            parameters,
-            return_type,
-            mcp_client,
-            documentation,
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl Function for ExternalFunctionExpr {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn parameters(&self) -> &[Parameter] {
-        &self.parameters
-    }
-
-    fn function_return_type(&self) -> &Type {
-        &self.return_type
     }
 }
 

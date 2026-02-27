@@ -1,7 +1,7 @@
 use crate::expressions::NativeFunctionExpr;
 use crate::runtime::RuntimeError;
 use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, NativeFunction,
+    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, NativeFunction,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -140,7 +140,7 @@ mod tests {
         );
 
         let expr = provider.create_expression(&definition).await.unwrap();
-        assert_eq!(Function::name(expr.as_ref()), "test_fn");
+        assert_eq!(expr.name(), "test_fn");
     }
 
     #[tokio::test]

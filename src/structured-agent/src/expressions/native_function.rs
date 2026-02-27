@@ -1,5 +1,5 @@
 use crate::runtime::{Context, ExpressionResult, ExpressionValue};
-use crate::types::{ExecutableFunction, Expression, Function, NativeFunction, Parameter, Type};
+use crate::types::{ExecutableFunction, Function, NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
 
@@ -26,41 +26,6 @@ impl Clone for NativeFunctionExpr {
 }
 
 #[async_trait(?Send)]
-impl Expression for NativeFunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
-        let mut args = Vec::new();
-
-        for param in self.native_function.parameters() {
-            let param_name = &param.name;
-            if let Some(result) = context.get_variable(param_name) {
-                args.push(result.value.clone());
-            } else {
-                return Err(format!("Parameter '{}' not found in context", param_name));
-            }
-        }
-
-        let result = self.native_function.execute(args).await?;
-        Ok(ExpressionResult::new(result))
-    }
-
-    fn return_type(&self) -> Type {
-        self.native_function.return_type().clone()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn clone_box(&self) -> Box<dyn Expression> {
-        panic!("NativeFunctionExpr cannot be cloned due to boxed trait object")
-    }
-
-    fn documentation(&self) -> Option<&str> {
-        self.native_function.documentation()
-    }
-}
-
-#[async_trait(?Send)]
 impl Function for NativeFunctionExpr {
     fn name(&self) -> &str {
         self.native_function.name()
@@ -72,6 +37,28 @@ impl Function for NativeFunctionExpr {
 
     fn function_return_type(&self) -> &Type {
         self.native_function.return_type()
+    }
+
+    async fn execute(
+        &self,
+        _context: Arc<Context>,
+        args: Vec<ExpressionResult>,
+    ) -> Result<ExpressionResult, String> {
+        let values: Vec<ExpressionValue> = args.into_iter().map(|r| r.value).collect();
+        let result = self.native_function.execute(values).await?;
+        Ok(ExpressionResult::new(result))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Function> {
+        panic!("NativeFunctionExpr cannot be cloned due to boxed trait object")
+    }
+
+    fn documentation(&self) -> Option<&str> {
+        self.native_function.documentation()
     }
 }
 
@@ -206,7 +193,7 @@ mod tests {
         let runtime = Rc::new(test_runtime());
         let context = Arc::new(Context::with_runtime(runtime));
 
-        let result = expr.evaluate(context).await.unwrap();
+        let result = expr.execute(context, vec![]).await.unwrap();
 
         match result.value {
             crate::runtime::ExpressionValue::String(s) => assert_eq!(s, "test_result"),

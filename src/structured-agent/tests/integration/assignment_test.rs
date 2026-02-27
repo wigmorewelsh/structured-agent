@@ -6,8 +6,8 @@ use structured_agent::bytecode::BytecodeCompiler;
 use structured_agent::compiler::parser;
 use structured_agent::compiler::{CompilationUnit, FunctionCompiler};
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
-use structured_agent::types::Expression;
 use structured_agent::types::FileId;
+use structured_agent::types::Function;
 
 const TEST_FILE_ID: FileId = 0;
 
@@ -55,7 +55,7 @@ fn test_assignment(): () {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
-    let execution_result = compiled_function.evaluate(context.clone()).await;
+    let execution_result = compiled_function.execute(context.clone(), vec![]).await;
     assert!(execution_result.is_ok());
 
     // Note: Bytecode compiler may handle event metadata differently
@@ -101,7 +101,7 @@ fn test_var_assignment(): () {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
-    let result = compiled_function.evaluate(context.clone()).await;
+    let result = compiled_function.execute(context.clone(), vec![]).await;
     assert!(result.is_ok());
 
     // Note: Bytecode compiler handles events, verify we have the expected count
@@ -148,7 +148,7 @@ fn test_return(): () {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Arc::new(Context::with_runtime(runtime));
-    let result = compiled_function.evaluate(context.clone()).await;
+    let result = compiled_function.execute(context.clone(), vec![]).await;
     assert!(result.is_ok());
 
     match result.unwrap().value {

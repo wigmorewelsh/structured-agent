@@ -325,7 +325,7 @@ impl Runtime {
         if let Some(main_function) = compiled_program.main_function() {
             debug!("Executing main function");
             match runtime
-                .run_expression(main_function.as_ref() as &dyn crate::types::Expression)
+                .run_expression(main_function.as_ref() as &dyn crate::types::Function)
                 .await
             {
                 Ok(result) => {
@@ -346,11 +346,11 @@ impl Runtime {
 
     pub async fn run_expression(
         &self,
-        program: &dyn crate::types::Expression,
+        program: &dyn crate::types::Function,
     ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Running expression");
         let initial_context = Arc::new(Context::with_runtime(Rc::new(self.create_runtime_ref())));
-        match program.evaluate(initial_context).await {
+        match program.execute(initial_context, vec![]).await {
             Ok(result) => {
                 debug!("Expression evaluated successfully");
                 Ok(result.value)

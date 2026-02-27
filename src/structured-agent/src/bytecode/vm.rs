@@ -214,28 +214,22 @@ impl VM {
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
         let function_params = func.parameters();
-        if params.len() != function_params.len() {
-            return Err(format!(
-                "Function {} expects {} arguments, got {}",
-                function_name,
-                function_params.len(),
-                params.len()
-            ));
-        }
 
-        let mut evaluated_parameters = Vec::new();
-
-        for (i, var_name) in params.iter().enumerate() {
+        let mut args = Vec::new();
+        for var_name in params.iter() {
             let value = Self::read_variable(state, var_name)?;
-            let actual_param_name = &function_params[i].name;
-            child_context.declare_variable(actual_param_name.clone(), value.clone());
-            evaluated_parameters.push(ExpressionParameter::new(
-                actual_param_name.clone(),
-                value.value.clone(),
-            ));
+            args.push(value.clone());
         }
 
-        let result = func.evaluate(child_context.clone()).await?;
+        let evaluated_parameters: Vec<ExpressionParameter> = args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| {
+                ExpressionParameter::new(function_params[i].name.clone(), arg.value.clone())
+            })
+            .collect();
+
+        let result = func.execute(child_context.clone(), args).await?;
 
         let result_with_metadata = ExpressionResult {
             name: Some(function_name.to_string()),

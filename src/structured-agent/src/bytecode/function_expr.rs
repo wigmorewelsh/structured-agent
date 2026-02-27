@@ -1,6 +1,6 @@
 use crate::bytecode::{CompiledFunction, VM};
 use crate::runtime::{Context, ExpressionResult};
-use crate::types::{ExecutableFunction, Expression, Function, Parameter, Type};
+use crate::types::{ExecutableFunction, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
 use std::sync::Arc;
@@ -40,34 +40,6 @@ impl Clone for BytecodeFunctionExpr {
 }
 
 #[async_trait(?Send)]
-impl Expression for BytecodeFunctionExpr {
-    async fn evaluate(&self, context: Arc<Context>) -> Result<ExpressionResult, String> {
-        let vm = VM::new(context.runtime_rc());
-        vm.execute(&self.compiled, context).await
-    }
-
-    fn return_type(&self) -> Type {
-        self.compiled.return_type.clone()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn clone_box(&self) -> Box<dyn Expression> {
-        Box::new(self.clone())
-    }
-
-    fn documentation(&self) -> Option<&str> {
-        self.compiled.documentation.as_deref()
-    }
-
-    fn name(&self) -> Option<&str> {
-        Some(self.compiled.name.as_str())
-    }
-}
-
-#[async_trait(?Send)]
 impl Function for BytecodeFunctionExpr {
     fn name(&self) -> &str {
         &self.compiled.name
@@ -79,6 +51,31 @@ impl Function for BytecodeFunctionExpr {
 
     fn function_return_type(&self) -> &Type {
         &self.compiled.return_type
+    }
+
+    async fn execute(
+        &self,
+        context: Arc<Context>,
+        args: Vec<ExpressionResult>,
+    ) -> Result<ExpressionResult, String> {
+        for (i, param) in self.compiled.parameters.iter().enumerate() {
+            context.declare_variable(param.name.clone(), args[i].clone());
+        }
+
+        let vm = VM::new(context.runtime_rc());
+        vm.execute(&self.compiled, context).await
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Function> {
+        Box::new(self.clone())
+    }
+
+    fn documentation(&self) -> Option<&str> {
+        self.compiled.documentation.as_deref()
     }
 }
 
