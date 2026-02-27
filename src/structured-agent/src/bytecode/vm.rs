@@ -133,7 +133,9 @@ impl VM {
 
     fn execute_mov(&self, state: &mut VMState, dest: &str, src: &str) -> Result<(), String> {
         let value = Self::read_variable(state, src)?;
-        Self::write_variable(state, dest, value);
+        state
+            .current_context
+            .assign_variable(dest.to_string(), value)?;
         Self::advance_pc(state);
         Ok(())
     }
@@ -144,7 +146,7 @@ impl VM {
     }
 
     fn execute_drop(&self, state: &mut VMState, name: &str) {
-        state.current_context.variables.remove(name);
+        state.current_context.remove_variable(name);
         Self::advance_pc(state);
     }
 
@@ -225,9 +227,7 @@ impl VM {
         for (i, var_name) in params.iter().enumerate() {
             let value = Self::read_variable(state, var_name)?;
             let actual_param_name = &function_params[i].name;
-            child_context
-                .variables
-                .insert(actual_param_name.clone(), value.clone());
+            child_context.declare_variable(actual_param_name.clone(), value.clone());
             evaluated_parameters.push(ExpressionParameter::new(
                 actual_param_name.clone(),
                 value.value.clone(),
@@ -274,8 +274,7 @@ impl VM {
     fn execute_ctx_restore(&self, state: &mut VMState) -> Result<(), String> {
         state.current_context = state
             .current_context
-            .parent
-            .clone()
+            .parent_context()
             .ok_or("No parent context to restore")?;
         Self::advance_pc(state);
         Ok(())
@@ -402,8 +401,7 @@ impl VM {
     fn write_variable(state: &VMState, name: &str, value: ExpressionResult) {
         state
             .current_context
-            .variables
-            .insert(name.to_string(), value);
+            .declare_variable(name.to_string(), value);
     }
 
     fn branch_if_bool(

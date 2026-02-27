@@ -24,7 +24,20 @@ async fn test_select_with_simple_options() {
         None,
     );
 
-    let options = vec!["Red".to_string(), "Blue".to_string(), "Green".to_string()];
+    let options = vec![
+        ExpressionValue::Metadata {
+            name: "Red".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Blue".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Green".to_string(),
+            documentation: None,
+        },
+    ];
 
     let result = engine.select(&context, &options).await;
 
@@ -36,7 +49,9 @@ async fn test_select_with_simple_options() {
                 index,
                 options.len()
             );
-            println!("✓ Selected option {}: {}", index, options[index]);
+            if let ExpressionValue::Metadata { name, .. } = &options[index] {
+                println!("✓ Selected option {}: {}", index, name);
+            }
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -62,10 +77,22 @@ async fn test_select_with_numbered_options() {
     );
 
     let options = vec![
-        "Addition".to_string(),
-        "Subtraction".to_string(),
-        "Multiplication".to_string(),
-        "Division".to_string(),
+        ExpressionValue::Metadata {
+            name: "Addition".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Subtraction".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Multiplication".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Division".to_string(),
+            documentation: None,
+        },
     ];
 
     let result = engine.select(&context, &options).await;
@@ -94,7 +121,10 @@ async fn test_select_with_single_option() {
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
-    let options = vec!["Only choice".to_string()];
+    let options = vec![ExpressionValue::Metadata {
+        name: "Only choice".to_string(),
+        documentation: None,
+    }];
 
     let result = engine.select(&context, &options).await;
 
@@ -132,9 +162,18 @@ async fn test_select_with_contextual_decision() {
     );
 
     let options = vec![
-        "Heavy winter coat".to_string(),
-        "Light t-shirt".to_string(),
-        "Thick sweater".to_string(),
+        ExpressionValue::Metadata {
+            name: "Heavy winter coat".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Light t-shirt".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Thick sweater".to_string(),
+            documentation: None,
+        },
     ];
 
     let result = engine.select(&context, &options).await;
@@ -169,10 +208,22 @@ async fn test_select_with_mathematical_context() {
     );
 
     let options = vec![
-        "2x".to_string(),
-        "x^2".to_string(),
-        "2".to_string(),
-        "x".to_string(),
+        ExpressionValue::Metadata {
+            name: "2x".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "x^2".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "2".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "x".to_string(),
+            documentation: None,
+        },
     ];
 
     let result = engine.select(&context, &options).await;
@@ -209,14 +260,38 @@ async fn test_select_with_many_options() {
     );
 
     let options = vec![
-        "C".to_string(),
-        "C++".to_string(),
-        "JavaScript".to_string(),
-        "Python".to_string(),
-        "Rust".to_string(),
-        "Java".to_string(),
-        "Go".to_string(),
-        "Ruby".to_string(),
+        ExpressionValue::Metadata {
+            name: "C".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "C++".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "JavaScript".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Python".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Rust".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Java".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Go".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Ruby".to_string(),
+            documentation: None,
+        },
     ];
 
     let result = engine.select(&context, &options).await;
@@ -245,7 +320,16 @@ async fn test_select_validates_bounds() {
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
-    let options = vec!["Option A".to_string(), "Option B".to_string()];
+    let options = vec![
+        ExpressionValue::Metadata {
+            name: "First".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "Second".to_string(),
+            documentation: None,
+        },
+    ];
 
     let result = engine.select(&context, &options).await;
 
@@ -272,7 +356,16 @@ async fn test_select_prompt_formatting() {
     let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
     let runtime = Rc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
-    let options = vec!["First".to_string(), "Second".to_string()];
+    let options = vec![
+        ExpressionValue::Metadata {
+            name: "A".to_string(),
+            documentation: None,
+        },
+        ExpressionValue::Metadata {
+            name: "B".to_string(),
+            documentation: None,
+        },
+    ];
 
     let result = engine.select(&context, &options).await;
 

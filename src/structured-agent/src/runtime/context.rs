@@ -13,10 +13,10 @@ pub struct Event {
 }
 
 pub struct Context {
-    pub parent: Option<Arc<Context>>,
+    parent: Option<Arc<Context>>,
     events: RefCell<Vec<Event>>,
-    pub variables: DashMap<String, ExpressionResult>,
-    pub is_scope_boundary: bool,
+    variables: DashMap<String, ExpressionResult>,
+    is_scope_boundary: bool,
     return_value: RefCell<Option<ExpressionResult>>,
     runtime: Rc<Runtime>,
 }
@@ -126,6 +126,14 @@ impl Context {
         } else {
             Err(format!("Variable '{}' not found", name))
         }
+    }
+
+    pub fn remove_variable(&self, name: &str) {
+        self.variables.remove(name);
+    }
+
+    pub fn parent_context(&self) -> Option<Arc<Context>> {
+        self.parent.clone()
     }
 
     pub fn create_child(

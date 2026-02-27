@@ -807,7 +807,7 @@ mod vm_execution_tests {
         let runtime = Rc::new(Runtime::builder(program).build());
         let context = Arc::new(Context::with_runtime(runtime.clone()));
 
-        context.variables.insert(
+        context.declare_variable(
             "x".to_string(),
             crate::runtime::ExpressionResult::new(ExpressionValue::Boolean(true)),
         );
@@ -891,8 +891,8 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         vm.execute(&compiled, context.clone()).await.unwrap();
-        assert!(context.variables.contains_key("x"));
-        assert!(!context.variables.contains_key("y"));
+        assert!(context.get_variable("x").is_some());
+        assert!(context.get_variable("y").is_none());
     }
 
     #[tokio::test]
@@ -960,7 +960,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         vm.execute(&compiled, context.clone()).await.unwrap();
-        assert!(!context.variables.contains_key("$tmp0"));
+        assert!(context.get_variable("$tmp0").is_none());
     }
 
     #[tokio::test]
@@ -981,7 +981,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         vm.execute(&compiled, context.clone()).await.unwrap();
-        let x_value = context.variables.get("x").unwrap();
+        let x_value = context.get_variable("x").unwrap();
         match x_value.value {
             ExpressionValue::String(ref s) => assert_eq!(s, "value"),
             _ => panic!("Expected string value"),

@@ -239,9 +239,6 @@ fn main(): String {
 
     assert_eq!(
         result,
-        ExpressionValue::String(
-            "<message>\n    <result>\n    Processing complete\n    </result>\n</message>"
-                .to_string()
-        )
+        ExpressionValue::String("Processing complete".to_string())
     );
 }

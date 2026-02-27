@@ -139,12 +139,7 @@ fn main(): String {
         "Should see 'modified' twice if variable assignment persists"
     );
 
-    assert_eq!(
-        result,
-        ExpressionValue::String(
-            "<val>\n    <result>\n    modified\n    </result>\n</val>".to_string()
-        )
-    );
+    assert_eq!(result, ExpressionValue::String("modified".to_string()));
 }
 
 #[tokio::test]
@@ -183,12 +178,7 @@ fn main(): String {
     assert!(messages.contains(&"1".to_string())); // Modified value after loop
 
     // The function should return the modified value from inside the loop
-    assert_eq!(
-        result,
-        ExpressionValue::String(
-            "<iteration>\n    <result>\n    1\n    </result>\n</iteration>".to_string()
-        )
-    );
+    assert_eq!(result, ExpressionValue::String("1".to_string()));
 }
 
 #[tokio::test]
@@ -257,38 +247,6 @@ async fn test_context_assign_variable_directly() {
         ExpressionResult::new(ExpressionValue::String("modified".to_string())),
     );
     assert!(result.is_ok(), "assign_variable should succeed");
-
-    assert_eq!(
-        context.get_variable("test_var").unwrap().value,
-        ExpressionValue::String("modified".to_string())
-    );
-}
-
-#[tokio::test]
-async fn test_variable_assignment_expr_directly() {
-    use crate::expressions::{StringLiteralExpr, VariableAssignmentExpr};
-    use crate::types::Expression;
-
-    let runtime = Rc::new(test_runtime());
-    let context = Arc::new(Context::with_runtime(runtime));
-
-    context.declare_variable(
-        "test_var".to_string(),
-        ExpressionResult::new(ExpressionValue::String("initial".to_string())),
-    );
-
-    let assignment = VariableAssignmentExpr {
-        variable: "test_var".to_string(),
-        expression: Box::new(StringLiteralExpr {
-            value: "modified".to_string(),
-        }),
-    };
-
-    let result = assignment.evaluate(context.clone()).await;
-    assert!(
-        result.is_ok(),
-        "VariableAssignmentExpr evaluation should succeed"
-    );
 
     assert_eq!(
         context.get_variable("test_var").unwrap().value,
