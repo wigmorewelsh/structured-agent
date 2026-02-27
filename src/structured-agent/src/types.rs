@@ -312,5 +312,5 @@ pub trait FunctionProvider {
     async fn create_expression(
         &self,
         definition: &ExternalFunctionDefinition,
-    ) -> Result<Rc<dyn ExecutableFunction>, crate::runtime::RuntimeError>;
+    ) -> Result<std::sync::Arc<dyn ExecutableFunction>, crate::runtime::RuntimeError>;
 }

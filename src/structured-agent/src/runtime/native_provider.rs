@@ -52,7 +52,7 @@ impl FunctionProvider for NativeFunctionProvider {
     async fn create_expression(
         &self,
         definition: &ExternalFunctionDefinition,
-    ) -> Result<Rc<dyn ExecutableFunction>, RuntimeError> {
+    ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
         let native_function = self.native_functions.get(&definition.name).ok_or_else(|| {
             RuntimeError::FunctionNotFound(format!(
                 "Native function '{}' not found",
@@ -61,7 +61,7 @@ impl FunctionProvider for NativeFunctionProvider {
         })?;
 
         let expr = NativeFunctionExpr::new(native_function.clone());
-        Ok(Rc::new(expr))
+        Ok(Arc::new(expr))
     }
 }
 

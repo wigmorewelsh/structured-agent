@@ -5,13 +5,13 @@ use arrow::array::Array;
 use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct ExternalFunctionExpr {
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
-    pub mcp_client: Rc<McpClient>,
+    pub mcp_client: Arc<McpClient>,
     pub documentation: Option<String>,
 }
 
@@ -29,7 +29,7 @@ impl std::fmt::Debug for ExternalFunctionExpr {
 
 impl Clone for ExternalFunctionExpr {
     fn clone(&self) -> Self {
-        ExternalFunctionExpr {
+        Self {
             name: self.name.clone(),
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
@@ -44,7 +44,7 @@ impl ExternalFunctionExpr {
         name: String,
         parameters: Vec<Parameter>,
         return_type: Type,
-        mcp_client: Rc<McpClient>,
+        mcp_client: Arc<McpClient>,
         documentation: Option<String>,
     ) -> Self {
         Self {
@@ -174,11 +174,11 @@ impl Function for ExternalFunctionExpr {
 mod tests {
     use super::*;
     use crate::types::Type;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_external_function_documentation() {
-        let client = Rc::new(McpClient::new_stdio("echo", vec![]).await.unwrap());
+        let client = Arc::new(McpClient::new_stdio("echo", vec![]).await.unwrap());
 
         let expr_with_docs = ExternalFunctionExpr {
             name: "test_function".to_string(),

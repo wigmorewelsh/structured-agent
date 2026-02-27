@@ -193,15 +193,15 @@ impl FunctionProvider for McpClient {
     async fn create_expression(
         &self,
         definition: &ExternalFunctionDefinition,
-    ) -> Result<Rc<dyn ExecutableFunction>, RuntimeError> {
+    ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
         let expr = ExternalFunctionExpr::new(
             definition.name.clone(),
             definition.parameters.clone(),
             definition.return_type.clone(),
-            Rc::new(self.clone()),
+            Arc::new(self.clone()),
             definition.documentation.clone(),
         );
-        Ok(Rc::new(expr))
+        Ok(Arc::new(expr))
     }
 }
 

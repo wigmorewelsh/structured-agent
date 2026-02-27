@@ -18,19 +18,19 @@ use std::sync::Arc;
 use tracing::{debug, error};
 
 pub struct Runtime {
-    function_registry: HashMap<String, Rc<dyn ExecutableFunction>>,
+    function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
-    language_engine: Rc<dyn LanguageEngine>,
-    compiler: Rc<dyn CompilerTrait>,
-    providers: Vec<Rc<dyn FunctionProvider>>,
+    language_engine: Arc<dyn LanguageEngine>,
+    compiler: Arc<dyn CompilerTrait>,
+    providers: Vec<Arc<dyn FunctionProvider>>,
     compiled_program: CompilationUnit,
 }
 
 pub struct RuntimeBuilder {
-    providers: Vec<Rc<dyn FunctionProvider>>,
+    providers: Vec<Arc<dyn FunctionProvider>>,
     native_provider: NativeFunctionProvider,
-    language_engine: Option<Rc<dyn LanguageEngine>>,
-    compiler: Option<Rc<dyn CompilerTrait>>,
+    language_engine: Option<Arc<dyn LanguageEngine>>,
+    compiler: Option<Arc<dyn CompilerTrait>>,
     program_source: CompilationUnit,
 }
 
@@ -64,17 +64,17 @@ impl RuntimeBuilder {
         }
     }
 
-    pub fn with_engine(mut self, engine: Rc<dyn LanguageEngine>) -> Self {
+    pub fn with_language_engine(mut self, engine: Arc<dyn LanguageEngine>) -> Self {
         self.language_engine = Some(engine);
         self
     }
 
-    pub fn with_compiler(mut self, compiler: Rc<dyn CompilerTrait>) -> Self {
+    pub fn with_compiler(mut self, compiler: Arc<dyn CompilerTrait>) -> Self {
         self.compiler = Some(compiler);
         self
     }
 
-    pub fn with_provider(mut self, provider: Rc<dyn FunctionProvider>) -> Self {
+    pub fn with_provider(mut self, provider: Arc<dyn FunctionProvider>) -> Self {
         self.providers.push(provider);
         self
     }
@@ -85,7 +85,7 @@ impl RuntimeBuilder {
     }
 
     pub fn with_mcp_client(mut self, client: McpClient) -> Self {
-        self.providers.push(Rc::new(client));
+        self.providers.push(Arc::new(client));
         self
     }
 
@@ -96,7 +96,7 @@ impl RuntimeBuilder {
 
     pub fn with_mcp_clients(mut self, clients: Vec<McpClient>) -> Self {
         for client in clients {
-            self.providers.push(Rc::new(client));
+            self.providers.push(Arc::new(client));
         }
         self
     }
@@ -108,7 +108,7 @@ impl RuntimeBuilder {
         for config in configs {
             match McpClient::new_stdio(&config.command, config.args.clone()).await {
                 Ok(client) => {
-                    self.providers.push(Rc::new(client));
+                    self.providers.push(Arc::new(client));
                 }
                 Err(e) => {
                     return Err(format!(
@@ -122,15 +122,15 @@ impl RuntimeBuilder {
     }
 
     pub fn with_native_provider(mut self, provider: NativeFunctionProvider) -> Self {
-        self.providers.push(Rc::new(provider));
+        self.providers.push(Arc::new(provider));
         self
     }
 
     pub async fn from_config(mut self, config: &Config) -> Result<Runtime, String> {
         self = self.with_mcp_server_configs(&config.mcp_servers).await?;
 
-        let engine: Rc<dyn LanguageEngine> = match &config.engine {
-            EngineType::Print => Rc::new(crate::types::PrintEngine {}),
+        let engine: Arc<dyn LanguageEngine> = match &config.engine {
+            EngineType::Print => Arc::new(crate::types::PrintEngine {}),
             EngineType::Gemini { api_key, model } => {
                 let gemini_config = if let Some(key) = api_key {
                     GeminiConfig::default().with_api_key_auth(key.clone())
@@ -165,11 +165,11 @@ impl RuntimeBuilder {
                     gemini = gemini.with_model(model_enum);
                 }
 
-                Rc::new(gemini)
+                Arc::new(gemini)
             }
         };
 
-        self = self.with_engine(engine);
+        self = self.with_language_engine(engine);
 
         if config.with_default_functions {
             self = self
@@ -197,7 +197,7 @@ impl RuntimeBuilder {
     }
 
     pub fn build(self) -> Runtime {
-        let native_provider_rc = Rc::new(self.native_provider);
+        let native_provider_rc = Arc::new(self.native_provider);
         let mut providers = self.providers;
         providers.push(native_provider_rc.clone());
 
@@ -205,7 +205,7 @@ impl RuntimeBuilder {
 
         for (name, native_fn) in &native_provider_rc.native_functions {
             let expr = NativeFunctionExpr::new(native_fn.clone());
-            function_registry.insert(name.clone(), Rc::new(expr) as Rc<dyn ExecutableFunction>);
+            function_registry.insert(name.clone(), Arc::new(expr) as Arc<dyn ExecutableFunction>);
         }
 
         Runtime {
@@ -213,8 +213,8 @@ impl RuntimeBuilder {
             external_function_registry: HashMap::new(),
             language_engine: self
                 .language_engine
-                .unwrap_or_else(|| Rc::new(crate::types::PrintEngine {})),
-            compiler: self.compiler.unwrap_or_else(|| Rc::new(Compiler::new())),
+                .unwrap_or_else(|| Arc::new(crate::types::PrintEngine {})),
+            compiler: self.compiler.unwrap_or_else(|| Arc::new(Compiler::new())),
             providers,
             compiled_program: self.program_source,
         }
@@ -228,15 +228,15 @@ impl Runtime {
 
     pub fn register_function(&mut self, function: Box<dyn ExecutableFunction>) {
         let name = Function::name(function.as_ref()).to_string();
-        self.function_registry.insert(name, Rc::from(function));
+        self.function_registry.insert(name, Arc::from(function));
     }
 
-    pub fn register_expression(&mut self, name: String, expression: Rc<dyn ExecutableFunction>) {
+    pub fn register_expression(&mut self, name: String, expression: Arc<dyn ExecutableFunction>) {
         self.function_registry.insert(name, expression);
     }
 
     pub fn get_function(&self, name: &str) -> Option<&dyn ExecutableFunction> {
-        self.function_registry.get(name).map(|expr| expr.as_ref())
+        self.function_registry.get(name).map(|arc| arc.as_ref())
     }
 
     pub fn register_external_function(&mut self, function: ExternalFunctionDefinition) {
@@ -403,10 +403,10 @@ impl Runtime {
     }
 
     fn find_matching_provider<'a>(
-        matches: &'a [(ExternalFunctionDefinition, Rc<dyn FunctionProvider>)],
+        matches: &'a [(ExternalFunctionDefinition, Arc<dyn FunctionProvider>)],
         definition: &ExternalFunctionDefinition,
         name: &str,
-    ) -> Result<&'a Rc<dyn FunctionProvider>, RuntimeError> {
+    ) -> Result<&'a Arc<dyn FunctionProvider>, RuntimeError> {
         matches
             .iter()
             .find(|(provider_def, _)| Self::signatures_match(provider_def, definition))
