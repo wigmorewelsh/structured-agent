@@ -1,4 +1,3 @@
-pub mod expression_compiler;
 pub mod parser;
 
 use crate::analysis::{
@@ -22,7 +21,7 @@ use std::rc::Rc;
 use tracing::{debug, error, warn};
 
 use crate::bytecode::BytecodeCompiler;
-use expression_compiler::{ExpressionCompiler, compile_external_function};
+use crate::types::{Parameter, Type};
 
 #[derive(Debug, Clone)]
 pub struct CompilationUnit {
@@ -196,10 +195,35 @@ impl CompiledProgram {
     }
 }
 
+pub fn compile_external_function(
+    ast_ext_func: &crate::ast::ExternalFunction,
+) -> Result<ExternalFunctionDefinition, String> {
+    let parameters = ast_ext_func
+        .parameters
+        .iter()
+        .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
+        .collect();
+
+    Ok(ExternalFunctionDefinition::new(
+        ast_ext_func.name.clone(),
+        parameters,
+        convert_ast_type_to_type(&ast_ext_func.return_type),
+    ))
+}
+
+fn convert_ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
+    match ast_type {
+        crate::ast::Type::Unit => Type::unit(),
+        crate::ast::Type::Boolean => Type::boolean(),
+        crate::ast::Type::String => Type::string(),
+        crate::ast::Type::List(inner) => Type::list(convert_ast_type_to_type(inner)),
+        crate::ast::Type::Option(inner) => Type::option(convert_ast_type_to_type(inner)),
+    }
+}
+
 pub struct Compiler {
     parser: Rc<dyn Parser>,
     diagnostic_manager: RefCell<DiagnosticManager>,
-    use_bytecode_compiler: bool,
 }
 
 impl Default for Compiler {
@@ -210,17 +234,12 @@ impl Default for Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
-        Self::with_bytecode(false)
-    }
-
-    pub fn with_bytecode(use_bytecode: bool) -> Self {
         let diagnostic_manager = DiagnosticManager::new();
         let reporter = DiagnosticReporter::new(diagnostic_manager.files().clone());
         let parser = Rc::new(CodespanParser::new(reporter));
         Self {
             parser,
             diagnostic_manager: RefCell::new(diagnostic_manager),
-            use_bytecode_compiler: use_bytecode,
         }
     }
 }
@@ -295,11 +314,7 @@ impl CompilerTrait for Compiler {
             match definition {
                 Definition::Function(ast_function) => {
                     debug!("Compiling function: {}", ast_function.name);
-                    let func_expr = if self.use_bytecode_compiler {
-                        BytecodeCompiler::compile_function(&ast_function)?
-                    } else {
-                        ExpressionCompiler::compile_function(&ast_function)?
-                    };
+                    let func_expr = BytecodeCompiler::compile_function(&ast_function)?;
                     compiled_program.add_function(func_expr);
                 }
                 Definition::ExternalFunction(ast_external_function) => {
@@ -332,27 +347,11 @@ impl CompilerTrait for Compiler {
 mod tests {
     use super::{CompilationUnit, Compiler, CompilerTrait};
     use crate::runtime::{ExpressionValue, Runtime};
-    use rstest::rstest;
     use std::rc::Rc;
 
-    #[derive(Debug, Clone, Copy)]
-    enum CompilerBackend {
-        Expression,
-        Bytecode,
-    }
-
-    async fn run_test_with_compiler(
-        program_source: &str,
-        backend: CompilerBackend,
-        expected: &str,
-    ) {
+    async fn run_test_with_compiler(program_source: &str, expected: &str) {
         let program = CompilationUnit::from_string(program_source.to_string());
-        let runtime = Runtime::builder(program)
-            .with_compiler(Rc::new(match backend {
-                CompilerBackend::Expression => Compiler::new(),
-                CompilerBackend::Bytecode => Compiler::with_bytecode(true),
-            }))
-            .build();
+        let runtime = Runtime::builder(program).build();
         let result = runtime.run().await.unwrap();
 
         match result {
@@ -361,11 +360,8 @@ mod tests {
         }
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_new_architecture_end_to_end(#[case] backend: CompilerBackend) {
+    async fn test_new_architecture_end_to_end() {
         let program_source = r#"
 fn greet(name: String): () {
     "Hello, "!
@@ -380,14 +376,11 @@ fn main(): String {
     "Test completed"!
 }
 "#;
-        run_test_with_compiler(program_source, backend, "Test completed").await;
+        run_test_with_compiler(program_source, "Test completed").await;
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_select_statement_end_to_end(#[case] backend: CompilerBackend) {
+    async fn test_select_statement_end_to_end() {
         let program_source = r#"
 fn add(a: String, b: String): String {
     "Adding numbers"
@@ -412,9 +405,9 @@ fn main(): String {
 "#;
         run_test_with_compiler(
             program_source,
-            backend,
-            "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>"
-        ).await;
+            "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>",
+        )
+        .await;
     }
 
     #[test]
@@ -451,11 +444,8 @@ fn main(): () {
         assert_eq!(compiled_program.functions().len(), 4);
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_simple_function(#[case] backend: CompilerBackend) {
+    async fn test_simple_function() {
         let program_source = r#"
 fn add(a: String, b: String): String {
     return "result"
@@ -465,14 +455,11 @@ fn main(): String {
     return add("1", "2")
 }
 "#;
-        run_test_with_compiler(program_source, backend, "result").await;
+        run_test_with_compiler(program_source, "result").await;
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_multi_function(#[case] backend: CompilerBackend) {
+    async fn test_multi_function() {
         let program_source = r#"
 fn greet(name: String): () {
     "Hello, "!
@@ -484,36 +471,25 @@ fn main(): String {
     "Done"!
 }
 "#;
-        run_test_with_compiler(program_source, backend, "Done").await;
+        run_test_with_compiler(program_source, "Done").await;
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_unit_literal_end_to_end(#[case] backend: CompilerBackend) {
+    async fn test_unit_literal_end_to_end() {
         let source = r#"
 fn main(): () {
     return ()
 }
 "#;
         let program = CompilationUnit::from_string(source.to_string());
-        let runtime = Runtime::builder(program)
-            .with_compiler(Rc::new(match backend {
-                CompilerBackend::Expression => Compiler::new(),
-                CompilerBackend::Bytecode => Compiler::with_bytecode(true),
-            }))
-            .build();
+        let runtime = Runtime::builder(program).build();
         let result = runtime.run().await.unwrap();
 
         assert_eq!(result, ExpressionValue::Unit);
     }
 
-    #[rstest]
-    #[case::expression(CompilerBackend::Expression)]
-    #[case::bytecode(CompilerBackend::Bytecode)]
     #[tokio::test]
-    async fn test_if_else_expression_end_to_end(#[case] backend: CompilerBackend) {
+    async fn test_if_else_expression_end_to_end() {
         let program_source = r#"
 fn choose_message(ready: Boolean): String {
     return if ready { "System ready" } else { "System not ready" }
@@ -526,8 +502,8 @@ fn main(): String {
 "#;
         run_test_with_compiler(
             program_source,
-            backend,
-            "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>"
-        ).await;
+            "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>",
+        )
+        .await;
     }
 }

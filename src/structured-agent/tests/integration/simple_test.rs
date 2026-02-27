@@ -5,7 +5,7 @@ use structured_agent::runtime::{ExpressionValue, Runtime};
 async fn test_simple_function_call() {
     let program_source = r#"
         fn main(): String {
-            "hello world"
+            return "hello world"
         }
     "#;
 

@@ -11,7 +11,6 @@ pub struct Config {
     pub with_default_functions: bool,
     pub with_unstable_functions: bool,
     pub with_acp_functions: bool,
-    pub use_bytecode_compiler: bool,
     pub mode: Mode,
 }
 
@@ -74,8 +73,6 @@ impl Config {
             args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
         let with_acp_functions =
             args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
-        let use_bytecode_compiler =
-            args.use_bytecode_compiler || file_config.use_bytecode_compiler.unwrap_or(false);
 
         Config {
             program_source,
@@ -84,7 +81,6 @@ impl Config {
             with_default_functions,
             with_unstable_functions,
             with_acp_functions,
-            use_bytecode_compiler,
             mode: Mode::Run,
         }
     }
@@ -98,8 +94,6 @@ impl Config {
             args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
         let with_acp_functions =
             args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
-        let use_bytecode_compiler =
-            args.use_bytecode_compiler || file_config.use_bytecode_compiler.unwrap_or(false);
 
         Config {
             program_source,
@@ -108,7 +102,6 @@ impl Config {
             with_default_functions,
             with_unstable_functions,
             with_acp_functions,
-            use_bytecode_compiler,
             mode: Mode::Check,
         }
     }
@@ -129,8 +122,6 @@ impl Config {
             args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
         let with_acp_functions =
             args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
-        let use_bytecode_compiler =
-            args.use_bytecode_compiler || file_config.use_bytecode_compiler.unwrap_or(false);
 
         Config {
             program_source,
@@ -139,7 +130,6 @@ impl Config {
             with_default_functions,
             with_unstable_functions,
             with_acp_functions,
-            use_bytecode_compiler,
             mode: Mode::Acp,
         }
     }

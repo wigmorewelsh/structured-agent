@@ -166,7 +166,6 @@ mod tests {
             with_default_functions: true,
             with_unstable_functions: false,
             with_acp_functions: false,
-            use_bytecode_compiler: false,
             mode: Mode::Run,
         };
 
@@ -192,7 +191,6 @@ mod tests {
             with_default_functions: false,
             with_unstable_functions: false,
             with_acp_functions: false,
-            use_bytecode_compiler: false,
             mode: Mode::Run,
         };
 

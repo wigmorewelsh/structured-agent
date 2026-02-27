@@ -78,9 +78,6 @@ pub struct RunArgs {
         help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
     )]
     pub gemini_model: Option<String>,
-
-    #[arg(long, help = "Use bytecode compiler instead of expression compiler")]
-    pub use_bytecode_compiler: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -110,9 +107,6 @@ pub struct CheckArgs {
 
     #[arg(long, help = "Include ACP functions (receive, try_receive)")]
     pub with_acp_functions: bool,
-
-    #[arg(long, help = "Use bytecode compiler instead of expression compiler")]
-    pub use_bytecode_compiler: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -161,9 +155,6 @@ pub struct AcpArgs {
         help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
     )]
     pub gemini_model: Option<String>,
-
-    #[arg(long, help = "Use bytecode compiler instead of expression compiler")]
-    pub use_bytecode_compiler: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -177,7 +168,6 @@ pub struct FileConfig {
     pub with_acp_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
     pub gemini_model: Option<String>,
-    pub use_bytecode_compiler: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

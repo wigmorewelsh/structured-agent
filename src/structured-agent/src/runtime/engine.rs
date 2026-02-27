@@ -129,10 +129,6 @@ impl RuntimeBuilder {
     pub async fn from_config(mut self, config: &Config) -> Result<Runtime, String> {
         self = self.with_mcp_server_configs(&config.mcp_servers).await?;
 
-        if config.use_bytecode_compiler {
-            self = self.with_compiler(Rc::new(Compiler::with_bytecode(true)));
-        }
-
         let engine: Rc<dyn LanguageEngine> = match &config.engine {
             EngineType::Print => Rc::new(crate::types::PrintEngine {}),
             EngineType::Gemini { api_key, model } => {
