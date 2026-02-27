@@ -59,7 +59,7 @@ impl Expression for BytecodeFunctionExpr {
     }
 
     fn documentation(&self) -> Option<&str> {
-        None
+        self.compiled.documentation.as_deref()
     }
 
     fn name(&self) -> Option<&str> {

@@ -1,8 +1,7 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast::{self, Expression, Statement};
 use crate::compiler::FunctionCompiler;
-use crate::expressions::FunctionExpr;
-use crate::types::{Expression as ExpressionTrait, Function, Parameter};
+use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
 
 pub struct CompiledFunction {
@@ -11,6 +10,7 @@ pub struct CompiledFunction {
     pub return_type: crate::types::Type,
     pub instructions: Vec<Instruction>,
     pub labels: std::collections::HashMap<String, usize>,
+    pub documentation: Option<String>,
 }
 
 pub struct BytecodeCompiler;
@@ -58,6 +58,7 @@ impl BytecodeCompiler {
             return_type: Self::convert_type(&ast_func.return_type),
             instructions,
             labels,
+            documentation: ast_func.documentation.clone(),
         })
     }
 
@@ -546,17 +547,10 @@ impl BytecodeCompiler {
 }
 
 impl FunctionCompiler for BytecodeCompiler {
-    fn compile_function(ast_func: &ast::Function) -> Result<FunctionExpr, String> {
+    fn compile_function(ast_func: &ast::Function) -> Result<Box<dyn ExecutableFunction>, String> {
         let compiled = Self::compile_to_bytecode(ast_func)?;
         let bytecode_expr = BytecodeFunctionExpr::new(compiled);
-
-        Ok(FunctionExpr {
-            name: Function::name(&bytecode_expr).to_string(),
-            parameters: Function::parameters(&bytecode_expr).to_vec(),
-            return_type: bytecode_expr.return_type(),
-            body: vec![Box::new(bytecode_expr) as Box<dyn ExpressionTrait>],
-            documentation: ast_func.documentation.clone(),
-        })
+        Ok(Box::new(bytecode_expr))
     }
 }
 

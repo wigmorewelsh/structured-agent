@@ -144,8 +144,7 @@ async fn test_mcp_echo_integration_full_pipeline() {
 extern fn echo(message: String): String
 
 fn main(): String {{
-    let result = echo("{}")
-    result
+    return echo("{}")
 }}
 "#,
         test_message
@@ -204,8 +203,7 @@ async fn test_mcp_complete_integration_workflow() {
 extern fn echo(message: String): String
 
 fn main(): String {{
-    let greeting = echo("{}")
-    greeting
+    return echo("{}")
 }}
 "#,
         test_message
@@ -273,8 +271,7 @@ async fn test_mcp_echo_with_prefix_tool() {
 extern fn echo_with_prefix(message: String, prefix: String): String
 
 fn main(): String {{
-    let result = echo_with_prefix("{}", "{}")
-    result
+    return echo_with_prefix("{}", "{}")
 }}
 "#,
         test_message, test_prefix

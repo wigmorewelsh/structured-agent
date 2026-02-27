@@ -1,6 +1,6 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, Compiler, CompilerTrait};
-use crate::expressions::{FunctionExpr, NativeFunctionExpr};
+use crate::expressions::NativeFunctionExpr;
 use crate::functions::{
     HeadFunction, InputFunction, IsSomeFunction, IsSomeListFunction, PrintFunction,
     SomeValueFunction, SomeValueListFunction, TailFunction, acp_shim,
@@ -9,7 +9,7 @@ use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
 use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, LanguageEngine,
+    ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
     NativeFunction,
 };
 use std::collections::HashMap;
@@ -226,9 +226,9 @@ impl Runtime {
         RuntimeBuilder::new(program)
     }
 
-    pub fn register_function(&mut self, function: FunctionExpr) {
-        self.function_registry
-            .insert(function.name.clone(), Rc::new(function));
+    pub fn register_function(&mut self, function: Box<dyn ExecutableFunction>) {
+        let name = Function::name(function.as_ref()).to_string();
+        self.function_registry.insert(name, Rc::from(function));
     }
 
     pub fn register_expression(&mut self, name: String, expression: Rc<dyn ExecutableFunction>) {
@@ -306,8 +306,11 @@ impl Runtime {
         };
 
         for function in compiled_program.functions().values() {
-            debug!("Registering function: {}", function.name);
-            runtime.register_function(function.clone());
+            debug!(
+                "Registering function: {}",
+                Function::name(function.as_ref())
+            );
+            runtime.register_function(function.clone_executable());
         }
         for external_function in compiled_program.external_functions().values() {
             debug!("Registering external function: {}", external_function.name);
@@ -321,7 +324,10 @@ impl Runtime {
 
         if let Some(main_function) = compiled_program.main_function() {
             debug!("Executing main function");
-            match runtime.run_expression(main_function).await {
+            match runtime
+                .run_expression(main_function.as_ref() as &dyn crate::types::Expression)
+                .await
+            {
                 Ok(result) => {
                     debug!("Program execution completed successfully");
                     debug!("Result type: {}", result.type_name());

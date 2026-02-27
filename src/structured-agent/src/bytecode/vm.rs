@@ -2,6 +2,7 @@ use super::{CompiledFunction, Instruction};
 use crate::runtime::{Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime};
 use std::rc::Rc;
 use std::sync::Arc;
+use tracing::{debug, info};
 
 pub struct VMState {
     pc: usize,
@@ -239,8 +240,20 @@ impl VM {
         let result_with_metadata = ExpressionResult {
             name: Some(function_name.to_string()),
             params: Some(evaluated_parameters),
-            value: result.value,
+            value: result.value.clone(),
         };
+
+        let result_display = match &result.value {
+            ExpressionValue::String(s) => s.clone(),
+            ExpressionValue::Boolean(b) => b.to_string(),
+            ExpressionValue::Unit => "()".to_string(),
+            _ => format!("{:?}", result.value),
+        };
+
+        info!(
+            "<result function=\"{}\">\n{}\n</result>",
+            function_name, result_display
+        );
 
         Self::write_variable(state, dest, result_with_metadata);
         Self::advance_pc(state);

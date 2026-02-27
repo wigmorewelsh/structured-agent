@@ -9,9 +9,8 @@ use crate::analysis::{
 };
 use crate::ast::{Definition, Module};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
-use crate::expressions::FunctionExpr;
 use crate::typecheck::type_check_module;
-use crate::types::{ExternalFunctionDefinition, FileId};
+use crate::types::{ExecutableFunction, ExternalFunctionDefinition, FileId, Function};
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
@@ -131,12 +130,14 @@ pub trait CompilerTrait {
 }
 
 pub trait FunctionCompiler {
-    fn compile_function(ast_func: &crate::ast::Function) -> Result<FunctionExpr, String>;
+    fn compile_function(
+        ast_func: &crate::ast::Function,
+    ) -> Result<Box<dyn ExecutableFunction>, String>;
 }
 
 #[derive(Debug)]
 pub struct CompiledProgram {
-    functions: HashMap<String, FunctionExpr>,
+    functions: HashMap<String, Box<dyn ExecutableFunction>>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     main_function: Option<String>,
     source_path: Option<String>,
@@ -167,8 +168,8 @@ impl CompiledProgram {
         self.source_path.as_deref()
     }
 
-    pub fn add_function(&mut self, function: FunctionExpr) {
-        let name = function.name.clone();
+    pub fn add_function(&mut self, function: Box<dyn ExecutableFunction>) {
+        let name = Function::name(function.as_ref()).to_string();
         if name == "main" {
             self.main_function = Some(name.clone());
         }
@@ -180,13 +181,13 @@ impl CompiledProgram {
         self.external_functions.insert(name, external_function);
     }
 
-    pub fn main_function(&self) -> Option<&FunctionExpr> {
+    pub fn main_function(&self) -> Option<&Box<dyn ExecutableFunction>> {
         self.main_function
             .as_ref()
             .and_then(|name| self.functions.get(name))
     }
 
-    pub fn functions(&self) -> &HashMap<String, FunctionExpr> {
+    pub fn functions(&self) -> &HashMap<String, Box<dyn ExecutableFunction>> {
         &self.functions
     }
 
@@ -347,7 +348,6 @@ impl CompilerTrait for Compiler {
 mod tests {
     use super::{CompilationUnit, Compiler, CompilerTrait};
     use crate::runtime::{ExpressionValue, Runtime};
-    use std::rc::Rc;
 
     async fn run_test_with_compiler(program_source: &str, expected: &str) {
         let program = CompilationUnit::from_string(program_source.to_string());

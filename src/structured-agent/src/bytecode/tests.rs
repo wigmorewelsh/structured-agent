@@ -1011,7 +1011,7 @@ mod vm_execution_tests {
         let mut runtime = Runtime::builder(program.clone()).build();
 
         for function in compiled_program.functions().values() {
-            runtime.register_function(function.clone());
+            runtime.register_function(function.clone_executable());
         }
 
         let runtime = Rc::new(runtime);
