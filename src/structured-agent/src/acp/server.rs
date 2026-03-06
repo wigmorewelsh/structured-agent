@@ -66,7 +66,7 @@ impl AcpServer {
         }
     }
 
-    fn spawn_agent_creation(&self, session_id: acp::SessionId) {
+    async fn spawn_agent_creation(&self, session_id: acp::SessionId) {
         debug!("Spawning agent creation for session: {}", session_id.0);
 
         let config = self.config.clone();
@@ -76,48 +76,49 @@ impl AcpServer {
         let agents = self.agents.clone();
         let agent_tasks = self.agent_tasks.clone();
 
-        let handle = super::AGENT_RUNTIME.spawn(async move {
-            let result: Result<(), String> = async {
-                let mut agent = Agent::from_config(
-                    &config,
-                    &program_source,
-                    session_id_clone.clone(),
-                    update_tx,
-                )
-                .await?;
+        let handle = super::AGENT_RUNTIME.spawn(Self::create_and_start_agent(
+            config,
+            program_source,
+            session_id_clone,
+            update_tx,
+            agents,
+            agent_tasks,
+        ));
 
-                agent.start().map_err(|e| e.to_string())?;
+        self.agent_tasks
+            .lock()
+            .await
+            .insert(session_id.0.to_string(), handle);
+    }
 
-                agents
-                    .lock()
-                    .await
-                    .insert(session_id_clone.0.to_string(), agent);
+    async fn create_and_start_agent(
+        config: Arc<Config>,
+        program_source: crate::cli::config::ProgramSource,
+        session_id: acp::SessionId,
+        update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        agents: Arc<Mutex<HashMap<String, Agent>>>,
+        agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    ) {
+        let result: Result<(), String> = async {
+            let mut agent =
+                Agent::from_config(&config, &program_source, session_id.clone(), update_tx).await?;
 
-                Ok(())
-            }
-            .await;
+            agent.start().map_err(|e| e.to_string())?;
 
-            if let Err(e) = result {
-                error!(
-                    "Failed to create/start agent for session {}: {}",
-                    session_id_clone.0, e
-                );
-            }
+            agents.lock().await.insert(session_id.0.to_string(), agent);
 
-            agent_tasks
-                .lock()
-                .await
-                .remove(&session_id_clone.0.to_string());
-        });
+            Ok(())
+        }
+        .await;
 
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.agent_tasks
-                    .lock()
-                    .await
-                    .insert(session_id.0.to_string(), handle);
-            })
-        });
+        if let Err(e) = result {
+            error!(
+                "Failed to create/start agent for session {}: {}",
+                session_id.0, e
+            );
+        }
+
+        agent_tasks.lock().await.remove(&session_id.0.to_string());
     }
 }
 
@@ -166,7 +167,7 @@ impl acp::Agent for AcpServer {
 
         debug!("New session request: {}", session_id.0);
 
-        self.spawn_agent_creation(session_id.clone());
+        self.spawn_agent_creation(session_id.clone()).await;
 
         debug!("Session {} creation initiated", session_id.0);
 

@@ -144,75 +144,81 @@ impl Agent {
         let session_id = self.session_id.clone();
         let update_tx = self.update_tx.clone();
 
-        let handle = AGENT_RUNTIME.spawn(async move {
-            debug!("Agent task spawned for session {}", session_id.0);
-
-            let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
-
-            let log_dir = dirs::home_dir()
-                .map(|home| home.join(".structured-agent").join("acp-logs"))
-                .unwrap_or_else(|| std::path::PathBuf::from("acp-logs"));
-
-            if let Err(e) = std::fs::create_dir_all(&log_dir) {
-                error!("Failed to create log directory {:?}: {}", log_dir, e);
-            }
-
-            let log_path = log_dir.join(format!("session-{}.log", session_id.0));
-            debug!("Logging to {:?}", log_path);
-
-            let file_layer =
-                if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
-                    debug!("Log file opened successfully");
-                    Some(
-                        fmt::layer()
-                            .with_writer(Arc::new(file))
-                            .with_ansi(false)
-                            .with_target(true)
-                            .with_thread_ids(true)
-                            .with_line_number(true),
-                    )
-                } else {
-                    error!("Failed to create log file at {:?}", log_path);
-                    None
-                };
-
-            let session_span = tracing::info_span!(
-                "session",
-                session_id = %session_id.0
-            );
-
-            let env_filter =
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-            let registry = tracing_subscriber::registry()
-                .with(env_filter)
-                .with(tracing_layer);
-
-            let _guard = if let Some(file_layer) = file_layer {
-                registry.with(file_layer).set_default()
-            } else {
-                registry.set_default()
-            };
-
-            let _span_guard = session_span.enter();
-
-            debug!("Starting runtime execution");
-            match runtime.run().await {
-                Ok(result) => {
-                    debug!("Runtime execution completed successfully");
-                    debug!("Result: {:?}", result);
-                    Ok(result)
-                }
-                Err(e) => {
-                    error!("Runtime execution failed: {:?}", e);
-                    Err(e.into())
-                }
-            }
-        });
+        let handle = AGENT_RUNTIME.spawn(Self::run_agent_task(runtime, session_id, update_tx));
 
         self.task_handle = Some(handle);
         debug!("Agent started successfully");
         Ok(())
+    }
+
+    async fn run_agent_task(
+        runtime: Arc<Runtime>,
+        session_id: acp::SessionId,
+        update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<ExpressionValue, AgentError> {
+        debug!("Agent task spawned for session {}", session_id.0);
+
+        let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
+
+        let log_dir = dirs::home_dir()
+            .map(|home| home.join(".structured-agent").join("acp-logs"))
+            .unwrap_or_else(|| std::path::PathBuf::from("acp-logs"));
+
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            error!("Failed to create log directory {:?}: {}", log_dir, e);
+        }
+
+        let log_path = log_dir.join(format!("session-{}.log", session_id.0));
+        debug!("Logging to {:?}", log_path);
+
+        let file_layer =
+            if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                debug!("Log file opened successfully");
+                Some(
+                    fmt::layer()
+                        .with_writer(Arc::new(file))
+                        .with_ansi(false)
+                        .with_target(true)
+                        .with_thread_ids(true)
+                        .with_line_number(true),
+                )
+            } else {
+                error!("Failed to create log file at {:?}", log_path);
+                None
+            };
+
+        let session_span = tracing::info_span!(
+            "session",
+            session_id = %session_id.0
+        );
+
+        let env_filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+        let registry = tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_layer);
+
+        let _guard = if let Some(file_layer) = file_layer {
+            registry.with(file_layer).set_default()
+        } else {
+            registry.set_default()
+        };
+
+        let _span_guard = session_span.enter();
+
+        debug!("Starting runtime execution");
+        match runtime.run().await {
+            Ok(result) => {
+                debug!("Runtime execution completed successfully");
+                debug!("Result: {:?}", result);
+                Ok(result)
+            }
+            Err(e) => {
+                error!("Runtime execution failed: {:?}", e);
+                Err(e.into())
+            }
+        }
     }
 
     pub async fn send_prompt(&self, content: String) -> Result<(), AgentError> {
