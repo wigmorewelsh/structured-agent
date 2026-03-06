@@ -1,10 +1,10 @@
 use agent_client_protocol as acp;
 use agent_client_protocol::Client as _;
 use async_trait::async_trait;
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
@@ -16,8 +16,8 @@ const ACP_INTERNAL_ERROR: i32 = -32603;
 pub struct AcpServer {
     config: Arc<Config>,
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
-    next_session_id: Cell<u64>,
-    agents: RefCell<HashMap<String, Agent>>,
+    next_session_id: AtomicU64,
+    agents: Arc<Mutex<HashMap<String, Agent>>>,
 }
 
 async fn send_available_commands(
@@ -59,33 +59,57 @@ impl AcpServer {
         Self {
             config: Arc::new(config),
             session_update_tx,
-            next_session_id: Cell::new(0),
-            agents: RefCell::new(HashMap::new()),
+            next_session_id: AtomicU64::new(0),
+            agents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    async fn create_agent(&self, session_id: acp::SessionId) -> Result<Agent, acp::Error> {
-        debug!("Creating agent for session: {}", session_id.0);
+    fn spawn_agent_creation(&self, session_id: acp::SessionId) {
+        debug!("Spawning agent creation for session: {}", session_id.0);
 
-        let mut agent = Agent::from_config(
-            &self.config,
-            &self.config.program_source,
-            session_id.clone(),
-            self.session_update_tx.clone(),
-        )
-        .await
-        .map_err(|e| {
-            error!("Failed to create agent from config: {}", e);
-            acp::Error::new(ACP_INTERNAL_ERROR, e)
-        })?;
+        let config = self.config.clone();
+        let program_source = self.config.program_source.clone();
+        let session_id_clone = session_id.clone();
+        let update_tx = self.session_update_tx.clone();
+        let agents = self.agents.clone();
 
-        agent.start().map_err(|e| {
-            error!("Failed to start agent: {}", e);
-            acp::Error::new(ACP_INTERNAL_ERROR, e.to_string())
-        })?;
+        super::AGENT_RUNTIME.spawn(async move {
+            debug!(
+                "Agent creation task started for session: {}",
+                session_id_clone.0
+            );
 
-        debug!("Agent created and started successfully");
-        Ok(agent)
+            let mut agent = match Agent::from_config(
+                &config,
+                &program_source,
+                session_id_clone.clone(),
+                update_tx,
+            )
+            .await
+            {
+                Ok(a) => a,
+                Err(e) => {
+                    error!(
+                        "Failed to create agent for session {}: {}",
+                        session_id_clone.0, e
+                    );
+                    return;
+                }
+            };
+
+            if let Err(e) = agent.start() {
+                error!(
+                    "Failed to start agent for session {}: {}",
+                    session_id_clone.0, e
+                );
+                return;
+            }
+
+            agents
+                .lock()
+                .await
+                .insert(session_id_clone.0.to_string(), agent);
+        });
     }
 }
 
@@ -115,19 +139,14 @@ impl acp::Agent for AcpServer {
         &self,
         _args: acp::NewSessionRequest,
     ) -> Result<acp::NewSessionResponse, acp::Error> {
-        let session_id = self.next_session_id.get();
-        self.next_session_id.set(session_id + 1);
+        let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
         let session_id = acp::SessionId::new(session_id.to_string());
 
         debug!("New session request: {}", session_id.0);
 
-        let agent = self.create_agent(session_id.clone()).await?;
+        self.spawn_agent_creation(session_id.clone());
 
-        self.agents
-            .borrow_mut()
-            .insert(session_id.0.to_string(), agent);
-
-        debug!("Session {} created successfully", session_id.0);
+        debug!("Session {} creation initiated", session_id.0);
 
         send_available_commands(&session_id, &self.session_update_tx).await?;
 
@@ -142,7 +161,7 @@ impl acp::Agent for AcpServer {
         if prompt_content.contains("/reload") {
             info!("Reload command detected for session: {}", args.session_id.0);
 
-            let mut agents = self.agents.borrow_mut();
+            let mut agents = self.agents.lock().await;
             let agent = agents
                 .get_mut(&args.session_id.0.to_string())
                 .ok_or_else(|| {
@@ -163,7 +182,7 @@ impl acp::Agent for AcpServer {
         }
 
         let prompt_tx = {
-            let agents = self.agents.borrow();
+            let agents = self.agents.lock().await;
             let agent = agents.get(&args.session_id.0.to_string()).ok_or_else(|| {
                 error!("Agent not found for session: {}", args.session_id.0);
                 acp::Error::new(ACP_INTERNAL_ERROR, "Agent not found")

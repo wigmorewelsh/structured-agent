@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use std::any::Any;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 pub type FileId = usize;
 
@@ -27,7 +26,7 @@ impl Span {
 
 #[derive(Debug, Clone)]
 pub struct SourceFiles {
-    inner: Rc<RefCell<codespan_reporting::files::SimpleFiles<String, String>>>,
+    inner: Arc<Mutex<codespan_reporting::files::SimpleFiles<String, String>>>,
 }
 
 pub trait Spanned {
@@ -43,15 +42,15 @@ impl Default for SourceFiles {
 impl SourceFiles {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(codespan_reporting::files::SimpleFiles::new())),
+            inner: Arc::new(Mutex::new(codespan_reporting::files::SimpleFiles::new())),
         }
     }
 
     pub fn add(&self, name: String, source: String) -> FileId {
-        self.inner.borrow_mut().add(name, source)
+        self.inner.lock().unwrap().add(name, source)
     }
 
-    pub fn files(&self) -> Rc<RefCell<codespan_reporting::files::SimpleFiles<String, String>>> {
+    pub fn files(&self) -> Arc<Mutex<codespan_reporting::files::SimpleFiles<String, String>>> {
         self.inner.clone()
     }
 }

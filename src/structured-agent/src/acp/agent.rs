@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+use super::AGENT_RUNTIME;
 use super::functions::ReceiveFunction;
 use super::functions::TryReceiveFunction;
 use super::tracing::SessionTracingLayer;
@@ -143,7 +144,7 @@ impl Agent {
         let session_id = self.session_id.clone();
         let update_tx = self.update_tx.clone();
 
-        let handle = tokio::task::spawn_local(async move {
+        let handle = AGENT_RUNTIME.spawn(async move {
             debug!("Agent task spawned for session {}", session_id.0);
 
             let tracing_layer = SessionTracingLayer::new(session_id.clone(), update_tx.clone());
@@ -310,73 +311,63 @@ mod tests {
 
     #[tokio::test]
     async fn test_reload_scripts_from_file() {
-        let local_set = tokio::task::LocalSet::new();
-        local_set
-            .run_until(async {
-                let mut temp_file = NamedTempFile::new().unwrap();
-                writeln!(temp_file, "fn main() {{ }}").unwrap();
-                temp_file.flush().unwrap();
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "fn main() {{ }}").unwrap();
+        temp_file.flush().unwrap();
 
-                let file_path = temp_file.path().to_str().unwrap().to_string();
+        let file_path = temp_file.path().to_str().unwrap().to_string();
 
-                let config = Config {
-                    program_source: ProgramSource::File(file_path.clone()),
-                    engine: EngineType::Print,
-                    mcp_servers: vec![],
-                    with_default_functions: false,
-                    with_unstable_functions: false,
-                    with_acp_functions: false,
-                    mode: Mode::Acp,
-                };
+        let config = Config {
+            program_source: ProgramSource::File(file_path.clone()),
+            engine: EngineType::Print,
+            mcp_servers: vec![],
+            with_default_functions: false,
+            with_unstable_functions: false,
+            with_acp_functions: false,
+            mode: Mode::Acp,
+        };
 
-                let (tx, mut rx) =
-                    mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
-                tokio::spawn(async move {
-                    while let Some((_notif, response_tx)) = rx.recv().await {
-                        response_tx.send(()).ok();
-                    }
-                });
+        let (tx, mut rx) =
+            mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
+        tokio::spawn(async move {
+            while let Some((_notif, response_tx)) = rx.recv().await {
+                response_tx.send(()).ok();
+            }
+        });
 
-                let session_id = acp::SessionId::new("test-reload".to_string());
-                let mut agent = Agent::from_config(&config, &config.program_source, session_id, tx)
-                    .await
-                    .unwrap();
+        let session_id = acp::SessionId::new("test-reload".to_string());
+        let mut agent = Agent::from_config(&config, &config.program_source, session_id, tx)
+            .await
+            .unwrap();
 
-                agent.start().unwrap();
+        agent.start().unwrap();
 
-                fs::write(temp_file.path(), "fn main() { }").unwrap();
+        fs::write(temp_file.path(), "fn main() { }").unwrap();
 
-                let result = agent.reload_scripts().await;
-                assert!(result.is_ok(), "Reload should succeed");
-            })
-            .await;
+        let result = agent.reload_scripts().await;
+        assert!(result.is_ok(), "Reload should succeed");
     }
 
     #[tokio::test]
     async fn test_reload_scripts_without_source_fails() {
-        let local_set = tokio::task::LocalSet::new();
-        local_set
-            .run_until(async {
-                use crate::compiler::CompilationUnit;
+        use crate::compiler::CompilationUnit;
 
-                let program = CompilationUnit::from_string("fn main() { }".to_string());
+        let program = CompilationUnit::from_string("fn main() { }".to_string());
 
-                let (tx, mut rx) =
-                    mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
-                tokio::spawn(async move {
-                    while let Some((_notif, response_tx)) = rx.recv().await {
-                        response_tx.send(()).ok();
-                    }
-                });
+        let (tx, mut rx) =
+            mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
+        tokio::spawn(async move {
+            while let Some((_notif, response_tx)) = rx.recv().await {
+                response_tx.send(()).ok();
+            }
+        });
 
-                let session_id = acp::SessionId::new("test-no-reload".to_string());
-                let mut agent = Agent::new(program, session_id, tx);
+        let session_id = acp::SessionId::new("test-no-reload".to_string());
+        let mut agent = Agent::new(program, session_id, tx);
 
-                agent.start().unwrap();
+        agent.start().unwrap();
 
-                let result = agent.reload_scripts().await;
-                assert!(result.is_err(), "Reload should fail without program source");
-            })
-            .await;
+        let result = agent.reload_scripts().await;
+        assert!(result.is_err(), "Reload should fail without program source");
     }
 }

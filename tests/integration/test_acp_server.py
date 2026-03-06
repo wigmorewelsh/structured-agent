@@ -109,10 +109,8 @@ fn main(): String {
             cwd=project_root
         ) as (conn, process):
             await conn.initialize(
-                acp.InitializeRequest(
-                    protocol_version=acp.PROTOCOL_VERSION,
-                    client_info=acp.schema.Implementation(name="test", version="1.0")
-                )
+                protocol_version=acp.PROTOCOL_VERSION,
+                client_info=acp.schema.Implementation(name="test", version="1.0")
             )
 
             session = await conn.new_session(cwd=str(project_root), mcp_servers=[])
@@ -126,10 +124,8 @@ fn main(): String {
             collector.prompt_send_time = asyncio.get_event_loop().time()
             collector.prompt_sent = True
             await conn.prompt(
-                acp.PromptRequest(
-                    session_id=session.session_id,
-                    prompt=[acp.text_block("test")]
-                )
+                prompt=[acp.text_block("test")],
+                session_id=session.session_id
             )
 
             await asyncio.sleep(0.5)

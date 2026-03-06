@@ -11,6 +11,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::error;
 
 type RmcpClient = rmcp::service::RunningService<RoleClient, ()>;
 

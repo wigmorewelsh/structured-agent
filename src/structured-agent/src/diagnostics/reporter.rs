@@ -52,7 +52,7 @@ impl DiagnosticReporter {
         term::emit(
             &mut writer.lock(),
             &self.config,
-            &*files.borrow(),
+            &*files.lock().unwrap(),
             diagnostic,
         )
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
