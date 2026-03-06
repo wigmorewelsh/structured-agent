@@ -148,8 +148,8 @@ impl ExternalFunctionDefinition {
     }
 }
 
-#[async_trait(?Send)]
-pub trait Function: std::fmt::Debug {
+#[async_trait]
+pub trait Function: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
     fn parameters(&self) -> &[Parameter];
     fn function_return_type(&self) -> &Type;
@@ -165,13 +165,13 @@ pub trait Function: std::fmt::Debug {
     }
 }
 
-#[async_trait(?Send)]
-pub trait ExecutableFunction: Function + std::fmt::Debug {
+#[async_trait]
+pub trait ExecutableFunction: Function + std::fmt::Debug + Send + Sync {
     fn clone_executable(&self) -> Box<dyn ExecutableFunction>;
 }
 
-#[async_trait(?Send)]
-pub trait LanguageEngine {
+#[async_trait]
+pub trait LanguageEngine: Send + Sync {
     async fn untyped(&self, context: &crate::runtime::Context) -> String;
     async fn typed(
         &self,
@@ -222,7 +222,7 @@ impl PrintEngine {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl LanguageEngine for PrintEngine {
     async fn untyped(&self, context: &crate::runtime::Context) -> String {
         if let Some(last_event) = context.last_event() {
@@ -290,7 +290,7 @@ impl LanguageEngine for PrintEngine {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
     fn parameters(&self) -> &[Parameter];
@@ -304,8 +304,8 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     }
 }
 
-#[async_trait(?Send)]
-pub trait FunctionProvider {
+#[async_trait]
+pub trait FunctionProvider: Send + Sync {
     async fn list_functions(
         &self,
     ) -> Result<Vec<ExternalFunctionDefinition>, crate::runtime::RuntimeError>;

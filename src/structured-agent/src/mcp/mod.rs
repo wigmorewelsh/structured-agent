@@ -156,7 +156,7 @@ impl McpClient {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FunctionProvider for McpClient {
     async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
         let tools = self.list_tools().await.map_err(|e| {

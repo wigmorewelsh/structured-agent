@@ -172,7 +172,7 @@ impl GeminiEngine {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl LanguageEngine for GeminiEngine {
     async fn untyped(&self, context: &Context) -> String {
         let chat_messages = self.build_context_messages(context);

@@ -36,7 +36,7 @@ impl Clone for BytecodeFunctionExpr {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Function for BytecodeFunctionExpr {
     fn name(&self) -> &str {
         &self.compiled.name
@@ -79,7 +79,7 @@ impl Function for BytecodeFunctionExpr {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl ExecutableFunction for BytecodeFunctionExpr {
     fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
         Box::new(self.clone())

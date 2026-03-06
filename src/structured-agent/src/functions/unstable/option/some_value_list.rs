@@ -26,7 +26,7 @@ impl SomeValueListFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for SomeValueListFunction {
     fn name(&self) -> &str {
         "some_value_list"

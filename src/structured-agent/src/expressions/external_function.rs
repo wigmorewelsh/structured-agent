@@ -57,7 +57,7 @@ impl ExternalFunctionExpr {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Function for ExternalFunctionExpr {
     fn name(&self) -> &str {
         &self.name
@@ -205,7 +205,7 @@ mod tests {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl ExecutableFunction for ExternalFunctionExpr {
     fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
         Box::new(self.clone())

@@ -25,7 +25,7 @@ impl<F: NativeFunction> Clone for NativeFunctionExpr<F> {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<F: NativeFunction + 'static> Function for NativeFunctionExpr<F> {
     fn name(&self) -> &str {
         self.native_function.name()
@@ -62,7 +62,7 @@ impl<F: NativeFunction + 'static> Function for NativeFunctionExpr<F> {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<F: NativeFunction + 'static> ExecutableFunction for NativeFunctionExpr<F> {
     fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
         panic!("NativeFunctionExpr cannot be cloned due to boxed trait object")
@@ -106,7 +106,7 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait(?Send)]
+    #[async_trait::async_trait]
     impl NativeFunction for TestNativeFunctionWithDocs {
         fn name(&self) -> &str {
             "test_function"
@@ -147,7 +147,7 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait(?Send)]
+    #[async_trait::async_trait]
     impl NativeFunction for TestNativeFunctionWithoutDocs {
         fn name(&self) -> &str {
             "undocumented_function"

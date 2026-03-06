@@ -24,7 +24,7 @@ impl TryReceiveFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for TryReceiveFunction {
     fn name(&self) -> &str {
         "try_receive"

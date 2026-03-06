@@ -22,7 +22,7 @@ impl InputFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for InputFunction {
     fn name(&self) -> &str {
         "input"

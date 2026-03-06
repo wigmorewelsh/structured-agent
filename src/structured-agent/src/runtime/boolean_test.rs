@@ -33,7 +33,7 @@ impl BooleanLoggingFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for BooleanLoggingFunction {
     fn name(&self) -> &str {
         "log_bool"
@@ -79,7 +79,7 @@ impl BooleanReturnFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for BooleanReturnFunction {
     fn name(&self) -> &str {
         "get_bool"

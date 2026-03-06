@@ -27,7 +27,7 @@ impl HeadFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for HeadFunction {
     fn name(&self) -> &str {
         "head"

@@ -28,7 +28,7 @@ impl TailFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for TailFunction {
     fn name(&self) -> &str {
         "tail"

@@ -31,7 +31,7 @@ impl Default for NativeFunctionProvider {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FunctionProvider for NativeFunctionProvider {
     async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
         let definitions = self
@@ -87,7 +87,7 @@ mod tests {
         }
     }
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl NativeFunction for TestNativeFunction {
         fn name(&self) -> &str {
             &self.name

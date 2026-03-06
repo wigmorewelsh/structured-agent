@@ -23,7 +23,7 @@ impl ReceiveFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for ReceiveFunction {
     fn name(&self) -> &str {
         "receive"

@@ -30,7 +30,7 @@ impl TestExternFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for TestExternFunction {
     fn name(&self) -> &str {
         "to_call"

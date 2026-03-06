@@ -37,7 +37,7 @@ impl LoggingFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for LoggingFunction {
     fn name(&self) -> &str {
         "log"

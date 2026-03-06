@@ -37,7 +37,7 @@ impl LoggingFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for LoggingFunction {
     fn name(&self) -> &str {
         "log"
@@ -83,7 +83,7 @@ impl BooleanFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for BooleanFunction {
     fn name(&self) -> &str {
         "get_bool"

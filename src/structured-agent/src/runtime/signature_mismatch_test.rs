@@ -22,7 +22,7 @@ impl WrongSignatureFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for WrongSignatureFunction {
     fn name(&self) -> &str {
         "log"
@@ -87,7 +87,7 @@ async fn test_wrong_parameter_type_error_message() {
         }
     }
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl NativeFunction for WrongTypeFunction {
         fn name(&self) -> &str {
             "log"
@@ -147,7 +147,7 @@ async fn test_wrong_return_type_error_message() {
         }
     }
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl NativeFunction for WrongReturnFunction {
         fn name(&self) -> &str {
             "log"

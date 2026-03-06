@@ -26,7 +26,7 @@ impl IsSomeFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for IsSomeFunction {
     fn name(&self) -> &str {
         "is_some"

@@ -24,7 +24,7 @@ impl PrintFunction {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl NativeFunction for PrintFunction {
     fn name(&self) -> &str {
         "print"
