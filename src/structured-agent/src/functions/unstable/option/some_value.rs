@@ -40,8 +40,14 @@ impl NativeFunction for SomeValueFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        Err("Option types not yet supported in Arrow-based values".to_string())
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        if args.len() != 1 {
+            return Err(format!("some_value expects 1 argument, got {}", args.len()));
+        }
+        let opt = args[0]
+            .as_option()
+            .map_err(|_| "some_value expects an option argument".to_string())?;
+        opt.ok_or_else(|| "Cannot unwrap None value with some_value".to_string())
     }
 
     fn documentation(&self) -> Option<&str> {
@@ -63,34 +69,30 @@ mod tests {
         assert_eq!(some_value_fn.return_type().name(), "String");
     }
 
-    // TODO: Re-enable when Option types are supported
-    // #[tokio::test]
-    // async fn test_some_value_with_some() {
-    //     let some_value_fn = SomeValueFunction::new();
-    //     let args = vec![ExpressionValue::Option(Some(Box::new(
-    //         ExpressionValue::string("test_value"),
-    //     )))];
-    //
-    //     let result = some_value_fn.execute(args).await.unwrap();
-    //     match result.as_string() {
-    //         Ok(s) => assert_eq!(s, "test_value"),
-    //         Err(_) => panic!("Expected String result"),
-    //     }
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_some_value_with_none() {
-    //     let some_value_fn = SomeValueFunction::new();
-    //     let args = vec![ExpressionValue::Option(None)];
-    //
-    //     let result = some_value_fn.execute(args).await;
-    //     assert!(result.is_err());
-    //     assert!(
-    //         result
-    //             .unwrap_err()
-    //             .contains("Cannot unwrap None value with some_value")
-    //     );
-    // }
+    #[tokio::test]
+    async fn test_some_value_with_some() {
+        let some_value_fn = SomeValueFunction::new();
+        let args = vec![ExpressionValue::option_some(ExpressionValue::string(
+            "test_value",
+        ))];
+
+        let result = some_value_fn.execute(args).await.unwrap();
+        assert_eq!(result.as_string().unwrap(), "test_value");
+    }
+
+    #[tokio::test]
+    async fn test_some_value_with_none() {
+        let some_value_fn = SomeValueFunction::new();
+        let args = vec![ExpressionValue::option_none()];
+
+        let result = some_value_fn.execute(args).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Cannot unwrap None value with some_value")
+        );
+    }
 
     #[tokio::test]
     async fn test_some_value_wrong_argument_type() {
@@ -110,7 +112,7 @@ mod tests {
         assert!(
             result
                 .unwrap_err()
-                .contains("Option types not yet supported")
+                .contains("some_value expects 1 argument")
         );
     }
 }

@@ -1,5 +1,8 @@
-use arrow::array::{Array, BooleanArray, ListArray, NullArray, StringArray, StructArray};
-use arrow::datatypes::{DataType, Field, Fields};
+use arrow::array::{
+    Array, BooleanArray, ListArray, NullArray, StringArray, StructArray, UnionArray,
+};
+use arrow::buffer::ScalarBuffer;
+use arrow::datatypes::{DataType, Field, Fields, UnionFields};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +96,46 @@ impl ExpressionValue {
         Self { data: arr }
     }
 
+    pub fn option_none() -> Self {
+        let union_fields = UnionFields::try_new(
+            [0_i8, 1_i8],
+            [
+                Field::new("none", DataType::Null, true),
+                Field::new("some", DataType::Null, true),
+            ],
+        )
+        .expect("valid option_none union fields");
+        let type_ids: ScalarBuffer<i8> = [0_i8].into_iter().collect();
+        let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
+        let children: Vec<Arc<dyn Array>> =
+            vec![Arc::new(NullArray::new(1)), Arc::new(NullArray::new(0))];
+        let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
+            .expect("valid option_none union");
+        Self {
+            data: Arc::new(union_array),
+        }
+    }
+
+    pub fn option_some(inner: ExpressionValue) -> Self {
+        let inner_type = inner.data.data_type().clone();
+        let union_fields = UnionFields::try_new(
+            [0_i8, 1_i8],
+            [
+                Field::new("none", DataType::Null, true),
+                Field::new("some", inner_type, false),
+            ],
+        )
+        .expect("valid option_some union fields");
+        let type_ids: ScalarBuffer<i8> = [1_i8].into_iter().collect();
+        let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
+        let children: Vec<Arc<dyn Array>> = vec![Arc::new(NullArray::new(0)), inner.data];
+        let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
+            .expect("valid option_some union");
+        Self {
+            data: Arc::new(union_array),
+        }
+    }
+
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
         let name_str = name.into();
 
@@ -153,6 +196,32 @@ impl ExpressionValue {
             .ok_or_else(|| "Expected list".to_string())
     }
 
+    pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {
+        let union_array = self
+            .data
+            .as_any()
+            .downcast_ref::<UnionArray>()
+            .ok_or_else(|| "Expected option (union) type".to_string())?;
+
+        if union_array.len() != 1 {
+            return Err("Expected scalar option value".to_string());
+        }
+
+        let type_id = union_array.type_id(0);
+        match type_id {
+            0 => Ok(None),
+            1 => {
+                let inner = union_array.value(0);
+                Ok(Some(ExpressionValue { data: inner }))
+            }
+            _ => Err(format!("Unexpected union type_id: {}", type_id)),
+        }
+    }
+
+    pub fn is_option(&self) -> bool {
+        matches!(self.data.data_type(), DataType::Union(_, _))
+    }
+
     pub fn type_name(&self) -> &str {
         match self.data.data_type() {
             DataType::Null => "Unit",
@@ -160,6 +229,7 @@ impl ExpressionValue {
             DataType::Boolean => "Boolean",
             DataType::List(_) => "List",
             DataType::Struct(_) => "Metadata",
+            DataType::Union(_, _) => "Option",
             _ => "Unknown",
         }
     }
@@ -210,6 +280,11 @@ impl ExpressionValue {
             } else {
                 format!("Metadata({})", name)
             }
+        } else if let Ok(opt) = self.as_option() {
+            match opt {
+                None => "None".to_string(),
+                Some(inner) => format!("Some({})", inner.value_string()),
+            }
         } else {
             format!("{:?}", self.data)
         }
@@ -241,6 +316,11 @@ impl ExpressionValue {
                 format!("{}: {}", name, doc)
             } else {
                 name
+            }
+        } else if let Ok(opt) = self.as_option() {
+            match opt {
+                None => "None".to_string(),
+                Some(inner) => inner.format_for_llm(),
             }
         } else {
             self.value_string()

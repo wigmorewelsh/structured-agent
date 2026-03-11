@@ -40,8 +40,17 @@ impl NativeFunction for SomeValueListFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        Err("Option types not yet supported in Arrow-based values".to_string())
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        if args.len() != 1 {
+            return Err(format!(
+                "some_value_list expects 1 argument, got {}",
+                args.len()
+            ));
+        }
+        let opt = args[0]
+            .as_option()
+            .map_err(|_| "some_value_list expects an option argument".to_string())?;
+        opt.ok_or_else(|| "Cannot unwrap None value with some_value_list".to_string())
     }
 
     fn documentation(&self) -> Option<&str> {
@@ -52,7 +61,8 @@ impl NativeFunction for SomeValueListFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::Array;
+    use arrow::array::{Array, ListBuilder, StringBuilder};
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_some_value_list_function_properties() {
@@ -64,46 +74,39 @@ mod tests {
         assert_eq!(some_value_list_fn.return_type().name(), "List<String>");
     }
 
-    // TODO: Re-enable when Option types are supported
-    // #[tokio::test]
-    // async fn test_some_value_list_with_some() {
-    //     let some_value_list_fn = SomeValueListFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let values = builder.values();
-    //     values.append_value("first");
-    //     values.append_value("second");
-    //     builder.append(true);
-    //     let list_array = Arc::new(builder.finish());
-    //
-    //     let args = vec![ExpressionValue::Option(Some(Box::new(
-    //         ExpressionValue::list(list_array.clone()),
-    //     )))];
-    //
-    //     let result = some_value_list_fn.execute(args).await.unwrap();
-    //     match result.as_list() {
-    //         Ok(list) => {
-    //             assert_eq!(list.len(), 1);
-    //             let list_values = list.value(0);
-    //             assert_eq!(list_values.len(), 2);
-    //         }
-    //         Err(_) => panic!("Expected List result"),
-    //     }
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_some_value_list_with_none() {
-    //     let some_value_list_fn = SomeValueListFunction::new();
-    //     let args = vec![ExpressionValue::Option(None)];
-    //
-    //     let result = some_value_list_fn.execute(args).await;
-    //     assert!(result.is_err());
-    //     assert!(
-    //         result
-    //             .unwrap_err()
-    //             .contains("Cannot unwrap None value with some_value_list")
-    //     );
-    // }
+    #[tokio::test]
+    async fn test_some_value_list_with_some() {
+        let some_value_list_fn = SomeValueListFunction::new();
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.values().append_value("first");
+        builder.values().append_value("second");
+        builder.append(true);
+        let list_array = Arc::new(builder.finish());
+
+        let args = vec![ExpressionValue::option_some(ExpressionValue::list(
+            list_array,
+        ))];
+
+        let result = some_value_list_fn.execute(args).await.unwrap();
+        let list = result.as_list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list.value(0).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_some_value_list_with_none() {
+        let some_value_list_fn = SomeValueListFunction::new();
+        let args = vec![ExpressionValue::option_none()];
+
+        let result = some_value_list_fn.execute(args).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Cannot unwrap None value with some_value_list")
+        );
+    }
 
     #[tokio::test]
     async fn test_some_value_list_wrong_argument_type() {
@@ -123,7 +126,7 @@ mod tests {
         assert!(
             result
                 .unwrap_err()
-                .contains("Option types not yet supported")
+                .contains("some_value_list expects 1 argument")
         );
     }
 }

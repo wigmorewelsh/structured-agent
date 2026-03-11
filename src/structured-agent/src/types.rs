@@ -247,9 +247,7 @@ impl LanguageEngine for PrintEngine {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => {
-                Err("Option types not yet supported in Arrow-based values".to_string())
-            }
+            Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
             Type::Custom(_) => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
@@ -281,9 +279,7 @@ impl LanguageEngine for PrintEngine {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => {
-                Err("Option types not yet supported in Arrow-based values".to_string())
-            }
+            Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
             Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExpressionValue::string(format!(
                 "PrintEngine: {} ({})",
                 param_name,

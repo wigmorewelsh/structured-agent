@@ -139,8 +139,13 @@ impl GeminiEngine {
                 builder.append(true);
                 Ok(ExpressionValue::list(std::sync::Arc::new(builder.finish())))
             }
-            Type::Option(_inner_type) => {
-                Err("Option types not yet supported in Arrow-based values".to_string())
+            Type::Option(inner_type) => {
+                if json_value.is_null() {
+                    Ok(ExpressionValue::option_none())
+                } else {
+                    let inner = Self::parse_json_value(json_value, inner_type)?;
+                    Ok(ExpressionValue::option_some(inner))
+                }
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }

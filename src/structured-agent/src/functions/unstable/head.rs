@@ -1,6 +1,6 @@
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
-use arrow::array::Array;
+use arrow::array::{Array, Datum, StringArray};
 use async_trait::async_trait;
 
 #[derive(Debug)]
@@ -51,22 +51,22 @@ impl NativeFunction for HeadFunction {
             .map_err(|_| "head expects a list argument")?;
 
         if list.len() == 0 {
-            return Err("Option types not yet supported in Arrow-based values".to_string());
+            return Ok(ExpressionValue::option_none());
         }
 
         let values = list.value(0);
         if values.len() == 0 {
-            return Err("Option types not yet supported in Arrow-based values".to_string());
+            return Ok(ExpressionValue::option_none());
         }
 
         let string_array = values
             .as_any()
-            .downcast_ref::<arrow::array::StringArray>()
+            .downcast_ref::<StringArray>()
             .ok_or("Expected string array")?;
-        let first_value = string_array.value(0);
 
-        // TODO: Return Option type once Arrow-based Option support is implemented
-        Ok(ExpressionValue::string(first_value))
+        Ok(ExpressionValue::option_some(ExpressionValue::string(
+            string_array.value(0),
+        )))
     }
 
     fn documentation(&self) -> Option<&str> {
@@ -77,8 +77,8 @@ impl NativeFunction for HeadFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
+    use arrow::array::{ListBuilder, StringBuilder};
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_head_function_properties() {
@@ -90,42 +90,35 @@ mod tests {
         assert_eq!(head_fn.return_type().name(), "Option<String>");
     }
 
-    // TODO: Re-enable when Option types are supported
-    // #[tokio::test]
-    // async fn test_head_function_with_non_empty_list() {
-    //     let head_fn = HeadFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let values = builder.values();
-    //     values.append_value("first");
-    //     values.append_value("second");
-    //     builder.append(true);
-    //
-    //     let list_array = Arc::new(builder.finish());
-    //     let args = vec![ExpressionValue::list(list_array)];
-    //
-    //     let result = head_fn.execute(args).await.unwrap();
-    //     match result {
-    //         ExpressionValue::Option(Some(inner)) => match *inner {
-    //             ExpressionValue::String(s) => assert_eq!(s, "first"),
-    //             _ => panic!("Expected String inside Some"),
-    //         },
-    //         _ => panic!("Expected Some result"),
-    //     }
-    // }
+    #[tokio::test]
+    async fn test_head_function_with_non_empty_list() {
+        let head_fn = HeadFunction::new();
 
-    // TODO: Re-enable when Option types are supported
-    // #[tokio::test]
-    // async fn test_head_function_with_empty_list() {
-    //     let head_fn = HeadFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let list_array = Arc::new(builder.finish());
-    //     let args = vec![ExpressionValue::list(list_array)];
-    //
-    //     let result = head_fn.execute(args).await.unwrap();
-    //     assert!(matches!(result, ExpressionValue::Option(None)));
-    // }
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.values().append_value("first");
+        builder.values().append_value("second");
+        builder.append(true);
+
+        let list_array = Arc::new(builder.finish());
+        let args = vec![ExpressionValue::list(list_array)];
+
+        let result = head_fn.execute(args).await.unwrap();
+        let inner = result.as_option().unwrap().unwrap();
+        assert_eq!(inner.as_string().unwrap(), "first");
+    }
+
+    #[tokio::test]
+    async fn test_head_function_with_empty_list() {
+        let head_fn = HeadFunction::new();
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.append(true);
+        let list_array = Arc::new(builder.finish());
+        let args = vec![ExpressionValue::list(list_array)];
+
+        let result = head_fn.execute(args).await.unwrap();
+        assert!(result.as_option().unwrap().is_none());
+    }
 
     #[tokio::test]
     async fn test_head_function_wrong_argument_type() {

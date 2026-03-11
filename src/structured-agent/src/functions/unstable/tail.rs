@@ -1,6 +1,8 @@
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
+use arrow::array::{Array, ListBuilder, StringArray, StringBuilder};
 use async_trait::async_trait;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct TailFunction {
@@ -40,8 +42,39 @@ impl NativeFunction for TailFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        Err("Option types not yet supported in Arrow-based values".to_string())
+    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        if args.len() != 1 {
+            return Err(format!("tail expects 1 argument, got {}", args.len()));
+        }
+
+        let list = args[0]
+            .as_list()
+            .map_err(|_| "tail expects a list argument")?;
+
+        if list.len() == 0 {
+            return Ok(ExpressionValue::option_none());
+        }
+
+        let values = list.value(0);
+        if values.len() == 0 {
+            return Ok(ExpressionValue::option_none());
+        }
+
+        let string_array = values
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("Expected string array")?;
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        for i in 1..string_array.len() {
+            builder.values().append_value(string_array.value(i));
+        }
+        builder.append(true);
+
+        let tail_list = Arc::new(builder.finish());
+        Ok(ExpressionValue::option_some(ExpressionValue::list(
+            tail_list,
+        )))
     }
 
     fn documentation(&self) -> Option<&str> {
@@ -52,6 +85,7 @@ impl NativeFunction for TailFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Array;
 
     #[tokio::test]
     async fn test_tail_function_properties() {
@@ -63,72 +97,60 @@ mod tests {
         assert_eq!(tail_fn.return_type().name(), "Option<List<String>>");
     }
 
-    // TODO: Re-enable when Option types are supported
-    // #[tokio::test]
-    // async fn test_tail_function_with_multiple_elements() {
-    //     let tail_fn = TailFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let values = builder.values();
-    //     values.append_value("first");
-    //     values.append_value("second");
-    //     values.append_value("third");
-    //     builder.append(true);
-    //
-    //     let list_array = Arc::new(builder.finish());
-    //     let args = vec![ExpressionValue::list(list_array)];
-    //
-    //     let result = tail_fn.execute(args).await.unwrap();
-    //     match result {
-    //         ExpressionValue::Option(Some(inner)) => match *inner {
-    //             ExpressionValue::List(tail_list) => {
-    //                 assert_eq!(tail_list.len(), 1);
-    //                 let tail_values = tail_list.value(0);
-    //                 assert_eq!(tail_values.len(), 2);
-    //             }
-    //             _ => panic!("Expected List inside Some"),
-    //         },
-    //         _ => panic!("Expected Some result"),
-    //     }
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_tail_function_with_single_element() {
-    //     let tail_fn = TailFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let values = builder.values();
-    //     values.append_value("only");
-    //     builder.append(true);
-    //
-    //     let list_array = Arc::new(builder.finish());
-    //     let args = vec![ExpressionValue::list(list_array)];
-    //
-    //     let result = tail_fn.execute(args).await.unwrap();
-    //     match result {
-    //         ExpressionValue::Option(Some(inner)) => match *inner {
-    //             ExpressionValue::List(tail_list) => {
-    //                 assert_eq!(tail_list.len(), 1);
-    //                 let tail_values = tail_list.value(0);
-    //                 assert_eq!(tail_values.len(), 0);
-    //             }
-    //             _ => panic!("Expected List inside Some"),
-    //         },
-    //         _ => panic!("Expected Some result"),
-    //     }
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_tail_function_with_empty_list() {
-    //     let tail_fn = TailFunction::new();
-    //
-    //     let mut builder = ListBuilder::new(StringBuilder::new());
-    //     let list_array = Arc::new(builder.finish());
-    //     let args = vec![ExpressionValue::list(list_array)];
-    //
-    //     let result = tail_fn.execute(args).await.unwrap();
-    //     assert!(matches!(result, ExpressionValue::Option(None)));
-    // }
+    #[tokio::test]
+    async fn test_tail_function_with_multiple_elements() {
+        let tail_fn = TailFunction::new();
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.values().append_value("first");
+        builder.values().append_value("second");
+        builder.values().append_value("third");
+        builder.append(true);
+
+        let list_array = Arc::new(builder.finish());
+        let args = vec![ExpressionValue::list(list_array)];
+
+        let result = tail_fn.execute(args).await.unwrap();
+        let inner = result.as_option().unwrap().unwrap();
+        let tail_list = inner.as_list().unwrap();
+        assert_eq!(tail_list.len(), 1);
+        let tail_values = tail_list.value(0);
+        let tail_strings = tail_values.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(tail_strings.len(), 2);
+        assert_eq!(tail_strings.value(0), "second");
+        assert_eq!(tail_strings.value(1), "third");
+    }
+
+    #[tokio::test]
+    async fn test_tail_function_with_single_element() {
+        let tail_fn = TailFunction::new();
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.values().append_value("only");
+        builder.append(true);
+
+        let list_array = Arc::new(builder.finish());
+        let args = vec![ExpressionValue::list(list_array)];
+
+        let result = tail_fn.execute(args).await.unwrap();
+        let inner = result.as_option().unwrap().unwrap();
+        let tail_list = inner.as_list().unwrap();
+        assert_eq!(tail_list.len(), 1);
+        assert_eq!(tail_list.value(0).len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_tail_function_with_empty_list() {
+        let tail_fn = TailFunction::new();
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.append(true);
+        let list_array = Arc::new(builder.finish());
+        let args = vec![ExpressionValue::list(list_array)];
+
+        let result = tail_fn.execute(args).await.unwrap();
+        assert!(result.as_option().unwrap().is_none());
+    }
 
     #[tokio::test]
     async fn test_tail_function_wrong_argument_type() {
@@ -145,10 +167,6 @@ mod tests {
 
         let result = tail_fn.execute(vec![]).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("Option types not yet supported")
-        );
+        assert!(result.unwrap_err().contains("tail expects 1 argument"));
     }
 }
