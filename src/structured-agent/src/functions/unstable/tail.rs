@@ -1,6 +1,8 @@
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
-use arrow::array::{Array, ListBuilder, StringArray, StringBuilder};
+use arrow::array::{Array, ListArray};
+use arrow::buffer::OffsetBuffer;
+use arrow::datatypes::{Field, FieldRef};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -51,27 +53,23 @@ impl NativeFunction for TailFunction {
             .as_list()
             .map_err(|_| "tail expects a list argument")?;
 
-        if list.len() == 0 {
+        if list.is_empty() {
             return Ok(ExpressionValue::option_none());
         }
 
         let values = list.value(0);
-        if values.len() == 0 {
+        if values.is_empty() {
             return Ok(ExpressionValue::option_none());
         }
 
-        let string_array = values
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or("Expected string array")?;
+        let tail_values = values.slice(1, values.len() - 1);
+        let field: FieldRef = Arc::new(Field::new("item", tail_values.data_type().clone(), true));
+        let offsets = OffsetBuffer::from_lengths([tail_values.len()]);
+        let tail_list = Arc::new(
+            ListArray::try_new(field, offsets, tail_values, None)
+                .map_err(|e| format!("Failed to create tail list: {}", e))?,
+        );
 
-        let mut builder = ListBuilder::new(StringBuilder::new());
-        for i in 1..string_array.len() {
-            builder.values().append_value(string_array.value(i));
-        }
-        builder.append(true);
-
-        let tail_list = Arc::new(builder.finish());
         Ok(ExpressionValue::option_some(ExpressionValue::list(
             tail_list,
         )))
@@ -85,7 +83,7 @@ impl NativeFunction for TailFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::Array;
+    use arrow::array::{Array, ListBuilder, StringArray, StringBuilder};
 
     #[tokio::test]
     async fn test_tail_function_properties() {
@@ -159,6 +157,7 @@ mod tests {
 
         let result = tail_fn.execute(args).await;
         assert!(result.is_err());
+        assert!(result.unwrap_err().contains("tail expects a list argument"));
     }
 
     #[tokio::test]

@@ -96,6 +96,10 @@ impl ExpressionValue {
         Self { data: arr }
     }
 
+    pub fn from_array(data: Arc<dyn Array>) -> Self {
+        Self { data }
+    }
+
     pub fn option_none() -> Self {
         let union_fields = UnionFields::try_new(
             [0_i8, 1_i8],

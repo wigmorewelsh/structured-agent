@@ -1,8 +1,8 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, Compiler};
 use crate::functions::{
-    HeadFunction, InputFunction, IsSomeFunction, IsSomeListFunction, PrintFunction,
-    SomeValueFunction, SomeValueListFunction, TailFunction, acp_shim,
+    HeadFunction, InputFunction, IsSomeFunction, PrintFunction, SomeValueFunction, TailFunction,
+    acp_shim,
 };
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
@@ -182,10 +182,10 @@ impl RuntimeBuilder {
             self = self
                 .with_native_function(Arc::new(HeadFunction::new()))
                 .with_native_function(Arc::new(TailFunction::new()))
-                .with_native_function(Arc::new(IsSomeFunction::new()))
-                .with_native_function(Arc::new(SomeValueFunction::new()))
-                .with_native_function(Arc::new(IsSomeListFunction::new()))
-                .with_native_function(Arc::new(SomeValueListFunction::new()));
+                .with_native_function(Arc::new(IsSomeFunction::for_string()))
+                .with_native_function(Arc::new(SomeValueFunction::for_string()))
+                .with_native_function(Arc::new(IsSomeFunction::for_list()))
+                .with_native_function(Arc::new(SomeValueFunction::for_list()));
         }
 
         if config.with_acp_functions {

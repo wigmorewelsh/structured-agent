@@ -4,24 +4,36 @@ use async_trait::async_trait;
 
 #[derive(Debug)]
 pub struct IsSomeFunction {
+    name: String,
     parameters: Vec<Parameter>,
     return_type: Type,
 }
 
-impl Default for IsSomeFunction {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl IsSomeFunction {
-    pub fn new() -> Self {
+    pub fn new(inner_type: Type) -> Self {
+        let name = format!("is_some_{}", Self::type_suffix(&inner_type));
         Self {
+            name,
             parameters: vec![Parameter::new(
                 "option".to_string(),
-                Type::option(Type::string()),
+                Type::option(inner_type),
             )],
             return_type: Type::Boolean,
+        }
+    }
+
+    pub fn for_string() -> Self {
+        Self::new(Type::String)
+    }
+
+    pub fn for_list() -> Self {
+        Self::new(Type::list(Type::String))
+    }
+
+    fn type_suffix(t: &Type) -> &'static str {
+        match t {
+            Type::List(_) => "list",
+            _ => "string",
         }
     }
 }
@@ -29,7 +41,7 @@ impl IsSomeFunction {
 #[async_trait]
 impl NativeFunction for IsSomeFunction {
     fn name(&self) -> &str {
-        "is_some"
+        &self.name
     }
 
     fn parameters(&self) -> &[Parameter] {
@@ -42,11 +54,15 @@ impl NativeFunction for IsSomeFunction {
 
     async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
-            return Err(format!("is_some expects 1 argument, got {}", args.len()));
+            return Err(format!(
+                "{} expects 1 argument, got {}",
+                self.name,
+                args.len()
+            ));
         }
         let opt = args[0]
             .as_option()
-            .map_err(|_| "is_some expects an option argument".to_string())?;
+            .map_err(|_| format!("{} expects an option argument", self.name))?;
         Ok(ExpressionValue::boolean(opt.is_some()))
     }
 
@@ -58,52 +74,92 @@ impl NativeFunction for IsSomeFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::{ListBuilder, StringBuilder};
+    use std::sync::Arc;
 
     #[tokio::test]
-    async fn test_is_some_function_properties() {
-        let is_some_fn = IsSomeFunction::new();
-
-        assert_eq!(is_some_fn.name(), "is_some");
-        assert_eq!(is_some_fn.parameters().len(), 1);
-        assert_eq!(is_some_fn.parameters()[0].name, "option");
-        assert_eq!(is_some_fn.return_type().name(), "Boolean");
+    async fn test_is_some_string_properties() {
+        let f = IsSomeFunction::for_string();
+        assert_eq!(f.name(), "is_some_string");
+        assert_eq!(f.parameters().len(), 1);
+        assert_eq!(f.parameters()[0].param_type, Type::option(Type::String));
+        assert_eq!(f.return_type().name(), "Boolean");
     }
 
     #[tokio::test]
-    async fn test_is_some_with_some_value() {
-        let is_some_fn = IsSomeFunction::new();
-        let args = vec![ExpressionValue::option_some(ExpressionValue::string(
-            "value",
-        ))];
+    async fn test_is_some_list_properties() {
+        let f = IsSomeFunction::for_list();
+        assert_eq!(f.name(), "is_some_list");
+        assert_eq!(f.parameters().len(), 1);
+        assert_eq!(
+            f.parameters()[0].param_type,
+            Type::option(Type::list(Type::String))
+        );
+        assert_eq!(f.return_type().name(), "Boolean");
+    }
 
-        let result = is_some_fn.execute(args).await.unwrap();
+    #[tokio::test]
+    async fn test_is_some_string_with_some() {
+        let f = IsSomeFunction::for_string();
+        let result = f
+            .execute(vec![ExpressionValue::option_some(ExpressionValue::string(
+                "value",
+            ))])
+            .await
+            .unwrap();
         assert_eq!(result.as_boolean().unwrap(), true);
     }
 
     #[tokio::test]
-    async fn test_is_some_with_none() {
-        let is_some_fn = IsSomeFunction::new();
-        let args = vec![ExpressionValue::option_none()];
+    async fn test_is_some_string_with_none() {
+        let f = IsSomeFunction::for_string();
+        let result = f
+            .execute(vec![ExpressionValue::option_none()])
+            .await
+            .unwrap();
+        assert_eq!(result.as_boolean().unwrap(), false);
+    }
 
-        let result = is_some_fn.execute(args).await.unwrap();
+    #[tokio::test]
+    async fn test_is_some_list_with_some() {
+        let f = IsSomeFunction::for_list();
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        builder.values().append_value("test");
+        builder.append(true);
+        let list_array = Arc::new(builder.finish());
+        let result = f
+            .execute(vec![ExpressionValue::option_some(ExpressionValue::list(
+                list_array,
+            ))])
+            .await
+            .unwrap();
+        assert_eq!(result.as_boolean().unwrap(), true);
+    }
+
+    #[tokio::test]
+    async fn test_is_some_list_with_none() {
+        let f = IsSomeFunction::for_list();
+        let result = f
+            .execute(vec![ExpressionValue::option_none()])
+            .await
+            .unwrap();
         assert_eq!(result.as_boolean().unwrap(), false);
     }
 
     #[tokio::test]
     async fn test_is_some_wrong_argument_type() {
-        let is_some_fn = IsSomeFunction::new();
-        let args = vec![ExpressionValue::string("not an option")];
-
-        let result = is_some_fn.execute(args).await;
+        let f = IsSomeFunction::for_string();
+        let result = f
+            .execute(vec![ExpressionValue::string("not an option")])
+            .await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_is_some_wrong_args_count() {
-        let is_some_fn = IsSomeFunction::new();
-
-        let result = is_some_fn.execute(vec![]).await;
+        let f = IsSomeFunction::for_string();
+        let result = f.execute(vec![]).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("is_some expects 1 argument"));
+        assert!(result.unwrap_err().contains("expects 1 argument"));
     }
 }

@@ -1,6 +1,6 @@
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
-use arrow::array::{Array, Datum, StringArray};
+use arrow::array::Array;
 use async_trait::async_trait;
 
 #[derive(Debug)]
@@ -50,22 +50,18 @@ impl NativeFunction for HeadFunction {
             .as_list()
             .map_err(|_| "head expects a list argument")?;
 
-        if list.len() == 0 {
+        if list.is_empty() {
             return Ok(ExpressionValue::option_none());
         }
 
         let values = list.value(0);
-        if values.len() == 0 {
+        if values.is_empty() {
             return Ok(ExpressionValue::option_none());
         }
 
-        let string_array = values
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or("Expected string array")?;
-
-        Ok(ExpressionValue::option_some(ExpressionValue::string(
-            string_array.value(0),
+        let first = values.slice(0, 1);
+        Ok(ExpressionValue::option_some(ExpressionValue::from_array(
+            first,
         )))
     }
 
