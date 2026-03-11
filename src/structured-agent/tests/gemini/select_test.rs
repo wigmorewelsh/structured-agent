@@ -25,18 +25,9 @@ async fn test_select_with_simple_options() {
     );
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "Red".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Blue".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Green".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("Red", None),
+        ExpressionValue::metadata("Blue", None),
+        ExpressionValue::metadata("Green", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -49,9 +40,11 @@ async fn test_select_with_simple_options() {
                 index,
                 options.len()
             );
-            if let ExpressionValue::Metadata { name, .. } = &options[index] {
-                println!("✓ Selected option {}: {}", index, name);
-            }
+            let name = options[index]
+                .as_metadata()
+                .map(|(n, _)| n)
+                .unwrap_or_default();
+            println!("Selected option {}: {}", index, name);
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -77,22 +70,10 @@ async fn test_select_with_numbered_options() {
     );
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "Addition".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Subtraction".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Multiplication".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Division".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("Addition", None),
+        ExpressionValue::metadata("Subtraction", None),
+        ExpressionValue::metadata("Multiplication", None),
+        ExpressionValue::metadata("Division", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -101,7 +82,6 @@ async fn test_select_with_numbered_options() {
         Ok(index) => {
             assert!(index < options.len());
             assert_eq!(index, 0, "Should select Addition (index 0) for 2 + 2");
-            println!("✓ Correctly selected Addition for 2 + 2");
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -121,17 +101,13 @@ async fn test_select_with_single_option() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
 
-    let options = vec![ExpressionValue::Metadata {
-        name: "Only choice".to_string(),
-        documentation: None,
-    }];
+    let options = vec![ExpressionValue::metadata("Only choice", None)];
 
     let result = engine.select(&context, &options).await;
 
     match result {
         Ok(index) => {
             assert_eq!(index, 0, "Should select the only available option");
-            println!("✓ Correctly selected the only option");
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -162,18 +138,9 @@ async fn test_select_with_contextual_decision() {
     );
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "Heavy winter coat".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Light t-shirt".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Thick sweater".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("Heavy winter coat", None),
+        ExpressionValue::metadata("Light t-shirt", None),
+        ExpressionValue::metadata("Thick sweater", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -182,7 +149,6 @@ async fn test_select_with_contextual_decision() {
         Ok(index) => {
             assert!(index < options.len());
             assert_eq!(index, 1, "Should select light t-shirt for hot weather");
-            println!("✓ Correctly selected light t-shirt for hot weather");
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -208,22 +174,10 @@ async fn test_select_with_mathematical_context() {
     );
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "2x".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "x^2".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "2".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "x".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("2x", None),
+        ExpressionValue::metadata("x^2", None),
+        ExpressionValue::metadata("2", None),
+        ExpressionValue::metadata("x", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -232,7 +186,6 @@ async fn test_select_with_mathematical_context() {
         Ok(index) => {
             assert!(index < options.len());
             assert_eq!(index, 0, "Should select 2x as derivative of x^2");
-            println!("✓ Correctly selected 2x as derivative of x^2");
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -258,38 +211,14 @@ async fn test_select_with_many_options() {
     );
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "C".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "C++".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "JavaScript".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Python".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Rust".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Java".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Go".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Ruby".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("C", None),
+        ExpressionValue::metadata("C++", None),
+        ExpressionValue::metadata("JavaScript", None),
+        ExpressionValue::metadata("Python", None),
+        ExpressionValue::metadata("Rust", None),
+        ExpressionValue::metadata("Java", None),
+        ExpressionValue::metadata("Go", None),
+        ExpressionValue::metadata("Ruby", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -298,7 +227,6 @@ async fn test_select_with_many_options() {
         Ok(index) => {
             assert!(index < options.len());
             assert_eq!(index, 4, "Should select Rust for memory safety");
-            println!("✓ Correctly selected Rust for memory safety");
         }
         Err(e) => panic!("Selection failed: {}", e),
     }
@@ -319,14 +247,8 @@ async fn test_select_validates_bounds() {
     let context = Context::with_runtime(runtime);
 
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "First".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "Second".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("First", None),
+        ExpressionValue::metadata("Second", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -334,7 +256,6 @@ async fn test_select_validates_bounds() {
     match result {
         Ok(index) => {
             assert!(index < 2, "Index should be 0 or 1 for 2 options");
-            println!("✓ Response index {} is within bounds", index);
         }
         Err(_) => {}
     }
@@ -355,14 +276,8 @@ async fn test_select_prompt_formatting() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let context = Context::with_runtime(runtime);
     let options = vec![
-        ExpressionValue::Metadata {
-            name: "A".to_string(),
-            documentation: None,
-        },
-        ExpressionValue::Metadata {
-            name: "B".to_string(),
-            documentation: None,
-        },
+        ExpressionValue::metadata("A", None),
+        ExpressionValue::metadata("B", None),
     ];
 
     let result = engine.select(&context, &options).await;
@@ -370,11 +285,10 @@ async fn test_select_prompt_formatting() {
     match result {
         Ok(index) => {
             assert!(index < options.len(), "Selected index should be valid");
-            println!("✓ Prompt formatting test passed with index: {}", index);
         }
         Err(e) => {
             if e.contains("Language engine returned invalid selection") {
-                println!("✓ Validation error caught: {}", e);
+                println!("Validation error caught: {}", e);
             } else {
                 panic!("Unexpected error: {}", e);
             }
@@ -406,9 +320,7 @@ mod unit_tests {
                 (Ok(val), Ok(expected_val)) => {
                     assert_eq!(val, expected_val, "Failed parsing: {}", input);
                 }
-                (Err(_), Err(_)) => {
-                    // Both failed as expected
-                }
+                (Err(_), Err(_)) => {}
                 (Ok(val), Err(_)) => {
                     panic!("Expected parsing to fail for '{}', but got: {}", input, val);
                 }

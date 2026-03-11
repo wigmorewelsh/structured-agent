@@ -2,6 +2,7 @@ use crate::acp;
 use crate::cli::config::{Config, Mode};
 use crate::cli::errors::CliError;
 use crate::runtime::{Runtime, load_program};
+use arrow::array::Array;
 
 pub struct App;
 
@@ -119,7 +120,6 @@ impl App {
         } else if let Ok(b) = result.as_boolean() {
             println!("Result: {}", b);
         } else if let Ok(list) = result.as_list() {
-            use arrow::array::Array;
             println!("Result: List[{}]", list.len());
         } else {
             println!("Result: {}", result.value_string());

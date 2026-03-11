@@ -21,7 +21,6 @@ impl ExpressionParameter {
     }
 }
 
-// was ExprResult is now ExpressionValue
 #[derive(Debug, Clone)]
 pub struct ExpressionValue {
     data: Arc<dyn Array>,
@@ -72,7 +71,6 @@ impl ExpressionResult {
 }
 
 impl ExpressionValue {
-    // Constructors
     pub fn unit() -> Self {
         Self {
             data: Arc::new(NullArray::new(1)),
@@ -120,7 +118,6 @@ impl ExpressionValue {
         }
     }
 
-    // Helper for scalar extraction
     fn downcast_scalar<T: Array + 'static>(&self) -> Result<&T, String> {
         self.data
             .as_any()
@@ -129,7 +126,6 @@ impl ExpressionValue {
             .ok_or_else(|| format!("Expected scalar {}", std::any::type_name::<T>()))
     }
 
-    // Accessors
     pub fn as_string(&self) -> Result<&str, String> {
         self.downcast_scalar::<StringArray>().and_then(|arr| {
             if arr.is_null(0) {
@@ -150,20 +146,14 @@ impl ExpressionValue {
         })
     }
 
-    pub fn as_list(&self) -> Result<&Arc<ListArray>, String> {
-        if self.data.as_any().is::<ListArray>() {
-            unsafe {
-                Ok(std::mem::transmute::<&Arc<dyn Array>, &Arc<ListArray>>(
-                    &self.data,
-                ))
-            }
-        } else {
-            Err("Expected list".to_string())
-        }
+    pub fn as_list(&self) -> Result<&ListArray, String> {
+        self.data
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .ok_or_else(|| "Expected list".to_string())
     }
 
     pub fn type_name(&self) -> &str {
-        use arrow::datatypes::DataType;
         match self.data.data_type() {
             DataType::Null => "Unit",
             DataType::Utf8 => "String",
