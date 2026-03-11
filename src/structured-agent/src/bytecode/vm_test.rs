@@ -1,5 +1,5 @@
 use crate::compiler::CompilationUnit;
-use crate::runtime::{ExpressionValue, Runtime};
+use crate::runtime::Runtime;
 
 #[tokio::test]
 async fn test_vm_simple_string_return() {
@@ -14,10 +14,9 @@ async fn test_vm_simple_string_return() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "hello world");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "hello world");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -36,10 +35,9 @@ async fn test_vm_variable_assignment_and_return() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "hello");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "hello");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -60,10 +58,9 @@ async fn test_vm_return_in_if_block() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "from_if_block");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "from_if_block");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -82,10 +79,8 @@ async fn test_vm_variable_injection() {
     let result = runtime.run().await;
 
     assert!(result.is_ok(), "Expected successful execution");
-    match result.unwrap() {
-        ExpressionValue::Unit => (),
-        other => panic!("Expected Unit result, got: {:?}", other),
-    }
+    let value = result.unwrap();
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
@@ -104,10 +99,8 @@ async fn test_vm_multiple_variable_injections() {
     let result = runtime.run().await;
 
     assert!(result.is_ok(), "Expected successful execution");
-    match result.unwrap() {
-        ExpressionValue::Unit => (),
-        other => panic!("Expected Unit result, got: {:?}", other),
-    }
+    let value = result.unwrap();
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
@@ -127,10 +120,9 @@ async fn test_vm_function_call() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "helper_result");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "helper_result");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -152,10 +144,9 @@ async fn test_vm_function_call_with_parameter() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "input_value");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "input_value");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -174,10 +165,8 @@ async fn test_vm_multiple_statements() {
     let result = runtime.run().await;
 
     assert!(result.is_ok(), "Expected successful execution");
-    match result.unwrap() {
-        ExpressionValue::Unit => (),
-        other => panic!("Expected Unit result, got: {:?}", other),
-    }
+    let value = result.unwrap();
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
@@ -193,10 +182,9 @@ async fn test_vm_boolean_literal() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::Boolean(b)) => {
-            assert_eq!(b, true);
+        Ok(value) => {
+            assert_eq!(value.as_boolean().unwrap(), true);
         }
-        Ok(other) => panic!("Expected boolean result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -218,10 +206,9 @@ async fn test_vm_if_else_true_branch() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "true_branch");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "true_branch");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -243,10 +230,9 @@ async fn test_vm_if_else_false_branch() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "false_branch");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "false_branch");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -273,10 +259,9 @@ async fn test_vm_nested_function_calls() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
-            assert_eq!(s, "inner_value");
+        Ok(value) => {
+            assert_eq!(value.as_string().unwrap(), "inner_value");
         }
-        Ok(other) => panic!("Expected string result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
@@ -294,7 +279,7 @@ async fn test_vm_unit_return() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::Unit) => (),
+        Ok(value) if value.type_name() == "Unit" => (),
         Ok(other) => panic!("Expected unit result, got: {:?}", other),
         Err(e) => panic!("Test failed with error: {:?}", e),
     }

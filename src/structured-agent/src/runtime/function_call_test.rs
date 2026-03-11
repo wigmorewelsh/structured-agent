@@ -51,7 +51,7 @@ impl NativeFunction for TestExternFunction {
 
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(ExpressionValue::Unit)
+        Ok(ExpressionValue::unit())
     }
 }
 

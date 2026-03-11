@@ -10,7 +10,6 @@ mod tests;
 #[cfg(test)]
 mod vm_test;
 
-pub use builder::InstructionBuilder;
 pub use compiler::{BytecodeCompiler, CompiledFunction};
 pub use function_expr::BytecodeFunctionExpr;
 pub use instruction::Instruction;

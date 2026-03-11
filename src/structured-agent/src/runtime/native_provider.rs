@@ -102,7 +102,7 @@ mod tests {
         }
 
         async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-            Ok(ExpressionValue::String("test_result".to_string()))
+            Ok(ExpressionValue::string("test_result"))
         }
 
         fn documentation(&self) -> Option<&str> {

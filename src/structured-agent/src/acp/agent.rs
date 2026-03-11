@@ -82,7 +82,7 @@ impl Agent {
         let runtime = match Runtime::builder(program.clone())
             .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
             .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
-            .from_config(config)
+            .with_config(config)
             .await
         {
             Ok(r) => {
@@ -282,7 +282,7 @@ impl Agent {
         let runtime = Runtime::builder(program.clone())
             .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
             .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
-            .from_config(config)
+            .with_config(config)
             .await
             .map_err(|e| {
                 error!("Failed to rebuild runtime: {}", e);

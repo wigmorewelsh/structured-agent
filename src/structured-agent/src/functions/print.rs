@@ -1,6 +1,5 @@
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
-use arrow::array::Array;
 use async_trait::async_trait;
 
 #[derive(Debug)]
@@ -44,47 +43,12 @@ impl NativeFunction for PrintFunction {
         }
 
         fn format_expr_result(result: &ExpressionValue) -> String {
-            match result {
-                ExpressionValue::String(s) => s.clone(),
-                ExpressionValue::Boolean(b) => b.to_string(),
-                ExpressionValue::Unit => "()".to_string(),
-                ExpressionValue::List(list) => {
-                    if list.len() == 0 {
-                        "[]".to_string()
-                    } else {
-                        let values = list.value(0);
-                        if let Some(string_array) =
-                            values.as_any().downcast_ref::<arrow::array::StringArray>()
-                        {
-                            let items: Vec<String> = (0..string_array.len())
-                                .map(|i| format!("\"{}\"", string_array.value(i)))
-                                .collect();
-                            format!("[{}]", items.join(", "))
-                        } else {
-                            "[]".to_string()
-                        }
-                    }
-                }
-                ExpressionValue::Option(opt) => match opt {
-                    Some(inner) => format!("Some({})", format_expr_result(inner)),
-                    None => "None".to_string(),
-                },
-                ExpressionValue::Metadata {
-                    name,
-                    documentation,
-                } => {
-                    if let Some(doc) = documentation {
-                        format!("Metadata({}, \"{}\")", name, doc)
-                    } else {
-                        format!("Metadata({})", name)
-                    }
-                }
-            }
+            result.format_for_llm()
         }
 
         let value = format_expr_result(&args[0]);
         println!("{}", value);
-        Ok(ExpressionValue::Unit)
+        Ok(ExpressionValue::unit())
     }
 }
 
@@ -106,28 +70,28 @@ mod tests {
     #[tokio::test]
     async fn test_print_function_execute_string() {
         let print_fn = PrintFunction::new();
-        let args = vec![ExpressionValue::String("Hello, World!".to_string())];
+        let args = vec![ExpressionValue::string("Hello, World!")];
 
         let result = print_fn.execute(args).await.unwrap();
-        assert_eq!(result, ExpressionValue::Unit);
+        assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]
     async fn test_print_function_execute_boolean() {
         let print_fn = PrintFunction::new();
-        let args = vec![ExpressionValue::Boolean(true)];
+        let args = vec![ExpressionValue::boolean(true)];
 
         let result = print_fn.execute(args).await.unwrap();
-        assert_eq!(result, ExpressionValue::Unit);
+        assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]
     async fn test_print_function_execute_unit() {
         let print_fn = PrintFunction::new();
-        let args = vec![ExpressionValue::Unit];
+        let args = vec![ExpressionValue::unit()];
 
         let result = print_fn.execute(args).await.unwrap();
-        assert_eq!(result, ExpressionValue::Unit);
+        assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]
@@ -144,8 +108,8 @@ mod tests {
 
         let result = print_fn
             .execute(vec![
-                ExpressionValue::String("a".to_string()),
-                ExpressionValue::String("b".to_string()),
+                ExpressionValue::string("a"),
+                ExpressionValue::string("b"),
             ])
             .await;
         assert!(result.is_err());

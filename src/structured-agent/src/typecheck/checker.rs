@@ -80,13 +80,13 @@ impl TypeChecker {
     fn validate_type(
         &self,
         ast_type: &AstType,
-        span: Span,
-        file_id: FileId,
+        _span: Span,
+        _file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
             AstType::Unit | AstType::Boolean | AstType::String => Ok(()),
-            AstType::List(inner) => self.validate_type(inner, span, file_id),
-            AstType::Option(inner) => self.validate_type(inner, span, file_id),
+            AstType::List(inner) => self.validate_type(inner, _span, _file_id),
+            AstType::Option(inner) => self.validate_type(inner, _span, _file_id),
         }
     }
 

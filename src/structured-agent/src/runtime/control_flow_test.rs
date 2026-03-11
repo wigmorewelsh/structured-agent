@@ -56,12 +56,12 @@ impl NativeFunction for LoggingFunction {
             return Err("Expected 1 argument".to_string());
         }
 
-        match &args[0] {
-            ExpressionValue::String(s) => {
-                self.messages.lock().unwrap().push(s.clone());
-                Ok(ExpressionValue::Unit)
+        match args[0].as_string() {
+            Ok(s) => {
+                self.messages.lock().unwrap().push(s.to_string());
+                Ok(ExpressionValue::unit())
             }
-            _ => Err("Expected string argument".to_string()),
+            Err(_) => Err("Expected string argument".to_string()),
         }
     }
 }
@@ -102,7 +102,7 @@ impl NativeFunction for BooleanFunction {
             return Err("Expected 0 arguments".to_string());
         }
 
-        Ok(ExpressionValue::Boolean(self.return_value))
+        Ok(ExpressionValue::boolean(self.return_value))
     }
 }
 
@@ -130,7 +130,7 @@ fn main(): () {
     let messages = logger.messages_vec();
 
     assert_eq!(messages, vec!["if body executed", "after if"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -157,7 +157,7 @@ fn main(): () {
     let messages = logger.messages_vec();
 
     assert_eq!(messages, vec!["after if"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -184,7 +184,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["condition was true", "after if"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -213,7 +213,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["function returned true", "after if"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -239,7 +239,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["after while"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -267,7 +267,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["loop iteration", "after while"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -300,7 +300,7 @@ fn main(): () {
         messages,
         vec!["outer if", "inner if", "after inner if", "after outer if"]
     );
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -336,7 +336,7 @@ fn main(): () {
         messages,
         vec!["starting loop", "in loop", "loop done", "all done"]
     );
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -417,7 +417,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in if", "after if"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -446,7 +446,7 @@ fn main(): () {
 
     let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in while", "after while"]);
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]

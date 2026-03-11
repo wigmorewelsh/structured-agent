@@ -55,7 +55,7 @@ impl NativeFunction for ReceiveFunction {
                 let content = message.content.clone();
                 let _ = message.response_tx.send(());
                 debug!("Prompt response sent");
-                Ok(ExpressionValue::String(content))
+                Ok(ExpressionValue::string(content))
             }
             None => {
                 error!("Prompt channel closed");
@@ -93,7 +93,7 @@ mod tests {
         tx.send(message).unwrap();
 
         let result = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result, ExpressionValue::String("test prompt".to_string()));
+        assert_eq!(result, ExpressionValue::string("test prompt"));
 
         assert!(response_rx.await.is_ok());
     }
@@ -116,7 +116,7 @@ mod tests {
         let receive_fn = ReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         let result = receive_fn
-            .execute(vec![ExpressionValue::String("unexpected".to_string())])
+            .execute(vec![ExpressionValue::string("unexpected")])
             .await;
         assert!(result.is_err());
         assert!(
@@ -146,11 +146,11 @@ mod tests {
         .unwrap();
 
         let result1 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result1, ExpressionValue::String("first".to_string()));
+        assert_eq!(result1, ExpressionValue::string("first"));
         assert!(response_rx1.await.is_ok());
 
         let result2 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result2, ExpressionValue::String("second".to_string()));
+        assert_eq!(result2, ExpressionValue::string("second"));
         assert!(response_rx2.await.is_ok());
     }
 }

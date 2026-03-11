@@ -4,7 +4,7 @@ use std::sync::Arc;
 use structured_agent::bytecode::BytecodeCompiler;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::compiler::parser;
-use structured_agent::runtime::{Context, ExpressionValue, Runtime};
+use structured_agent::runtime::{Context, Runtime};
 use structured_agent::types::FileId;
 
 const TEST_FILE_ID: FileId = 0;
@@ -60,10 +60,10 @@ fn test_assignment(): () {
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
-    match stored_value.unwrap().value {
-        ExpressionValue::String(s) => assert_eq!(s, "Hello, World!"),
-        _ => panic!("Expected string value in context"),
-    }
+    assert_eq!(
+        stored_value.unwrap().value.as_string().unwrap(),
+        "Hello, World!"
+    );
 }
 
 #[tokio::test]
@@ -148,14 +148,8 @@ fn test_return(): () {
 
     let (context, expr_result) = result.unwrap();
 
-    match expr_result.value {
-        ExpressionValue::Unit => (),
-        _ => panic!("Expected unit result"),
-    }
+    assert_eq!(expr_result.value.type_name(), "Unit");
 
     let stored_value = context.get_variable("result").unwrap();
-    match stored_value.value {
-        ExpressionValue::String(s) => assert_eq!(s, "test value"),
-        _ => panic!("Expected string in context"),
-    }
+    assert_eq!(stored_value.value.as_string().unwrap(), "test value");
 }

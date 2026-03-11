@@ -29,7 +29,7 @@ impl App {
         println!("Initializing structured agent runtime...");
 
         let runtime = Runtime::builder(program.clone())
-            .from_config(&config)
+            .with_config(&config)
             .await
             .map_err(CliError::RuntimeError)?;
 
@@ -59,7 +59,7 @@ impl App {
         println!("Initializing structured agent runtime...");
 
         let runtime = Runtime::builder(program.clone())
-            .from_config(&config)
+            .with_config(&config)
             .await
             .map_err(CliError::RuntimeError)?;
 
@@ -80,72 +80,49 @@ impl App {
     }
 
     fn display_result(result: &crate::runtime::ExpressionValue) {
-        match result {
-            crate::runtime::ExpressionValue::String(s) => {
-                println!("\n═══ Agent Response ═══");
+        if let Ok(s) = result.as_string() {
+            println!("\n═══ Agent Response ═══");
 
-                let cleaned = s.trim();
+            let cleaned = s.trim();
 
-                if cleaned.contains('\n') {
-                    let mut in_code_block = false;
+            if cleaned.contains('\n') {
+                let mut in_code_block = false;
 
-                    for line in cleaned.lines() {
-                        let trimmed_line = line.trim();
+                for line in cleaned.lines() {
+                    let trimmed_line = line.trim();
 
-                        if trimmed_line.starts_with("```") {
-                            in_code_block = !in_code_block;
-                            if in_code_block {
-                                println!("\n┌─ Code Block ─");
-                            } else {
-                                println!("└─────────────");
-                            }
-                            continue;
-                        }
-
+                    if trimmed_line.starts_with("```") {
+                        in_code_block = !in_code_block;
                         if in_code_block {
-                            println!("│ {}", line);
-                        } else if trimmed_line.is_empty() {
-                            println!();
+                            println!("\n┌─ Code Block ─");
                         } else {
-                            println!("{}", line);
+                            println!("└─────────────");
                         }
+                        continue;
                     }
-                } else {
-                    println!("{}", cleaned);
-                }
 
-                println!("═══════════════════════");
-            }
-            crate::runtime::ExpressionValue::Unit => {
-                println!("Result: (no output)");
-            }
-            crate::runtime::ExpressionValue::Boolean(b) => {
-                println!("Result: {}", b);
-            }
-            crate::runtime::ExpressionValue::List(list) => {
-                use arrow::array::Array;
-                println!("Result: List[{}]", list.len());
-            }
-            crate::runtime::ExpressionValue::Option(opt) => match opt {
-                Some(inner) => {
-                    print!("Result: Some(");
-                    Self::display_result(inner);
-                    println!(")");
+                    if in_code_block {
+                        println!("│ {}", line);
+                    } else if trimmed_line.is_empty() {
+                        println!();
+                    } else {
+                        println!("{}", line);
+                    }
                 }
-                None => {
-                    println!("Result: None");
-                }
-            },
-            crate::runtime::ExpressionValue::Metadata {
-                name,
-                documentation,
-            } => {
-                if let Some(doc) = documentation {
-                    println!("Result: Metadata({}, \"{}\")", name, doc);
-                } else {
-                    println!("Result: Metadata({})", name);
-                }
+            } else {
+                println!("{}", cleaned);
             }
+
+            println!("═══════════════════════");
+        } else if result.type_name() == "Unit" {
+            println!("Result: (no output)");
+        } else if let Ok(b) = result.as_boolean() {
+            println!("Result: {}", b);
+        } else if let Ok(list) = result.as_list() {
+            use arrow::array::Array;
+            println!("Result: List[{}]", list.len());
+        } else {
+            println!("Result: {}", result.value_string());
         }
     }
 }
@@ -171,7 +148,7 @@ mod tests {
 
         let program = load_program(&config.program_source).unwrap();
         let runtime = Runtime::builder(program)
-            .from_config(&config)
+            .with_config(&config)
             .await
             .unwrap();
 
@@ -196,7 +173,7 @@ mod tests {
 
         let program = load_program(&config.program_source).unwrap();
         let runtime = Runtime::builder(program)
-            .from_config(&config)
+            .with_config(&config)
             .await
             .unwrap();
 

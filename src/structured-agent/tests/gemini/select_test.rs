@@ -19,7 +19,7 @@ async fn test_select_with_simple_options() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
-        ExpressionValue::String("Choose your favorite color".to_string()),
+        ExpressionValue::string("Choose your favorite color"),
         None,
         None,
     );
@@ -71,7 +71,7 @@ async fn test_select_with_numbered_options() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
-        ExpressionValue::String("Pick the correct mathematical operation for 2 + 2".to_string()),
+        ExpressionValue::string("Pick the correct mathematical operation for 2 + 2"),
         None,
         None,
     );
@@ -151,12 +151,12 @@ async fn test_select_with_contextual_decision() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
-        ExpressionValue::String("The weather is very hot today".to_string()),
+        ExpressionValue::string("The weather is very hot today"),
         None,
         None,
     );
     context.add_event(
-        ExpressionValue::String("You need to choose appropriate clothing".to_string()),
+        ExpressionValue::string("You need to choose appropriate clothing"),
         None,
         None,
     );
@@ -202,7 +202,7 @@ async fn test_select_with_mathematical_context() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
-        ExpressionValue::String("Calculate the derivative of x^2".to_string()),
+        ExpressionValue::string("Calculate the derivative of x^2"),
         None,
         None,
     );
@@ -252,9 +252,7 @@ async fn test_select_with_many_options() {
     let runtime = Arc::new(Runtime::builder(empty_program).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
-        ExpressionValue::String(
-            "Choose the programming language known for memory safety".to_string(),
-        ),
+        ExpressionValue::string("Choose the programming language known for memory safety"),
         None,
         None,
     );

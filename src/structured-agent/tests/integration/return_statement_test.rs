@@ -1,5 +1,5 @@
 use structured_agent::compiler::CompilationUnit;
-use structured_agent::runtime::{ExpressionValue, Runtime};
+use structured_agent::runtime::Runtime;
 
 #[tokio::test]
 async fn test_return_statement_with_expression() {
@@ -14,13 +14,10 @@ async fn test_return_statement_with_expression() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
+        Ok(value) => {
+            let s = value.as_string().unwrap();
             println!("Success: {}", s);
             assert_eq!(s, "calculated_value");
-        }
-        Ok(other) => {
-            println!("Unexpected result: {:?}", other);
-            panic!("Expected string result, got: {:?}", other);
         }
         Err(e) => {
             println!("Error: {:?}", e);
@@ -44,13 +41,10 @@ async fn test_return_statement_end_to_end() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
+        Ok(value) => {
+            let s = value.as_string().unwrap();
             println!("Success: {}", s);
             assert_eq!(s, "hello");
-        }
-        Ok(other) => {
-            println!("Unexpected result: {:?}", other);
-            panic!("Expected string result, got: {:?}", other);
         }
         Err(e) => {
             println!("Error: {:?}", e);
@@ -75,13 +69,10 @@ async fn test_return_in_nested_scope() {
     let result = runtime.run().await;
 
     match result {
-        Ok(ExpressionValue::String(s)) => {
+        Ok(value) => {
+            let s = value.as_string().unwrap();
             println!("Success: {}", s);
             assert_eq!(s, "from_if_block");
-        }
-        Ok(other) => {
-            println!("Unexpected result: {:?}", other);
-            panic!("Expected string result, got: {:?}", other);
         }
         Err(e) => {
             println!("Error: {:?}", e);

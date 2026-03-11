@@ -98,7 +98,7 @@ impl VM {
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::String(value.to_string())),
+            ExpressionResult::new(ExpressionValue::string(value)),
         );
         Self::advance_pc(state)
     }
@@ -107,7 +107,7 @@ impl VM {
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::Boolean(value)),
+            ExpressionResult::new(ExpressionValue::boolean(value)),
         );
         Self::advance_pc(state)
     }
@@ -116,7 +116,7 @@ impl VM {
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::Unit),
+            ExpressionResult::new(ExpressionValue::unit()),
         );
         Self::advance_pc(state)
     }
@@ -131,7 +131,7 @@ impl VM {
         Self::write_variable(
             &mut state,
             name,
-            ExpressionResult::new(ExpressionValue::Unit),
+            ExpressionResult::new(ExpressionValue::unit()),
         );
         Self::advance_pc(state)
     }
@@ -149,17 +149,15 @@ impl VM {
     ) -> Result<VMState, String> {
         let value = Self::read_variable(&state, var)?;
 
-        let index = match &value.value {
-            ExpressionValue::String(s) => s
-                .parse::<usize>()
-                .map_err(|_| format!("Invalid switch index: {}", s))?,
-            _ => {
-                return Err(format!(
-                    "Expected string value for switch, got {:?}",
-                    value.value
-                ));
-            }
-        };
+        let s = value.value.as_string().map_err(|_| {
+            format!(
+                "Expected string value for switch, got {}",
+                value.value.type_name()
+            )
+        })?;
+        let index = s
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid switch index: {}", s))?;
 
         if index < offsets.len() {
             Ok(Self::branch(state, offsets[index] as usize))
@@ -209,7 +207,7 @@ impl VM {
         let mut child_context = state.context.create_child(true);
 
         child_context.add_event(
-            ExpressionValue::String(format!("## {}", function_name)),
+            ExpressionValue::string(format!("## {}", function_name)),
             None,
             None,
         );
@@ -224,11 +222,14 @@ impl VM {
             value: result.value.clone(),
         };
 
-        let result_display = match &result.value {
-            ExpressionValue::String(s) => s.clone(),
-            ExpressionValue::Boolean(b) => b.to_string(),
-            ExpressionValue::Unit => "()".to_string(),
-            _ => format!("{:?}", result.value),
+        let result_display = if let Ok(s) = result.value.as_string() {
+            s.to_string()
+        } else if let Ok(b) = result.value.as_boolean() {
+            b.to_string()
+        } else if result.value.type_name() == "Unit" {
+            "()".to_string()
+        } else {
+            format!("{:?}", result.value)
         };
 
         info!(
@@ -280,10 +281,8 @@ impl VM {
             .get_function(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
-        let metadata = ExpressionValue::Metadata {
-            name: function_name.to_string(),
-            documentation: func.documentation().map(|s| s.to_string()),
-        };
+        let metadata =
+            ExpressionValue::metadata(function_name, func.documentation().map(|s| s.to_string()));
 
         Self::write_variable(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))
@@ -293,7 +292,7 @@ impl VM {
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::Unit),
+            ExpressionResult::new(ExpressionValue::unit()),
         );
         Self::advance_pc(state)
     }
@@ -327,7 +326,7 @@ impl VM {
 
         for var_name in metadata_vars {
             let value = Self::read_variable(&state, var_name)?;
-            if !matches!(&value.value, ExpressionValue::Metadata { .. }) {
+            if value.value.type_name() != "Metadata" {
                 return Err(format!(
                     "Expected Metadata value in variable {}, got {}",
                     var_name,
@@ -344,7 +343,7 @@ impl VM {
             .select(&state.context, &metadata_values)
             .await?;
 
-        let result = ExpressionResult::new(ExpressionValue::String(selected_index.to_string()));
+        let result = ExpressionResult::new(ExpressionValue::string(selected_index.to_string()));
 
         Self::write_variable(&mut state, dest, result);
         Ok(Self::advance_pc(state))
@@ -397,15 +396,17 @@ impl VM {
     ) -> Result<VMState, String> {
         let value = Self::read_variable(&state, var)?;
 
-        match &value.value {
-            ExpressionValue::Boolean(b) if *b == expected => {
-                Ok(Self::branch(state, offset as usize))
-            }
-            ExpressionValue::Boolean(_) => Ok(Self::advance_pc(state)),
-            _ => Err(format!(
-                "Expected boolean for branch, got {:?}",
-                value.value
-            )),
+        let b = value.value.as_boolean().map_err(|_| {
+            format!(
+                "Expected boolean for branch, got {}",
+                value.value.type_name()
+            )
+        })?;
+
+        if b == expected {
+            Ok(Self::branch(state, offset as usize))
+        } else {
+            Ok(Self::advance_pc(state))
         }
     }
 }

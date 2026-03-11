@@ -322,10 +322,7 @@ mod tests {
         let runtime = Runtime::builder(program).build();
         let result = runtime.run().await.unwrap();
 
-        match result {
-            ExpressionValue::String(s) => assert_eq!(s, expected),
-            _ => panic!("Expected string result, got: {:?}", result),
-        }
+        assert_eq!(result.as_string().unwrap(), expected);
     }
 
     #[tokio::test]
@@ -453,7 +450,7 @@ fn main(): () {
         let runtime = Runtime::builder(program).build();
         let result = runtime.run().await.unwrap();
 
-        assert_eq!(result, ExpressionValue::Unit);
+        assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]

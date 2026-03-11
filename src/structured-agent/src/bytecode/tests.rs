@@ -685,10 +685,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "hello"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(result.value.as_string().unwrap(), "hello");
     }
 
     #[tokio::test]
@@ -709,10 +706,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::Boolean(b) => assert_eq!(b, true),
-            _ => panic!("Expected boolean value"),
-        }
+        assert_eq!(result.value.as_boolean().unwrap(), true);
     }
 
     #[tokio::test]
@@ -733,10 +727,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::Unit => {}
-            _ => panic!("Expected unit value"),
-        }
+        assert_eq!(result.value.type_name(), "Unit");
     }
 
     #[tokio::test]
@@ -758,10 +749,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "test"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(result.value.as_string().unwrap(), "test");
     }
 
     #[tokio::test]
@@ -784,10 +772,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "updated"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(result.value.as_string().unwrap(), "updated");
     }
 
     #[tokio::test]
@@ -808,15 +793,12 @@ mod vm_execution_tests {
 
         context.declare_variable(
             "x".to_string(),
-            crate::runtime::ExpressionResult::new(ExpressionValue::Boolean(true)),
+            crate::runtime::ExpressionResult::new(ExpressionValue::boolean(true)),
         );
 
         let vm = VM::new(runtime);
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::String(s) => assert_eq!(s, "yes"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(result.value.as_string().unwrap(), "yes");
     }
 
     #[tokio::test]
@@ -863,10 +845,7 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let (_context, result) = vm.execute(&compiled, context).await.unwrap();
-        match result.value {
-            ExpressionValue::Boolean(b) => assert_eq!(b, false),
-            _ => panic!("Expected boolean value"),
-        }
+        assert_eq!(result.value.as_boolean().unwrap(), false);
     }
 
     #[tokio::test]
@@ -981,10 +960,7 @@ mod vm_execution_tests {
 
         let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
         let x_value = returned_context.get_variable("x").unwrap();
-        match x_value.value {
-            ExpressionValue::String(ref s) => assert_eq!(s, "value"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(x_value.value.as_string().unwrap(), "value");
     }
 
     #[tokio::test]
@@ -1018,9 +994,6 @@ mod vm_execution_tests {
         let vm = VM::new(runtime);
 
         let result = vm.execute(&test_compiled, context).await.unwrap();
-        match result.1.value {
-            ExpressionValue::String(s) => assert_eq!(s, "test_value"),
-            _ => panic!("Expected string value"),
-        }
+        assert_eq!(result.1.value.as_string().unwrap(), "test_value");
     }
 }

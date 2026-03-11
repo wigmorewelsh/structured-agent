@@ -48,7 +48,7 @@ impl NativeFunction for InputFunction {
             .map_err(|e| format!("Failed to read input: {}", e))?;
 
         let trimmed = input.trim().to_string();
-        Ok(ExpressionValue::String(trimmed))
+        Ok(ExpressionValue::string(trimmed))
     }
 }
 

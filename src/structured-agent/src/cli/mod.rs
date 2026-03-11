@@ -5,4 +5,4 @@ mod errors;
 
 pub use app::App;
 pub use args::Args;
-pub use config::{Config, Mode};
+pub use config::Config;

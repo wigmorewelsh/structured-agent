@@ -63,8 +63,8 @@ impl NativeFunction for TryReceiveFunction {
         });
 
         match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(input) => Ok(ExpressionValue::String(input)),
-            Err(_) => Ok(ExpressionValue::String("No prompt received".to_string())),
+            Ok(input) => Ok(ExpressionValue::string(input)),
+            Err(_) => Ok(ExpressionValue::string("No prompt received")),
         }
     }
 }
@@ -87,7 +87,7 @@ mod tests {
         let try_receive_fn = TryReceiveFunction::new();
 
         let result = try_receive_fn
-            .execute(vec![ExpressionValue::String("unexpected".to_string())])
+            .execute(vec![ExpressionValue::string("unexpected")])
             .await;
         assert!(result.is_err());
         assert!(

@@ -52,12 +52,12 @@ impl NativeFunction for BooleanLoggingFunction {
             return Err("Expected 1 argument".to_string());
         }
 
-        match &args[0] {
-            ExpressionValue::Boolean(b) => {
+        match args[0].as_boolean() {
+            Ok(b) => {
                 self.messages.lock().unwrap().push(b.to_string());
-                Ok(ExpressionValue::Unit)
+                Ok(ExpressionValue::unit())
             }
-            _ => Err("Expected boolean argument".to_string()),
+            Err(_) => Err("Expected boolean argument".to_string()),
         }
     }
 }
@@ -94,7 +94,7 @@ impl NativeFunction for BooleanReturnFunction {
     }
 
     async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        Ok(ExpressionValue::Boolean(self.return_value))
+        Ok(ExpressionValue::boolean(self.return_value))
     }
 }
 
@@ -121,7 +121,7 @@ fn main(): () {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["true"]);
 
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -147,7 +147,7 @@ fn main(): () {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["false"]);
 
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -178,7 +178,7 @@ fn main(): () {
     assert!(messages.contains(&"true".to_string()));
     assert!(messages.contains(&"false".to_string()));
 
-    assert_eq!(result, ExpressionValue::Unit);
+    assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
@@ -206,10 +206,7 @@ fn main(): String {
     let result = runtime.run().await;
     let result = result.unwrap();
 
-    assert_eq!(
-        result,
-        ExpressionValue::String("Function completed".to_string())
-    );
+    assert_eq!(result.as_string().unwrap(), "Function completed");
 }
 
 #[tokio::test]
@@ -237,8 +234,5 @@ fn main(): String {
     let messages = logger.messages.lock().unwrap().clone();
     assert_eq!(messages, vec!["true"]);
 
-    assert_eq!(
-        result,
-        ExpressionValue::String("Processing complete".to_string())
-    );
+    assert_eq!(result.as_string().unwrap(), "Processing complete");
 }

@@ -37,7 +37,7 @@ impl NativeFunction for WrongSignatureFunction {
     }
 
     async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        Ok(ExpressionValue::Unit)
+        Ok(ExpressionValue::unit())
     }
 }
 
@@ -102,7 +102,7 @@ async fn test_wrong_parameter_type_error_message() {
         }
 
         async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-            Ok(ExpressionValue::Unit)
+            Ok(ExpressionValue::unit())
         }
     }
 
@@ -162,7 +162,7 @@ async fn test_wrong_return_type_error_message() {
         }
 
         async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-            Ok(ExpressionValue::String("test".to_string()))
+            Ok(ExpressionValue::string("test"))
         }
     }
 

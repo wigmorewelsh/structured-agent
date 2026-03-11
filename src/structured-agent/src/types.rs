@@ -239,18 +239,20 @@ impl LanguageEngine for PrintEngine {
         match return_type {
             Type::String => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::String(value))
+                Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExpressionValue::Boolean(true)),
-            Type::Unit => Ok(crate::runtime::ExpressionValue::Unit),
+            Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
+            Type::Unit => Ok(crate::runtime::ExpressionValue::unit()),
             Type::List(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::String(value))
+                Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExpressionValue::Option(None)),
+            Type::Option(_) => {
+                Err("Option types not yet supported in Arrow-based values".to_string())
+            }
             Type::Custom(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::String(value))
+                Ok(crate::runtime::ExpressionValue::string(value))
             }
         }
     }
@@ -272,15 +274,17 @@ impl LanguageEngine for PrintEngine {
         match param_type {
             Type::String => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::String(value))
+                Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExpressionValue::Boolean(true)),
+            Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
             Type::List(_) => {
                 let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::String(value))
+                Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExpressionValue::Option(None)),
-            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExpressionValue::String(format!(
+            Type::Option(_) => {
+                Err("Option types not yet supported in Arrow-based values".to_string())
+            }
+            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExpressionValue::string(format!(
                 "PrintEngine: {} ({})",
                 param_name,
                 param_type.name()

@@ -127,7 +127,7 @@ impl RuntimeBuilder {
         self
     }
 
-    pub async fn from_config(mut self, config: &Config) -> Result<Runtime, String> {
+    pub async fn with_config(mut self, config: &Config) -> Result<Runtime, String> {
         self = self.with_mcp_server_configs(&config.mcp_servers).await?;
 
         let engine: Arc<dyn LanguageEngine> = match &config.engine {

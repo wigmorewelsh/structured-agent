@@ -21,8 +21,9 @@ fn main(): () {
 
     // Verify the result is Unit type
     let value = result.unwrap();
-    assert!(
-        matches!(value, structured_agent::runtime::ExpressionValue::Unit),
+    assert_eq!(
+        value.type_name(),
+        "Unit",
         "Expected Unit return value, got: {:?}",
         value
     );
@@ -52,10 +53,7 @@ fn main(): () {
     );
 
     let value = result.unwrap();
-    assert!(
-        matches!(value, structured_agent::runtime::ExpressionValue::Unit),
-        "Expected Unit return value"
-    );
+    assert_eq!(value.type_name(), "Unit", "Expected Unit return value");
 }
 
 #[tokio::test]
@@ -77,10 +75,7 @@ fn main(): () {
     assert!(result.is_ok(), "Variable injection test failed");
 
     let value = result.unwrap();
-    assert!(
-        matches!(value, structured_agent::runtime::ExpressionValue::Unit),
-        "Expected Unit return value"
-    );
+    assert_eq!(value.type_name(), "Unit", "Expected Unit return value");
 }
 
 #[tokio::test]
@@ -103,12 +98,11 @@ fn main(): String {
     assert!(result.is_ok(), "Variable usage test failed");
 
     let value = result.unwrap();
-    match value {
-        structured_agent::runtime::ExpressionValue::String(s) => {
-            assert_eq!(s, "test value", "Expected 'test value', got: {}", s);
-        }
-        _ => panic!("Expected String return value, got: {:?}", value),
-    }
+    assert_eq!(
+        value.as_string().unwrap(),
+        "test value",
+        "Expected 'test value'"
+    );
 }
 
 #[tokio::test]
@@ -151,10 +145,10 @@ fn main(): String {
     let result = runtime.run().await;
     assert!(result.is_ok(), "Execution failed");
 
-    match result.unwrap() {
-        structured_agent::runtime::ExpressionValue::String(s) => {
-            assert_eq!(s, "helper", "Expected 'helper' return value");
-        }
-        other => panic!("Expected String return value, got: {:?}", other),
-    }
+    let value = result.unwrap();
+    assert_eq!(
+        value.as_string().unwrap(),
+        "helper",
+        "Expected 'helper' return value"
+    );
 }

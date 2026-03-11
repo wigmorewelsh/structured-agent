@@ -56,11 +56,11 @@ impl NativeFunction for TryReceiveFunction {
                 let content = message.content.clone();
                 let _ = message.response_tx.send(());
                 debug!("Prompt response sent");
-                Ok(ExpressionValue::String(content))
+                Ok(ExpressionValue::string(content))
             }
             Err(TryRecvError::Empty) => {
                 info!("No prompt received");
-                Ok(ExpressionValue::String("No prompt received".to_string()))
+                Ok(ExpressionValue::string("No prompt received"))
             }
             Err(TryRecvError::Disconnected) => {
                 error!("Prompt channel disconnected");
@@ -98,7 +98,7 @@ mod tests {
         tx.send(message).unwrap();
 
         let result = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result, ExpressionValue::String("test prompt".to_string()));
+        assert_eq!(result, ExpressionValue::string("test prompt"));
 
         assert!(response_rx.await.is_ok());
     }
@@ -112,7 +112,7 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(
             result.unwrap(),
-            ExpressionValue::String("No prompt received".to_string())
+            ExpressionValue::string("No prompt received")
         );
     }
 
@@ -134,7 +134,7 @@ mod tests {
         let receive_fn = TryReceiveFunction::new(Arc::new(Mutex::new(rx)));
 
         let result = receive_fn
-            .execute(vec![ExpressionValue::String("unexpected".to_string())])
+            .execute(vec![ExpressionValue::string("unexpected")])
             .await;
         assert!(result.is_err());
         assert!(
@@ -164,11 +164,11 @@ mod tests {
         .unwrap();
 
         let result1 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result1, ExpressionValue::String("first".to_string()));
+        assert_eq!(result1, ExpressionValue::string("first"));
         assert!(response_rx1.await.is_ok());
 
         let result2 = receive_fn.execute(vec![]).await.unwrap();
-        assert_eq!(result2, ExpressionValue::String("second".to_string()));
+        assert_eq!(result2, ExpressionValue::string("second"));
         assert!(response_rx2.await.is_ok());
     }
 }

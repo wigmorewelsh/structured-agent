@@ -163,19 +163,15 @@ fn main(): String {{
         result.err()
     );
 
-    use structured_agent::runtime::ExpressionValue;
+    
     let value = result.unwrap();
-    match value {
-        ExpressionValue::String(s) => {
-            assert_eq!(
-                s, test_message,
-                "Expected echo to return '{}', got '{}'",
-                test_message, s
-            );
-            println!("Full MCP integration test passed! Echo returned: {}", s);
-        }
-        _ => panic!("Expected String result from echo, got {:?}", value),
-    }
+    let s = value.as_string().unwrap();
+    assert_eq!(
+        s, test_message,
+        "Expected echo to return '{}', got '{}'",
+        test_message, s
+    );
+    println!("Full MCP integration test passed! Echo returned: {}", s);
 }
 
 #[tokio::test]
@@ -222,18 +218,14 @@ fn main(): String {{
         result.err()
     );
 
-    use structured_agent::runtime::ExpressionValue;
+    
     let value = result.unwrap();
-    match value {
-        ExpressionValue::String(s) => {
-            assert_eq!(
-                s, test_message,
-                "Expected echo to return '{}', got '{}'",
-                test_message, s
-            );
-        }
-        _ => panic!("Expected String result from echo, got {:?}", value),
-    }
+    let s = value.as_string().unwrap();
+    assert_eq!(
+        s, test_message,
+        "Expected echo to return '{}', got '{}'",
+        test_message, s
+    );
 
     println!("Complete MCP integration workflow test passed!");
     println!("  MCP client connection established");
@@ -290,21 +282,14 @@ fn main(): String {{
         result.err()
     );
 
-    use structured_agent::runtime::ExpressionValue;
+    
     let value = result.unwrap();
-    match value {
-        ExpressionValue::String(s) => {
-            let expected = format!("{}{}", test_prefix, test_message);
-            assert_eq!(
-                s, expected,
-                "Expected echo_with_prefix to return '{}', got '{}'",
-                expected, s
-            );
-            println!("echo_with_prefix test passed! Returned: {}", s);
-        }
-        _ => panic!(
-            "Expected String result from echo_with_prefix, got {:?}",
-            value
-        ),
-    }
+    let s = value.as_string().unwrap();
+    let expected = format!("{}{}", test_prefix, test_message);
+    assert_eq!(
+        s, expected,
+        "Expected echo_with_prefix to return '{}', got '{}'",
+        expected, s
+    );
+    println!("echo_with_prefix test passed! Returned: {}", s);
 }

@@ -79,41 +79,29 @@ impl Function for ExternalFunctionExpr {
         let mut arguments = json!({});
 
         fn expr_result_to_json(value: &ExpressionValue) -> serde_json::Value {
-            match value {
-                ExpressionValue::String(s) => json!(s),
-                ExpressionValue::Unit => json!(null),
-                ExpressionValue::Boolean(b) => json!(b),
-                ExpressionValue::List(list) => {
-                    if list.len() == 0 {
-                        json!([])
-                    } else {
-                        let values = list.value(0);
-                        let mut items = Vec::new();
-                        if let Some(string_array) =
-                            values.as_any().downcast_ref::<arrow::array::StringArray>()
-                        {
-                            for i in 0..string_array.len() {
-                                items.push(json!(string_array.value(i)));
-                            }
+            if let Ok(s) = value.as_string() {
+                json!(s)
+            } else if let Ok(b) = value.as_boolean() {
+                json!(b)
+            } else if value.type_name() == "Unit" {
+                json!(null)
+            } else if let Ok(list) = value.as_list() {
+                if list.len() == 0 {
+                    json!([])
+                } else {
+                    let values = list.value(0);
+                    let mut items = Vec::new();
+                    if let Some(string_array) =
+                        values.as_any().downcast_ref::<arrow::array::StringArray>()
+                    {
+                        for i in 0..string_array.len() {
+                            items.push(json!(string_array.value(i)));
                         }
-                        json!(items)
                     }
+                    json!(items)
                 }
-                ExpressionValue::Option(opt) => match opt {
-                    Some(inner) => json!({
-                        "some": expr_result_to_json(inner)
-                    }),
-                    None => json!(null),
-                },
-                ExpressionValue::Metadata {
-                    name,
-                    documentation,
-                } => {
-                    json!({
-                        "name": name,
-                        "documentation": documentation
-                    })
-                }
+            } else {
+                json!(null)
             }
         }
 
@@ -129,13 +117,13 @@ impl Function for ExternalFunctionExpr {
             .map_err(|e| format!("MCP tool call failed: {}", e));
 
         if let Err(e) = result_raw {
-            return Ok((context, ExpressionResult::new(ExpressionValue::String(e))));
+            return Ok((context, ExpressionResult::new(ExpressionValue::string(e))));
         }
 
         let result = result_raw?;
 
         if result.content.is_empty() {
-            Ok((context, ExpressionResult::new(ExpressionValue::Unit)))
+            Ok((context, ExpressionResult::new(ExpressionValue::unit())))
         } else {
             if result.content.len() != 1 {
                 return Err(format!("Expected one result, got {}", result.content.len()));
@@ -144,13 +132,13 @@ impl Function for ExternalFunctionExpr {
             match &*result.content[0] {
                 rmcp::model::RawContent::Text(text_content) => Ok((
                     context,
-                    ExpressionResult::new(ExpressionValue::String(text_content.text.clone())),
+                    ExpressionResult::new(ExpressionValue::string(text_content.text.clone())),
                 )),
                 _ => {
                     let content_str = format!("{:?}", result.content);
                     Ok((
                         context,
-                        ExpressionResult::new(ExpressionValue::String(content_str)),
+                        ExpressionResult::new(ExpressionValue::string(content_str)),
                     ))
                 }
             }

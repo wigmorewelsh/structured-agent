@@ -54,7 +54,7 @@ impl NativeFunction for ReceiveFunction {
             .map_err(|e| format!("Failed to read input: {}", e))?;
 
         let trimmed = input.trim().to_string();
-        Ok(ExpressionValue::String(trimmed))
+        Ok(ExpressionValue::string(trimmed))
     }
 }
 
@@ -76,7 +76,7 @@ mod tests {
         let receive_fn = ReceiveFunction::new();
 
         let result = receive_fn
-            .execute(vec![ExpressionValue::String("unexpected".to_string())])
+            .execute(vec![ExpressionValue::string("unexpected")])
             .await;
         assert!(result.is_err());
         assert!(

@@ -106,14 +106,14 @@ impl GeminiEngine {
         match value_type {
             Type::String => {
                 if let Some(s) = json_value.as_str() {
-                    Ok(ExpressionValue::String(s.to_string()))
+                    Ok(ExpressionValue::string(s))
                 } else {
                     Err("Expected string value".to_string())
                 }
             }
             Type::Boolean => {
                 if let Some(b) = json_value.as_bool() {
-                    Ok(ExpressionValue::Boolean(b))
+                    Ok(ExpressionValue::boolean(b))
                 } else {
                     Err("Expected boolean value".to_string())
                 }
@@ -137,15 +137,10 @@ impl GeminiEngine {
                     values_builder.append_value(item);
                 }
                 builder.append(true);
-                Ok(ExpressionValue::List(std::sync::Arc::new(builder.finish())))
+                Ok(ExpressionValue::list(std::sync::Arc::new(builder.finish())))
             }
-            Type::Option(inner_type) => {
-                if json_value.is_null() {
-                    Ok(ExpressionValue::Option(None))
-                } else {
-                    let inner_result = Self::parse_json_value(json_value, inner_type)?;
-                    Ok(ExpressionValue::Option(Some(Box::new(inner_result))))
-                }
+            Type::Option(_inner_type) => {
+                Err("Option types not yet supported in Arrow-based values".to_string())
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }
@@ -201,7 +196,7 @@ impl LanguageEngine for GeminiEngine {
         return_type: &Type,
     ) -> Result<ExpressionValue, String> {
         if matches!(return_type, Type::Unit) {
-            return Ok(ExpressionValue::Unit);
+            return Ok(ExpressionValue::unit());
         }
 
         let value_schema = Self::build_value_schema(return_type)?;
@@ -250,18 +245,18 @@ impl LanguageEngine for GeminiEngine {
             "SELECT: Choose one of the following options by responding with the appropriate number:\n"
                 .to_string();
         for (index, option) in options.iter().enumerate() {
-            let description = match option {
-                crate::runtime::ExpressionValue::Metadata {
-                    name,
-                    documentation,
-                } => {
+            let description = if option.type_name() == "Metadata" {
+                if let Ok((name, documentation)) = option.as_metadata() {
                     if let Some(doc) = documentation {
                         format!("Function Name: '{}' Documentation: {}", name, doc)
                     } else {
                         format!("Function Name: '{}'", name)
                     }
+                } else {
+                    option.format_for_llm()
                 }
-                _ => option.format_for_llm(),
+            } else {
+                option.format_for_llm()
             };
             selection_prompt.push_str(&format!("{}: {}\n", index, description));
         }
@@ -326,7 +321,7 @@ impl LanguageEngine for GeminiEngine {
         param_type: &Type,
     ) -> Result<ExpressionValue, String> {
         if matches!(param_type, Type::Unit) {
-            return Ok(ExpressionValue::Unit);
+            return Ok(ExpressionValue::unit());
         }
 
         let value_schema = Self::build_value_schema(param_type)?;

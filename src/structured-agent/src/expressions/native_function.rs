@@ -124,9 +124,7 @@ mod tests {
             &self,
             _args: Vec<crate::runtime::ExpressionValue>,
         ) -> Result<crate::runtime::ExpressionValue, String> {
-            Ok(crate::runtime::ExpressionValue::String(
-                "test_result".to_string(),
-            ))
+            Ok(crate::runtime::ExpressionValue::string("test_result"))
         }
 
         fn documentation(&self) -> Option<&str> {
@@ -165,8 +163,8 @@ mod tests {
             &self,
             _args: Vec<crate::runtime::ExpressionValue>,
         ) -> Result<crate::runtime::ExpressionValue, String> {
-            Ok(crate::runtime::ExpressionValue::String(
-                "undocumented_result".to_string(),
+            Ok(crate::runtime::ExpressionValue::string(
+                "undocumented_result",
             ))
         }
     }
@@ -200,9 +198,9 @@ mod tests {
 
         let (_context, result) = expr.execute(context, vec![]).await.unwrap();
 
-        match result.value {
-            crate::runtime::ExpressionValue::String(s) => assert_eq!(s, "test_result"),
-            _ => panic!("Expected string result"),
+        match result.value.as_string() {
+            Ok(s) => assert_eq!(s, "test_result"),
+            Err(_) => panic!("Expected string result"),
         }
 
         assert_eq!(
