@@ -373,6 +373,14 @@ impl Runtime {
         self.struct_registry.insert(name, fields);
     }
 
+    pub fn with_structs_from_compiled(&mut self, program: &CompilationUnit) {
+        if let Ok(compiled) = self.compiler.compile_program(program) {
+            for (name, fields) in compiled.struct_definitions() {
+                self.register_struct(name.clone(), fields.clone());
+            }
+        }
+    }
+
     fn create_runtime_ref(&self) -> Runtime {
         Runtime {
             function_registry: self.function_registry.clone(),
@@ -697,14 +705,8 @@ fn main(): () {
 "#;
         use crate::compiler::CompilationUnit;
         let program = CompilationUnit::from_string(code.to_string());
-        let mut runtime = Runtime::builder(program).build();
-        let compiled = runtime
-            .compiler
-            .compile_program(&runtime.compiled_program)
-            .unwrap();
-        for (name, fields) in compiled.struct_definitions() {
-            runtime.register_struct(name.clone(), fields.clone());
-        }
+        let mut runtime = Runtime::builder(program.clone()).build();
+        runtime.with_structs_from_compiled(&program);
         let fields = runtime.get_struct("Task").unwrap();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].0, "title");

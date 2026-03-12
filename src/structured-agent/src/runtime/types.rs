@@ -3,6 +3,7 @@ use arrow::array::{
 };
 use arrow::buffer::ScalarBuffer;
 use arrow::datatypes::{DataType, Field, Fields, UnionFields};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -176,8 +177,9 @@ impl ExpressionValue {
 
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
         let name_str = name.into();
+        let marker: HashMap<String, String> = [("kind".to_string(), "metadata".to_string())].into();
         let fields = Fields::from(vec![
-            Field::new("name", DataType::Utf8, false),
+            Field::new("name", DataType::Utf8, false).with_metadata(marker),
             Field::new("documentation", DataType::Utf8, true),
         ]);
 
@@ -342,8 +344,16 @@ impl ExpressionValue {
     }
 
     fn is_metadata_struct(struct_array: &StructArray) -> bool {
-        let fields = struct_array.fields();
-        fields.len() == 2 && fields[0].name() == "name" && fields[1].name() == "documentation"
+        struct_array
+            .fields()
+            .first()
+            .map(|f| {
+                f.metadata()
+                    .get("kind")
+                    .map(|v| v == "metadata")
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
     }
 
     pub fn format_for_llm(&self) -> String {

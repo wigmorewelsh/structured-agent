@@ -969,6 +969,36 @@ mod tests {
     }
 
     #[test]
+    fn test_struct_literal_missing_field_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "make",
+                vec![],
+                AstType::Struct("Point".to_string()),
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Point".to_string(),
+                    fields: vec![(
+                        "x".to_string(),
+                        Expression::IntLiteral {
+                            value: 1,
+                            span: crate::types::Span::dummy(),
+                        },
+                    )],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::MissingField { field_name, .. } if field_name == "y"
+        ));
+    }
+
+    #[test]
     fn test_field_access_valid() {
         let mut checker = TypeChecker::new();
         let module = create_test_module(vec![

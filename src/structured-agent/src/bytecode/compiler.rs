@@ -598,15 +598,7 @@ impl BytecodeCompiler {
     }
 
     fn type_to_string(ast_type: &ast::Type) -> String {
-        match ast_type {
-            ast::Type::Unit => "Unit".to_string(),
-            ast::Type::Boolean => "Boolean".to_string(),
-            ast::Type::String => "String".to_string(),
-            ast::Type::Int => "Int".to_string(),
-            ast::Type::Struct(name) => name.clone(),
-            ast::Type::List(inner) => format!("List<{}>", Self::type_to_string(inner)),
-            ast::Type::Option(inner) => format!("Option<{}>", Self::type_to_string(inner)),
-        }
+        format!("{}", ast_type)
     }
 }
 

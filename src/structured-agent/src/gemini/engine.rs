@@ -214,7 +214,8 @@ impl GeminiEngine {
                     Type::Option(_) => {
                         Self::parse_json_value(value_field.clone(), return_type, context)
                     }
-                    Type::Unit | Type::Struct(_) => unreachable!(),
+                    Type::Unit => Err("Unit type cannot be used as return type".to_string()),
+                    Type::Struct(_) => unreachable!(),
                 }
             }
         }
@@ -430,10 +431,7 @@ mod tests {
     fn make_context_with_struct(code: &str) -> crate::runtime::Context {
         let program = CompilationUnit::from_string(code.to_string());
         let mut runtime = Runtime::builder(program.clone()).build();
-        let compiled = runtime.compiler().compile_program(&program).unwrap();
-        for (name, fields) in compiled.struct_definitions() {
-            runtime.register_struct(name.clone(), fields.clone());
-        }
+        runtime.with_structs_from_compiled(&program);
         crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
     }
 

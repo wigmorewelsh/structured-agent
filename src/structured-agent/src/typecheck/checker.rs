@@ -174,7 +174,7 @@ impl TypeChecker {
                         file_id,
                     })?;
 
-                if !self.types_equal(&expr_type, &existing_type) {
+                if expr_type != existing_type {
                     return Err(TypeError::VariableTypeMismatch {
                         variable: variable.clone(),
                         expected: format!("{}", existing_type),
@@ -299,7 +299,7 @@ impl TypeChecker {
                         Expression::Placeholder { .. } => {}
                         _ => {
                             let arg_type = self.check_expression(arg, env, file_id)?;
-                            if !self.types_equal(&arg_type, &param.param_type) {
+                            if arg_type != param.param_type {
                                 return Err(TypeError::ArgumentTypeMismatch {
                                     function: function.clone(),
                                     parameter: param.name.clone(),
@@ -339,9 +339,9 @@ impl TypeChecker {
 
                 let first_type = self.check_expression(&elements[0], env, file_id)?;
 
-                for (_i, elem) in elements.iter().enumerate().skip(1) {
+                for elem in elements.iter().skip(1) {
                     let elem_type = self.check_expression(elem, env, file_id)?;
-                    if !self.types_equal(&first_type, &elem_type) {
+                    if first_type != elem_type {
                         return Err(TypeError::TypeMismatch {
                             expected: format!("{}", first_type),
                             found: format!("{}", elem_type),
@@ -395,7 +395,7 @@ impl TypeChecker {
                     );
                     let clause_type =
                         self.check_expression(&clause.expression_next, &clause_env, file_id)?;
-                    if !self.types_equal(&first_type, &clause_type) {
+                    if first_type != clause_type {
                         return Err(TypeError::SelectBranchTypeMismatch {
                             expected: format!("{}", first_type),
                             found: format!("{}", clause_type),
@@ -428,7 +428,7 @@ impl TypeChecker {
                 let then_type = self.check_expression(then_expr, env, file_id)?;
                 let else_type = self.check_expression(else_expr, env, file_id)?;
 
-                if !self.types_equal(&then_type, &else_type) {
+                if then_type != else_type {
                     return Err(TypeError::TypeMismatch {
                         expected: format!("{}", then_type),
                         found: format!("{}", else_type),
@@ -466,13 +466,24 @@ impl TypeChecker {
                             file_id,
                         })?;
                     let actual_type = self.check_expression(value_expr, env, file_id)?;
-                    if !self.types_equal(&actual_type, &declared_type) {
+                    if actual_type != declared_type {
                         return Err(TypeError::StructFieldTypeMismatch {
                             struct_name: struct_name.clone(),
                             field_name: field_name.clone(),
                             expected: format!("{}", declared_type),
                             found: format!("{}", actual_type),
                             span: value_expr.span(),
+                            file_id,
+                        });
+                    }
+                }
+
+                for (required_field, _) in &definition {
+                    if !fields.iter().any(|(n, _)| n == required_field) {
+                        return Err(TypeError::MissingField {
+                            struct_name: struct_name.clone(),
+                            field_name: required_field.clone(),
+                            span: *span,
                             file_id,
                         });
                     }
@@ -517,10 +528,6 @@ impl TypeChecker {
                 }
             }
         }
-    }
-
-    fn types_equal(&self, type1: &AstType, type2: &AstType) -> bool {
-        type1 == type2
     }
 }
 
