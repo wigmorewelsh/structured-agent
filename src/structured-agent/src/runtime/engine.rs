@@ -18,7 +18,7 @@ use tracing::{debug, error};
 pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
-    pub(crate) struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
+    struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
     language_engine: Arc<dyn LanguageEngine>,
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
@@ -305,7 +305,7 @@ impl Runtime {
         };
 
         for (name, fields) in compiled_program.struct_definitions() {
-            runtime.struct_registry.insert(name.clone(), fields.clone());
+            runtime.register_struct(name.clone(), fields.clone());
         }
 
         for function in compiled_program.functions().values() {
@@ -367,6 +367,10 @@ impl Runtime {
 
     pub fn get_struct(&self, name: &str) -> Option<&Vec<(String, crate::types::Type)>> {
         self.struct_registry.get(name)
+    }
+
+    pub fn register_struct(&mut self, name: String, fields: Vec<(String, crate::types::Type)>) {
+        self.struct_registry.insert(name, fields);
     }
 
     fn create_runtime_ref(&self) -> Runtime {
@@ -699,7 +703,7 @@ fn main(): () {
             .compile_program(&runtime.compiled_program)
             .unwrap();
         for (name, fields) in compiled.struct_definitions() {
-            runtime.struct_registry.insert(name.clone(), fields.clone());
+            runtime.register_struct(name.clone(), fields.clone());
         }
         let fields = runtime.get_struct("Task").unwrap();
         assert_eq!(fields.len(), 2);

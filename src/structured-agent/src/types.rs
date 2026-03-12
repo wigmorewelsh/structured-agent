@@ -97,10 +97,6 @@ impl Type {
         Self::Int
     }
 
-    pub fn struct_type(name: std::string::String) -> Self {
-        Self::Struct(name)
-    }
-
     pub fn list(inner: Type) -> Self {
         Self::List(Box::new(inner))
     }

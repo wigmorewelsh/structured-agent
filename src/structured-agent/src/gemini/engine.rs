@@ -48,18 +48,26 @@ impl GeminiEngine {
         self
     }
 
-    fn build_value_schema(value_type: &Type) -> Result<SchemaObject, String> {
+    fn build_value_schema(value_type: &Type, context: &Context) -> Result<SchemaObject, String> {
         match value_type {
             Type::String => Ok(JsonSchemaBuilder::string()),
             Type::Boolean => Ok(JsonSchemaBuilder::boolean()),
             Type::Int => Ok(JsonSchemaBuilder::integer()),
             Type::List(_) => Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string())),
-            Type::Option(inner_type) => Self::build_value_schema(inner_type),
+            Type::Option(inner_type) => Self::build_value_schema(inner_type, context),
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
-            Type::Struct(name) => Err(format!(
-                "Struct type '{}' not yet supported in schema",
-                name
-            )),
+            Type::Struct(name) => {
+                let fields = context
+                    .runtime()
+                    .get_struct(name)
+                    .ok_or_else(|| format!("Unknown struct: {}", name))?;
+                let mut obj = JsonSchemaBuilder::object();
+                for (field_name, field_type) in fields {
+                    let field_schema = Self::build_value_schema(field_type, context)?;
+                    obj = JsonSchemaBuilder::with_property(obj, field_name, field_schema, true);
+                }
+                Ok(obj)
+            }
         }
     }
 
@@ -106,6 +114,7 @@ impl GeminiEngine {
     fn parse_json_value(
         json_value: serde_json::Value,
         value_type: &Type,
+        context: &Context,
     ) -> Result<ExpressionValue, String> {
         match value_type {
             Type::String => {
@@ -154,9 +163,31 @@ impl GeminiEngine {
                 if json_value.is_null() {
                     Ok(ExpressionValue::option_none())
                 } else {
-                    let inner = Self::parse_json_value(json_value, inner_type)?;
+                    let inner = Self::parse_json_value(json_value, inner_type, context)?;
                     Ok(ExpressionValue::option_some(inner))
                 }
+            }
+            Type::Struct(name) => {
+                let obj = json_value
+                    .as_object()
+                    .ok_or_else(|| format!("Expected JSON object for struct {}", name))?;
+                let fields = context
+                    .runtime()
+                    .get_struct(name)
+                    .ok_or_else(|| format!("Unknown struct: {}", name))?
+                    .clone();
+                let field_values: Vec<(&str, ExpressionValue)> = fields
+                    .iter()
+                    .map(|(field_name, field_type)| {
+                        let json_field = obj
+                            .get(field_name)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                        let val = Self::parse_json_value(json_field, field_type, context)?;
+                        Ok((field_name.as_str(), val))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                Ok(ExpressionValue::struct_value(field_values))
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }
@@ -165,20 +196,27 @@ impl GeminiEngine {
     fn parse_typed_response(
         response_text: &str,
         return_type: &Type,
+        context: &Context,
     ) -> Result<ExpressionValue, String> {
         let response_json: serde_json::Value = serde_json::from_str(response_text)
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
-        let value_field = response_json
-            .get("value")
-            .ok_or_else(|| "Missing 'value' field in response".to_string())?;
-
         match return_type {
-            Type::String | Type::Boolean | Type::Int | Type::List(_) => {
-                Self::parse_json_value(value_field.clone(), return_type)
+            Type::Struct(_) => Self::parse_json_value(response_json, return_type, context),
+            _ => {
+                let value_field = response_json
+                    .get("value")
+                    .ok_or_else(|| "Missing 'value' field in response".to_string())?;
+                match return_type {
+                    Type::String | Type::Boolean | Type::Int | Type::List(_) => {
+                        Self::parse_json_value(value_field.clone(), return_type, context)
+                    }
+                    Type::Option(_) => {
+                        Self::parse_json_value(value_field.clone(), return_type, context)
+                    }
+                    Type::Unit | Type::Struct(_) => unreachable!(),
+                }
             }
-            Type::Option(_) => Self::parse_json_value(value_field.clone(), return_type),
-            Type::Unit | Type::Struct(_) => unreachable!(),
         }
     }
 }
@@ -215,7 +253,7 @@ impl LanguageEngine for GeminiEngine {
             return Ok(ExpressionValue::unit());
         }
 
-        let value_schema = Self::build_value_schema(return_type)?;
+        let value_schema = Self::build_value_schema(return_type, context)?;
         let is_required = !matches!(return_type, Type::Option(_));
         let temperature = if matches!(return_type, Type::Boolean) {
             0.0
@@ -249,7 +287,7 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        Self::parse_typed_response(&response_text, return_type)
+        Self::parse_typed_response(&response_text, return_type, context)
     }
 
     async fn select(
@@ -340,7 +378,7 @@ impl LanguageEngine for GeminiEngine {
             return Ok(ExpressionValue::unit());
         }
 
-        let value_schema = Self::build_value_schema(param_type)?;
+        let value_schema = Self::build_value_schema(param_type, context)?;
         let is_required = !matches!(param_type, Type::Option(_));
         let temperature = if matches!(param_type, Type::Boolean) {
             0.0
@@ -379,6 +417,73 @@ impl LanguageEngine for GeminiEngine {
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        Self::parse_typed_response(&response_text, param_type)
+        Self::parse_typed_response(&response_text, param_type, context)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::CompilationUnit;
+    use crate::runtime::Runtime;
+
+    fn make_context_with_struct(code: &str) -> crate::runtime::Context {
+        let program = CompilationUnit::from_string(code.to_string());
+        let mut runtime = Runtime::builder(program.clone()).build();
+        let compiled = runtime.compiler().compile_program(&program).unwrap();
+        for (name, fields) in compiled.struct_definitions() {
+            runtime.register_struct(name.clone(), fields.clone());
+        }
+        crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
+    }
+
+    #[test]
+    fn test_build_value_schema_struct_unknown_returns_error() {
+        let code = "fn main(): () { return () }";
+        let program = CompilationUnit::from_string(code.to_string());
+        let runtime = std::sync::Arc::new(Runtime::builder(program).build());
+        let context = crate::runtime::Context::with_runtime(runtime);
+        let result = GeminiEngine::build_value_schema(&Type::Struct("Ghost".to_string()), &context);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Ghost"));
+    }
+
+    #[test]
+    fn test_build_value_schema_struct_with_fields() {
+        let code = r#"
+struct Task {
+    title: String,
+    steps: Int,
+}
+fn main(): () { return () }
+"#;
+        let context = make_context_with_struct(code);
+        let result = GeminiEngine::build_value_schema(&Type::Struct("Task".to_string()), &context);
+        assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_value_struct() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn main(): () { return () }
+"#;
+        let context = make_context_with_struct(code);
+        let json = serde_json::json!({"x": 10, "y": 20});
+        let result =
+            GeminiEngine::parse_json_value(json, &Type::Struct("Point".to_string()), &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        let value = result.unwrap();
+        assert_eq!(
+            value.get_struct_field("x").unwrap().as_integer().unwrap(),
+            10
+        );
+        assert_eq!(
+            value.get_struct_field("y").unwrap().as_integer().unwrap(),
+            20
+        );
     }
 }
