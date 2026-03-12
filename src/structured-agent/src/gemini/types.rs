@@ -434,6 +434,12 @@ impl JsonSchemaBuilder {
         schema
     }
 
+    pub fn integer() -> SchemaObject {
+        let mut schema = SchemaObject::default();
+        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Integer)));
+        schema
+    }
+
     pub fn array(items: SchemaObject) -> SchemaObject {
         let mut schema = SchemaObject::default();
         schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Array)));

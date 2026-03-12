@@ -36,6 +36,7 @@ impl VM {
                 Instruction::Drop { name } => self.execute_drop(state, name),
                 Instruction::LdcStr { dest, value } => self.execute_ldc_str(state, dest, value),
                 Instruction::LdcBool { dest, value } => self.execute_ldc_bool(state, dest, *value),
+                Instruction::LdcInt { dest, value } => self.execute_ldc_int(state, dest, *value),
                 Instruction::LdcUnit { dest } => self.execute_ldc_unit(state, dest),
                 Instruction::Mov { dest, src } => self.execute_mov(state, dest, src)?,
                 Instruction::Decl { name } => self.execute_decl(state, name),
@@ -108,6 +109,15 @@ impl VM {
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::boolean(value)),
+        );
+        Self::advance_pc(state)
+    }
+
+    fn execute_ldc_int(&self, mut state: VMState, dest: &str, value: i64) -> VMState {
+        Self::write_variable(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::integer(value)),
         );
         Self::advance_pc(state)
     }
@@ -415,6 +425,7 @@ fn parse_type(type_str: &str) -> Result<crate::types::Type, String> {
     match type_str {
         "String" => Ok(crate::types::Type::String),
         "Boolean" => Ok(crate::types::Type::Boolean),
+        "Int" => Ok(crate::types::Type::Int),
         "Unit" | "()" => Ok(crate::types::Type::Unit),
         "Unknown" => Ok(crate::types::Type::String),
         s if s.starts_with("List<") && s.ends_with(">") => {

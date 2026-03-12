@@ -20,6 +20,7 @@ impl UnusedExpressionAnalyzer {
             Statement::ExpressionStatement(expr) => match expr {
                 Expression::StringLiteral { span, .. }
                 | Expression::BooleanLiteral { span, .. }
+                | Expression::IntLiteral { span, .. }
                 | Expression::ListLiteral { span, .. }
                 | Expression::UnitLiteral { span } => {
                     self.warnings.push(Warning::UnusedExpression {
@@ -100,6 +101,7 @@ impl UnusedExpressionAnalyzer {
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
+            | Expression::IntLiteral { .. }
             | Expression::ListLiteral { .. }
             | Expression::UnitLiteral { .. }
             | Expression::Placeholder { .. } => {}

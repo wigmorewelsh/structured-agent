@@ -268,6 +268,9 @@ impl BytecodeCompiler {
             Expression::BooleanLiteral { value, .. } => {
                 Self::compile_boolean_literal(builder, *value, dest_var)
             }
+            Expression::IntLiteral { value, .. } => {
+                Self::compile_int_literal(builder, *value, dest_var)
+            }
             Expression::UnitLiteral { .. } => Self::compile_unit_literal(builder, dest_var),
             Expression::ListLiteral { elements, .. } => {
                 Self::compile_list_literal(builder, elements, dest_var)
@@ -342,6 +345,18 @@ impl BytecodeCompiler {
         dest_var: &str,
     ) -> Result<(), String> {
         builder.emit(Instruction::LdcBool {
+            dest: dest_var.to_string(),
+            value,
+        });
+        Ok(())
+    }
+
+    fn compile_int_literal(
+        builder: &mut InstructionBuilder,
+        value: i64,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::LdcInt {
             dest: dest_var.to_string(),
             value,
         });
@@ -528,6 +543,7 @@ impl BytecodeCompiler {
             ast::Type::Unit => crate::types::Type::Unit,
             ast::Type::Boolean => crate::types::Type::Boolean,
             ast::Type::String => crate::types::Type::String,
+            ast::Type::Int => crate::types::Type::Int,
             ast::Type::List(inner) => crate::types::Type::List(Box::new(Self::convert_type(inner))),
             ast::Type::Option(inner) => {
                 crate::types::Type::Option(Box::new(Self::convert_type(inner)))
@@ -540,6 +556,7 @@ impl BytecodeCompiler {
             ast::Type::Unit => "Unit".to_string(),
             ast::Type::Boolean => "Boolean".to_string(),
             ast::Type::String => "String".to_string(),
+            ast::Type::Int => "Int".to_string(),
             ast::Type::List(inner) => format!("List<{}>", Self::type_to_string(inner)),
             ast::Type::Option(inner) => format!("Option<{}>", Self::type_to_string(inner)),
         }

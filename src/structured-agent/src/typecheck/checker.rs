@@ -84,7 +84,7 @@ impl TypeChecker {
         _file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
-            AstType::Unit | AstType::Boolean | AstType::String => Ok(()),
+            AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
             AstType::List(inner) => self.validate_type(inner, _span, _file_id),
             AstType::Option(inner) => self.validate_type(inner, _span, _file_id),
         }
@@ -299,6 +299,7 @@ impl TypeChecker {
             }
             Expression::StringLiteral { .. } => Ok(AstType::String),
             Expression::BooleanLiteral { .. } => Ok(AstType::Boolean),
+            Expression::IntLiteral { .. } => Ok(AstType::Int),
             Expression::UnitLiteral { .. } => Ok(AstType::Unit),
             Expression::ListLiteral { elements, span } => {
                 if elements.is_empty() {

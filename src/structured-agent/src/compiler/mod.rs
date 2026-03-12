@@ -194,6 +194,7 @@ fn convert_ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
         crate::ast::Type::String => Type::string(),
         crate::ast::Type::List(inner) => Type::list(convert_ast_type_to_type(inner)),
         crate::ast::Type::Option(inner) => Type::option(convert_ast_type_to_type(inner)),
+        crate::ast::Type::Int => Type::int(),
     }
 }
 

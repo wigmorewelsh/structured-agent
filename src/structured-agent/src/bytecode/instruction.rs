@@ -12,6 +12,8 @@ pub enum Instruction {
     LdcStr { dest: String, value: String },
     /// Load boolean constant into variable
     LdcBool { dest: String, value: bool },
+    /// Load integer constant into variable
+    LdcInt { dest: String, value: i64 },
     /// Load unit value into variable
     LdcUnit { dest: String },
 
@@ -84,6 +86,9 @@ impl fmt::Display for Instruction {
             }
             Instruction::LdcBool { dest, value } => {
                 write!(f, "ldc.bool {}, {}", dest, value)
+            }
+            Instruction::LdcInt { dest, value } => {
+                write!(f, "ldc.int {}, {}", dest, value)
             }
             Instruction::LdcUnit { dest } => {
                 write!(f, "ldc.unit {}", dest)

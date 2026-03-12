@@ -59,6 +59,7 @@ impl SourceFiles {
 pub enum Type {
     String,
     Boolean,
+    Int,
     Unit,
     List(Box<Type>),
     Option(Box<Type>),
@@ -92,6 +93,10 @@ impl Type {
         Self::Boolean
     }
 
+    pub fn int() -> Self {
+        Self::Int
+    }
+
     pub fn custom(name: String) -> Self {
         Self::Custom(name)
     }
@@ -108,6 +113,7 @@ impl Type {
         match self {
             Type::String => "String".to_string(),
             Type::Boolean => "Boolean".to_string(),
+            Type::Int => "Int".to_string(),
             Type::Unit => "()".to_string(),
             Type::List(inner) => format!("List<{}>", inner.name()),
             Type::Option(inner) => format!("Option<{}>", inner.name()),
@@ -242,6 +248,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
+            Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
             Type::Unit => Ok(crate::runtime::ExpressionValue::unit()),
             Type::List(_) => {
                 let value = self.untyped(context).await;
@@ -275,6 +282,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
+            Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
             Type::List(_) => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))

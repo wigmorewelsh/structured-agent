@@ -52,6 +52,7 @@ impl GeminiEngine {
         match value_type {
             Type::String => Ok(JsonSchemaBuilder::string()),
             Type::Boolean => Ok(JsonSchemaBuilder::boolean()),
+            Type::Int => Ok(JsonSchemaBuilder::integer()),
             Type::List(_) => Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string())),
             Type::Option(inner_type) => Self::build_value_schema(inner_type),
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
@@ -118,6 +119,13 @@ impl GeminiEngine {
                     Err("Expected boolean value".to_string())
                 }
             }
+            Type::Int => {
+                if let Some(n) = json_value.as_i64() {
+                    Ok(ExpressionValue::integer(n))
+                } else {
+                    Err("Expected integer value".to_string())
+                }
+            }
             Type::List(_) => {
                 let items: Vec<String> = if json_value.is_array() {
                     json_value
@@ -163,7 +171,7 @@ impl GeminiEngine {
             .ok_or_else(|| "Missing 'value' field in response".to_string())?;
 
         match return_type {
-            Type::String | Type::Boolean | Type::List(_) => {
+            Type::String | Type::Boolean | Type::Int | Type::List(_) => {
                 Self::parse_json_value(value_field.clone(), return_type)
             }
             Type::Option(_) => Self::parse_json_value(value_field.clone(), return_type),

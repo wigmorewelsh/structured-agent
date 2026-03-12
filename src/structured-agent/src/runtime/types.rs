@@ -1,5 +1,5 @@
 use arrow::array::{
-    Array, BooleanArray, ListArray, NullArray, StringArray, StructArray, UnionArray,
+    Array, BooleanArray, Int64Array, ListArray, NullArray, StringArray, StructArray, UnionArray,
 };
 use arrow::buffer::ScalarBuffer;
 use arrow::datatypes::{DataType, Field, Fields, UnionFields};
@@ -89,6 +89,12 @@ impl ExpressionValue {
     pub fn boolean(b: bool) -> Self {
         Self {
             data: Arc::new(BooleanArray::from(vec![b])),
+        }
+    }
+
+    pub fn integer(n: i64) -> Self {
+        Self {
+            data: Arc::new(Int64Array::from(vec![n])),
         }
     }
 
@@ -193,6 +199,10 @@ impl ExpressionValue {
         })
     }
 
+    pub fn as_integer(&self) -> Result<i64, String> {
+        self.downcast_scalar::<Int64Array>().map(|arr| arr.value(0))
+    }
+
     pub fn as_list(&self) -> Result<&ListArray, String> {
         self.data
             .as_any()
@@ -231,6 +241,7 @@ impl ExpressionValue {
             DataType::Null => "Unit",
             DataType::Utf8 => "String",
             DataType::Boolean => "Boolean",
+            DataType::Int64 => "Int",
             DataType::List(_) => "List",
             DataType::Struct(_) => "Metadata",
             DataType::Union(_, _) => "Option",
@@ -276,6 +287,8 @@ impl ExpressionValue {
             s.to_string()
         } else if let Ok(b) = self.as_boolean() {
             b.to_string()
+        } else if let Ok(n) = self.as_integer() {
+            n.to_string()
         } else if let Ok(list) = self.as_list() {
             format!("{:?}", list)
         } else if let Ok((name, documentation)) = self.as_metadata() {
@@ -301,6 +314,8 @@ impl ExpressionValue {
             s.to_string()
         } else if let Ok(b) = self.as_boolean() {
             b.to_string()
+        } else if let Ok(n) = self.as_integer() {
+            n.to_string()
         } else if let Ok(list) = self.as_list() {
             if list.len() == 0 {
                 "[]".to_string()

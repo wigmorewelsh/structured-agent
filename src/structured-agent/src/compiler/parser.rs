@@ -251,6 +251,7 @@ combine::parser! {
             lex_string("()").map(|_| Type::Unit),
             lex_string("Boolean").map(|_| Type::Boolean),
             lex_string("String").map(|_| Type::String),
+            lex_string("Int").map(|_| Type::Int),
         ))
     }
 }
@@ -357,6 +358,7 @@ combine::parser! {
             attempt(parse_list_literal()),
             attempt(parse_unit_literal()),
             attempt(parse_boolean_literal()),
+            attempt(parse_integer_literal()),
             parse_variable(),
         ))
     }
@@ -533,6 +535,30 @@ where
     (position(), lex_char('_'), position()).map(|(start, _, end)| Expression::Placeholder {
         span: Span::new(start, end),
     })
+}
+
+fn parse_integer_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        optional(char('-')),
+        many1(satisfy(|c: char| c.is_ascii_digit())),
+        position(),
+    )
+        .skip(skip_spaces())
+        .map(
+            |(start, sign, digits, end): (usize, Option<char>, Vec<char>, usize)| {
+                let s: String = sign.into_iter().chain(digits).collect();
+                let n = s.parse::<i64>().unwrap_or(0);
+                Expression::IntLiteral {
+                    value: n,
+                    span: Span::new(start, end),
+                }
+            },
+        )
 }
 
 fn parse_boolean_literal<Input>() -> impl Parser<Input, Output = Expression>
@@ -1956,6 +1982,108 @@ fn test_function(): () {
             assert_eq!(func.body.statements.len(), 2);
         } else {
             panic!("Expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_integer_literal() {
+        let input = r#"
+fn test(): () {
+    let x = 42
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            if let Statement::Assignment { expression, .. } = &func.body.statements[0] {
+                assert!(matches!(
+                    expression,
+                    Expression::IntLiteral { value: 42, .. }
+                ));
+            } else {
+                panic!("Expected assignment");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_negative_integer_literal() {
+        let input = r#"
+fn test(): () {
+    let x = -7
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            if let Statement::Assignment { expression, .. } = &func.body.statements[0] {
+                assert!(matches!(
+                    expression,
+                    Expression::IntLiteral { value: -7, .. }
+                ));
+            } else {
+                panic!("Expected assignment");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_zero_integer_literal() {
+        let input = r#"
+fn test(): () {
+    let x = 0
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            if let Statement::Assignment { expression, .. } = &func.body.statements[0] {
+                assert!(matches!(
+                    expression,
+                    Expression::IntLiteral { value: 0, .. }
+                ));
+            } else {
+                panic!("Expected assignment");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_int_type() {
+        let input = r#"
+extern fn count(): Int
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        if let Definition::ExternalFunction(func) = &module.definitions[0] {
+            assert!(matches!(func.return_type, Type::Int));
+        } else {
+            panic!("Expected external function");
+        }
+    }
+
+    #[test]
+    fn test_parse_int_parameter_type() {
+        let input = r#"
+extern fn add(n: Int): Int
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        if let Definition::ExternalFunction(func) = &module.definitions[0] {
+            assert!(matches!(func.parameters[0].param_type, Type::Int));
+            assert!(matches!(func.return_type, Type::Int));
+        } else {
+            panic!("Expected external function");
         }
     }
 }

@@ -123,6 +123,7 @@ impl UnusedVariableAnalyzer {
             }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
+            | Expression::IntLiteral { .. }
             | Expression::ListLiteral { .. }
             | Expression::UnitLiteral { .. }
             | Expression::Placeholder { .. } => {}
