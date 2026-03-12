@@ -72,6 +72,19 @@ pub enum Instruction {
     },
     /// Await LLM generation with context, store result in dest
     LlmGenerate { dest: String, return_type: String },
+
+    /// Create a new struct value from named field variables
+    StructNew {
+        dest: String,
+        struct_name: String,
+        fields: Vec<(String, String)>,
+    },
+    /// Read a single field from a struct value into dest
+    StructGet {
+        dest: String,
+        src: String,
+        field: String,
+    },
 }
 
 impl fmt::Display for Instruction {
@@ -195,6 +208,24 @@ impl fmt::Display for Instruction {
             }
             Instruction::LlmGenerate { dest, return_type } => {
                 write!(f, "llm.generate {}, {}", dest, return_type)
+            }
+
+            Instruction::StructNew {
+                dest,
+                struct_name,
+                fields,
+            } => {
+                write!(f, "struct.new {}, {}, {{", dest, struct_name)?;
+                for (i, (name, src)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", name, src)?;
+                }
+                write!(f, "}}")
+            }
+            Instruction::StructGet { dest, src, field } => {
+                write!(f, "struct.get {}, {}, {}", dest, src, field)
             }
         }
     }

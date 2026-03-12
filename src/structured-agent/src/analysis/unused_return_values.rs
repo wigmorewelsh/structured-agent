@@ -31,6 +31,7 @@ impl UnusedReturnValueAnalyzer {
                     self.function_return_types
                         .insert(ext_func.name.clone(), returns_value);
                 }
+                Definition::Struct(_) => {}
             }
         }
     }
@@ -105,6 +106,12 @@ impl UnusedReturnValueAnalyzer {
                 self.analyze_expression(then_expr);
                 self.analyze_expression(else_expr);
             }
+            Expression::StructLiteral { fields, .. } => {
+                for (_, expr) in fields {
+                    self.analyze_expression(expr);
+                }
+            }
+            Expression::FieldAccess { .. } => {}
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

@@ -287,6 +287,14 @@ impl BytecodeCompiler {
             } => {
                 Self::compile_if_else_expression(builder, condition, then_expr, else_expr, dest_var)
             }
+            Expression::StructLiteral {
+                struct_name,
+                fields,
+                ..
+            } => Self::compile_struct_literal(builder, struct_name, fields, dest_var),
+            Expression::FieldAccess { base, field, .. } => {
+                Self::compile_field_access(builder, base, field, dest_var)
+            }
         }
     }
 
@@ -538,12 +546,50 @@ impl BytecodeCompiler {
         Ok(())
     }
 
+    fn compile_struct_literal(
+        builder: &mut InstructionBuilder,
+        struct_name: &str,
+        fields: &[(String, Expression)],
+        dest_var: &str,
+    ) -> Result<(), String> {
+        let mut field_vars: Vec<(String, String)> = Vec::new();
+        for (field_name, field_expr) in fields {
+            let temp_var = builder.next_temp();
+            builder.emit(Instruction::Decl {
+                name: temp_var.clone(),
+            });
+            Self::compile_expression(builder, field_expr, &temp_var)?;
+            field_vars.push((field_name.clone(), temp_var));
+        }
+        builder.emit(Instruction::StructNew {
+            dest: dest_var.to_string(),
+            struct_name: struct_name.to_string(),
+            fields: field_vars,
+        });
+        Ok(())
+    }
+
+    fn compile_field_access(
+        builder: &mut InstructionBuilder,
+        base: &str,
+        field: &str,
+        dest_var: &str,
+    ) -> Result<(), String> {
+        builder.emit(Instruction::StructGet {
+            dest: dest_var.to_string(),
+            src: base.to_string(),
+            field: field.to_string(),
+        });
+        Ok(())
+    }
+
     fn convert_type(ast_type: &ast::Type) -> crate::types::Type {
         match ast_type {
             ast::Type::Unit => crate::types::Type::Unit,
             ast::Type::Boolean => crate::types::Type::Boolean,
             ast::Type::String => crate::types::Type::String,
             ast::Type::Int => crate::types::Type::Int,
+            ast::Type::Struct(name) => crate::types::Type::Struct(name.clone()),
             ast::Type::List(inner) => crate::types::Type::List(Box::new(Self::convert_type(inner))),
             ast::Type::Option(inner) => {
                 crate::types::Type::Option(Box::new(Self::convert_type(inner)))
@@ -557,6 +603,7 @@ impl BytecodeCompiler {
             ast::Type::Boolean => "Boolean".to_string(),
             ast::Type::String => "String".to_string(),
             ast::Type::Int => "Int".to_string(),
+            ast::Type::Struct(name) => name.clone(),
             ast::Type::List(inner) => format!("List<{}>", Self::type_to_string(inner)),
             ast::Type::Option(inner) => format!("Option<{}>", Self::type_to_string(inner)),
         }

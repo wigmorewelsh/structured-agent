@@ -61,9 +61,9 @@ pub enum Type {
     Boolean,
     Int,
     Unit,
+    Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
-    Custom(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,8 +97,8 @@ impl Type {
         Self::Int
     }
 
-    pub fn custom(name: String) -> Self {
-        Self::Custom(name)
+    pub fn struct_type(name: std::string::String) -> Self {
+        Self::Struct(name)
     }
 
     pub fn list(inner: Type) -> Self {
@@ -115,9 +115,9 @@ impl Type {
             Type::Boolean => "Boolean".to_string(),
             Type::Int => "Int".to_string(),
             Type::Unit => "()".to_string(),
+            Type::Struct(name) => name.clone(),
             Type::List(inner) => format!("List<{}>", inner.name()),
             Type::Option(inner) => format!("Option<{}>", inner.name()),
-            Type::Custom(name) => name.clone(),
         }
     }
 }
@@ -255,10 +255,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
-            Type::Custom(_) => {
-                let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::string(value))
-            }
+            Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
     }
 
@@ -273,7 +270,7 @@ impl LanguageEngine for PrintEngine {
     async fn fill_parameter(
         &self,
         context: &crate::runtime::Context,
-        param_name: &str,
+        _param_name: &str,
         param_type: &Type,
     ) -> Result<crate::runtime::ExpressionValue, String> {
         match param_type {
@@ -288,11 +285,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
-            Type::Unit | Type::Custom(_) => Ok(crate::runtime::ExpressionValue::string(format!(
-                "PrintEngine: {} ({})",
-                param_name,
-                param_type.name()
-            ))),
+            Type::Unit | Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
     }
 }

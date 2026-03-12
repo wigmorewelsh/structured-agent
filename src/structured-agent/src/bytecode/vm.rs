@@ -91,6 +91,14 @@ impl VM {
                 Instruction::LlmGenerate { dest, return_type } => {
                     self.execute_llm_generate(state, dest, return_type).await?
                 }
+                Instruction::StructNew {
+                    dest,
+                    struct_name,
+                    fields,
+                } => self.execute_struct_new(state, dest, struct_name, fields)?,
+                Instruction::StructGet { dest, src, field } => {
+                    self.execute_struct_get(state, dest, src, field)?
+                }
             };
         }
     }
@@ -418,6 +426,47 @@ impl VM {
         } else {
             Ok(Self::advance_pc(state))
         }
+    }
+
+    fn execute_struct_new(
+        &self,
+        mut state: VMState,
+        dest: &str,
+        _struct_name: &str,
+        fields: &[(String, String)],
+    ) -> Result<VMState, String> {
+        let field_values: Vec<(&str, crate::runtime::ExpressionValue)> = fields
+            .iter()
+            .map(|(name, src)| {
+                let val = Self::read_variable(&state, src)?;
+                Ok((name.as_str(), val.value.clone()))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let struct_value = crate::runtime::ExpressionValue::struct_value(field_values);
+        Self::write_variable(
+            &mut state,
+            dest,
+            crate::runtime::ExpressionResult::new(struct_value),
+        );
+        Ok(Self::advance_pc(state))
+    }
+
+    fn execute_struct_get(
+        &self,
+        mut state: VMState,
+        dest: &str,
+        src: &str,
+        field: &str,
+    ) -> Result<VMState, String> {
+        let src_val = Self::read_variable(&state, src)?;
+        let field_value = src_val.value.get_struct_field(field)?;
+        Self::write_variable(
+            &mut state,
+            dest,
+            crate::runtime::ExpressionResult::new(field_value),
+        );
+        Ok(Self::advance_pc(state))
     }
 }
 

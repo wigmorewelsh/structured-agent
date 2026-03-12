@@ -72,6 +72,7 @@ impl TypeChecker {
                     self.function_signatures
                         .insert(ext_func.name.clone(), signature);
                 }
+                Definition::Struct(_) => {}
             }
         }
         Ok(())
@@ -87,6 +88,7 @@ impl TypeChecker {
             AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
             AstType::List(inner) => self.validate_type(inner, _span, _file_id),
             AstType::Option(inner) => self.validate_type(inner, _span, _file_id),
+            AstType::Struct(_) => Ok(()),
         }
     }
 
@@ -413,6 +415,16 @@ impl TypeChecker {
 
                 Ok(then_type)
             }
+            Expression::StructLiteral { span, .. } => Err(TypeError::UnsupportedType {
+                type_name: "struct literal (not yet implemented)".to_string(),
+                span: *span,
+                file_id,
+            }),
+            Expression::FieldAccess { span, .. } => Err(TypeError::UnsupportedType {
+                type_name: "field access (not yet implemented)".to_string(),
+                span: *span,
+                file_id,
+            }),
         }
     }
 

@@ -12,6 +12,7 @@ pub struct Module {
 pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
+    Struct(StructDefinition),
 }
 
 impl Spanned for Definition {
@@ -19,8 +20,23 @@ impl Spanned for Definition {
         match self {
             Definition::Function(f) => f.span,
             Definition::ExternalFunction(f) => f.span,
+            Definition::Struct(s) => s.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDefinition {
+    pub name: String,
+    pub fields: Vec<StructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub field_type: Type,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +70,7 @@ pub enum Type {
     Boolean,
     String,
     Int,
+    Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
 }
@@ -137,6 +154,16 @@ pub enum Expression {
         name: String,
         span: Span,
     },
+    StructLiteral {
+        struct_name: String,
+        fields: Vec<(String, Expression)>,
+        span: Span,
+    },
+    FieldAccess {
+        base: String,
+        field: String,
+        span: Span,
+    },
     StringLiteral {
         value: String,
         span: Span,
@@ -181,6 +208,8 @@ impl Spanned for Expression {
             Expression::UnitLiteral { span } => *span,
             Expression::Select(select) => select.span,
             Expression::IfElse { span, .. } => *span,
+            Expression::StructLiteral { span, .. } => *span,
+            Expression::FieldAccess { span, .. } => *span,
         }
     }
 }
@@ -204,6 +233,7 @@ impl fmt::Display for Type {
             Type::Boolean => write!(f, "Boolean"),
             Type::String => write!(f, "String"),
             Type::Int => write!(f, "Int"),
+            Type::Struct(name) => write!(f, "{}", name),
             Type::List(inner) => write!(f, "List<{}>", inner),
             Type::Option(inner) => write!(f, "Option<{}>", inner),
         }
@@ -313,6 +343,13 @@ impl fmt::Display for Definition {
         match self {
             Definition::Function(func) => write!(f, "{}", func),
             Definition::ExternalFunction(ext_func) => write!(f, "{}", ext_func),
+            Definition::Struct(s) => {
+                write!(f, "struct {} {{", s.name)?;
+                for field in &s.fields {
+                    write!(f, "\n    {}: {},", field.name, field.field_type)?;
+                }
+                write!(f, "\n}}")
+            }
         }
     }
 }
@@ -375,6 +412,21 @@ impl fmt::Display for Expression {
                 "if {} {{ {} }} else {{ {} }}",
                 condition, then_expr, else_expr
             ),
+            Expression::StructLiteral {
+                struct_name,
+                fields,
+                ..
+            } => {
+                write!(f, "{} {{", struct_name)?;
+                for (i, (name, expr)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, " {}: {}", name, expr)?;
+                }
+                write!(f, " }}")
+            }
+            Expression::FieldAccess { base, field, .. } => write!(f, "{}.{}", base, field),
         }
     }
 }

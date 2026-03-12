@@ -56,7 +56,10 @@ impl GeminiEngine {
             Type::List(_) => Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string())),
             Type::Option(inner_type) => Self::build_value_schema(inner_type),
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
-            Type::Custom(_) => Err(format!("Unsupported type: {}", value_type.name())),
+            Type::Struct(name) => Err(format!(
+                "Struct type '{}' not yet supported in schema",
+                name
+            )),
         }
     }
 
@@ -175,7 +178,7 @@ impl GeminiEngine {
                 Self::parse_json_value(value_field.clone(), return_type)
             }
             Type::Option(_) => Self::parse_json_value(value_field.clone(), return_type),
-            Type::Unit | Type::Custom(_) => unreachable!(),
+            Type::Unit | Type::Struct(_) => unreachable!(),
         }
     }
 }

@@ -106,6 +106,34 @@ impl ExpressionValue {
         Self { data }
     }
 
+    pub fn struct_value(fields: Vec<(&str, ExpressionValue)>) -> Self {
+        let arrow_fields: Vec<Field> = fields
+            .iter()
+            .map(|(field_name, val)| Field::new(*field_name, val.data.data_type().clone(), true))
+            .collect();
+        let arrays: Vec<Arc<dyn Array>> = fields.iter().map(|(_, val)| val.data.clone()).collect();
+        let struct_array = StructArray::new(Fields::from(arrow_fields), arrays, None);
+        Self {
+            data: Arc::new(struct_array),
+        }
+    }
+
+    pub fn get_struct_field(&self, field: &str) -> Result<ExpressionValue, String> {
+        let struct_array = self
+            .data
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+        let (index, _) = struct_array
+            .fields()
+            .iter()
+            .enumerate()
+            .find(|(_, f)| f.name() == field)
+            .ok_or_else(|| format!("No field '{}' in struct", field))?;
+        let col = struct_array.column(index);
+        Ok(ExpressionValue { data: col.clone() })
+    }
+
     pub fn option_none() -> Self {
         let union_fields = UnionFields::try_new(
             [0_i8, 1_i8],
@@ -148,18 +176,14 @@ impl ExpressionValue {
 
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
         let name_str = name.into();
-
-        // Create fields for the struct
         let fields = Fields::from(vec![
             Field::new("name", DataType::Utf8, false),
             Field::new("documentation", DataType::Utf8, true),
         ]);
 
-        // Create the arrays for each field
         let name_array = Arc::new(StringArray::from(vec![name_str]));
         let doc_array = Arc::new(StringArray::from(vec![documentation]));
 
-        // Create the struct array
         let struct_array = StructArray::new(
             fields,
             vec![name_array as Arc<dyn Array>, doc_array as Arc<dyn Array>],
@@ -243,7 +267,14 @@ impl ExpressionValue {
             DataType::Boolean => "Boolean",
             DataType::Int64 => "Int",
             DataType::List(_) => "List",
-            DataType::Struct(_) => "Metadata",
+            DataType::Struct(_) => {
+                if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
+                    if Self::is_metadata_struct(struct_array) {
+                        return "Metadata";
+                    }
+                }
+                "Struct"
+            }
             DataType::Union(_, _) => "Option",
             _ => "Unknown",
         }
@@ -251,6 +282,9 @@ impl ExpressionValue {
 
     pub fn as_metadata(&self) -> Result<(String, Option<String>), String> {
         if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
+            if !Self::is_metadata_struct(struct_array) {
+                return Err("Not a metadata struct".to_string());
+            }
             if struct_array.len() != 1 {
                 return Err("Expected single metadata value".to_string());
             }
@@ -307,7 +341,32 @@ impl ExpressionValue {
         }
     }
 
+    fn is_metadata_struct(struct_array: &StructArray) -> bool {
+        let fields = struct_array.fields();
+        fields.len() == 2 && fields[0].name() == "name" && fields[1].name() == "documentation"
+    }
+
     pub fn format_for_llm(&self) -> String {
+        if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
+            if !Self::is_metadata_struct(struct_array) {
+                let mut obj = serde_json::Map::new();
+                for (i, field) in struct_array.fields().iter().enumerate() {
+                    let col = struct_array.column(i);
+                    let val = ExpressionValue { data: col.clone() };
+                    let json_val = if let Ok(s) = val.as_string() {
+                        serde_json::Value::String(s.to_string())
+                    } else if let Ok(b) = val.as_boolean() {
+                        serde_json::Value::Bool(b)
+                    } else if let Ok(n) = val.as_integer() {
+                        serde_json::Value::Number(n.into())
+                    } else {
+                        serde_json::Value::String(val.format_for_llm())
+                    };
+                    obj.insert(field.name().clone(), json_val);
+                }
+                return serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string());
+            }
+        }
         if self.data.as_any().is::<NullArray>() {
             "()".to_string()
         } else if let Ok(s) = self.as_string() {

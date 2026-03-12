@@ -121,6 +121,14 @@ impl UnusedVariableAnalyzer {
                 self.analyze_expression(then_expr);
                 self.analyze_expression(else_expr);
             }
+            Expression::StructLiteral { fields, .. } => {
+                for (_, expr) in fields {
+                    self.analyze_expression(expr);
+                }
+            }
+            Expression::FieldAccess { base, span, .. } => {
+                self.track_read(base, *span);
+            }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
             | Expression::IntLiteral { .. }
