@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct TypeChecker {
     function_signatures: HashMap<String, FunctionSignature>,
+    struct_definitions: HashMap<String, Vec<(String, AstType)>>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ impl TypeChecker {
     pub fn new() -> Self {
         Self {
             function_signatures: HashMap::new(),
+            struct_definitions: HashMap::new(),
         }
     }
 
@@ -44,6 +46,18 @@ impl TypeChecker {
         module: &Module,
         file_id: FileId,
     ) -> Result<(), TypeError> {
+        for definition in &module.definitions {
+            if let Definition::Struct(struct_def) = definition {
+                let fields = struct_def
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), f.field_type.clone()))
+                    .collect();
+                self.struct_definitions
+                    .insert(struct_def.name.clone(), fields);
+            }
+        }
+
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
@@ -88,7 +102,17 @@ impl TypeChecker {
             AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
             AstType::List(inner) => self.validate_type(inner, _span, _file_id),
             AstType::Option(inner) => self.validate_type(inner, _span, _file_id),
-            AstType::Struct(_) => Ok(()),
+            AstType::Struct(name) => {
+                if self.struct_definitions.contains_key(name) {
+                    Ok(())
+                } else {
+                    Err(TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span: _span,
+                        file_id: _file_id,
+                    })
+                }
+            }
         }
     }
 
@@ -415,16 +439,83 @@ impl TypeChecker {
 
                 Ok(then_type)
             }
-            Expression::StructLiteral { span, .. } => Err(TypeError::UnsupportedType {
-                type_name: "struct literal (not yet implemented)".to_string(),
-                span: *span,
-                file_id,
-            }),
-            Expression::FieldAccess { span, .. } => Err(TypeError::UnsupportedType {
-                type_name: "field access (not yet implemented)".to_string(),
-                span: *span,
-                file_id,
-            }),
+            Expression::StructLiteral {
+                struct_name,
+                fields,
+                span,
+            } => {
+                let definition = self
+                    .struct_definitions
+                    .get(struct_name)
+                    .ok_or_else(|| TypeError::UnsupportedType {
+                        type_name: struct_name.clone(),
+                        span: *span,
+                        file_id,
+                    })?
+                    .clone();
+
+                for (field_name, value_expr) in fields {
+                    let declared_type = definition
+                        .iter()
+                        .find(|(n, _)| n == field_name)
+                        .map(|(_, t)| t.clone())
+                        .ok_or_else(|| TypeError::UnknownField {
+                            struct_name: struct_name.clone(),
+                            field_name: field_name.clone(),
+                            span: value_expr.span(),
+                            file_id,
+                        })?;
+                    let actual_type = self.check_expression(value_expr, env, file_id)?;
+                    if !self.types_equal(&actual_type, &declared_type) {
+                        return Err(TypeError::StructFieldTypeMismatch {
+                            struct_name: struct_name.clone(),
+                            field_name: field_name.clone(),
+                            expected: format!("{}", declared_type),
+                            found: format!("{}", actual_type),
+                            span: value_expr.span(),
+                            file_id,
+                        });
+                    }
+                }
+
+                Ok(AstType::Struct(struct_name.clone()))
+            }
+            Expression::FieldAccess { base, field, span } => {
+                let base_type =
+                    env.lookup_variable(base)
+                        .ok_or_else(|| TypeError::UnknownVariable {
+                            name: base.clone(),
+                            span: *span,
+                            file_id,
+                        })?;
+                match base_type {
+                    AstType::Struct(name) => {
+                        let definition = self.struct_definitions.get(&name).ok_or_else(|| {
+                            TypeError::UnsupportedType {
+                                type_name: name.clone(),
+                                span: *span,
+                                file_id,
+                            }
+                        })?;
+                        definition
+                            .iter()
+                            .find(|(n, _)| n == field)
+                            .map(|(_, t)| t.clone())
+                            .ok_or_else(|| TypeError::UnknownField {
+                                struct_name: name.clone(),
+                                field_name: field.clone(),
+                                span: *span,
+                                file_id,
+                            })
+                    }
+                    other => Err(TypeError::TypeMismatch {
+                        expected: "struct".to_string(),
+                        found: format!("{}", other),
+                        span: *span,
+                        file_id,
+                    }),
+                }
+            }
         }
     }
 

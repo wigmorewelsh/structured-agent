@@ -62,6 +62,20 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    UnknownField {
+        struct_name: String,
+        field_name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    StructFieldTypeMismatch {
+        struct_name: String,
+        field_name: String,
+        expected: String,
+        found: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -76,6 +90,8 @@ impl TypeError {
             TypeError::ReturnTypeMismatch { span, .. } => *span,
             TypeError::SelectBranchTypeMismatch { span, .. } => *span,
             TypeError::UnsupportedType { span, .. } => *span,
+            TypeError::UnknownField { span, .. } => *span,
+            TypeError::StructFieldTypeMismatch { span, .. } => *span,
         }
     }
 
@@ -90,6 +106,8 @@ impl TypeError {
             TypeError::ReturnTypeMismatch { file_id, .. } => *file_id,
             TypeError::SelectBranchTypeMismatch { file_id, .. } => *file_id,
             TypeError::UnsupportedType { file_id, .. } => *file_id,
+            TypeError::UnknownField { file_id, .. } => *file_id,
+            TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
         }
     }
 
@@ -217,6 +235,35 @@ impl TypeError {
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("type not supported"),
                 ]),
+            TypeError::UnknownField {
+                struct_name,
+                field_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "no field `{}` on struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range()).with_message("unknown field"),
+                ]),
+            TypeError::StructFieldTypeMismatch {
+                struct_name,
+                field_name,
+                expected,
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "type mismatch for field `{}` of struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ]),
         }
     }
 }
@@ -298,6 +345,26 @@ impl fmt::Display for TypeError {
             }
             TypeError::UnsupportedType { type_name, .. } => {
                 write!(f, "Unsupported type: {}", type_name)
+            }
+            TypeError::UnknownField {
+                struct_name,
+                field_name,
+                ..
+            } => {
+                write!(f, "No field `{}` on struct `{}`", field_name, struct_name)
+            }
+            TypeError::StructFieldTypeMismatch {
+                struct_name,
+                field_name,
+                expected,
+                found,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Struct `{}` field `{}`: expected {}, found {}",
+                    struct_name, field_name, expected, found
+                )
             }
         }
     }

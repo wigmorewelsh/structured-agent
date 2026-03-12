@@ -775,4 +775,287 @@ mod tests {
         }
         assert!(result.is_ok());
     }
+
+    fn create_struct_definition(name: &str, fields: Vec<(&str, AstType)>) -> Definition {
+        use crate::ast::{StructDefinition, StructField};
+        Definition::Struct(StructDefinition {
+            name: name.to_string(),
+            fields: fields
+                .into_iter()
+                .map(|(field_name, field_type)| StructField {
+                    name: field_name.to_string(),
+                    field_type,
+                    span: crate::types::Span::dummy(),
+                })
+                .collect(),
+            span: crate::types::Span::dummy(),
+        })
+    }
+
+    #[test]
+    fn test_struct_definition_registers_type() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "main",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_struct_type_in_function_parameter_is_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Task", vec![("title", AstType::String)]),
+            Definition::Function(create_test_function(
+                "get_title",
+                vec![create_parameter("t", AstType::Struct("Task".to_string()))],
+                AstType::String,
+                vec![Statement::Return(Expression::FieldAccess {
+                    base: "t".to_string(),
+                    field: "title".to_string(),
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unknown_struct_type_in_parameter_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(create_test_function(
+            "foo",
+            vec![create_parameter(
+                "x",
+                AstType::Struct("Unknown".to_string()),
+            )],
+            AstType::Unit,
+            vec![Statement::Return(Expression::UnitLiteral {
+                span: crate::types::Span::dummy(),
+            })],
+        ))]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnsupportedType { .. }
+        ));
+    }
+
+    #[test]
+    fn test_struct_literal_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "make",
+                vec![],
+                AstType::Struct("Point".to_string()),
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Point".to_string(),
+                    fields: vec![
+                        (
+                            "x".to_string(),
+                            Expression::IntLiteral {
+                                value: 1,
+                                span: crate::types::Span::dummy(),
+                            },
+                        ),
+                        (
+                            "y".to_string(),
+                            Expression::IntLiteral {
+                                value: 2,
+                                span: crate::types::Span::dummy(),
+                            },
+                        ),
+                    ],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_struct_literal_unknown_struct_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(create_test_function(
+            "make",
+            vec![],
+            AstType::Unit,
+            vec![Statement::Return(Expression::StructLiteral {
+                struct_name: "Ghost".to_string(),
+                fields: vec![],
+                span: crate::types::Span::dummy(),
+            })],
+        ))]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnsupportedType { .. }
+        ));
+    }
+
+    #[test]
+    fn test_struct_literal_unknown_field_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "make",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Point".to_string(),
+                    fields: vec![(
+                        "z".to_string(),
+                        Expression::IntLiteral {
+                            value: 1,
+                            span: crate::types::Span::dummy(),
+                        },
+                    )],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnknownField { .. }
+        ));
+    }
+
+    #[test]
+    fn test_struct_literal_field_type_mismatch_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "make",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Point".to_string(),
+                    fields: vec![(
+                        "x".to_string(),
+                        Expression::StringLiteral {
+                            value: "wrong".to_string(),
+                            span: crate::types::Span::dummy(),
+                        },
+                    )],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::StructFieldTypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_field_access_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "get_x",
+                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                AstType::Int,
+                vec![Statement::Return(Expression::FieldAccess {
+                    base: "p".to_string(),
+                    field: "x".to_string(),
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_field_access_unknown_field_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "get_z",
+                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                AstType::Int,
+                vec![Statement::Return(Expression::FieldAccess {
+                    base: "p".to_string(),
+                    field: "z".to_string(),
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnknownField { .. }
+        ));
+    }
+
+    #[test]
+    fn test_field_access_on_non_struct_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(create_test_function(
+            "bad",
+            vec![create_parameter("s", AstType::String)],
+            AstType::Int,
+            vec![Statement::Return(Expression::FieldAccess {
+                base: "s".to_string(),
+                field: "x".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        ))]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_struct_defined_after_function_that_uses_it_is_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            Definition::Function(create_test_function(
+                "make",
+                vec![],
+                AstType::Struct("Point".to_string()),
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Point".to_string(),
+                    fields: vec![(
+                        "x".to_string(),
+                        Expression::IntLiteral {
+                            value: 0,
+                            span: crate::types::Span::dummy(),
+                        },
+                    )],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
 }
