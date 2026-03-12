@@ -18,6 +18,7 @@ use tracing::{debug, error};
 pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
     external_function_registry: HashMap<String, ExternalFunctionDefinition>,
+    pub(crate) struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
     language_engine: Arc<dyn LanguageEngine>,
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
@@ -207,6 +208,7 @@ impl RuntimeBuilder {
         Runtime {
             function_registry,
             external_function_registry: HashMap::new(),
+            struct_registry: HashMap::new(),
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Arc::new(crate::types::PrintEngine {})),
@@ -295,11 +297,16 @@ impl Runtime {
         let mut runtime = Runtime {
             function_registry: self.function_registry.clone(),
             external_function_registry: self.external_function_registry.clone(),
+            struct_registry: self.struct_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
             compiled_program: self.compiled_program.clone(),
         };
+
+        for (name, fields) in compiled_program.struct_definitions() {
+            runtime.struct_registry.insert(name.clone(), fields.clone());
+        }
 
         for function in compiled_program.functions().values() {
             debug!(
@@ -358,10 +365,15 @@ impl Runtime {
         }
     }
 
+    pub fn get_struct(&self, name: &str) -> Option<&Vec<(String, crate::types::Type)>> {
+        self.struct_registry.get(name)
+    }
+
     fn create_runtime_ref(&self) -> Runtime {
         Runtime {
             function_registry: self.function_registry.clone(),
             external_function_registry: self.external_function_registry.clone(),
+            struct_registry: self.struct_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
@@ -488,6 +500,7 @@ impl Clone for Runtime {
         Self {
             function_registry: self.function_registry.clone(),
             external_function_registry: self.external_function_registry.clone(),
+            struct_registry: self.struct_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
@@ -638,5 +651,59 @@ mod tests {
         );
 
         assert!(!Runtime::signatures_match(&provider_def, &extern_def));
+    }
+
+    #[tokio::test]
+    async fn test_struct_registry_populated_after_run() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn main(): Int {
+    let p = Point { x: 1, y: 2 }
+    return p.x
+}
+"#;
+        use crate::compiler::CompilationUnit;
+        let program = CompilationUnit::from_string(code.to_string());
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
+        assert_eq!(result.as_integer().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_get_struct_returns_none_for_unknown() {
+        use crate::compiler::CompilationUnit;
+        let program = CompilationUnit::from_string("fn main(): () { return () }".to_string());
+        let runtime = Runtime::builder(program).build();
+        assert!(runtime.get_struct("Unknown").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_struct_returns_fields_after_run() {
+        let code = r#"
+struct Task {
+    title: String,
+    steps: Int,
+}
+fn main(): () {
+    return ()
+}
+"#;
+        use crate::compiler::CompilationUnit;
+        let program = CompilationUnit::from_string(code.to_string());
+        let mut runtime = Runtime::builder(program).build();
+        let compiled = runtime
+            .compiler
+            .compile_program(&runtime.compiled_program)
+            .unwrap();
+        for (name, fields) in compiled.struct_definitions() {
+            runtime.struct_registry.insert(name.clone(), fields.clone());
+        }
+        let fields = runtime.get_struct("Task").unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].0, "title");
+        assert_eq!(fields[1].0, "steps");
     }
 }

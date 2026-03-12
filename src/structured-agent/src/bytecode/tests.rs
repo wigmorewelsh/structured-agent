@@ -34,6 +34,32 @@ mod instruction_display_tests {
         };
         assert_eq!(format!("{}", instr), "ctx.child true");
     }
+
+    #[test]
+    fn test_struct_new_display() {
+        let instr = Instruction::StructNew {
+            dest: "p".to_string(),
+            struct_name: "Point".to_string(),
+            fields: vec![
+                ("x".to_string(), "$tmp0".to_string()),
+                ("y".to_string(), "$tmp1".to_string()),
+            ],
+        };
+        assert_eq!(
+            format!("{}", instr),
+            "struct.new p, Point, {x: $tmp0, y: $tmp1}"
+        );
+    }
+
+    #[test]
+    fn test_struct_get_display() {
+        let instr = Instruction::StructGet {
+            dest: "$tmp0".to_string(),
+            src: "p".to_string(),
+            field: "x".to_string(),
+        };
+        assert_eq!(format!("{}", instr), "struct.get $tmp0, p, x");
+    }
 }
 
 #[cfg(test)]
@@ -995,5 +1021,172 @@ mod vm_execution_tests {
 
         let result = vm.execute(&test_compiled, context).await.unwrap();
         assert_eq!(result.1.value.as_string().unwrap(), "test_value");
+    }
+}
+
+#[cfg(test)]
+mod struct_bytecode_tests {
+    use crate::ast::Module;
+    use crate::bytecode::BytecodeCompiler;
+    use crate::compiler::{CodespanParser, CompilationUnit};
+    use crate::diagnostics::DiagnosticManager;
+    use crate::runtime::{ExpressionValue, Runtime};
+
+    fn parse_code(code: &str) -> Module {
+        let unit = CompilationUnit::from_string(code.to_string());
+        let mut manager = DiagnosticManager::new();
+        let file_id = manager.add_file("test.sa".to_string(), code.to_string());
+        let parser = CodespanParser::new();
+        parser.parse(&unit, file_id, manager.reporter()).unwrap()
+    }
+
+    fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
+        for def in &module.definitions {
+            if let crate::ast::Definition::Function(f) = def {
+                if f.name == name {
+                    return f;
+                }
+            }
+        }
+        panic!("Function '{}' not found", name);
+    }
+
+    #[test]
+    fn test_struct_literal_compiles_to_struct_new() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn make(): Point {
+    return Point { x: 1, y: 2 }
+}
+"#;
+        let module = parse_code(code);
+        let func = get_function(&module, "make");
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let has_struct_new = compiled
+            .instructions
+            .iter()
+            .any(|i| matches!(i, crate::bytecode::Instruction::StructNew { struct_name, .. } if struct_name == "Point"));
+        assert!(has_struct_new, "Expected StructNew instruction for Point");
+    }
+
+    #[test]
+    fn test_field_access_compiles_to_struct_get() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn get_x(p: Point): Int {
+    return p.x
+}
+"#;
+        let module = parse_code(code);
+        let func = get_function(&module, "get_x");
+        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let has_struct_get = compiled.instructions.iter().any(
+            |i| matches!(i, crate::bytecode::Instruction::StructGet { field, .. } if field == "x"),
+        );
+        assert!(has_struct_get, "Expected StructGet instruction for field x");
+    }
+
+    #[tokio::test]
+    async fn test_vm_struct_construction_and_field_access() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn make_point(): Int {
+    let p = Point { x: 42, y: 7 }
+    return p.x
+}
+fn main(): Int {
+    return make_point()
+}
+"#;
+        let program = CompilationUnit::from_string(code.to_string());
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
+        assert_eq!(result.as_integer().unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_vm_struct_string_field() {
+        let code = r#"
+struct Task {
+    title: String,
+}
+fn get_title(): String {
+    let t = Task { title: "buy milk" }
+    return t.title
+}
+fn main(): String {
+    return get_title()
+}
+"#;
+        let program = CompilationUnit::from_string(code.to_string());
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
+        assert_eq!(result.as_string().unwrap(), "buy milk");
+    }
+
+    #[tokio::test]
+    async fn test_vm_struct_passed_as_argument() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn get_y(p: Point): Int {
+    return p.y
+}
+fn main(): Int {
+    let p = Point { x: 1, y: 99 }
+    return get_y(p)
+}
+"#;
+        let program = CompilationUnit::from_string(code.to_string());
+        let runtime = Runtime::builder(program).build();
+        let result = runtime.run().await.unwrap();
+        assert_eq!(result.as_integer().unwrap(), 99);
+    }
+
+    #[test]
+    fn test_struct_value_type_name() {
+        let value = ExpressionValue::struct_value(vec![
+            ("x", ExpressionValue::integer(1)),
+            ("y", ExpressionValue::integer(2)),
+        ]);
+        assert_eq!(value.type_name(), "Struct");
+    }
+
+    #[test]
+    fn test_struct_value_get_field() {
+        let value = ExpressionValue::struct_value(vec![
+            ("x", ExpressionValue::integer(10)),
+            ("y", ExpressionValue::integer(20)),
+        ]);
+        let x = value.get_struct_field("x").unwrap();
+        assert_eq!(x.as_integer().unwrap(), 10);
+        let y = value.get_struct_field("y").unwrap();
+        assert_eq!(y.as_integer().unwrap(), 20);
+    }
+
+    #[test]
+    fn test_struct_value_unknown_field_is_error() {
+        let value = ExpressionValue::struct_value(vec![("x", ExpressionValue::integer(1))]);
+        assert!(value.get_struct_field("z").is_err());
+    }
+
+    #[test]
+    fn test_struct_value_format_for_llm() {
+        let value =
+            ExpressionValue::struct_value(vec![("title", ExpressionValue::string("hello"))]);
+        let formatted = value.format_for_llm();
+        assert!(formatted.contains("title"));
+        assert!(formatted.contains("hello"));
     }
 }

@@ -322,7 +322,7 @@ impl VM {
         param_name: &str,
         param_type: &str,
     ) -> Result<VMState, String> {
-        let param_type_obj = parse_type(param_type)?;
+        let param_type_obj = parse_type(param_type, state.context.runtime())?;
         let value = state
             .context
             .runtime()
@@ -373,7 +373,7 @@ impl VM {
         dest: &str,
         return_type: &str,
     ) -> Result<VMState, String> {
-        let return_type_obj = parse_type(return_type)?;
+        let return_type_obj = parse_type(return_type, state.context.runtime())?;
         let value = state
             .context
             .runtime()
@@ -470,7 +470,10 @@ impl VM {
     }
 }
 
-fn parse_type(type_str: &str) -> Result<crate::types::Type, String> {
+fn parse_type(
+    type_str: &str,
+    runtime: &crate::runtime::Runtime,
+) -> Result<crate::types::Type, String> {
     match type_str {
         "String" => Ok(crate::types::Type::String),
         "Boolean" => Ok(crate::types::Type::Boolean),
@@ -479,11 +482,18 @@ fn parse_type(type_str: &str) -> Result<crate::types::Type, String> {
         "Unknown" => Ok(crate::types::Type::String),
         s if s.starts_with("List<") && s.ends_with(">") => {
             let inner = &s[5..s.len() - 1];
-            Ok(crate::types::Type::List(Box::new(parse_type(inner)?)))
+            Ok(crate::types::Type::List(Box::new(parse_type(
+                inner, runtime,
+            )?)))
         }
         s if s.starts_with("Option<") && s.ends_with(">") => {
             let inner = &s[7..s.len() - 1];
-            Ok(crate::types::Type::Option(Box::new(parse_type(inner)?)))
+            Ok(crate::types::Type::Option(Box::new(parse_type(
+                inner, runtime,
+            )?)))
+        }
+        name if runtime.get_struct(name).is_some() => {
+            Ok(crate::types::Type::Struct(name.to_string()))
         }
         _ => Err(format!("Unknown type: {}", type_str)),
     }

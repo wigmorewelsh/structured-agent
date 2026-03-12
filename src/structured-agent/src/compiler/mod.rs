@@ -114,6 +114,7 @@ impl CodespanParser {
 pub struct CompiledProgram {
     functions: HashMap<String, Box<dyn ExecutableFunction>>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
+    struct_definitions: HashMap<String, Vec<(String, Type)>>,
     main_function: Option<String>,
     source_path: Option<String>,
 }
@@ -129,6 +130,7 @@ impl CompiledProgram {
         Self {
             functions: HashMap::new(),
             external_functions: HashMap::new(),
+            struct_definitions: HashMap::new(),
             main_function: None,
             source_path: None,
         }
@@ -168,6 +170,14 @@ impl CompiledProgram {
 
     pub fn external_functions(&self) -> &HashMap<String, ExternalFunctionDefinition> {
         &self.external_functions
+    }
+
+    pub fn struct_definitions(&self) -> &HashMap<String, Vec<(String, Type)>> {
+        &self.struct_definitions
+    }
+
+    pub fn add_struct_definition(&mut self, name: String, fields: Vec<(String, Type)>) {
+        self.struct_definitions.insert(name, fields);
     }
 }
 
@@ -306,7 +316,14 @@ impl Compiler {
                         }
                     }
                 }
-                Definition::Struct(_) => {}
+                Definition::Struct(ast_struct) => {
+                    let fields = ast_struct
+                        .fields
+                        .iter()
+                        .map(|f| (f.name.clone(), convert_ast_type_to_type(&f.field_type)))
+                        .collect();
+                    compiled_program.add_struct_definition(ast_struct.name.clone(), fields);
+                }
             }
         }
 

@@ -284,3 +284,44 @@ async fn test_vm_unit_return() {
         Err(e) => panic!("Test failed with error: {:?}", e),
     }
 }
+
+#[tokio::test]
+async fn test_vm_struct_type_recognised_in_llm_generate() {
+    let code = r#"
+struct Task {
+    title: String,
+}
+fn main(): Task {
+    return Task { title: "done" }
+}
+"#;
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    let value = result.unwrap();
+    assert_eq!(value.type_name(), "Struct");
+}
+
+#[tokio::test]
+async fn test_vm_struct_field_access_in_function() {
+    let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn sum_coords(p: Point): Int {
+    let xv = p.x
+    return xv
+}
+fn main(): Int {
+    let p = Point { x: 5, y: 3 }
+    return sum_coords(p)
+}
+"#;
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    assert_eq!(result.unwrap().as_integer().unwrap(), 5);
+}
