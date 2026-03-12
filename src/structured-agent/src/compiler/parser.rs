@@ -1,6 +1,6 @@
 use crate::ast::{
     Definition, Expression, ExternalFunction, Function, FunctionBody, Module, Parameter,
-    SelectClause, SelectExpression, Statement, Type,
+    SelectClause, SelectExpression, Statement, StructDefinition, StructField, Type,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -123,6 +123,7 @@ where
             choice((
                 parse_function_with_docs().map(Definition::Function),
                 parse_external_function().map(Definition::ExternalFunction),
+                parse_struct_definition().map(Definition::Struct),
             ))
             .skip(skip_spaces_and_comments()),
         )),
@@ -252,8 +253,58 @@ combine::parser! {
             lex_string("Boolean").map(|_| Type::Boolean),
             lex_string("String").map(|_| Type::String),
             lex_string("Int").map(|_| Type::Int),
+            attempt(
+                (
+                    satisfy(|c: char| c.is_uppercase()),
+                    many(combine::parser::char::alpha_num()),
+                )
+                    .skip(skip_spaces())
+                    .map(|(first, rest): (char, Vec<char>)| {
+                        Type::Struct(std::iter::once(first).chain(rest).collect())
+                    }),
+            ),
         ))
     }
+}
+
+fn parse_struct_definition<Input>() -> impl Parser<Input, Output = StructDefinition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("struct"),
+        identifier(),
+        between(lex_char('{'), lex_char('}'), many(parse_struct_field())),
+        position(),
+    )
+        .map(|(start, _, name, fields, end)| StructDefinition {
+            name,
+            fields,
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_struct_field<Input>() -> impl Parser<Input, Output = StructField>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        skip_spaces_and_comments(),
+        position(),
+        identifier(),
+        lex_char(':'),
+        parse_type(),
+        lex_char(','),
+        position(),
+    )
+        .map(|(_, start, name, _, field_type, _, end)| StructField {
+            name,
+            field_type,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_function_body<Input>() -> impl Parser<Input, Output = FunctionBody>
@@ -353,6 +404,8 @@ combine::parser! {
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
+            attempt(parse_struct_literal()),
+            attempt(parse_field_access()),
             attempt(parse_call()),
             parse_string_literal(),
             attempt(parse_list_literal()),
@@ -398,6 +451,72 @@ combine::parser! {
                 },
             )
     }
+}
+
+fn parse_struct_literal<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        satisfy(|c: char| c.is_uppercase()),
+        many(combine::parser::char::alpha_num()),
+        skip_spaces(),
+        lex_char('{'),
+        sep_by(parse_struct_field_assignment(), lex_char(',')),
+        optional(lex_char(',')),
+        lex_char('}'),
+        position(),
+    )
+        .map(
+            |(start, first, rest, _, _, fields, _, _, end): (
+                usize,
+                char,
+                Vec<char>,
+                (),
+                _,
+                Vec<(String, Expression)>,
+                _,
+                _,
+                usize,
+            )| {
+                let struct_name: String = std::iter::once(first).chain(rest).collect();
+                Expression::StructLiteral {
+                    struct_name,
+                    fields,
+                    span: Span::new(start, end),
+                }
+            },
+        )
+}
+
+fn parse_struct_field_assignment<Input>() -> impl Parser<Input, Output = (String, Expression)>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (identifier(), lex_char(':'), parse_simple_expression()).map(|(name, _, expr)| (name, expr))
+}
+
+fn parse_field_access<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        identifier_raw(),
+        char('.'),
+        identifier_raw(),
+        position(),
+    )
+        .skip(skip_spaces())
+        .map(|(start, base, _, field, end)| Expression::FieldAccess {
+            base,
+            field,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_call<Input>() -> impl Parser<Input, Output = Expression>
@@ -2085,5 +2204,136 @@ extern fn add(n: Int): Int
         } else {
             panic!("Expected external function");
         }
+    }
+
+    #[test]
+    fn test_parse_struct_definition() {
+        let input = "struct Point {\n    x: Int,\n    y: Int,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.name, "Point");
+            assert_eq!(s.fields.len(), 2);
+            assert_eq!(s.fields[0].name, "x");
+            assert!(matches!(s.fields[0].field_type, Type::Struct(_)) == false);
+            assert!(matches!(s.fields[0].field_type, Type::Int));
+            assert_eq!(s.fields[1].name, "y");
+            assert!(matches!(s.fields[1].field_type, Type::Int));
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_string_fields() {
+        let input = "struct Task {\n    title: String,\n    done: Boolean,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.name, "Task");
+            assert!(matches!(s.fields[0].field_type, Type::String));
+            assert!(matches!(s.fields[1].field_type, Type::Boolean));
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_type_in_extern_fn() {
+        let input = "struct Point {\n    x: Int,\n    y: Int,\n}\nextern fn get_point(): Point\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        if let Definition::ExternalFunction(f) = &module.definitions[1] {
+            assert!(matches!(&f.return_type, Type::Struct(n) if n == "Point"));
+        } else {
+            panic!("Expected external function");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_type_as_parameter() {
+        let input = "struct Point {\n    x: Int,\n    y: Int,\n}\nfn describe(p: Point): String {\n    return \"ok\"\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[1] {
+            assert!(matches!(&f.parameters[0].param_type, Type::Struct(n) if n == "Point"));
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_literal_expression() {
+        let input = "fn make(): Point {\n    return Point { x: 1, y: 2 }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            if let crate::ast::Statement::Return(expr) = &f.body.statements[0] {
+                if let Expression::StructLiteral {
+                    struct_name,
+                    fields,
+                    ..
+                } = expr
+                {
+                    assert_eq!(struct_name, "Point");
+                    assert_eq!(fields.len(), 2);
+                    assert_eq!(fields[0].0, "x");
+                    assert_eq!(fields[1].0, "y");
+                } else {
+                    panic!("Expected StructLiteral, got {:?}", expr);
+                }
+            } else {
+                panic!("Expected return statement");
+            }
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_field_access_expression() {
+        let input = "fn get_x(p: Point): Int {\n    return p.x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            if let crate::ast::Statement::Return(expr) = &f.body.statements[0] {
+                if let Expression::FieldAccess { base, field, .. } = expr {
+                    assert_eq!(base, "p");
+                    assert_eq!(field, "x");
+                } else {
+                    panic!("Expected FieldAccess, got {:?}", expr);
+                }
+            } else {
+                panic!("Expected return statement");
+            }
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_and_function_together() {
+        let input = "struct Task {\n    title: String,\n}\nfn make_task(): Task {\n    return Task { title: \"hello\" }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        assert!(matches!(module.definitions[0], Definition::Struct(_)));
+        assert!(matches!(module.definitions[1], Definition::Function(_)));
     }
 }
