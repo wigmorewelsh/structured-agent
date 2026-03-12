@@ -640,8 +640,65 @@ fn test(p: Point): Int {
     p: Point
 ): Int {
       0: decl $tmp0
-      1: struct.get $tmp0, p, x
-      2: ret $tmp0
+      1: decl $tmp1
+      2: mov $tmp1, p
+      3: struct.get $tmp0, $tmp1, x
+      4: ret $tmp0
+}
+"#;
+        compile_and_check_named(code, "test", expected);
+    }
+
+    #[test]
+    fn test_compile_chained_field_access() {
+        let code = r#"
+struct Address {
+    city: String,
+}
+struct Person {
+    address: Address,
+}
+fn test(p: Person): String {
+    return p.address.city
+}
+"#;
+        let expected = r#"fn test(
+    p: Person
+): String {
+      0: decl $tmp0
+      1: decl $tmp1
+      2: decl $tmp2
+      3: mov $tmp2, p
+      4: struct.get $tmp1, $tmp2, address
+      5: struct.get $tmp0, $tmp1, city
+      6: ret $tmp0
+}
+"#;
+        compile_and_check_named(code, "test", expected);
+    }
+
+    #[test]
+    fn test_compile_field_access_on_call() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn make_point(): Point {
+    return Point { x: 5, y: 10 }
+}
+fn test(): Int {
+    return make_point().x
+}
+"#;
+        let expected = r#"fn test(
+
+): Int {
+      0: decl $tmp0
+      1: decl $tmp1
+      2: call make_point, [], $tmp1
+      3: struct.get $tmp0, $tmp1, x
+      4: ret $tmp0
 }
 "#;
         compile_and_check_named(code, "test", expected);

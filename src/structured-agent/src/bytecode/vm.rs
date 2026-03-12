@@ -240,15 +240,7 @@ impl VM {
             value: result.value.clone(),
         };
 
-        let result_display = if let Ok(s) = result.value.as_string() {
-            s.to_string()
-        } else if let Ok(b) = result.value.as_boolean() {
-            b.to_string()
-        } else if result.value.type_name() == "Unit" {
-            "()".to_string()
-        } else {
-            format!("{:?}", result.value)
-        };
+        let result_display = result.value.value_string();
 
         info!(
             "<result function=\"{}\">\n{}\n</result>",

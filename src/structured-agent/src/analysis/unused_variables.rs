@@ -126,8 +126,8 @@ impl UnusedVariableAnalyzer {
                     self.analyze_expression(expr);
                 }
             }
-            Expression::FieldAccess { base, span, .. } => {
-                self.track_read(base, *span);
+            Expression::FieldAccess { base, .. } => {
+                self.analyze_expression(base);
             }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

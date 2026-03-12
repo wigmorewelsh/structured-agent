@@ -403,9 +403,8 @@ combine::parser! {
     fn parse_simple_expression[Input]()(Input) -> Expression
     where [Input: Stream<Token = char, Position = usize>]
     {
-        choice((
+        let primary = choice((
             attempt(parse_struct_literal()),
-            attempt(parse_field_access()),
             attempt(parse_call()),
             parse_string_literal(),
             attempt(parse_list_literal()),
@@ -413,7 +412,19 @@ combine::parser! {
             attempt(parse_boolean_literal()),
             attempt(parse_integer_literal()),
             parse_variable(),
-        ))
+        ));
+
+        (primary, many(attempt((char('.'), identifier_raw(), position()))))
+            .map(|(base, suffixes): (Expression, Vec<(char, String, usize)>)| {
+                suffixes.into_iter().fold(base, |acc, (_, field, end)| {
+                    let span_start = acc.span().start;
+                    Expression::FieldAccess {
+                        base: Box::new(acc),
+                        field,
+                        span: Span::new(span_start, end),
+                    }
+                })
+            })
     }
 }
 
@@ -466,9 +477,10 @@ where
         lex_char('{'),
         sep_by(parse_struct_field_assignment(), lex_char(',')),
         optional(lex_char(',')),
-        lex_char('}'),
+        char('}'),
         position(),
     )
+        .skip(skip_spaces())
         .map(
             |(start, first, rest, _, _, fields, _, _, end): (
                 usize,
@@ -497,26 +509,6 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (identifier(), lex_char(':'), parse_simple_expression()).map(|(name, _, expr)| (name, expr))
-}
-
-fn parse_field_access<Input>() -> impl Parser<Input, Output = Expression>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        identifier_raw(),
-        char('.'),
-        identifier_raw(),
-        position(),
-    )
-        .skip(skip_spaces())
-        .map(|(start, base, _, field, end)| Expression::FieldAccess {
-            base,
-            field,
-            span: Span::new(start, end),
-        })
 }
 
 fn parse_call<Input>() -> impl Parser<Input, Output = Expression>
@@ -2309,20 +2301,20 @@ extern fn add(n: Int): Int
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
-        if let Definition::Function(f) = &module.definitions[0] {
-            if let crate::ast::Statement::Return(expr) = &f.body.statements[0] {
-                if let Expression::FieldAccess { base, field, .. } = expr {
-                    assert_eq!(base, "p");
-                    assert_eq!(field, "x");
-                } else {
-                    panic!("Expected FieldAccess, got {:?}", expr);
-                }
-            } else {
-                panic!("Expected return statement");
-            }
-        } else {
-            panic!("Expected function");
-        }
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::FieldAccess { base, field, .. } = expr else {
+            panic!()
+        };
+        let Expression::Variable { name, .. } = base.as_ref() else {
+            panic!()
+        };
+        assert_eq!(name, "p");
+        assert_eq!(field, "x");
     }
 
     #[test]
@@ -2381,6 +2373,57 @@ extern fn add(n: Int): Int
         } else {
             panic!("Expected struct definition");
         }
+    }
+
+    #[test]
+    fn test_parse_chained_field_access() {
+        let input = "fn get_city(p: Person): String {\n    return p.address.city\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::FieldAccess { base, field, .. } = expr else {
+            panic!()
+        };
+        assert_eq!(field, "city");
+        let Expression::FieldAccess {
+            base: inner_base,
+            field: inner_field,
+            ..
+        } = base.as_ref()
+        else {
+            panic!()
+        };
+        assert_eq!(inner_field, "address");
+        let Expression::Variable { name, .. } = inner_base.as_ref() else {
+            panic!()
+        };
+        assert_eq!(name, "p");
+    }
+
+    #[test]
+    fn test_parse_field_access_on_call() {
+        let input = "fn test(): Int {\n    return make_point().x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::FieldAccess { base, field, .. } = expr else {
+            panic!()
+        };
+        assert_eq!(field, "x");
+        let Expression::Call { function, .. } = base.as_ref() else {
+            panic!()
+        };
+        assert_eq!(function, "make_point");
     }
 
     #[test]

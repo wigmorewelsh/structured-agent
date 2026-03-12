@@ -82,6 +82,12 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    DuplicateField {
+        struct_name: String,
+        field_name: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -99,6 +105,7 @@ impl TypeError {
             TypeError::UnknownField { span, .. } => *span,
             TypeError::MissingField { span, .. } => *span,
             TypeError::StructFieldTypeMismatch { span, .. } => *span,
+            TypeError::DuplicateField { span, .. } => *span,
         }
     }
 
@@ -116,6 +123,7 @@ impl TypeError {
             TypeError::UnknownField { file_id, .. } => *file_id,
             TypeError::MissingField { file_id, .. } => *file_id,
             TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
+            TypeError::DuplicateField { file_id, .. } => *file_id,
         }
     }
 
@@ -286,6 +294,20 @@ impl TypeError {
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("expected `{}`, found `{}`", expected, found)),
                 ]),
+            TypeError::DuplicateField {
+                struct_name,
+                field_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "duplicate field `{}` in struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("field `{}` provided more than once", field_name)),
+                ]),
         }
     }
 }
@@ -397,6 +419,17 @@ impl fmt::Display for TypeError {
                     f,
                     "Struct `{}` field `{}`: expected {}, found {}",
                     struct_name, field_name, expected, found
+                )
+            }
+            TypeError::DuplicateField {
+                struct_name,
+                field_name,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Duplicate field `{}` in struct `{}`",
+                    field_name, struct_name
                 )
             }
         }

@@ -293,7 +293,7 @@ impl BytecodeCompiler {
                 ..
             } => Self::compile_struct_literal(builder, struct_name, fields, dest_var),
             Expression::FieldAccess { base, field, .. } => {
-                Self::compile_field_access(builder, base, field, dest_var)
+                Self::compile_field_access(builder, base.as_ref(), field, dest_var)
             }
         }
     }
@@ -571,13 +571,18 @@ impl BytecodeCompiler {
 
     fn compile_field_access(
         builder: &mut InstructionBuilder,
-        base: &str,
+        base: &ast::Expression,
         field: &str,
         dest_var: &str,
     ) -> Result<(), String> {
+        let base_var = builder.next_temp();
+        builder.emit(Instruction::Decl {
+            name: base_var.clone(),
+        });
+        Self::compile_expression(builder, base, &base_var)?;
         builder.emit(Instruction::StructGet {
             dest: dest_var.to_string(),
-            src: base.to_string(),
+            src: base_var,
             field: field.to_string(),
         });
         Ok(())

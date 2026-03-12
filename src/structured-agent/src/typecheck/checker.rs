@@ -478,6 +478,18 @@ impl TypeChecker {
                     }
                 }
 
+                let mut seen = std::collections::HashSet::new();
+                for (field_name, value_expr) in fields {
+                    if !seen.insert(field_name.clone()) {
+                        return Err(TypeError::DuplicateField {
+                            struct_name: struct_name.clone(),
+                            field_name: field_name.clone(),
+                            span: value_expr.span(),
+                            file_id,
+                        });
+                    }
+                }
+
                 for (required_field, _) in &definition {
                     if !fields.iter().any(|(n, _)| n == required_field) {
                         return Err(TypeError::MissingField {
@@ -492,13 +504,7 @@ impl TypeChecker {
                 Ok(AstType::Struct(struct_name.clone()))
             }
             Expression::FieldAccess { base, field, span } => {
-                let base_type =
-                    env.lookup_variable(base)
-                        .ok_or_else(|| TypeError::UnknownVariable {
-                            name: base.clone(),
-                            span: *span,
-                            file_id,
-                        })?;
+                let base_type = self.check_expression(base, env, file_id)?;
                 match base_type {
                     AstType::Struct(name) => {
                         let definition = self.struct_definitions.get(&name).ok_or_else(|| {

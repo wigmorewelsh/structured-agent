@@ -160,7 +160,7 @@ pub enum Expression {
         span: Span,
     },
     FieldAccess {
-        base: String,
+        base: Box<Expression>,
         field: String,
         span: Span,
     },
