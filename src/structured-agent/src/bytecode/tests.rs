@@ -600,6 +600,54 @@ fn greet(name: String): () {
     }
 
     #[test]
+    fn test_compile_struct_literal() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn test(): Point {
+    return Point { x: 1, y: 2 }
+}
+"#;
+        let expected = r#"fn test(
+
+): Point {
+      0: decl $tmp0
+      1: decl $tmp1
+      2: ldc.int $tmp1, 1
+      3: decl $tmp2
+      4: ldc.int $tmp2, 2
+      5: struct.new $tmp0, Point, {x: $tmp1, y: $tmp2}
+      6: ret $tmp0
+}
+"#;
+        compile_and_check_named(code, "test", expected);
+    }
+
+    #[test]
+    fn test_compile_field_access() {
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn test(p: Point): Int {
+    return p.x
+}
+"#;
+        let expected = r#"fn test(
+    p: Point
+): Int {
+      0: decl $tmp0
+      1: struct.get $tmp0, p, x
+      2: ret $tmp0
+}
+"#;
+        compile_and_check_named(code, "test", expected);
+    }
+
+    #[test]
     fn test_compile_placeholder() {
         let code = r#"
             fn test(): String {
@@ -1188,5 +1236,33 @@ fn main(): Int {
         let formatted = value.format_for_llm();
         assert!(formatted.contains("title"));
         assert!(formatted.contains("hello"));
+    }
+
+    #[test]
+    fn test_struct_value_format_for_llm_int_and_bool_fields() {
+        let value = ExpressionValue::struct_value(vec![
+            ("count", ExpressionValue::integer(42)),
+            ("active", ExpressionValue::boolean(true)),
+        ]);
+        let formatted = value.format_for_llm();
+        assert!(formatted.contains("count"));
+        assert!(formatted.contains("42"));
+        assert!(formatted.contains("active"));
+        assert!(formatted.contains("true"));
+    }
+
+    #[test]
+    fn test_metadata_type_name_is_metadata_not_struct() {
+        let value = ExpressionValue::metadata("my_func", Some("does things".to_string()));
+        assert_eq!(value.type_name(), "Metadata");
+    }
+
+    #[test]
+    fn test_user_struct_with_name_and_documentation_fields_is_not_metadata() {
+        let value = ExpressionValue::struct_value(vec![
+            ("name", ExpressionValue::string("alice")),
+            ("documentation", ExpressionValue::string("some doc")),
+        ]);
+        assert_eq!(value.type_name(), "Struct");
     }
 }

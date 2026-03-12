@@ -2336,4 +2336,66 @@ extern fn add(n: Int): Int
         assert!(matches!(module.definitions[0], Definition::Struct(_)));
         assert!(matches!(module.definitions[1], Definition::Function(_)));
     }
+
+    #[test]
+    fn test_parse_struct_return_type_on_fn() {
+        let input =
+            "struct Point {\n    x: Int,\n}\nfn make(): Point {\n    return Point { x: 1 }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[1] {
+            assert!(matches!(&f.return_type, Type::Struct(n) if n == "Point"));
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_struct() {
+        let input = "struct Empty {\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.name, "Empty");
+            assert_eq!(s.fields.len(), 0);
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_list_field() {
+        let input = "struct Bag {\n    items: List<String>,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert!(
+                matches!(&s.fields[0].field_type, Type::List(inner) if matches!(inner.as_ref(), Type::String))
+            );
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_option_field() {
+        let input = "struct Wrapper {\n    value: Option<Int>,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert!(
+                matches!(&s.fields[0].field_type, Type::Option(inner) if matches!(inner.as_ref(), Type::Int))
+            );
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
 }

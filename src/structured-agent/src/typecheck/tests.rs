@@ -1088,4 +1088,85 @@ mod tests {
         let result = checker.check_module(&module, 0);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_struct_literal_as_call_argument_is_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+            Definition::Function(create_test_function(
+                "consume",
+                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                AstType::Unit,
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+            Definition::Function(create_test_function(
+                "make_and_pass",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::Call {
+                    function: "consume".to_string(),
+                    arguments: vec![Expression::StructLiteral {
+                        struct_name: "Point".to_string(),
+                        fields: vec![(
+                            "x".to_string(),
+                            Expression::IntLiteral {
+                                value: 1,
+                                span: crate::types::Span::dummy(),
+                            },
+                        )],
+                        span: crate::types::Span::dummy(),
+                    }],
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extern_fn_with_struct_return_type_is_valid() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![
+            create_struct_definition("Point", vec![("x", AstType::Int)]),
+            Definition::ExternalFunction(crate::ast::ExternalFunction {
+                name: "get_point".to_string(),
+                parameters: vec![],
+                return_type: AstType::Struct("Point".to_string()),
+                span: crate::types::Span::dummy(),
+            }),
+            Definition::Function(create_test_function(
+                "main",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )),
+        ]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extern_fn_with_unknown_struct_return_type_is_error() {
+        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::ExternalFunction(
+            crate::ast::ExternalFunction {
+                name: "get_ghost".to_string(),
+                parameters: vec![],
+                return_type: AstType::Struct("Ghost".to_string()),
+                span: crate::types::Span::dummy(),
+            },
+        )]);
+        let result = checker.check_module(&module, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::UnsupportedType { .. }
+        ));
+    }
 }
