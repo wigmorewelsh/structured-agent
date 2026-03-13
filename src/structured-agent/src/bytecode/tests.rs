@@ -359,11 +359,8 @@ fn main(): String {
       2: ldc.str $tmp1, "a"
       3: decl $tmp2
       4: ldc.str $tmp2, "b"
-      5: list.new $tmp0, Unknown
-      6: list.add $tmp0, $tmp1
-      7: list.add $tmp0, $tmp2
-      8: list.finish $tmp0
-      9: ret $tmp0
+      5: list.create $tmp0, [$tmp1, $tmp2]
+      6: ret $tmp0
 }
 "#;
         compile_and_check(code, expected);
@@ -1136,6 +1133,7 @@ mod struct_bytecode_tests {
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{ExpressionValue, Runtime};
+    use arrow::array::Array;
 
     fn parse_code(code: &str) -> Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -1321,5 +1319,57 @@ fn main(): Int {
             ("documentation", ExpressionValue::string("some doc")),
         ]);
         assert_eq!(value.type_name(), "Struct");
+    }
+
+    #[test]
+    fn test_from_elements_struct_list() {
+        let a = ExpressionValue::struct_value(vec![
+            ("x", ExpressionValue::integer(1)),
+            ("y", ExpressionValue::integer(2)),
+        ]);
+        let b = ExpressionValue::struct_value(vec![
+            ("x", ExpressionValue::integer(3)),
+            ("y", ExpressionValue::integer(4)),
+        ]);
+        let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
+        assert_eq!(list.type_name(), "List");
+        let arr = list.as_list().unwrap();
+        assert_eq!(arr.len(), 1);
+        let values = arr.value(0);
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_from_elements_option_list() {
+        let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
+        let b = ExpressionValue::option_none();
+        let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
+        assert_eq!(list.type_name(), "List");
+        let arr = list.as_list().unwrap();
+        assert_eq!(arr.len(), 1);
+        let values = arr.value(0);
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_format_for_llm_struct_list() {
+        let a = ExpressionValue::struct_value(vec![("name", ExpressionValue::string("alice"))]);
+        let b = ExpressionValue::struct_value(vec![("name", ExpressionValue::string("bob"))]);
+        let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
+        let formatted = list.format_for_llm();
+        assert!(formatted.contains("alice"), "got: {}", formatted);
+        assert!(formatted.contains("bob"), "got: {}", formatted);
+        assert!(formatted.contains("name"), "got: {}", formatted);
+    }
+
+    #[test]
+    fn test_format_for_llm_option_list() {
+        let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
+        let b = ExpressionValue::option_none();
+        let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
+        let formatted = list.format_for_llm();
+        assert!(formatted.contains("Some"), "got: {}", formatted);
+        assert!(formatted.contains("hello"), "got: {}", formatted);
+        assert!(formatted.contains("None"), "got: {}", formatted);
     }
 }

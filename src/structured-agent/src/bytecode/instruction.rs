@@ -52,12 +52,8 @@ pub enum Instruction {
     /// Get metadata for a function
     MetaFunction { function_name: String, dest: String },
 
-    /// Create new list builder
-    ListNew { dest: String, element_type: String },
-    /// Append element to list builder
-    ListAdd { dest: String, src: String },
-    /// Finalize list builder into ListArray
-    ListFinish { dest: String },
+    /// Create list from element variables
+    ListCreate { dest: String, elements: Vec<String> },
 
     /// Await LLM to fill placeholder, store in dest
     LlmPlaceholder {
@@ -172,14 +168,15 @@ impl fmt::Display for Instruction {
                 write!(f, "meta.function {}, {}", function_name, dest)
             }
 
-            Instruction::ListNew { dest, element_type } => {
-                write!(f, "list.new {}, {}", dest, element_type)
-            }
-            Instruction::ListAdd { dest, src } => {
-                write!(f, "list.add {}, {}", dest, src)
-            }
-            Instruction::ListFinish { dest } => {
-                write!(f, "list.finish {}", dest)
+            Instruction::ListCreate { dest, elements } => {
+                write!(f, "list.create {}, [", dest)?;
+                for (i, var) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "]")
             }
 
             Instruction::LlmPlaceholder {

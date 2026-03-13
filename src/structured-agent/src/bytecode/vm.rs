@@ -70,12 +70,9 @@ impl VM {
                     function_name,
                     dest,
                 } => self.execute_meta_function(state, function_name, dest)?,
-                Instruction::ListNew {
-                    dest,
-                    element_type: _,
-                } => self.execute_list_new(state, dest),
-                Instruction::ListAdd { dest: _, src: _ } => Self::advance_pc(state),
-                Instruction::ListFinish { dest: _ } => Self::advance_pc(state),
+                Instruction::ListCreate { dest, elements } => {
+                    self.execute_list_create(state, dest, elements)?
+                }
                 Instruction::LlmPlaceholder {
                     dest,
                     param_name,
@@ -298,13 +295,20 @@ impl VM {
         Ok(Self::advance_pc(state))
     }
 
-    fn execute_list_new(&self, mut state: VMState, dest: &str) -> VMState {
-        Self::write_variable(
-            &mut state,
-            dest,
-            ExpressionResult::new(ExpressionValue::unit()),
-        );
-        Self::advance_pc(state)
+    fn execute_list_create(
+        &self,
+        mut state: VMState,
+        dest: &str,
+        element_vars: &[String],
+    ) -> Result<VMState, String> {
+        let elements: Vec<ExpressionValue> = element_vars
+            .iter()
+            .map(|var| Ok(Self::read_variable(&state, var)?.value))
+            .collect::<Result<_, String>>()?;
+
+        let list_value = ExpressionValue::from_elements(elements)?;
+        Self::write_variable(&mut state, dest, ExpressionResult::new(list_value));
+        Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_placeholder(

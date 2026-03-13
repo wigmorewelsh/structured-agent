@@ -1,5 +1,6 @@
 use crate::compiler::CompilationUnit;
 use crate::runtime::Runtime;
+use arrow::array::{Array, BooleanArray, Int64Array, StringArray, StructArray, UnionArray};
 
 #[tokio::test]
 async fn test_vm_simple_string_return() {
@@ -301,6 +302,153 @@ fn main(): Task {
     assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
     let value = result.unwrap();
     assert_eq!(value.type_name(), "Struct");
+}
+
+#[tokio::test]
+async fn test_vm_string_list_literal() {
+    let code = r#"
+        fn main(): List<String> {
+            return ["apple", "banana", "cherry"]
+        }
+    "#;
+
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    assert_eq!(list.len(), 1);
+    let values = list.value(0);
+    let strings = values.as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(strings.len(), 3);
+    assert_eq!(strings.value(0), "apple");
+    assert_eq!(strings.value(1), "banana");
+    assert_eq!(strings.value(2), "cherry");
+}
+
+#[tokio::test]
+async fn test_vm_int_list_literal() {
+    let code = r#"
+        fn main(): List<Int> {
+            return [1, 2, 3]
+        }
+    "#;
+
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    assert_eq!(list.len(), 1);
+    let values = list.value(0);
+    let ints = values.as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(ints.len(), 3);
+    assert_eq!(ints.value(0), 1);
+    assert_eq!(ints.value(1), 2);
+    assert_eq!(ints.value(2), 3);
+}
+
+#[tokio::test]
+async fn test_vm_boolean_list_literal() {
+    let code = r#"
+        fn main(): List<Boolean> {
+            return [true, false, true]
+        }
+    "#;
+
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    assert_eq!(list.len(), 1);
+    let values = list.value(0);
+    let bools = values.as_any().downcast_ref::<BooleanArray>().unwrap();
+    assert_eq!(bools.len(), 3);
+    assert_eq!(bools.value(0), true);
+    assert_eq!(bools.value(1), false);
+    assert_eq!(bools.value(2), true);
+}
+
+#[tokio::test]
+async fn test_vm_struct_list_literal() {
+    let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn main(): List<Point> {
+    return [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
+}
+    "#;
+
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+
+    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    assert_eq!(list.len(), 1);
+    let values = list.value(0);
+    let structs = values.as_any().downcast_ref::<StructArray>().unwrap();
+    assert_eq!(structs.len(), 2);
+    let x_col = structs
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(x_col.value(0), 1);
+    assert_eq!(x_col.value(1), 3);
+    let y_col = structs
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(y_col.value(0), 2);
+    assert_eq!(y_col.value(1), 4);
+}
+
+#[test]
+fn test_from_elements_option_some_and_none() {
+    use crate::runtime::ExpressionValue;
+    use arrow::array::UnionArray;
+
+    let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
+    let b = ExpressionValue::option_none();
+    let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
+    assert_eq!(list.type_name(), "List");
+    let arr = list.as_list().unwrap();
+    assert_eq!(arr.len(), 1);
+    let values = arr.value(0);
+    let unions = values.as_any().downcast_ref::<UnionArray>().unwrap();
+    assert_eq!(unions.len(), 2);
+    assert_eq!(unions.type_id(0), 1);
+    assert_eq!(unions.type_id(1), 0);
+}
+
+#[tokio::test]
+async fn test_vm_empty_list_literal_is_rejected() {
+    let code = r#"
+        fn main(): List<String> {
+            return []
+        }
+    "#;
+
+    let program = CompilationUnit::from_string(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    let result = runtime.run().await;
+
+    assert!(
+        result.is_err(),
+        "Expected type error for empty list literal"
+    );
 }
 
 #[tokio::test]

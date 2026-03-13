@@ -386,8 +386,7 @@ impl BytecodeCompiler {
         elements: &[Expression],
         dest_var: &str,
     ) -> Result<(), String> {
-        let element_type = "Unknown".to_string();
-        let mut temp_vars = Vec::new();
+        let mut element_vars = Vec::new();
 
         for elem in elements {
             let temp_var = builder.next_temp();
@@ -395,23 +394,12 @@ impl BytecodeCompiler {
                 name: temp_var.clone(),
             });
             Self::compile_expression(builder, elem, &temp_var)?;
-            temp_vars.push(temp_var);
+            element_vars.push(temp_var);
         }
 
-        builder.emit(Instruction::ListNew {
+        builder.emit(Instruction::ListCreate {
             dest: dest_var.to_string(),
-            element_type,
-        });
-
-        for temp_var in temp_vars {
-            builder.emit(Instruction::ListAdd {
-                dest: dest_var.to_string(),
-                src: temp_var,
-            });
-        }
-
-        builder.emit(Instruction::ListFinish {
-            dest: dest_var.to_string(),
+            elements: element_vars,
         });
         Ok(())
     }

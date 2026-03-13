@@ -119,8 +119,8 @@ impl App {
             println!("Result: (no output)");
         } else if let Ok(b) = result.as_boolean() {
             println!("Result: {}", b);
-        } else if let Ok(list) = result.as_list() {
-            println!("Result: List[{}]", list.len());
+        } else if result.as_list().is_ok() {
+            println!("Result: {}", result.format_for_llm());
         } else {
             println!("Result: {}", result.value_string());
         }
