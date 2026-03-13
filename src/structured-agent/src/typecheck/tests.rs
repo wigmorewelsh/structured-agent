@@ -3,6 +3,8 @@ use crate::ast::{
     Definition, Expression, Function, FunctionBody, Module, Parameter, SelectClause,
     SelectExpression, Statement, Type as AstType,
 };
+use crate::compiler::parser::parse_program;
+use combine::{Parser, Stream, stream::position::IndexPositioner};
 
 fn create_test_module(definitions: Vec<Definition>) -> Module {
     Module {
@@ -969,6 +971,32 @@ mod tests {
             result.unwrap_err(),
             TypeError::StructFieldTypeMismatch { .. }
         ));
+    }
+
+    #[test]
+    fn test_struct_literal_missing_field_span_does_not_bleed() {
+        let source = "struct Point {\n    x: Int,\n    y: Int,\n}\n\nfn main(): Int {\n    let p = Point { x: 1 }\n    return p.x\n}\n";
+        let stream =
+            combine::stream::position::Stream::with_positioner(source, IndexPositioner::default());
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker.check_module(&module, 0).unwrap_err();
+        let TypeError::MissingField { span, .. } = err else {
+            panic!("Expected MissingField, got {:?}", err);
+        };
+        let literal = "Point { x: 1 }";
+        let literal_start = source.find(literal).unwrap();
+        let literal_end = literal_start + literal.len();
+        assert!(
+            span.start >= literal_start,
+            "span starts before the struct literal"
+        );
+        assert!(
+            span.end <= literal_end,
+            "MissingField span.end ({}) bleeds past closing brace of struct literal ({})",
+            span.end,
+            literal_end
+        );
     }
 
     #[test]

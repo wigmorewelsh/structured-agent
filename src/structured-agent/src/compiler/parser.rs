@@ -415,6 +415,7 @@ combine::parser! {
         ));
 
         (primary, many(attempt((char('.'), identifier_raw(), position()))))
+            .skip(skip_spaces())
             .map(|(base, suffixes): (Expression, Vec<(char, String, usize)>)| {
                 suffixes.into_iter().fold(base, |acc, (_, field, end)| {
                     let span_start = acc.span().start;
@@ -2424,6 +2425,28 @@ extern fn add(n: Int): Int
             panic!()
         };
         assert_eq!(function, "make_point");
+    }
+
+    #[test]
+    fn test_struct_literal_span_ends_at_closing_brace() {
+        let input = "fn make(): Point {\n    return Point { x: 1 }\n    return p.x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::StructLiteral { span, .. } = expr else {
+            panic!("Expected StructLiteral")
+        };
+        let closing_brace_pos = input.find('}').unwrap();
+        assert_eq!(
+            span.end,
+            closing_brace_pos + 1,
+            "span.end should point just past the closing brace, not into subsequent lines"
+        );
     }
 
     #[test]
