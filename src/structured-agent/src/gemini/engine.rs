@@ -425,21 +425,26 @@ impl LanguageEngine for GeminiEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::CompilationUnit;
+    use crate::cli::config::ProgramSource;
+    use crate::compiler::{CompilationUnit, Compiler};
     use crate::runtime::Runtime;
 
     fn make_context_with_struct(code: &str) -> crate::runtime::Context {
-        let program = CompilationUnit::from_string(code.to_string());
-        let mut runtime = Runtime::builder(program.clone()).build();
-        runtime.with_structs_from_compiled(&program);
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let compiled = compiler.compile_source(&unit).unwrap();
+        let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        for (name, fields) in compiled.struct_definitions() {
+            runtime.register_struct(name.clone(), fields.clone());
+        }
         crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
     }
 
     #[test]
     fn test_build_value_schema_struct_unknown_returns_error() {
         let code = "fn main(): () { return () }";
-        let program = CompilationUnit::from_string(code.to_string());
-        let runtime = std::sync::Arc::new(Runtime::builder(program).build());
+        let runtime =
+            std::sync::Arc::new(Runtime::builder(ProgramSource::Inline(code.to_string())).build());
         let context = crate::runtime::Context::with_runtime(runtime);
         let result = GeminiEngine::build_value_schema(&Type::Struct("Ghost".to_string()), &context);
         assert!(result.is_err());

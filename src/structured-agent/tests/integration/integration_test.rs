@@ -1,3 +1,4 @@
+use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::Runtime;
 
@@ -14,8 +15,7 @@ fn main(): () {
 }
 "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
-    let runtime = Runtime::builder(program).build();
+    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Program execution failed");
 
@@ -44,8 +44,7 @@ fn main(): () {
 }
 "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
-    let runtime = Runtime::builder(program).build();
+    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
     let result = runtime.run().await;
     assert!(
         result.is_ok(),
@@ -69,8 +68,7 @@ fn main(): () {
 }
 "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
-    let runtime = Runtime::builder(program).build();
+    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Variable injection test failed");
 
@@ -92,8 +90,7 @@ fn main(): String {
 }
 "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
-    let runtime = Runtime::builder(program).build();
+    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Variable usage test failed");
 
@@ -120,7 +117,7 @@ fn main(): String {
 
     let program = CompilationUnit::from_string(code.to_string());
     let compiler = structured_agent::compiler::Compiler::new();
-    let compiled = compiler.compile_program(&program);
+    let compiled = compiler.compile_source(&program);
 
     assert!(compiled.is_ok(), "Compilation failed");
     let compiled_program = compiled.unwrap();
@@ -141,7 +138,7 @@ fn main(): String {
     );
 
     // Verify execution produces correct result
-    let runtime = Runtime::builder(program).build();
+    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Execution failed");
 

@@ -1,4 +1,4 @@
-use crate::compiler::CompilationUnit;
+use crate::cli::config::ProgramSource;
 use crate::runtime::Runtime;
 use arrow::array::{Array, BooleanArray, Int64Array, StringArray, StructArray, UnionArray};
 
@@ -10,7 +10,7 @@ async fn test_vm_simple_string_return() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -31,7 +31,7 @@ async fn test_vm_variable_assignment_and_return() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -54,7 +54,7 @@ async fn test_vm_return_in_if_block() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -75,7 +75,7 @@ async fn test_vm_variable_injection() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -95,7 +95,7 @@ async fn test_vm_multiple_variable_injections() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -116,7 +116,7 @@ async fn test_vm_function_call() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -140,7 +140,7 @@ async fn test_vm_function_call_with_parameter() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -161,7 +161,7 @@ async fn test_vm_multiple_statements() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -178,7 +178,7 @@ async fn test_vm_boolean_literal() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -202,7 +202,7 @@ async fn test_vm_if_else_true_branch() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -226,7 +226,7 @@ async fn test_vm_if_else_false_branch() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -255,7 +255,7 @@ async fn test_vm_nested_function_calls() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -275,7 +275,7 @@ async fn test_vm_unit_return() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -296,7 +296,7 @@ fn main(): Task {
     return Task { title: "done" }
 }
 "#;
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
@@ -312,7 +312,7 @@ async fn test_vm_string_list_literal() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -336,7 +336,7 @@ async fn test_vm_int_list_literal() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -360,7 +360,7 @@ async fn test_vm_boolean_list_literal() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -388,7 +388,7 @@ fn main(): List<Point> {
 }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -441,7 +441,7 @@ async fn test_vm_empty_list_literal_is_rejected() {
         }
     "#;
 
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
 
@@ -467,7 +467,7 @@ fn main(): Int {
     return sum_coords(p)
 }
 "#;
-    let program = CompilationUnit::from_string(code.to_string());
+    let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
     assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());

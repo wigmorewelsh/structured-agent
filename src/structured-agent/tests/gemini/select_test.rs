@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use structured_agent::compiler::CompilationUnit;
+use structured_agent::cli::config::ProgramSource;
 use structured_agent::gemini::GeminiEngine;
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::LanguageEngine;
@@ -15,8 +15,8 @@ async fn test_select_with_simple_options() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::string("Choose your favorite color"),
@@ -60,8 +60,8 @@ async fn test_select_with_numbered_options() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::string("Pick the correct mathematical operation for 2 + 2"),
@@ -97,8 +97,8 @@ async fn test_select_with_single_option() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec![ExpressionValue::metadata("Only choice", None)];
@@ -123,8 +123,8 @@ async fn test_select_with_contextual_decision() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::string("The weather is very hot today"),
@@ -164,8 +164,8 @@ async fn test_select_with_mathematical_context() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::string("Calculate the derivative of x^2"),
@@ -201,8 +201,8 @@ async fn test_select_with_many_options() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     context.add_event(
         ExpressionValue::string("Choose the programming language known for memory safety"),
@@ -242,8 +242,8 @@ async fn test_select_validates_bounds() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
 
     let options = vec![
@@ -272,8 +272,8 @@ async fn test_select_prompt_formatting() {
         }
     };
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
     let options = vec![
         ExpressionValue::metadata("A", None),

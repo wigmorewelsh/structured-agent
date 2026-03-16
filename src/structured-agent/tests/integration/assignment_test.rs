@@ -2,7 +2,8 @@ use combine::Parser;
 use combine::stream::position;
 use std::sync::Arc;
 use structured_agent::bytecode::BytecodeCompiler;
-use structured_agent::compiler::CompilationUnit;
+use structured_agent::cli::config::ProgramSource;
+
 use structured_agent::compiler::parser;
 use structured_agent::runtime::{Context, Runtime};
 use structured_agent::types::FileId;
@@ -50,8 +51,8 @@ fn test_assignment(): () {
     assert!(compilation_result.is_ok());
     let compiled_function = compilation_result.unwrap();
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
     let execution_result = compiled_function.execute(context, vec![]).await;
     assert!(execution_result.is_ok());
@@ -91,8 +92,8 @@ fn test_var_assignment(): () {
     let function = functions[0];
     let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
     let result = compiled_function.execute(context, vec![]).await;
     assert!(result.is_ok());
@@ -140,8 +141,8 @@ fn test_return(): () {
     let function = &functions[0];
     let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
 
-    let empty_program = CompilationUnit::from_string("fn main() {}".to_string());
-    let runtime = Arc::new(Runtime::builder(empty_program).build());
+    let runtime =
+        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let context = Context::with_runtime(runtime);
     let result = compiled_function.execute(context, vec![]).await;
     assert!(result.is_ok());

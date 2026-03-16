@@ -1,4 +1,4 @@
-mod checker;
+pub mod checker;
 mod error;
 
 #[cfg(test)]

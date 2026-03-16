@@ -1,5 +1,6 @@
 use std::sync::Arc;
-use structured_agent::compiler::{CompilationUnit, Compiler};
+use structured_agent::cli::config::ProgramSource;
+use structured_agent::compiler::Compiler;
 use structured_agent::mcp::McpClient;
 use structured_agent::runtime::Runtime;
 
@@ -71,8 +72,7 @@ fn main(): () {
 }
 "#;
 
-    let program = CompilationUnit::from_string(simple_program.to_string());
-    let runtime = Runtime::builder(program)
+    let runtime = Runtime::builder(ProgramSource::Inline(simple_program.to_string()))
         .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
@@ -110,8 +110,7 @@ fn main(): () {
 }
 "#;
 
-    let program = CompilationUnit::from_string(program_with_extern.to_string());
-    let runtime = Runtime::builder(program)
+    let runtime = Runtime::builder(ProgramSource::Inline(program_with_extern.to_string()))
         .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
@@ -150,8 +149,7 @@ fn main(): String {{
         test_message
     );
 
-    let program = CompilationUnit::from_string(program_with_extern_call);
-    let runtime = Runtime::builder(program)
+    let runtime = Runtime::builder(ProgramSource::Inline(program_with_extern_call))
         .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
@@ -163,7 +161,6 @@ fn main(): String {{
         result.err()
     );
 
-    
     let value = result.unwrap();
     let s = value.as_string().unwrap();
     assert_eq!(
@@ -205,8 +202,7 @@ fn main(): String {{
         test_message
     );
 
-    let program = CompilationUnit::from_string(complete_program);
-    let runtime = Runtime::builder(program)
+    let runtime = Runtime::builder(ProgramSource::Inline(complete_program))
         .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
@@ -218,7 +214,6 @@ fn main(): String {{
         result.err()
     );
 
-    
     let value = result.unwrap();
     let s = value.as_string().unwrap();
     assert_eq!(
@@ -269,8 +264,7 @@ fn main(): String {{
         test_message, test_prefix
     );
 
-    let program = CompilationUnit::from_string(program);
-    let runtime = Runtime::builder(program)
+    let runtime = Runtime::builder(ProgramSource::Inline(program))
         .with_compiler(Arc::new(Compiler::new()))
         .with_mcp_client(mcp_client)
         .build();
@@ -282,7 +276,6 @@ fn main(): String {{
         result.err()
     );
 
-    
     let value = result.unwrap();
     let s = value.as_string().unwrap();
     let expected = format!("{}{}", test_prefix, test_message);

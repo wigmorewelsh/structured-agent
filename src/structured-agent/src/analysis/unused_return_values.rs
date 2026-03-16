@@ -31,7 +31,10 @@ impl UnusedReturnValueAnalyzer {
                     self.function_return_types
                         .insert(ext_func.name.clone(), returns_value);
                 }
-                Definition::Struct(_) | Definition::Use { .. } => {}
+                Definition::Struct(_)
+                | Definition::Use { .. }
+                | Definition::ModuleHeader { .. }
+                | Definition::Signature { .. } => {}
             }
         }
     }

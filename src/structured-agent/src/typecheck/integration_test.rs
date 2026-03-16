@@ -16,7 +16,7 @@ fn main(): () {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -38,7 +38,7 @@ fn main(): () {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");
@@ -63,7 +63,7 @@ fn get_number(): String {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");
@@ -93,7 +93,7 @@ fn main(): () {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -123,7 +123,7 @@ fn main(): String {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         assert!(
             result.is_ok(),
@@ -153,7 +153,7 @@ fn main(): String {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         assert!(
             result.is_err(),
@@ -177,7 +177,7 @@ fn main(): () {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         assert!(
             result.is_ok(),
@@ -199,7 +199,7 @@ fn main(): () {
 
         let unit = CompilationUnit::from_string(code.to_string());
         let compiler = Compiler::new();
-        let result = compiler.compile_program(&unit);
+        let result = compiler.compile_source(&unit);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");

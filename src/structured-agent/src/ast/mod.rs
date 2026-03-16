@@ -9,6 +9,21 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ModuleParam {
+    pub name: String,
+    pub path: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SigFunction {
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Type,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
@@ -17,6 +32,16 @@ pub enum Definition {
         path: Vec<String>,
         alias: Option<String>,
         is_pub: bool,
+        span: Span,
+    },
+    ModuleHeader {
+        name: String,
+        params: Vec<ModuleParam>,
+        span: Span,
+    },
+    Signature {
+        name: String,
+        functions: Vec<SigFunction>,
         span: Span,
     },
 }
@@ -28,6 +53,8 @@ impl Spanned for Definition {
             Definition::ExternalFunction(f) => f.span,
             Definition::Struct(s) => s.span,
             Definition::Use { span, .. } => *span,
+            Definition::ModuleHeader { span, .. } => *span,
+            Definition::Signature { span, .. } => *span,
         }
     }
 }
@@ -376,6 +403,36 @@ impl fmt::Display for Definition {
                     write!(f, " as {}", a)?;
                 }
                 Ok(())
+            }
+            Definition::ModuleHeader { name, params, .. } => {
+                write!(f, "mod {}", name)?;
+                if !params.is_empty() {
+                    write!(f, "(")?;
+                    for (i, p) in params.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", p.name, p.path.join("."))?;
+                    }
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+            Definition::Signature {
+                name, functions, ..
+            } => {
+                writeln!(f, "sig {} {{", name)?;
+                for sig_fn in functions {
+                    write!(f, "    fn {}(", sig_fn.name)?;
+                    for (i, param) in sig_fn.parameters.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", param.name, param.param_type)?;
+                    }
+                    writeln!(f, "): {}", sig_fn.return_type)?;
+                }
+                write!(f, "}}")
             }
         }
     }

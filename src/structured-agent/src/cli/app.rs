@@ -1,8 +1,7 @@
 use crate::acp;
 use crate::cli::config::{Config, Mode};
 use crate::cli::errors::CliError;
-use crate::runtime::{Runtime, load_program};
-use arrow::array::Array;
+use crate::runtime::Runtime;
 
 pub struct App;
 
@@ -18,8 +17,6 @@ impl App {
     async fn run_execute_mode(config: Config) -> Result<(), CliError> {
         println!("{}", config.describe_source());
 
-        let program = load_program(&config.program_source).map_err(CliError::from)?;
-
         if !config.mcp_servers.is_empty() {
             println!("MCP servers configured: {}", config.mcp_servers.len());
             for server in &config.mcp_servers {
@@ -29,10 +26,7 @@ impl App {
 
         println!("Initializing structured agent runtime...");
 
-        let runtime = Runtime::builder(program.clone())
-            .with_config(&config)
-            .await
-            .map_err(CliError::RuntimeError)?;
+        let runtime = Self::build_runtime(&config).await?;
 
         println!("Executing program...");
         match runtime.run().await {
@@ -48,8 +42,6 @@ impl App {
     async fn run_check_mode(config: Config) -> Result<(), CliError> {
         println!("{}", config.describe_source());
 
-        let program = load_program(&config.program_source).map_err(CliError::from)?;
-
         if !config.mcp_servers.is_empty() {
             println!("MCP servers configured: {}", config.mcp_servers.len());
             for server in &config.mcp_servers {
@@ -59,10 +51,7 @@ impl App {
 
         println!("Initializing structured agent runtime...");
 
-        let runtime = Runtime::builder(program.clone())
-            .with_config(&config)
-            .await
-            .map_err(CliError::RuntimeError)?;
+        let runtime = Self::build_runtime(&config).await?;
 
         println!("Running checks...");
         match runtime.check() {
@@ -72,6 +61,13 @@ impl App {
             }
             Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
         }
+    }
+
+    async fn build_runtime(config: &Config) -> Result<Runtime, CliError> {
+        Runtime::builder(config.program_source.clone())
+            .with_config(config)
+            .await
+            .map_err(CliError::RuntimeError)
     }
 
     async fn run_acp_mode(config: Config) -> Result<(), CliError> {
@@ -146,8 +142,7 @@ mod tests {
             mode: Mode::Run,
         };
 
-        let program = load_program(&config.program_source).unwrap();
-        let runtime = Runtime::builder(program)
+        let runtime = Runtime::builder(config.program_source.clone())
             .with_config(&config)
             .await
             .unwrap();
@@ -171,8 +166,7 @@ mod tests {
             mode: Mode::Run,
         };
 
-        let program = load_program(&config.program_source).unwrap();
-        let runtime = Runtime::builder(program)
+        let runtime = Runtime::builder(config.program_source.clone())
             .with_config(&config)
             .await
             .unwrap();

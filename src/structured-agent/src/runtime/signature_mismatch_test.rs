@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::CompilationUnit;
+use crate::cli::config::ProgramSource;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(CompilationUnit::from_string(program_source.to_string()))
+    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
         .with_native_function(wrong_func)
         .build();
 
@@ -116,7 +116,7 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(CompilationUnit::from_string(program_source.to_string()))
+    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
         .with_native_function(wrong_func)
         .build();
 
@@ -176,7 +176,7 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(CompilationUnit::from_string(program_source.to_string()))
+    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
         .with_native_function(wrong_func)
         .build();
 

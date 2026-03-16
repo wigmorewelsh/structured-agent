@@ -1,6 +1,5 @@
-use crate::cli::config::Config;
-use crate::compiler::CompilationUnit;
-use crate::runtime::{ExpressionValue, Runtime, RuntimeError, load_program};
+use crate::cli::config::{Config, ProgramSource};
+use crate::runtime::{ExpressionValue, Runtime, RuntimeError};
 use agent_client_protocol as acp;
 use std::fs::OpenOptions;
 use std::sync::Arc;
@@ -15,8 +14,7 @@ use super::tracing::SessionTracingLayer;
 
 pub struct Agent {
     runtime: Arc<Runtime>,
-    program: CompilationUnit,
-    program_source: Option<crate::cli::config::ProgramSource>,
+    program_source: ProgramSource,
     config: Option<Arc<Config>>,
     session_id: acp::SessionId,
     update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
@@ -64,22 +62,11 @@ impl Agent {
     ) -> Result<Self, String> {
         debug!("Creating agent for session {}", session_id.0);
 
-        let program = match load_program(program_source) {
-            Ok(p) => {
-                debug!("Program loaded successfully");
-                p
-            }
-            Err(e) => {
-                error!("Failed to load program: {}", e);
-                return Err(format!("Failed to load program: {}", e));
-            }
-        };
-
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
         let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
         debug!("Building runtime");
-        let runtime = match Runtime::builder(program.clone())
+        let runtime = match Runtime::builder(program_source.clone())
             .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
             .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .with_config(config)
@@ -97,8 +84,7 @@ impl Agent {
 
         Ok(Self {
             runtime: Arc::new(runtime),
-            program,
-            program_source: Some(program_source.clone()),
+            program_source: program_source.clone(),
             config: Some(Arc::new(config.clone())),
             session_id,
             update_tx,
@@ -108,22 +94,21 @@ impl Agent {
     }
 
     pub fn new(
-        program: CompilationUnit,
+        program_source: ProgramSource,
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Self {
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
         let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
-        let runtime = Runtime::builder(program.clone())
+        let runtime = Runtime::builder(program_source.clone())
             .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
             .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .build();
 
         Self {
             runtime: Arc::new(runtime),
-            program,
-            program_source: None,
+            program_source,
             config: None,
             session_id,
             update_tx,
@@ -254,12 +239,7 @@ impl Agent {
     pub async fn reload_scripts(&mut self) -> Result<(), AgentError> {
         debug!("Reloading scripts for session {}", self.session_id.0);
 
-        let program_source = self.program_source.as_ref().ok_or_else(|| {
-            error!("Cannot reload scripts: no program source available");
-            AgentError::RuntimeError(RuntimeError::ExecutionError(
-                "Reload not available for this session".to_string(),
-            ))
-        })?;
+        let program_source = &self.program_source;
 
         let config = self.config.as_ref().ok_or_else(|| {
             error!("Cannot reload scripts: no config available");
@@ -268,18 +248,10 @@ impl Agent {
             ))
         })?;
 
-        let program = load_program(program_source).map_err(|e| {
-            error!("Failed to reload program: {}", e);
-            AgentError::RuntimeError(RuntimeError::ExecutionError(format!(
-                "Failed to reload program: {}",
-                e
-            )))
-        })?;
-
         let (prompt_tx, prompt_rx) = mpsc::unbounded_channel();
         let shared_rx = Arc::new(Mutex::new(prompt_rx));
 
-        let runtime = Runtime::builder(program.clone())
+        let runtime = Runtime::builder(program_source.clone())
             .with_native_function(Arc::new(ReceiveFunction::new(shared_rx.clone())))
             .with_native_function(Arc::new(TryReceiveFunction::new(shared_rx)))
             .with_config(config)
@@ -289,7 +261,7 @@ impl Agent {
                 AgentError::RuntimeError(RuntimeError::ExecutionError(e))
             })?;
 
-        self.program = program;
+        self.program_source = program_source.clone();
         self.runtime = Arc::new(runtime);
         self.prompt_tx = prompt_tx;
 
@@ -356,9 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reload_scripts_without_source_fails() {
-        use crate::compiler::CompilationUnit;
-
-        let program = CompilationUnit::from_string("fn main() { }".to_string());
+        let program = ProgramSource::Inline("fn main() { }".to_string());
 
         let (tx, mut rx) =
             mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();

@@ -1,4 +1,7 @@
+pub(crate) mod discovery;
+pub(crate) mod parse;
 pub mod parser;
+pub(crate) mod sigs;
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
@@ -7,18 +10,23 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{Definition, Module};
+use crate::ast::{Definition, Module, SigFunction};
+use crate::bytecode::BytecodeCompiler;
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
-use crate::typecheck::type_check_module;
-use crate::types::{ExecutableFunction, ExternalFunctionDefinition, FileId, Function};
+use crate::typecheck::TypeChecker;
+use crate::typecheck::checker::{FunctionSignatureTuple, ModuleVisibility};
+use crate::types::{
+    ExecutableFunction, ExternalFunctionDefinition, FileId, Function, Parameter, Type,
+};
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
+use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
+use parse::parse_modules;
+use sigs::{SigTable, collect_sigs, sigs_visible_to_module};
 use std::collections::HashMap;
-use tracing::{debug, error, warn};
 
-use crate::bytecode::BytecodeCompiler;
-use crate::types::{Parameter, Type};
+use tracing::{debug, error, warn};
 
 #[derive(Debug, Clone)]
 pub struct CompilationUnit {
@@ -57,64 +65,13 @@ impl CompilationUnit {
     }
 }
 
-pub struct CodespanParser {}
-
-impl CodespanParser {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl CodespanParser {
-    pub fn parse(
-        &self,
-        program: &CompilationUnit,
-        file_id: FileId,
-        diagnostic_reporter: &DiagnosticReporter,
-    ) -> Result<Module, String> {
-        debug!("Parsing source code");
-        let input = program.source();
-        let stream = easy::Stream(position::Stream::with_positioner(
-            input,
-            position::IndexPositioner::new(),
-        ));
-
-        let result = parser::parse_program(file_id).parse(stream);
-
-        match result {
-            Ok((module, _)) => {
-                debug!(
-                    "Parser succeeded, found {} definitions",
-                    module.definitions.len()
-                );
-                Ok(module)
-            }
-            Err(e) => {
-                let error_str = format!("{}", e);
-                let byte_offset = e.position;
-                error!("Parser error at position {}: {}", byte_offset, error_str);
-
-                let clean_message = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
-
-                if let Err(io_err) = diagnostic_reporter.emit_parse_error(
-                    file_id,
-                    &clean_message,
-                    Some((byte_offset, byte_offset + 1)),
-                ) {
-                    eprintln!("Failed to emit diagnostic: {}", io_err);
-                }
-
-                Err("Parse error".to_string())
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct CompiledProgram {
     functions: HashMap<String, Box<dyn ExecutableFunction>>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
+    sig_definitions: HashMap<String, Vec<SigFunction>>,
+    pub module_visibility: ModuleVisibility,
     main_function: Option<String>,
     source_path: Option<String>,
 }
@@ -131,6 +88,8 @@ impl CompiledProgram {
             functions: HashMap::new(),
             external_functions: HashMap::new(),
             struct_definitions: HashMap::new(),
+            sig_definitions: HashMap::new(),
+            module_visibility: HashMap::new(),
             main_function: None,
             source_path: None,
         }
@@ -154,8 +113,8 @@ impl CompiledProgram {
     }
 
     pub fn add_external_function(&mut self, external_function: ExternalFunctionDefinition) {
-        let name = external_function.name.clone();
-        self.external_functions.insert(name, external_function);
+        self.external_functions
+            .insert(external_function.name.clone(), external_function);
     }
 
     pub fn main_function(&self) -> Option<&Box<dyn ExecutableFunction>> {
@@ -179,33 +138,17 @@ impl CompiledProgram {
     pub fn add_struct_definition(&mut self, name: String, fields: Vec<(String, Type)>) {
         self.struct_definitions.insert(name, fields);
     }
-}
 
-pub fn compile_external_function(
-    ast_ext_func: &crate::ast::ExternalFunction,
-) -> Result<ExternalFunctionDefinition, String> {
-    let parameters = ast_ext_func
-        .parameters
-        .iter()
-        .map(|p| Parameter::new(p.name.clone(), convert_ast_type_to_type(&p.param_type)))
-        .collect();
+    pub fn add_sig_definition(&mut self, name: String, functions: Vec<SigFunction>) {
+        self.sig_definitions.insert(name, functions);
+    }
 
-    Ok(ExternalFunctionDefinition::new(
-        ast_ext_func.name.clone(),
-        parameters,
-        convert_ast_type_to_type(&ast_ext_func.return_type),
-    ))
-}
+    pub fn sig_definitions(&self) -> &HashMap<String, Vec<SigFunction>> {
+        &self.sig_definitions
+    }
 
-fn convert_ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
-    match ast_type {
-        crate::ast::Type::Unit => Type::unit(),
-        crate::ast::Type::Boolean => Type::boolean(),
-        crate::ast::Type::String => Type::string(),
-        crate::ast::Type::List(inner) => Type::list(convert_ast_type_to_type(inner)),
-        crate::ast::Type::Option(inner) => Type::option(convert_ast_type_to_type(inner)),
-        crate::ast::Type::Int => Type::int(),
-        crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
+    pub fn module_visibility(&self) -> &ModuleVisibility {
+        &self.module_visibility
     }
 }
 
@@ -221,134 +164,265 @@ impl Default for Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
-        let parser = CodespanParser::new();
-        Self { parser }
+        Self {
+            parser: CodespanParser::new(),
+        }
+    }
+
+    pub fn compile_source(&self, unit: &CompilationUnit) -> Result<CompiledProgram, String> {
+        let mut sources = HashMap::new();
+        sources.insert(unit.name().to_string(), unit.source().to_string());
+        let discoverer = InMemoryDiscoverer::new(sources);
+        self.compile(
+            unit.name(),
+            unit.source(),
+            unit.path().map(String::from),
+            &discoverer,
+        )
+    }
+
+    pub fn compile_file(&self, entry_path: &str) -> Result<CompiledProgram, String> {
+        let entry_source = std::fs::read_to_string(entry_path)
+            .map_err(|e| format!("Failed to read {}: {}", entry_path, e))?;
+        self.compile(
+            entry_path,
+            &entry_source,
+            Some(entry_path.to_string()),
+            &FileDiscoverer,
+        )
+    }
+
+    fn compile(
+        &self,
+        entry_path: &str,
+        entry_source: &str,
+        source_path: Option<String>,
+        discoverer: &impl Discoverer,
+    ) -> Result<CompiledProgram, String> {
+        debug!("Compiling: {}", entry_path);
+
+        let mut diagnostics = DiagnosticManager::new();
+
+        let files = {
+            let parser = &self.parser;
+            let mut tmp_diagnostics = DiagnosticManager::new();
+            discover(entry_path, entry_source, discoverer, |path, source| {
+                let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
+                let file_id = tmp_diagnostics.add_file(path.to_string(), source.to_string());
+                let reporter = tmp_diagnostics.reporter().clone();
+                parser.parse(&unit, file_id, &reporter)
+            })?
+        };
+
+        let modules = parse_modules(&files, &mut diagnostics, &self.parser)?;
+
+        let sig_table: SigTable = collect_sigs(&modules);
+
+        let mut compiled = CompiledProgram {
+            module_visibility: sig_table.visibility.clone(),
+            ..CompiledProgram::new().with_source_path(source_path)
+        };
+
+        for parsed in &modules {
+            let external_sigs = if parsed.is_entry {
+                sigs_visible_to_module(&parsed.module, &sig_table)
+            } else {
+                sig_table.external_sigs.clone()
+            };
+            let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
+            let reporter = diagnostics.reporter().clone();
+            compile_module(
+                &parsed.module,
+                parsed.file_id,
+                &external_sigs,
+                &sig_table.visibility,
+                &reporter,
+                prefix,
+                &mut compiled,
+            )
+            .map_err(|e| format!("In {}: {}", parsed.name, e))?;
+        }
+
+        Ok(compiled)
     }
 }
 
-impl Compiler {
-    pub fn compile_program(&self, program: &CompilationUnit) -> Result<CompiledProgram, String> {
-        debug!("Compiling program: {}", program.name());
-        debug!("Source length: {} bytes", program.source().len());
-
-        let mut diagnostic_manager = DiagnosticManager::new();
-        let file_id =
-            diagnostic_manager.add_file(program.name().to_string(), program.source().to_string());
-
-        let reporter = diagnostic_manager.reporter().clone();
-
-        debug!("Starting parser");
-        let module = match self.parser.parse(program, file_id, &reporter) {
-            Ok(m) => {
-                debug!("Parsing completed successfully");
-                debug!("Found {} definitions", m.definitions.len());
-                m
+fn compile_module(
+    module: &Module,
+    file_id: FileId,
+    external_sigs: &HashMap<String, FunctionSignatureTuple>,
+    visibility: &ModuleVisibility,
+    reporter: &DiagnosticReporter,
+    prefix: Option<&str>,
+    compiled: &mut CompiledProgram,
+) -> Result<(), String> {
+    let mut checker = TypeChecker::new();
+    checker
+        .check_module_with_external_sigs(module, file_id, external_sigs, visibility)
+        .map_err(|e| {
+            error!("Type checking failed: {}", e);
+            if let Err(io_err) = reporter.emit_type_error(&e) {
+                eprintln!("Failed to emit type error: {}", io_err);
             }
-            Err(e) => {
-                error!("Parsing failed: {}", e);
-                return Err(e);
-            }
-        };
+            format!("Type error: {}", e)
+        })?;
 
-        debug!("Starting type checking");
-        if let Err(type_error) = type_check_module(&module, file_id) {
-            error!("Type checking failed: {}", type_error);
-            if let Err(io_err) = reporter.emit_type_error(&type_error) {
-                eprintln!("Failed to emit type error diagnostic: {}", io_err);
-            }
-            return Err(format!("Type error: {}", type_error));
+    let warnings = build_analysis_runner().run(module, file_id);
+    if !warnings.is_empty() {
+        warn!("Analysis found {} warnings", warnings.len());
+    }
+    for warning in &warnings {
+        if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
+            eprintln!("Failed to emit warning: {}", io_err);
         }
-        debug!("Type checking completed successfully");
+    }
 
-        let mut runner = AnalysisRunner::new()
-            .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
-            .with_analyzer(Box::new(ReachabilityAnalyzer::new()))
-            .with_analyzer(Box::new(InfiniteLoopAnalyzer::new()))
-            .with_analyzer(Box::new(EmptyBlockAnalyzer::new()))
-            .with_analyzer(Box::new(EmptyFunctionAnalyzer::new()))
-            .with_analyzer(Box::new(DuplicateInjectionAnalyzer::new()))
-            .with_analyzer(Box::new(PlaceholderOveruseAnalyzer::new()))
-            .with_analyzer(Box::new(RedundantSelectAnalyzer::new()))
-            .with_analyzer(Box::new(ConstantConditionAnalyzer::new()))
-            .with_analyzer(Box::new(VariableShadowingAnalyzer::new()))
-            .with_analyzer(Box::new(OverwrittenValueAnalyzer::new()))
-            .with_analyzer(Box::new(UnusedReturnValueAnalyzer::new()))
-            .with_analyzer(Box::new(UnusedExpressionAnalyzer::new()));
+    emit_definitions(module, prefix, compiled)
+}
 
-        debug!("Running analysis");
-        let warnings = runner.run(&module, file_id);
-        if !warnings.is_empty() {
-            warn!("Analysis found {} warnings", warnings.len());
-        }
-        for warning in &warnings {
-            debug!("Warning: {:?}", warning);
-            if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
-                eprintln!("Failed to emit warning diagnostic: {}", io_err);
-            }
-        }
-
-        let mut compiled_program =
-            CompiledProgram::new().with_source_path(program.path().map(String::from));
-
-        debug!("Compiling definitions");
-        for definition in module.definitions {
-            match definition {
-                Definition::Function(ast_function) => {
-                    debug!("Compiling function: {}", ast_function.name);
-                    let func_expr = BytecodeCompiler::compile_function(&ast_function)?;
-                    compiled_program.add_function(func_expr);
+fn emit_definitions(
+    module: &Module,
+    prefix: Option<&str>,
+    compiled: &mut CompiledProgram,
+) -> Result<(), String> {
+    for definition in &module.definitions {
+        match definition {
+            Definition::Function(f) => {
+                let mut f = f.clone();
+                if let Some(p) = prefix {
+                    f.name = format!("{}.{}", p, f.name);
                 }
-                Definition::ExternalFunction(ast_external_function) => {
-                    debug!(
-                        "Compiling external function: {}",
-                        ast_external_function.name
-                    );
-                    match compile_external_function(&ast_external_function) {
-                        Ok(compiled_external_function) => {
-                            compiled_program.add_external_function(compiled_external_function);
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to compile external function {}: {}",
-                                ast_external_function.name, e
-                            );
-                            return Err(e);
-                        }
-                    }
-                }
-                Definition::Struct(ast_struct) => {
-                    let fields = ast_struct
-                        .fields
-                        .iter()
-                        .map(|f| (f.name.clone(), convert_ast_type_to_type(&f.field_type)))
-                        .collect();
-                    compiled_program.add_struct_definition(ast_struct.name.clone(), fields);
-                }
-                Definition::Use { .. } => {}
+                debug!("Emitting function: {}", f.name);
+                compiled.add_function(BytecodeCompiler::compile_function(&f)?);
             }
+            Definition::ExternalFunction(f) => {
+                let mut f = f.clone();
+                if let Some(p) = prefix {
+                    f.name = format!("{}.{}", p, f.name);
+                }
+                debug!("Emitting external function: {}", f.name);
+                compiled.add_external_function(compile_external_function(&f)?);
+            }
+            Definition::Struct(s) => {
+                let fields = s
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), ast_type_to_type(&f.field_type)))
+                    .collect();
+                compiled.add_struct_definition(s.name.clone(), fields);
+            }
+            Definition::Signature {
+                name, functions, ..
+            } => {
+                compiled.add_sig_definition(name.clone(), functions.clone());
+            }
+            Definition::Use { .. } | Definition::ModuleHeader { .. } => {}
         }
+    }
+    Ok(())
+}
 
-        debug!("Compilation completed successfully");
-        Ok(compiled_program)
+pub fn compile_external_function(
+    ast_ext_func: &crate::ast::ExternalFunction,
+) -> Result<ExternalFunctionDefinition, String> {
+    let parameters = ast_ext_func
+        .parameters
+        .iter()
+        .map(|p| Parameter::new(p.name.clone(), ast_type_to_type(&p.param_type)))
+        .collect();
+    Ok(ExternalFunctionDefinition::new(
+        ast_ext_func.name.clone(),
+        parameters,
+        ast_type_to_type(&ast_ext_func.return_type),
+    ))
+}
+
+fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
+    match ast_type {
+        crate::ast::Type::Unit => Type::unit(),
+        crate::ast::Type::Boolean => Type::boolean(),
+        crate::ast::Type::String => Type::string(),
+        crate::ast::Type::List(inner) => Type::list(ast_type_to_type(inner)),
+        crate::ast::Type::Option(inner) => Type::option(ast_type_to_type(inner)),
+        crate::ast::Type::Int => Type::int(),
+        crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
+    }
+}
+
+fn build_analysis_runner() -> AnalysisRunner {
+    AnalysisRunner::new()
+        .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
+        .with_analyzer(Box::new(ReachabilityAnalyzer::new()))
+        .with_analyzer(Box::new(InfiniteLoopAnalyzer::new()))
+        .with_analyzer(Box::new(EmptyBlockAnalyzer::new()))
+        .with_analyzer(Box::new(EmptyFunctionAnalyzer::new()))
+        .with_analyzer(Box::new(DuplicateInjectionAnalyzer::new()))
+        .with_analyzer(Box::new(PlaceholderOveruseAnalyzer::new()))
+        .with_analyzer(Box::new(RedundantSelectAnalyzer::new()))
+        .with_analyzer(Box::new(ConstantConditionAnalyzer::new()))
+        .with_analyzer(Box::new(VariableShadowingAnalyzer::new()))
+        .with_analyzer(Box::new(OverwrittenValueAnalyzer::new()))
+        .with_analyzer(Box::new(UnusedReturnValueAnalyzer::new()))
+        .with_analyzer(Box::new(UnusedExpressionAnalyzer::new()))
+}
+
+pub(crate) struct CodespanParser {}
+
+impl CodespanParser {
+    pub(crate) fn new() -> Self {
+        Self {}
+    }
+
+    pub(crate) fn parse(
+        &self,
+        unit: &CompilationUnit,
+        file_id: FileId,
+        reporter: &DiagnosticReporter,
+    ) -> Result<Module, String> {
+        let stream = easy::Stream(position::Stream::with_positioner(
+            unit.source(),
+            position::IndexPositioner::new(),
+        ));
+
+        parser::parse_program(file_id)
+            .parse(stream)
+            .map(|(module, _)| {
+                debug!("Parsed {} definitions", module.definitions.len());
+                module
+            })
+            .map_err(|e| {
+                let error_str = format!("{}", e);
+                error!("Parse error at {}: {}", e.position, error_str);
+                let clean = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
+                if let Err(io_err) =
+                    reporter.emit_parse_error(file_id, &clean, Some((e.position, e.position + 1)))
+                {
+                    eprintln!("Failed to emit parse error: {}", io_err);
+                }
+                "Parse error".to_string()
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{CompilationUnit, Compiler};
+    use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
 
-    async fn run_test_with_compiler(program_source: &str, expected: &str) {
-        let program = CompilationUnit::from_string(program_source.to_string());
-        let runtime = Runtime::builder(program).build();
-        let result = runtime.run().await.unwrap();
-
+    async fn run_source(source: &str, expected: &str) {
+        let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
+            .build()
+            .run()
+            .await
+            .unwrap();
         assert_eq!(result.as_string().unwrap(), expected);
     }
 
     #[tokio::test]
     async fn test_new_architecture_end_to_end() {
-        let program_source = r#"
+        run_source(
+            r#"
 fn greet(name: String): () {
     "Hello, "!
     name!
@@ -361,13 +435,16 @@ fn main(): String {
     let result = greet(greeting_name)
     "Test completed"!
 }
-"#;
-        run_test_with_compiler(program_source, "Test completed").await;
+"#,
+            "Test completed",
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn test_select_statement_end_to_end() {
-        let program_source = r#"
+        run_source(
+            r#"
 fn add(a: String, b: String): String {
     "Adding numbers"
 }
@@ -388,17 +465,76 @@ fn main(): String {
     let result = calculator("5", "3")
     result!
 }
-"#;
-        run_test_with_compiler(
-            program_source,
+"#,
             "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>",
         )
         .await;
     }
 
     #[test]
+    fn test_compile_project_two_files() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let lib_path = dir.join("greetlib.sa");
+        let main_path = dir.join("mainproj.sa");
+
+        std::fs::File::create(&lib_path)
+            .unwrap()
+            .write_all(
+                b"pub fn greet(name: String): String {\n    return \"hello\"\n}\n\nfn internal(x: String): String {\n    return \"secret\"\n}\n",
+            )
+            .unwrap();
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(
+                b"use greetlib.greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n",
+            )
+            .unwrap();
+
+        let compiled = Compiler::new()
+            .compile_file(main_path.to_str().unwrap())
+            .expect("compile_file failed");
+
+        assert!(compiled.functions().contains_key("main"));
+        assert!(compiled.functions().contains_key("greetlib.greet"));
+        assert!(compiled.functions().contains_key("greetlib.internal"));
+        assert_eq!(
+            compiled.module_visibility().get("greetlib.greet"),
+            Some(&true)
+        );
+        assert_eq!(
+            compiled.module_visibility().get("greetlib.internal"),
+            Some(&false)
+        );
+    }
+
+    #[test]
+    fn test_compile_project_sig_stored() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("sigtest_main.sa");
+
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(
+                b"sig Greeter {\n    fn greet(name: String): String\n}\n\nfn main(): () {}\n",
+            )
+            .unwrap();
+
+        let compiled = Compiler::new()
+            .compile_file(path.to_str().unwrap())
+            .expect("compile_file failed");
+
+        assert!(compiled.sig_definitions().contains_key("Greeter"));
+        assert_eq!(compiled.sig_definitions()["Greeter"].len(), 1);
+        assert_eq!(compiled.sig_definitions()["Greeter"][0].name, "greet");
+    }
+
+    #[test]
     fn test_control_flow_analysis_warnings() {
-        let program_source = r#"
+        let source = r#"
 fn test_unused(): () {
     let unused_var = "never used"
     "done"!
@@ -420,19 +556,16 @@ fn main(): () {
     "main"!
 }
 "#;
-
-        let program = CompilationUnit::from_string(program_source.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_program(&program);
-
-        assert!(result.is_ok());
-        let compiled_program = result.unwrap();
-        assert_eq!(compiled_program.functions().len(), 4);
+        let compiled = Compiler::new()
+            .compile_source(&CompilationUnit::from_string(source.to_string()))
+            .unwrap();
+        assert_eq!(compiled.functions().len(), 4);
     }
 
     #[tokio::test]
     async fn test_simple_function() {
-        let program_source = r#"
+        run_source(
+            r#"
 fn add(a: String, b: String): String {
     return "result"
 }
@@ -440,13 +573,16 @@ fn add(a: String, b: String): String {
 fn main(): String {
     return add("1", "2")
 }
-"#;
-        run_test_with_compiler(program_source, "result").await;
+"#,
+            "result",
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn test_multi_function() {
-        let program_source = r#"
+        run_source(
+            r#"
 fn greet(name: String): () {
     "Hello, "!
     name!
@@ -456,27 +592,28 @@ fn main(): String {
     greet("World")
     "Done"!
 }
-"#;
-        run_test_with_compiler(program_source, "Done").await;
+"#,
+            "Done",
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn test_unit_literal_end_to_end() {
-        let source = r#"
-fn main(): () {
-    return ()
-}
-"#;
-        let program = CompilationUnit::from_string(source.to_string());
-        let runtime = Runtime::builder(program).build();
-        let result = runtime.run().await.unwrap();
-
+        let result = Runtime::builder(ProgramSource::Inline(
+            "fn main(): () {\n    return ()\n}\n".to_string(),
+        ))
+        .build()
+        .run()
+        .await
+        .unwrap();
         assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]
     async fn test_if_else_expression_end_to_end() {
-        let program_source = r#"
+        run_source(
+            r#"
 fn choose_message(ready: Boolean): String {
     return if ready { "System ready" } else { "System not ready" }
 }
@@ -485,11 +622,60 @@ fn main(): String {
     let message = choose_message(true)
     message!
 }
-"#;
-        run_test_with_compiler(
-            program_source,
+"#,
             "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>",
         )
         .await;
+    }
+
+    #[test]
+    fn test_cross_module_pub_fn_type_checks_ok() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let lib_path = dir.join("vislib.sa");
+        let main_path = dir.join("vismain.sa");
+
+        std::fs::File::create(&lib_path)
+            .unwrap()
+            .write_all(b"pub fn greet(name: String): String {\n    return \"hello\"\n}\n")
+            .unwrap();
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"use vislib.greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n")
+            .unwrap();
+
+        assert!(
+            Compiler::new()
+                .compile_file(main_path.to_str().unwrap())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_cross_module_private_fn_type_check_fails() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let lib_path = dir.join("privlib.sa");
+        let main_path = dir.join("privmain.sa");
+
+        std::fs::File::create(&lib_path)
+            .unwrap()
+            .write_all(b"fn secret(name: String): String {\n    return \"secret\"\n}\n\npub fn public_fn(): String {\n    return \"ok\"\n}\n")
+            .unwrap();
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"use privlib.secret\n\nfn main(): String {\n    return secret(\"x\")\n}\n")
+            .unwrap();
+
+        let err = Compiler::new()
+            .compile_file(main_path.to_str().unwrap())
+            .unwrap_err();
+        assert!(
+            err.contains("private") || err.contains("PrivateFunction"),
+            "error should mention private: {}",
+            err
+        );
     }
 }

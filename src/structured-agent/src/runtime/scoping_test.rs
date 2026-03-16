@@ -1,18 +1,17 @@
 use super::*;
-use crate::compiler::CompilationUnit;
+use crate::cli::config::ProgramSource;
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio;
 
-fn program(source: &str) -> CompilationUnit {
-    CompilationUnit::from_string(source.to_string())
+fn program(source: &str) -> ProgramSource {
+    ProgramSource::Inline(source.to_string())
 }
 
 fn test_runtime() -> Runtime {
-    let dummy_program = CompilationUnit::from_string("fn main(): () {}".to_string());
-    Runtime::builder(dummy_program).build()
+    Runtime::builder(ProgramSource::Inline("fn main(): () {}".to_string())).build()
 }
 
 #[derive(Debug)]

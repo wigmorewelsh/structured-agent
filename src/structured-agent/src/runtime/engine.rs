@@ -1,5 +1,5 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
-use crate::compiler::{CompilationUnit, Compiler};
+use crate::compiler::{CompilationUnit, CompiledProgram, Compiler, compile_external_function};
 use crate::functions::{
     HeadFunction, InputFunction, IsSomeFunction, PrintFunction, SomeValueFunction, TailFunction,
     acp_shim,
@@ -22,7 +22,7 @@ pub struct Runtime {
     language_engine: Arc<dyn LanguageEngine>,
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
-    compiled_program: CompilationUnit,
+    program_source: ProgramSource,
 }
 
 pub struct RuntimeBuilder {
@@ -30,7 +30,7 @@ pub struct RuntimeBuilder {
     native_provider: NativeFunctionProvider,
     language_engine: Option<Arc<dyn LanguageEngine>>,
     compiler: Option<Arc<Compiler>>,
-    program_source: CompilationUnit,
+    program_source: ProgramSource,
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,13 +53,13 @@ impl std::fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 impl RuntimeBuilder {
-    pub fn new(program: CompilationUnit) -> Self {
+    pub fn new(source: ProgramSource) -> Self {
         Self {
             providers: Vec::new(),
             native_provider: NativeFunctionProvider::new(),
             language_engine: None,
             compiler: None,
-            program_source: program,
+            program_source: source,
         }
     }
 
@@ -88,11 +88,6 @@ impl RuntimeBuilder {
 
     pub fn with_mcp_client(mut self, client: McpClient) -> Self {
         self.providers.push(Arc::new(client));
-        self
-    }
-
-    pub fn with_program(mut self, program: CompilationUnit) -> Self {
-        self.program_source = program;
         self
     }
 
@@ -214,14 +209,14 @@ impl RuntimeBuilder {
                 .unwrap_or_else(|| Arc::new(crate::types::PrintEngine {})),
             compiler: self.compiler.unwrap_or_else(|| Arc::new(Compiler::new())),
             providers,
-            compiled_program: self.program_source,
+            program_source: self.program_source,
         }
     }
 }
 
 impl Runtime {
-    pub fn builder(program: CompilationUnit) -> RuntimeBuilder {
-        RuntimeBuilder::new(program)
+    pub fn builder(source: ProgramSource) -> RuntimeBuilder {
+        RuntimeBuilder::new(source)
     }
 
     pub fn register_function(&mut self, function: Box<dyn ExecutableFunction>) {
@@ -260,49 +255,19 @@ impl Runtime {
 
     pub fn check(&self) -> Result<(), RuntimeError> {
         debug!("Starting program check");
-        match self.compiler.compile_program(&self.compiled_program) {
-            Ok(_) => {
-                debug!("Program check completed successfully");
-                Ok(())
-            }
-            Err(e) => {
-                error!("Program check failed: {}", e);
-                Err(RuntimeError::ExecutionError(e))
-            }
-        }
+        self.compile()
+            .map(|_| ())
+            .map_err(RuntimeError::ExecutionError)
     }
 
     pub async fn run(&self) -> Result<ExpressionValue, RuntimeError> {
         debug!("Starting program execution");
 
-        let compiled_program = match self.compiler.compile_program(&self.compiled_program) {
-            Ok(program) => {
-                debug!("Program compiled successfully");
-                debug!(
-                    "Functions: {:?}",
-                    program.functions().keys().collect::<Vec<_>>()
-                );
-                debug!(
-                    "External functions: {:?}",
-                    program.external_functions().keys().collect::<Vec<_>>()
-                );
-                program
-            }
-            Err(e) => {
-                error!("Compilation failed: {}", e);
-                return Err(RuntimeError::ExecutionError(e));
-            }
-        };
+        let compiled_program = self
+            .compile()
+            .map_err(|e| RuntimeError::ExecutionError(e))?;
 
-        let mut runtime = Runtime {
-            function_registry: self.function_registry.clone(),
-            external_function_registry: self.external_function_registry.clone(),
-            struct_registry: self.struct_registry.clone(),
-            language_engine: self.language_engine.clone(),
-            compiler: self.compiler.clone(),
-            providers: self.providers.clone(),
-            compiled_program: self.compiled_program.clone(),
-        };
+        let mut runtime = self.create_runtime_ref();
 
         for (name, fields) in compiled_program.struct_definitions() {
             runtime.register_struct(name.clone(), fields.clone());
@@ -373,11 +338,13 @@ impl Runtime {
         self.struct_registry.insert(name, fields);
     }
 
-    pub fn with_structs_from_compiled(&mut self, program: &CompilationUnit) {
-        if let Ok(compiled) = self.compiler.compile_program(program) {
-            for (name, fields) in compiled.struct_definitions() {
-                self.register_struct(name.clone(), fields.clone());
+    fn compile(&self) -> Result<CompiledProgram, String> {
+        match &self.program_source {
+            ProgramSource::Inline(source) => {
+                let unit = CompilationUnit::from_string(source.clone());
+                self.compiler.compile_source(&unit)
             }
+            ProgramSource::File(path) => self.compiler.compile_file(path),
         }
     }
 
@@ -389,7 +356,7 @@ impl Runtime {
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
-            compiled_program: self.compiled_program.clone(),
+            program_source: self.program_source.clone(),
         }
     }
 
@@ -509,31 +476,14 @@ impl Runtime {
 
 impl Clone for Runtime {
     fn clone(&self) -> Self {
-        Self {
-            function_registry: self.function_registry.clone(),
-            external_function_registry: self.external_function_registry.clone(),
-            struct_registry: self.struct_registry.clone(),
-            language_engine: self.language_engine.clone(),
-            compiler: self.compiler.clone(),
-            providers: self.providers.clone(),
-            compiled_program: self.compiled_program.clone(),
-        }
-    }
-}
-
-pub fn load_program(source: &ProgramSource) -> Result<CompilationUnit, std::io::Error> {
-    match source {
-        ProgramSource::Inline(code) => Ok(CompilationUnit::from_string(code.clone())),
-        ProgramSource::File(path) => {
-            let content = std::fs::read_to_string(path)?;
-            Ok(CompilationUnit::from_file(path.clone(), content))
-        }
+        self.create_runtime_ref()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::config::ProgramSource;
     use crate::types::{ExternalFunctionDefinition, Parameter, Type};
 
     #[test]
@@ -677,18 +627,17 @@ fn main(): Int {
     return p.x
 }
 "#;
-        use crate::compiler::CompilationUnit;
-        let program = CompilationUnit::from_string(code.to_string());
-        let runtime = Runtime::builder(program).build();
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
         let result = runtime.run().await.unwrap();
         assert_eq!(result.as_integer().unwrap(), 1);
     }
 
     #[test]
     fn test_get_struct_returns_none_for_unknown() {
-        use crate::compiler::CompilationUnit;
-        let program = CompilationUnit::from_string("fn main(): () { return () }".to_string());
-        let runtime = Runtime::builder(program).build();
+        let runtime = Runtime::builder(ProgramSource::Inline(
+            "fn main(): () { return () }".to_string(),
+        ))
+        .build();
         assert!(runtime.get_struct("Unknown").is_none());
     }
 
@@ -703,10 +652,13 @@ fn main(): () {
     return ()
 }
 "#;
-        use crate::compiler::CompilationUnit;
-        let program = CompilationUnit::from_string(code.to_string());
-        let mut runtime = Runtime::builder(program.clone()).build();
-        runtime.with_structs_from_compiled(&program);
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let compiled = compiler.compile_source(&unit).unwrap();
+        let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        for (name, fields) in compiled.struct_definitions() {
+            runtime.register_struct(name.clone(), fields.clone());
+        }
         let fields = runtime.get_struct("Task").unwrap();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].0, "title");

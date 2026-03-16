@@ -88,6 +88,11 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    PrivateFunction {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -106,6 +111,7 @@ impl TypeError {
             TypeError::MissingField { span, .. } => *span,
             TypeError::StructFieldTypeMismatch { span, .. } => *span,
             TypeError::DuplicateField { span, .. } => *span,
+            TypeError::PrivateFunction { span, .. } => *span,
         }
     }
 
@@ -124,6 +130,7 @@ impl TypeError {
             TypeError::MissingField { file_id, .. } => *file_id,
             TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
             TypeError::DuplicateField { file_id, .. } => *file_id,
+            TypeError::PrivateFunction { file_id, .. } => *file_id,
         }
     }
 
@@ -308,6 +315,16 @@ impl TypeError {
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("field `{}` provided more than once", field_name)),
                 ]),
+            TypeError::PrivateFunction {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!("function `{}` is private", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("this function is not public"),
+                ]),
         }
     }
 }
@@ -431,6 +448,9 @@ impl fmt::Display for TypeError {
                     "Duplicate field `{}` in struct `{}`",
                     field_name, struct_name
                 )
+            }
+            TypeError::PrivateFunction { name, .. } => {
+                write!(f, "Function `{}` is private", name)
             }
         }
     }

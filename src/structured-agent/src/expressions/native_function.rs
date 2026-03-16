@@ -84,13 +84,12 @@ pub fn create_native_function_expr<F: NativeFunction + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::CompilationUnit;
+    use crate::cli::config::ProgramSource;
     use crate::runtime::{Context, Runtime};
     use crate::types::{NativeFunction, Type};
 
     fn test_runtime() -> Runtime {
-        let program = CompilationUnit::from_string("fn main(): () {}".to_string());
-        Runtime::builder(program).build()
+        Runtime::builder(ProgramSource::Inline("fn main(): () {}".to_string())).build()
     }
 
     #[derive(Debug)]

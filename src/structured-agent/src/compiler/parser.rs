@@ -1,6 +1,7 @@
 use crate::ast::{
-    Definition, Expression, ExternalFunction, Function, FunctionBody, Module, Parameter,
-    SelectClause, SelectExpression, Statement, StructDefinition, StructField, Type,
+    Definition, Expression, ExternalFunction, Function, FunctionBody, Module, ModuleParam,
+    Parameter, SelectClause, SelectExpression, SigFunction, Statement, StructDefinition,
+    StructField, Type,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -119,22 +120,131 @@ where
 {
     (
         position(),
-        skip_spaces_and_comments().with(many(
-            choice((
-                attempt(parse_use()),
-                attempt(parse_function_with_docs().map(Definition::Function)),
-                attempt(parse_external_function().map(Definition::ExternalFunction)),
-                parse_struct_definition().map(Definition::Struct),
-            ))
-            .skip(skip_spaces_and_comments()),
+        skip_spaces_and_comments().with((
+            optional(attempt(
+                parse_module_header().skip(skip_spaces_and_comments()),
+            )),
+            many(
+                choice((
+                    attempt(parse_use()),
+                    attempt(parse_sig_definition()),
+                    attempt(parse_function_with_docs().map(Definition::Function)),
+                    attempt(parse_external_function().map(Definition::ExternalFunction)),
+                    parse_struct_definition().map(Definition::Struct),
+                ))
+                .skip(skip_spaces_and_comments()),
+            ),
         )),
         position(),
     )
-        .map(move |(start, definitions, end)| Module {
-            definitions,
-            span: Span::new(start, end),
-            file_id,
+        .map(move |(start, header_and_defs, end)| {
+            let (header, mut definitions): (Option<Definition>, Vec<Definition>) = header_and_defs;
+            if let Some(h) = header {
+                definitions.insert(0, h);
+            }
+            Module {
+                definitions,
+                span: Span::new(start, end),
+                file_id,
+            }
         })
+}
+
+fn parse_module_header<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("mod"),
+        identifier(),
+        optional(attempt(between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by(parse_module_param(), lex_char(',')),
+        ))),
+        position(),
+    )
+        .map(|(start, _, name, params, end)| Definition::ModuleHeader {
+            name,
+            params: params.unwrap_or_default(),
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_module_param<Input>() -> impl Parser<Input, Output = ModuleParam>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        identifier(),
+        lex_char(':'),
+        sep_by1(identifier_raw(), char('.')).skip(skip_spaces()),
+        position(),
+    )
+        .map(|(start, name, _, path, end)| ModuleParam {
+            name,
+            path,
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_sig_definition<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("sig"),
+        identifier(),
+        between(
+            lex_char('{'),
+            lex_char('}'),
+            many(
+                skip_spaces_and_comments()
+                    .with(parse_sig_function())
+                    .skip(skip_spaces_and_comments()),
+            ),
+        ),
+        position(),
+    )
+        .map(|(start, _, name, functions, end)| Definition::Signature {
+            name,
+            functions,
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_sig_function<Input>() -> impl Parser<Input, Output = SigFunction>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("fn"),
+        identifier(),
+        between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by(parse_parameter(), lex_char(',')),
+        ),
+        lex_char(':'),
+        parse_type(),
+        position(),
+    )
+        .map(
+            |(start, _, name, parameters, _, return_type, end)| SigFunction {
+                name,
+                parameters,
+                return_type,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_external_function<Input>() -> impl Parser<Input, Output = ExternalFunction>
@@ -2635,6 +2745,101 @@ fn main(): String {
             );
         } else {
             panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_module_header_simple() {
+        let input = "mod tasks\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        match &module.definitions[0] {
+            Definition::ModuleHeader { name, params, .. } => {
+                assert_eq!(name, "tasks");
+                assert!(params.is_empty());
+            }
+            other => panic!("Expected ModuleHeader, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_module_header_with_params() {
+        let input = "mod db(io: storage.Storage)\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert!(module.definitions.len() >= 2);
+        match &module.definitions[0] {
+            Definition::ModuleHeader { name, params, .. } => {
+                assert_eq!(name, "db");
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].name, "io");
+                assert_eq!(params[0].path, vec!["storage", "Storage"]);
+            }
+            other => panic!("Expected ModuleHeader, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_sig_definition_single_fn() {
+        let input = "sig Greeter {\n    fn greet(name: String): String\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        match &module.definitions[0] {
+            Definition::Signature {
+                name, functions, ..
+            } => {
+                assert_eq!(name, "Greeter");
+                assert_eq!(functions.len(), 1);
+                assert_eq!(functions[0].name, "greet");
+                assert_eq!(functions[0].parameters.len(), 1);
+                assert_eq!(functions[0].parameters[0].name, "name");
+                assert!(matches!(functions[0].return_type, Type::String));
+            }
+            other => panic!("Expected Signature, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_sig_definition_two_fns() {
+        let input = "sig Processor {\n    fn process(input: String): String\n    fn validate(input: String): Boolean\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        match &module.definitions[0] {
+            Definition::Signature {
+                name, functions, ..
+            } => {
+                assert_eq!(name, "Processor");
+                assert_eq!(functions.len(), 2);
+                assert_eq!(functions[0].name, "process");
+                assert_eq!(functions[1].name, "validate");
+                assert!(matches!(functions[1].return_type, Type::Boolean));
+            }
+            other => panic!("Expected Signature, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_module_header_no_params_no_following_defs() {
+        let input = "mod utils\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        match &module.definitions[0] {
+            Definition::ModuleHeader { name, .. } => assert_eq!(name, "utils"),
+            other => panic!("Expected ModuleHeader, got {:?}", other),
         }
     }
 }
