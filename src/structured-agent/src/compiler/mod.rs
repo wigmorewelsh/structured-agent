@@ -13,7 +13,7 @@ use crate::ast::{Definition, Module, SigFunction};
 use crate::bytecode::BytecodeCompiler;
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::{FunctionSignatureTuple, ModuleVisibility};
+use crate::typecheck::checker::ModuleVisibility;
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FileId, Function, Parameter, Type,
 };
@@ -63,13 +63,20 @@ impl CompilationUnit {
     }
 }
 
+struct ModuleArtifact {
+    functions: Vec<Box<dyn ExecutableFunction>>,
+    external_functions: Vec<ExternalFunctionDefinition>,
+    struct_definitions: Vec<(String, Vec<(String, Type)>)>,
+    sig_definitions: Vec<(String, Vec<SigFunction>)>,
+}
+
 #[derive(Debug)]
 pub struct CompiledProgram {
     functions: HashMap<String, Box<dyn ExecutableFunction>>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
-    pub module_visibility: ModuleVisibility,
+    module_visibility: ModuleVisibility,
     main_function: Option<String>,
     source_path: Option<String>,
 }
@@ -98,21 +105,13 @@ impl CompiledProgram {
         self
     }
 
+    fn with_module_visibility(mut self, visibility: ModuleVisibility) -> Self {
+        self.module_visibility = visibility;
+        self
+    }
+
     pub fn source_path(&self) -> Option<&str> {
         self.source_path.as_deref()
-    }
-
-    pub fn add_function(&mut self, function: Box<dyn ExecutableFunction>) {
-        let name = Function::name(function.as_ref()).to_string();
-        if name == "main" {
-            self.main_function = Some(name.clone());
-        }
-        self.functions.insert(name, function);
-    }
-
-    pub fn add_external_function(&mut self, external_function: ExternalFunctionDefinition) {
-        self.external_functions
-            .insert(external_function.name.clone(), external_function);
     }
 
     pub fn main_function(&self) -> Option<&Box<dyn ExecutableFunction>> {
@@ -133,20 +132,31 @@ impl CompiledProgram {
         &self.struct_definitions
     }
 
-    pub fn add_struct_definition(&mut self, name: String, fields: Vec<(String, Type)>) {
-        self.struct_definitions.insert(name, fields);
-    }
-
-    pub fn add_sig_definition(&mut self, name: String, functions: Vec<SigFunction>) {
-        self.sig_definitions.insert(name, functions);
-    }
-
     pub fn sig_definitions(&self) -> &HashMap<String, Vec<SigFunction>> {
         &self.sig_definitions
     }
 
     pub fn module_visibility(&self) -> &ModuleVisibility {
         &self.module_visibility
+    }
+
+    fn merge(&mut self, artifact: ModuleArtifact) {
+        for f in artifact.functions {
+            let name = Function::name(f.as_ref()).to_string();
+            if name == "main" {
+                self.main_function = Some(name.clone());
+            }
+            self.functions.insert(name, f);
+        }
+        for f in artifact.external_functions {
+            self.external_functions.insert(f.name.clone(), f);
+        }
+        for (name, fields) in artifact.struct_definitions {
+            self.struct_definitions.insert(name, fields);
+        }
+        for (name, functions) in artifact.sig_definitions {
+            self.sig_definitions.insert(name, functions);
+        }
     }
 }
 
@@ -215,68 +225,69 @@ impl Compiler {
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
-            check_module(parsed, &sig_table, &reporter)
-                .map_err(|e| format!("In {}: {}", parsed.name, e))?;
+            if let Err(e) = type_check_module(parsed, &sig_table) {
+                error!("Type checking failed: {}", e);
+                if let Err(io_err) = reporter.emit_type_error(&e) {
+                    eprintln!("Failed to emit type error: {}", io_err);
+                }
+                return Err(format!("In {}: Type error: {}", parsed.name, e));
+            }
+
+            for warning in analyse_module(parsed) {
+                if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
+                    eprintln!("Failed to emit warning: {}", io_err);
+                }
+            }
         }
 
-        let mut compiled = CompiledProgram {
-            module_visibility: sig_table.visibility.clone(),
-            ..CompiledProgram::new().with_source_path(source_path)
-        };
+        let mut compiled = CompiledProgram::new()
+            .with_source_path(source_path)
+            .with_module_visibility(sig_table.visibility.clone());
 
         for parsed in &modules {
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
-            emit_definitions(&parsed.module, prefix, &mut compiled)?;
+            let artifact = emit_module(&parsed.module, prefix)?;
+            compiled.merge(artifact);
         }
 
         Ok(compiled)
     }
 }
 
-fn check_module(
+fn type_check_module(
     parsed: &discovery::ParsedModule,
     sig_table: &SigTable,
-    reporter: &DiagnosticReporter,
-) -> Result<(), String> {
+) -> Result<(), crate::typecheck::TypeError> {
     let external_sigs = if parsed.is_entry {
         sigs_visible_to_module(&parsed.module, sig_table)
     } else {
         sig_table.external_sigs.clone()
     };
     let mut checker = TypeChecker::new();
-    checker
-        .check_module_with_external_sigs(
-            &parsed.module,
-            parsed.file_id,
-            &external_sigs,
-            &sig_table.visibility,
-        )
-        .map_err(|e| {
-            error!("Type checking failed: {}", e);
-            if let Err(io_err) = reporter.emit_type_error(&e) {
-                eprintln!("Failed to emit type error: {}", io_err);
-            }
-            format!("Type error: {}", e)
-        })?;
+    checker.check_module_with_external_sigs(
+        &parsed.module,
+        parsed.file_id,
+        &external_sigs,
+        &sig_table.visibility,
+    )
+}
 
+fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warning> {
     let warnings = build_analysis_runner().run(&parsed.module, parsed.file_id);
     if !warnings.is_empty() {
         warn!("Analysis found {} warnings", warnings.len());
     }
-    for warning in &warnings {
-        if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
-            eprintln!("Failed to emit warning: {}", io_err);
-        }
-    }
-
-    Ok(())
+    warnings
 }
 
-fn emit_definitions(
-    module: &Module,
-    prefix: Option<&str>,
-    compiled: &mut CompiledProgram,
-) -> Result<(), String> {
+fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, String> {
+    let mut artifact = ModuleArtifact {
+        functions: Vec::new(),
+        external_functions: Vec::new(),
+        struct_definitions: Vec::new(),
+        sig_definitions: Vec::new(),
+    };
+
     for definition in &module.definitions {
         match definition {
             Definition::Function(f) => {
@@ -285,7 +296,9 @@ fn emit_definitions(
                     f.name = format!("{}.{}", p, f.name);
                 }
                 debug!("Emitting function: {}", f.name);
-                compiled.add_function(BytecodeCompiler::compile_function(&f)?);
+                artifact
+                    .functions
+                    .push(BytecodeCompiler::compile_function(&f)?);
             }
             Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
@@ -293,7 +306,9 @@ fn emit_definitions(
                     f.name = format!("{}.{}", p, f.name);
                 }
                 debug!("Emitting external function: {}", f.name);
-                compiled.add_external_function(compile_external_function(&f)?);
+                artifact
+                    .external_functions
+                    .push(compile_external_function(&f)?);
             }
             Definition::Struct(s) => {
                 let fields = s
@@ -301,17 +316,20 @@ fn emit_definitions(
                     .iter()
                     .map(|f| (f.name.clone(), ast_type_to_type(&f.field_type)))
                     .collect();
-                compiled.add_struct_definition(s.name.clone(), fields);
+                artifact.struct_definitions.push((s.name.clone(), fields));
             }
             Definition::Signature {
                 name, functions, ..
             } => {
-                compiled.add_sig_definition(name.clone(), functions.clone());
+                artifact
+                    .sig_definitions
+                    .push((name.clone(), functions.clone()));
             }
             Definition::Use { .. } | Definition::ModuleHeader { .. } => {}
         }
     }
-    Ok(())
+
+    Ok(artifact)
 }
 
 pub fn compile_external_function(
