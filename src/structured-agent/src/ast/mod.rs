@@ -39,6 +39,17 @@ pub enum Definition {
         params: Vec<ModuleParam>,
         span: Span,
     },
+    ModuleBinding {
+        name: String,
+        sig_path: Vec<String>,
+        impl_path: Vec<String>,
+        span: Span,
+    },
+    WiringSite {
+        name: String,
+        args: Vec<String>,
+        span: Span,
+    },
     Signature {
         name: String,
         functions: Vec<SigFunction>,
@@ -54,6 +65,8 @@ impl Spanned for Definition {
             Definition::Struct(s) => s.span,
             Definition::Use { span, .. } => *span,
             Definition::ModuleHeader { span, .. } => *span,
+            Definition::ModuleBinding { span, .. } => *span,
+            Definition::WiringSite { span, .. } => *span,
             Definition::Signature { span, .. } => *span,
         }
     }
@@ -398,7 +411,7 @@ impl fmt::Display for Definition {
                 if *is_pub {
                     write!(f, "pub ")?;
                 }
-                write!(f, "use {}", path.join("."))?;
+                write!(f, "use {}", path.join("::"))?;
                 if let Some(a) = alias {
                     write!(f, " as {}", a)?;
                 }
@@ -412,11 +425,28 @@ impl fmt::Display for Definition {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        write!(f, "{}: {}", p.name, p.path.join("."))?;
+                        write!(f, "{}: {}", p.name, p.path.join("::"))?;
                     }
                     write!(f, ")")?;
                 }
                 Ok(())
+            }
+            Definition::ModuleBinding {
+                name,
+                sig_path,
+                impl_path,
+                ..
+            } => {
+                write!(
+                    f,
+                    "mod {}: {} = {}",
+                    name,
+                    sig_path.join("::"),
+                    impl_path.join("::")
+                )
+            }
+            Definition::WiringSite { name, args, .. } => {
+                write!(f, "mod {}({})", name, args.join(", "))
             }
             Definition::Signature {
                 name, functions, ..

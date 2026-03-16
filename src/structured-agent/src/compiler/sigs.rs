@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::Definition;
+use crate::ast::{Definition, SigFunction};
 use crate::typecheck::checker::{FunctionSignatureTuple, ModuleVisibility};
 
 use super::discovery::ParsedModule;
@@ -9,11 +9,13 @@ use super::discovery::ParsedModule;
 pub(crate) struct SigTable {
     pub(crate) visibility: ModuleVisibility,
     pub(crate) external_sigs: HashMap<String, FunctionSignatureTuple>,
+    pub(crate) sig_definitions: HashMap<String, Vec<SigFunction>>,
 }
 
 pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
     let mut visibility: ModuleVisibility = HashMap::new();
     let mut external_sigs: HashMap<String, FunctionSignatureTuple> = HashMap::new();
+    let mut sig_definitions: HashMap<String, Vec<SigFunction>> = HashMap::new();
 
     for parsed in modules {
         for def in &parsed.module.definitions {
@@ -38,6 +40,11 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                         );
                     }
                 }
+                Definition::Signature {
+                    name, functions, ..
+                } => {
+                    sig_definitions.insert(name.clone(), functions.clone());
+                }
                 _ => {}
             }
         }
@@ -46,6 +53,7 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
     SigTable {
         visibility,
         external_sigs,
+        sig_definitions,
     }
 }
 
@@ -63,7 +71,7 @@ pub(crate) fn sigs_visible_to_module(
             if path.len() < 2 {
                 return None;
             }
-            let qualified = format!("{}.{}", path[0], path.last().unwrap());
+            let qualified = format!("{}::{}", path[0], path.last().unwrap());
             let sig = sig_table.external_sigs.get(&qualified)?;
             let key = alias
                 .clone()
@@ -77,6 +85,6 @@ fn qualified(module: &str, function: &str, is_entry: bool) -> String {
     if is_entry {
         function.to_string()
     } else {
-        format!("{}.{}", module, function)
+        format!("{}::{}", module, function)
     }
 }

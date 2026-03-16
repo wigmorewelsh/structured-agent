@@ -1,5 +1,5 @@
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
-use crate::compiler::{CompilationUnit, CompiledProgram, Compiler, compile_external_function};
+use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::functions::{
     HeadFunction, InputFunction, IsSomeFunction, PrintFunction, SomeValueFunction, TailFunction,
     acp_shim,
@@ -23,6 +23,7 @@ pub struct Runtime {
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
     program_source: ProgramSource,
+    vtables: HashMap<String, HashMap<String, String>>,
 }
 
 pub struct RuntimeBuilder {
@@ -210,6 +211,7 @@ impl RuntimeBuilder {
             compiler: self.compiler.unwrap_or_else(|| Arc::new(Compiler::new())),
             providers,
             program_source: self.program_source,
+            vtables: HashMap::new(),
         }
     }
 }
@@ -268,17 +270,17 @@ impl Runtime {
             .map_err(|e| RuntimeError::ExecutionError(e))?;
 
         let mut runtime = self.create_runtime_ref();
+        runtime.vtables = compiled_program.vtables().clone();
 
         for (name, fields) in compiled_program.struct_definitions() {
             runtime.register_struct(name.clone(), fields.clone());
         }
 
-        for function in compiled_program.functions().values() {
-            debug!(
-                "Registering function: {}",
-                Function::name(function.as_ref())
-            );
-            runtime.register_function(function.clone_executable());
+        for (name, function) in compiled_program.functions() {
+            debug!("Registering function: {}", name);
+            runtime
+                .function_registry
+                .insert(name.clone(), Arc::from(function.clone_executable()));
         }
         for external_function in compiled_program.external_functions().values() {
             debug!("Registering external function: {}", external_function.name);
@@ -357,7 +359,12 @@ impl Runtime {
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
             program_source: self.program_source.clone(),
+            vtables: self.vtables.clone(),
         }
+    }
+
+    pub fn vtables(&self) -> &HashMap<String, HashMap<String, String>> {
+        &self.vtables
     }
 
     fn signatures_match(

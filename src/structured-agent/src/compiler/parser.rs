@@ -122,11 +122,14 @@ where
         position(),
         skip_spaces_and_comments().with((
             optional(attempt(
-                parse_module_header().skip(skip_spaces_and_comments()),
+                choice((attempt(parse_module_binding()), parse_module_header()))
+                    .skip(skip_spaces_and_comments()),
             )),
             many(
                 choice((
                     attempt(parse_use()),
+                    attempt(parse_module_binding()),
+                    attempt(parse_wiring_site()),
                     attempt(parse_sig_definition()),
                     attempt(parse_function_with_docs().map(Definition::Function)),
                     attempt(parse_external_function().map(Definition::ExternalFunction)),
@@ -148,6 +151,54 @@ where
                 file_id,
             }
         })
+}
+
+fn parse_wiring_site<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("mod"),
+        identifier(),
+        between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by1(identifier(), lex_char(',')),
+        ),
+        position(),
+    )
+        .map(|(start, _, name, args, end)| Definition::WiringSite {
+            name,
+            args,
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_module_binding<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("mod"),
+        identifier(),
+        lex_char(':'),
+        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
+        lex_char('='),
+        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
+        position(),
+    )
+        .map(
+            |(start, _, name, _, sig_path, _, impl_path, end)| Definition::ModuleBinding {
+                name,
+                sig_path,
+                impl_path,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_module_header<Input>() -> impl Parser<Input, Output = Definition>
@@ -182,7 +233,7 @@ where
         position(),
         identifier(),
         lex_char(':'),
-        sep_by1(identifier_raw(), char('.')).skip(skip_spaces()),
+        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
         position(),
     )
         .map(|(start, name, _, path, end)| ModuleParam {
@@ -331,7 +382,7 @@ where
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("use"),
-        sep_by1(identifier_raw(), char('.')),
+        sep_by1(identifier_raw(), attempt(string("::"))),
         optional(attempt(
             (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
         )),
@@ -657,20 +708,24 @@ where
 {
     (
         position(),
-        identifier(),
+        sep_by1(identifier_raw(), attempt(string("::"))),
         between(
             lex_char('('),
             char(')'),
             sep_by(parse_argument(), lex_char(',')),
         ),
+        skip_spaces(),
         position(),
     )
-        .skip(skip_spaces())
-        .map(|(start, function, args, end)| Expression::Call {
-            function,
-            arguments: args,
-            span: Span::new(start, end),
-        })
+        .map(
+            |(start, parts, args, _, end): (usize, Vec<String>, Vec<Expression>, (), usize)| {
+                Expression::Call {
+                    function: parts.join("::"),
+                    arguments: args,
+                    span: Span::new(start, end),
+                }
+            },
+        )
 }
 
 fn parse_argument<Input>() -> impl Parser<Input, Output = Expression>
@@ -2669,7 +2724,7 @@ pub fn greet(name: String): String {
 
     #[test]
     fn test_parse_use_statement() {
-        let input = "use foo.bar.baz\n\nfn main(): () {}\n";
+        let input = "use foo::bar::baz\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
@@ -2690,7 +2745,7 @@ pub fn greet(name: String): String {
 
     #[test]
     fn test_parse_use_with_alias() {
-        let input = "use foo.bar as fb\n\nfn main(): () {}\n";
+        let input = "use foo::bar as fb\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         let use_def = match &module.definitions[0] {
@@ -2703,7 +2758,7 @@ pub fn greet(name: String): String {
 
     #[test]
     fn test_parse_pub_use() {
-        let input = "pub use foo.bar\n\nfn main(): () {}\n";
+        let input = "pub use foo::bar\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         let is_pub = match &module.definitions[0] {
@@ -2767,7 +2822,7 @@ fn main(): String {
 
     #[test]
     fn test_parse_module_header_with_params() {
-        let input = "mod db(io: storage.Storage)\n\nfn main(): () {}\n";
+        let input = "mod db(io: storage::Storage)\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
@@ -2840,6 +2895,69 @@ fn main(): String {
         match &module.definitions[0] {
             Definition::ModuleHeader { name, .. } => assert_eq!(name, "utils"),
             other => panic!("Expected ModuleHeader, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_module_binding() {
+        let input = "mod fmt: formatter::Formatter = formatter\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        match &module.definitions[0] {
+            Definition::ModuleBinding {
+                name,
+                sig_path,
+                impl_path,
+                ..
+            } => {
+                assert_eq!(name, "fmt");
+                assert_eq!(sig_path, &vec!["formatter", "Formatter"]);
+                assert_eq!(impl_path, &vec!["formatter"]);
+            }
+            other => panic!("Expected ModuleBinding, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_module_binding_multi_segment_impl() {
+        let input = "mod io: storage::Storage = storage::disk\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::ModuleBinding {
+                name,
+                sig_path,
+                impl_path,
+                ..
+            } => {
+                assert_eq!(name, "io");
+                assert_eq!(sig_path, &vec!["storage", "Storage"]);
+                assert_eq!(impl_path, &vec!["storage", "disk"]);
+            }
+            other => panic!("Expected ModuleBinding, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_wiring_site() {
+        let input =
+            "mod fmt: formatter::Formatter = formatter\nmod reporter(fmt)\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 3);
+        match &module.definitions[1] {
+            Definition::WiringSite { name, args, .. } => {
+                assert_eq!(name, "reporter");
+                assert_eq!(args, &vec!["fmt"]);
+            }
+            other => panic!("Expected WiringSite, got {:?}", other),
         }
     }
 }

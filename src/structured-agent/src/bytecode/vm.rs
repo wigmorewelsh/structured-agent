@@ -58,8 +58,14 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_call(state, function_name, params, dest)
-                        .await?
+                    self.execute_call(
+                        state,
+                        function_name,
+                        params,
+                        dest,
+                        function.module_name.as_deref(),
+                    )
+                    .await?
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
@@ -197,10 +203,17 @@ impl VM {
         function_name: &str,
         params: &[String],
         dest: &str,
+        module_name: Option<&str>,
     ) -> Result<VMState, String> {
+        let resolved_name = module_name
+            .and_then(|m| self.runtime.vtables().get(m))
+            .and_then(|vtable| vtable.get(function_name))
+            .map(String::as_str)
+            .unwrap_or(function_name);
+
         let func = self
             .runtime
-            .get_function(function_name)
+            .get_function(resolved_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
         let function_params = func.parameters();

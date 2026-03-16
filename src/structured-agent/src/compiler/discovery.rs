@@ -117,6 +117,9 @@ pub(crate) fn referenced_module_names(module: &Module) -> Vec<String> {
                 .filter(|p| !p.path.is_empty())
                 .map(|p| p.path[0].clone())
                 .collect(),
+            Definition::ModuleBinding { impl_path, .. } if !impl_path.is_empty() => {
+                vec![impl_path[0].clone()]
+            }
             _ => vec![],
         })
         .collect()

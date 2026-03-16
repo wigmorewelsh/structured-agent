@@ -49,7 +49,13 @@ impl TypeChecker {
     }
 
     pub fn check_module(&mut self, module: &Module, file_id: FileId) -> Result<(), TypeError> {
-        self.check_module_with_external_sigs(module, file_id, &HashMap::new(), &HashMap::new())
+        self.check_module_with_external_sigs(
+            module,
+            file_id,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
     }
 
     pub fn check_module_with_external_sigs(
@@ -58,6 +64,7 @@ impl TypeChecker {
         file_id: FileId,
         external_sigs: &HashMap<String, FunctionSignatureTuple>,
         module_visibility: &ModuleVisibility,
+        sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
     ) -> Result<(), TypeError> {
         for (name, (params, ret, is_pub)) in external_sigs {
             self.function_signatures.insert(
@@ -69,6 +76,8 @@ impl TypeChecker {
                 },
             );
         }
+
+        self.register_param_sigs(module, sig_definitions, external_sigs);
 
         self.collect_function_signatures(module, file_id)?;
 
@@ -89,6 +98,61 @@ impl TypeChecker {
         }
 
         Ok(())
+    }
+
+    fn register_param_sigs(
+        &mut self,
+        module: &Module,
+        sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
+        external_sigs: &HashMap<String, FunctionSignatureTuple>,
+    ) {
+        let params = module.definitions.iter().find_map(|def| {
+            if let Definition::ModuleHeader { params, .. } = def {
+                Some(params)
+            } else {
+                None
+            }
+        });
+
+        let params = match params {
+            Some(p) => p,
+            None => return,
+        };
+
+        for param in params {
+            if param.path.len() < 2 {
+                continue;
+            }
+            let concrete_module = &param.path[0];
+            let sig_name = param.path.last().unwrap();
+
+            let fn_names: Vec<(String, Vec<crate::ast::Parameter>, crate::ast::Type)> =
+                if let Some(fns) = sig_definitions.get(sig_name) {
+                    fns.iter()
+                        .map(|f| (f.name.clone(), f.parameters.clone(), f.return_type.clone()))
+                        .collect()
+                } else {
+                    external_sigs
+                        .iter()
+                        .filter_map(|(k, (ps, ret, _))| {
+                            k.strip_prefix(&format!("{}::", concrete_module))
+                                .map(|fn_name| (fn_name.to_string(), ps.clone(), ret.clone()))
+                        })
+                        .collect()
+                };
+
+            for (fn_name, fn_params, ret_type) in fn_names {
+                let key = format!("{}::{}", param.name, fn_name);
+                self.function_signatures.insert(
+                    key,
+                    FunctionSignature {
+                        parameters: fn_params,
+                        return_type: ret_type,
+                        is_pub: true,
+                    },
+                );
+            }
+        }
     }
 
     fn collect_function_signatures(
@@ -141,6 +205,8 @@ impl TypeChecker {
                 Definition::Struct(_)
                 | Definition::Use { .. }
                 | Definition::ModuleHeader { .. }
+                | Definition::ModuleBinding { .. }
+                | Definition::WiringSite { .. }
                 | Definition::Signature { .. } => {}
             }
         }
@@ -182,7 +248,7 @@ impl TypeChecker {
 
             let dep_module = &path[0];
             let fn_name = path.last().unwrap();
-            let qualified = format!("{}.{}", dep_module, fn_name);
+            let qualified = format!("{}::{}", dep_module, fn_name);
 
             if module_visibility.contains_key(&qualified) {
                 let key = alias.clone().unwrap_or_else(|| fn_name.clone());
@@ -480,9 +546,9 @@ impl TypeChecker {
             return Ok(());
         }
 
-        let name_to_check = if qualified_for_vis.contains('.') {
+        let name_to_check = if qualified_for_vis.contains("::") {
             qualified_for_vis
-        } else if resolved.contains('.') {
+        } else if resolved.contains("::") {
             resolved
         } else {
             return Ok(());

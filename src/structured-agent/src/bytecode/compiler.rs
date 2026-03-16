@@ -6,6 +6,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct CompiledFunction {
     pub name: String,
+    pub module_name: Option<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: crate::types::Type,
     pub instructions: Vec<Instruction>,
@@ -50,6 +51,7 @@ impl BytecodeCompiler {
 
         Ok(CompiledFunction {
             name: ast_func.name.clone(),
+            module_name: None,
             parameters: ast_func
                 .parameters
                 .iter()

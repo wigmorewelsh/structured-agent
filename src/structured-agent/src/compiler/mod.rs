@@ -1,6 +1,8 @@
 pub(crate) mod discovery;
 pub mod parser;
 pub(crate) mod sigs;
+pub(crate) mod wiring;
+use wiring::resolve_vtables;
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
@@ -17,6 +19,7 @@ use crate::typecheck::checker::ModuleVisibility;
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FileId, Function, Parameter, Type,
 };
+use wiring::Vtables;
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
@@ -68,6 +71,7 @@ struct ModuleArtifact {
     external_functions: Vec<ExternalFunctionDefinition>,
     struct_definitions: Vec<(String, Vec<(String, Type)>)>,
     sig_definitions: Vec<(String, Vec<SigFunction>)>,
+    use_aliases: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -77,6 +81,9 @@ pub struct CompiledProgram {
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
     module_visibility: ModuleVisibility,
+    vtables: Vtables,
+    pending_aliases: Vec<(String, String)>,
+    use_aliases: Vec<(String, String)>,
     main_function: Option<String>,
     source_path: Option<String>,
 }
@@ -95,6 +102,9 @@ impl CompiledProgram {
             struct_definitions: HashMap::new(),
             sig_definitions: HashMap::new(),
             module_visibility: HashMap::new(),
+            vtables: HashMap::new(),
+            pending_aliases: Vec::new(),
+            use_aliases: Vec::new(),
             main_function: None,
             source_path: None,
         }
@@ -107,6 +117,11 @@ impl CompiledProgram {
 
     fn with_module_visibility(mut self, visibility: ModuleVisibility) -> Self {
         self.module_visibility = visibility;
+        self
+    }
+
+    fn with_vtables(mut self, vtables: Vtables) -> Self {
+        self.vtables = vtables;
         self
     }
 
@@ -140,6 +155,10 @@ impl CompiledProgram {
         &self.module_visibility
     }
 
+    pub fn vtables(&self) -> &Vtables {
+        &self.vtables
+    }
+
     fn merge(&mut self, artifact: ModuleArtifact) {
         for f in artifact.functions {
             let name = Function::name(f.as_ref()).to_string();
@@ -157,6 +176,23 @@ impl CompiledProgram {
         for (name, functions) in artifact.sig_definitions {
             self.sig_definitions.insert(name, functions);
         }
+        for (alias, qualified) in artifact.use_aliases {
+            self.pending_aliases.push((alias, qualified));
+        }
+    }
+
+    fn apply_pending_aliases(&mut self) {
+        let aliases = std::mem::take(&mut self.pending_aliases);
+        self.use_aliases = aliases.clone();
+        for (alias, qualified) in aliases {
+            if let Some(f) = self.functions.get(&qualified).map(|f| f.clone_executable()) {
+                self.functions.insert(alias, f);
+            }
+        }
+    }
+
+    pub fn use_aliases(&self) -> &[(String, String)] {
+        &self.use_aliases
     }
 }
 
@@ -240,15 +276,20 @@ impl Compiler {
             }
         }
 
+        let vtables = resolve_vtables(&modules, &sig_table);
+
         let mut compiled = CompiledProgram::new()
             .with_source_path(source_path)
-            .with_module_visibility(sig_table.visibility.clone());
+            .with_module_visibility(sig_table.visibility.clone())
+            .with_vtables(vtables);
 
         for parsed in &modules {
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
             let artifact = emit_module(&parsed.module, prefix)?;
             compiled.merge(artifact);
         }
+
+        compiled.apply_pending_aliases();
 
         Ok(compiled)
     }
@@ -269,6 +310,7 @@ fn type_check_module(
         parsed.file_id,
         &external_sigs,
         &sig_table.visibility,
+        &sig_table.sig_definitions,
     )
 }
 
@@ -286,6 +328,7 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
         external_functions: Vec::new(),
         struct_definitions: Vec::new(),
         sig_definitions: Vec::new(),
+        use_aliases: Vec::new(),
     };
 
     for definition in &module.definitions {
@@ -293,17 +336,21 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
             Definition::Function(f) => {
                 let mut f = f.clone();
                 if let Some(p) = prefix {
-                    f.name = format!("{}.{}", p, f.name);
+                    f.name = format!("{}::{}", p, f.name);
                 }
                 debug!("Emitting function: {}", f.name);
+                let mut compiled = BytecodeCompiler::compile_to_bytecode(&f)?;
+                compiled.module_name = prefix.map(str::to_string);
                 artifact
                     .functions
-                    .push(BytecodeCompiler::compile_function(&f)?);
+                    .push(Box::new(crate::bytecode::BytecodeFunctionExpr::new(
+                        compiled,
+                    )));
             }
             Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
                 if let Some(p) = prefix {
-                    f.name = format!("{}.{}", p, f.name);
+                    f.name = format!("{}::{}", p, f.name);
                 }
                 debug!("Emitting external function: {}", f.name);
                 artifact
@@ -325,7 +372,19 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
                     .sig_definitions
                     .push((name.clone(), functions.clone()));
             }
-            Definition::Use { .. } | Definition::ModuleHeader { .. } => {}
+            Definition::Use { path, alias, .. } if prefix.is_none() => {
+                if path.len() >= 2 {
+                    let qualified = format!("{}::{}", path[0], path.last().unwrap());
+                    let local = alias
+                        .clone()
+                        .unwrap_or_else(|| path.last().unwrap().clone());
+                    artifact.use_aliases.push((local, qualified));
+                }
+            }
+            Definition::Use { .. }
+            | Definition::ModuleHeader { .. }
+            | Definition::ModuleBinding { .. }
+            | Definition::WiringSite { .. } => {}
         }
     }
 
@@ -498,7 +557,7 @@ fn main(): String {
         std::fs::File::create(&main_path)
             .unwrap()
             .write_all(
-                b"use greetlib.greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n",
+                b"use greetlib::greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n",
             )
             .unwrap();
 
@@ -507,14 +566,14 @@ fn main(): String {
             .expect("compile_file failed");
 
         assert!(compiled.functions().contains_key("main"));
-        assert!(compiled.functions().contains_key("greetlib.greet"));
-        assert!(compiled.functions().contains_key("greetlib.internal"));
+        assert!(compiled.functions().contains_key("greetlib::greet"));
+        assert!(compiled.functions().contains_key("greetlib::internal"));
         assert_eq!(
-            compiled.module_visibility().get("greetlib.greet"),
+            compiled.module_visibility().get("greetlib::greet"),
             Some(&true)
         );
         assert_eq!(
-            compiled.module_visibility().get("greetlib.internal"),
+            compiled.module_visibility().get("greetlib::internal"),
             Some(&false)
         );
     }
@@ -652,7 +711,9 @@ fn main(): String {
             .unwrap();
         std::fs::File::create(&main_path)
             .unwrap()
-            .write_all(b"use vislib.greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n")
+            .write_all(
+                b"use vislib::greet\n\nfn main(): String {\n    return greet(\"world\")\n}\n",
+            )
             .unwrap();
 
         assert!(
@@ -676,7 +737,7 @@ fn main(): String {
             .unwrap();
         std::fs::File::create(&main_path)
             .unwrap()
-            .write_all(b"use privlib.secret\n\nfn main(): String {\n    return secret(\"x\")\n}\n")
+            .write_all(b"use privlib::secret\n\nfn main(): String {\n    return secret(\"x\")\n}\n")
             .unwrap();
 
         let err = Compiler::new()
@@ -687,5 +748,153 @@ fn main(): String {
             "error should mention private: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_vtable_populated_from_named_sig() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let storage_path = dir.join("vtstore.sa");
+        let tasks_path = dir.join("vttasks.sa");
+        let main_path = dir.join("vtmain.sa");
+
+        std::fs::File::create(&storage_path)
+            .unwrap()
+            .write_all(b"pub fn read(): String {\n    return \"data\"\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&tasks_path)
+            .unwrap()
+            .write_all(b"mod vttasks(io: vtstore::Store)\n\nsig Store {\n    fn read(): String\n}\n\npub fn run(): String {\n    return io::read()\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"use vttasks::run\n\nfn main(): String {\n    return run()\n}\n")
+            .unwrap();
+
+        let compiled = Compiler::new()
+            .compile_file(main_path.to_str().unwrap())
+            .expect("compile_file failed");
+
+        let vtable = compiled.vtables().get("vttasks");
+        assert!(vtable.is_some(), "expected vtable for vttasks");
+        assert_eq!(
+            vtable.unwrap().get("io::read").map(String::as_str),
+            Some("vtstore::read")
+        );
+    }
+
+    #[test]
+    fn test_vtable_driven_by_explicit_binding() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let impl_path = dir.join("eb_impl.sa");
+        let tasks_path = dir.join("eb_tasks.sa");
+        let main_path = dir.join("eb_main.sa");
+
+        std::fs::File::create(&impl_path)
+            .unwrap()
+            .write_all(b"pub fn read(): String {\n    return \"from-impl\"\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&tasks_path)
+            .unwrap()
+            .write_all(b"mod eb_tasks(io: eb_impl::Store)\n\nsig Store {\n    fn read(): String\n}\n\npub fn run(): String {\n    return io::read()\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"mod io: eb_impl::Store = eb_impl\nmod eb_tasks(io)\nuse eb_tasks::run\n\nfn main(): String {\n    return run()\n}\n")
+            .unwrap();
+
+        let compiled = Compiler::new()
+            .compile_file(main_path.to_str().unwrap())
+            .expect("compile_file failed");
+
+        let vtable = compiled.vtables().get("eb_tasks");
+        assert!(vtable.is_some(), "expected vtable for eb_tasks");
+        assert_eq!(
+            vtable.unwrap().get("io::read").map(String::as_str),
+            Some("eb_impl::read")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_vtable_substitution_end_to_end() {
+        use crate::cli::config::ProgramSource;
+        use crate::runtime::Runtime;
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let real_path = dir.join("sub_real.sa");
+        let mock_path = dir.join("sub_mock.sa");
+        let tasks_path = dir.join("sub_tasks.sa");
+        let main_path = dir.join("sub_main.sa");
+
+        std::fs::File::create(&real_path)
+            .unwrap()
+            .write_all(b"pub fn read(): String {\n    return \"real\"\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&mock_path)
+            .unwrap()
+            .write_all(b"pub fn read(): String {\n    return \"mock\"\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&tasks_path)
+            .unwrap()
+            .write_all(b"mod sub_tasks(io: sub_real::Store)\n\nsig Store {\n    fn read(): String\n}\n\npub fn run(): String {\n    return io::read()\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"mod io: sub_real::Store = sub_mock\nmod sub_tasks(io)\nuse sub_tasks::run\n\nfn main(): String {\n    return run()\n}\n")
+            .unwrap();
+
+        let result = Runtime::builder(ProgramSource::File(main_path.to_str().unwrap().to_string()))
+            .build()
+            .run()
+            .await
+            .expect("runtime execution failed");
+
+        assert_eq!(result.as_string().unwrap(), "mock");
+    }
+
+    #[tokio::test]
+    async fn test_vtable_dispatch_end_to_end() {
+        use crate::cli::config::ProgramSource;
+        use crate::runtime::Runtime;
+        use std::io::Write;
+
+        let dir = std::env::temp_dir();
+        let storage_path = dir.join("e2e_vtstore.sa");
+        let tasks_path = dir.join("e2e_vttasks.sa");
+        let main_path = dir.join("e2e_vtmain.sa");
+
+        std::fs::File::create(&storage_path)
+            .unwrap()
+            .write_all(b"pub fn read(): String {\n    return \"from-storage\"\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&tasks_path)
+            .unwrap()
+            .write_all(b"mod e2e_vttasks(io: e2e_vtstore::Store)\n\nsig Store {\n    fn read(): String\n}\n\npub fn run(): String {\n    return io::read()\n}\n")
+            .unwrap();
+
+        std::fs::File::create(&main_path)
+            .unwrap()
+            .write_all(b"use e2e_vttasks::run\n\nfn main(): String {\n    return run()\n}\n")
+            .unwrap();
+
+        let result = Runtime::builder(ProgramSource::File(main_path.to_str().unwrap().to_string()))
+            .build()
+            .run()
+            .await
+            .expect("runtime execution failed");
+
+        assert_eq!(result.as_string().unwrap(), "from-storage");
     }
 }
