@@ -30,6 +30,7 @@ fn create_test_function(
         },
         span: crate::types::Span::dummy(),
         documentation: None,
+        is_pub: false,
     }
 }
 
@@ -568,6 +569,7 @@ mod tests {
                 create_parameter("id", AstType::String),
             ],
             return_type: AstType::String,
+            is_pub: false,
             span: crate::types::Span::dummy(),
         };
 
@@ -1176,6 +1178,7 @@ mod tests {
                 name: "get_point".to_string(),
                 parameters: vec![],
                 return_type: AstType::Struct("Point".to_string()),
+                is_pub: false,
                 span: crate::types::Span::dummy(),
             }),
             Definition::Function(create_test_function(
@@ -1245,6 +1248,7 @@ mod tests {
                 name: "get_ghost".to_string(),
                 parameters: vec![],
                 return_type: AstType::Struct("Ghost".to_string()),
+                is_pub: false,
                 span: crate::types::Span::dummy(),
             },
         )]);

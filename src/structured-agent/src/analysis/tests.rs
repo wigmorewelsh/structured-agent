@@ -23,6 +23,7 @@ mod tests {
                 span: Span::dummy(),
             },
             documentation: None,
+            is_pub: false,
             span: Span::dummy(),
         }
     }

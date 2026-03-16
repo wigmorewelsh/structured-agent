@@ -7,7 +7,7 @@ use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
-use combine::{Parser, Stream, attempt, between, optional, position};
+use combine::{Parser, Stream, attempt, between, optional, position, sep_by1};
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
@@ -121,8 +121,9 @@ where
         position(),
         skip_spaces_and_comments().with(many(
             choice((
-                parse_function_with_docs().map(Definition::Function),
-                parse_external_function().map(Definition::ExternalFunction),
+                attempt(parse_use()),
+                attempt(parse_function_with_docs().map(Definition::Function)),
+                attempt(parse_external_function().map(Definition::ExternalFunction)),
                 parse_struct_definition().map(Definition::Struct),
             ))
             .skip(skip_spaces_and_comments()),
@@ -143,6 +144,7 @@ where
 {
     (
         position(),
+        optional(attempt(lex_string("pub"))),
         lex_string("extern"),
         lex_string("fn"),
         identifier(),
@@ -156,10 +158,11 @@ where
         position(),
     )
         .map(
-            |(start, _, _, name, params, _, return_type, end)| ExternalFunction {
+            |(start, pub_kw, _, _, name, params, _, return_type, end)| ExternalFunction {
                 name,
                 parameters: params,
                 return_type,
+                is_pub: pub_kw.is_some(),
                 span: Span::new(start, end),
             },
         )
@@ -183,6 +186,7 @@ where
 {
     (
         position(),
+        optional(attempt(lex_string("pub"))),
         lex_string("fn"),
         identifier(),
         between(
@@ -196,15 +200,39 @@ where
         position(),
     )
         .map(
-            |(start, _, name, params, _, return_type, body, end)| Function {
+            |(start, pub_kw, _, name, params, _, return_type, body, end)| Function {
                 name,
                 parameters: params,
                 return_type,
                 body,
                 documentation: None,
+                is_pub: pub_kw.is_some(),
                 span: Span::new(start, end),
             },
         )
+}
+
+fn parse_use<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        optional(attempt(lex_string("pub"))),
+        lex_string("use"),
+        sep_by1(identifier_raw(), char('.')),
+        optional(attempt(
+            (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
+        )),
+        position(),
+    )
+        .map(|(start, pub_kw, _, path, alias, end)| Definition::Use {
+            path,
+            alias,
+            is_pub: pub_kw.is_some(),
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_parameter<Input>() -> impl Parser<Input, Output = Parameter>
@@ -2447,6 +2475,151 @@ extern fn add(n: Int): Int
             closing_brace_pos + 1,
             "span.end should point just past the closing brace, not into subsequent lines"
         );
+    }
+
+    #[test]
+    fn test_parse_pub_function() {
+        let input = r#"
+pub fn greet(name: String): String {
+    return name
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        assert_eq!(func.name, "greet");
+        assert!(func.is_pub);
+    }
+
+    #[test]
+    fn test_parse_non_pub_function_defaults_to_false() {
+        let input = r#"
+fn greet(name: String): String {
+    return name
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        assert!(!func.is_pub);
+    }
+
+    #[test]
+    fn test_parse_pub_extern_function() {
+        let input = "pub extern fn add(x: String, y: String): String\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        let ext = match &module.definitions[0] {
+            Definition::ExternalFunction(f) => f,
+            _ => panic!("Expected external function"),
+        };
+        assert_eq!(ext.name, "add");
+        assert!(ext.is_pub);
+    }
+
+    #[test]
+    fn test_parse_non_pub_extern_function_defaults_to_false() {
+        let input = "extern fn add(x: String, y: String): String\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let ext = match &module.definitions[0] {
+            Definition::ExternalFunction(f) => f,
+            _ => panic!("Expected external function"),
+        };
+        assert!(!ext.is_pub);
+    }
+
+    #[test]
+    fn test_parse_pub_display() {
+        let input = r#"
+pub fn greet(name: String): String {
+    return name
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        let display = format!("{}", func);
+        assert!(display.starts_with("pub fn"));
+    }
+
+    #[test]
+    fn test_parse_use_statement() {
+        let input = "use foo.bar.baz\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        let use_def = match &module.definitions[0] {
+            Definition::Use {
+                path,
+                alias,
+                is_pub,
+                ..
+            } => (path.clone(), alias.clone(), *is_pub),
+            _ => panic!("Expected Use definition"),
+        };
+        assert_eq!(use_def.0, vec!["foo", "bar", "baz"]);
+        assert_eq!(use_def.1, None);
+        assert!(!use_def.2);
+    }
+
+    #[test]
+    fn test_parse_use_with_alias() {
+        let input = "use foo.bar as fb\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let use_def = match &module.definitions[0] {
+            Definition::Use { path, alias, .. } => (path.clone(), alias.clone()),
+            _ => panic!("Expected Use definition"),
+        };
+        assert_eq!(use_def.0, vec!["foo", "bar"]);
+        assert_eq!(use_def.1, Some("fb".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pub_use() {
+        let input = "pub use foo.bar\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let is_pub = match &module.definitions[0] {
+            Definition::Use { is_pub, .. } => *is_pub,
+            _ => panic!("Expected Use definition"),
+        };
+        assert!(is_pub);
+    }
+
+    #[test]
+    fn test_use_alias_resolves_in_typecheck() {
+        let input = r#"
+extern fn greet(name: String): String
+use greet as hello
+fn main(): String {
+    return hello("world")
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        use crate::typecheck::TypeChecker;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, TEST_FILE_ID);
+        assert!(result.is_ok(), "use alias should resolve: {:?}", result);
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub struct TypeChecker {
 struct FunctionSignature {
     parameters: Vec<Parameter>,
     return_type: AstType,
+    is_pub: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +38,8 @@ impl TypeChecker {
 
     pub fn check_module(&mut self, module: &Module, file_id: FileId) -> Result<(), TypeError> {
         self.collect_function_signatures(module, file_id)?;
-        self.check_all_functions(module, file_id)?;
+        let alias_map = Self::build_alias_map(module);
+        self.check_all_functions(module, file_id, &alias_map)?;
         Ok(())
     }
 
@@ -69,6 +71,7 @@ impl TypeChecker {
                     let signature = FunctionSignature {
                         parameters: func.parameters.clone(),
                         return_type: func.return_type.clone(),
+                        is_pub: func.is_pub,
                     };
                     self.function_signatures
                         .insert(func.name.clone(), signature);
@@ -82,14 +85,27 @@ impl TypeChecker {
                     let signature = FunctionSignature {
                         parameters: ext_func.parameters.clone(),
                         return_type: ext_func.return_type.clone(),
+                        is_pub: ext_func.is_pub,
                     };
                     self.function_signatures
                         .insert(ext_func.name.clone(), signature);
                 }
-                Definition::Struct(_) => {}
+                Definition::Struct(_) | Definition::Use { .. } => {}
             }
         }
         Ok(())
+    }
+
+    fn build_alias_map(module: &Module) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for def in &module.definitions {
+            if let Definition::Use { path, alias, .. } = def {
+                if let Some(a) = alias {
+                    map.insert(a.clone(), path.last().cloned().unwrap_or_default());
+                }
+            }
+        }
+        map
     }
 
     fn validate_type(
@@ -116,16 +132,26 @@ impl TypeChecker {
         }
     }
 
-    fn check_all_functions(&self, module: &Module, file_id: FileId) -> Result<(), TypeError> {
+    fn check_all_functions(
+        &self,
+        module: &Module,
+        file_id: FileId,
+        alias_map: &HashMap<String, String>,
+    ) -> Result<(), TypeError> {
         for definition in &module.definitions {
             if let Definition::Function(func) = definition {
-                self.check_function(func, file_id)?;
+                self.check_function(func, file_id, alias_map)?;
             }
         }
         Ok(())
     }
 
-    fn check_function(&self, func: &Function, file_id: FileId) -> Result<(), TypeError> {
+    fn check_function(
+        &self,
+        func: &Function,
+        file_id: FileId,
+        alias_map: &HashMap<String, String>,
+    ) -> Result<(), TypeError> {
         let mut env = TypeEnvironment::new();
 
         for param in &func.parameters {
@@ -133,7 +159,7 @@ impl TypeChecker {
         }
 
         for statement in &func.body.statements {
-            env = self.check_statement(statement, env, &func.name, file_id)?;
+            env = self.check_statement(statement, env, &func.name, file_id, alias_map)?;
         }
 
         Ok(())
@@ -145,10 +171,11 @@ impl TypeChecker {
         mut env: TypeEnvironment,
         function_name: &str,
         file_id: FileId,
+        alias_map: &HashMap<String, String>,
     ) -> Result<TypeEnvironment, TypeError> {
         match statement {
             Statement::Injection(expr) => {
-                self.check_expression(expr, &env, file_id)?;
+                self.check_expression(expr, &env, file_id, alias_map)?;
                 Ok(env)
             }
             Statement::Assignment {
@@ -156,7 +183,7 @@ impl TypeChecker {
                 expression,
                 span: _,
             } => {
-                let expr_type = self.check_expression(expression, &env, file_id)?;
+                let expr_type = self.check_expression(expression, &env, file_id, alias_map)?;
                 env.declare_variable(variable.clone(), expr_type, expression.span());
                 Ok(env)
             }
@@ -165,7 +192,7 @@ impl TypeChecker {
                 expression,
                 span,
             } => {
-                let expr_type = self.check_expression(expression, &env, file_id)?;
+                let expr_type = self.check_expression(expression, &env, file_id, alias_map)?;
                 let (existing_type, declaration_span) = env
                     .lookup_variable_with_span(variable)
                     .ok_or_else(|| TypeError::UnknownVariable {
@@ -188,7 +215,7 @@ impl TypeChecker {
                 Ok(env)
             }
             Statement::ExpressionStatement(expr) => {
-                self.check_expression(expr, &env, file_id)?;
+                self.check_expression(expr, &env, file_id, alias_map)?;
                 Ok(env)
             }
             Statement::If {
@@ -197,7 +224,7 @@ impl TypeChecker {
                 else_body,
                 span: _,
             } => {
-                let cond_type = self.check_expression(condition, &env, file_id)?;
+                let cond_type = self.check_expression(condition, &env, file_id, alias_map)?;
                 if !matches!(cond_type, AstType::Boolean) {
                     return Err(TypeError::TypeMismatch {
                         expected: "Boolean".to_string(),
@@ -209,13 +236,20 @@ impl TypeChecker {
 
                 let mut then_env = env.create_child();
                 for stmt in body {
-                    then_env = self.check_statement(stmt, then_env, function_name, file_id)?;
+                    then_env =
+                        self.check_statement(stmt, then_env, function_name, file_id, alias_map)?;
                 }
 
                 if let Some(else_stmts) = else_body {
                     let mut else_env = env.create_child();
                     for stmt in else_stmts {
-                        else_env = self.check_statement(stmt, else_env, function_name, file_id)?;
+                        else_env = self.check_statement(
+                            stmt,
+                            else_env,
+                            function_name,
+                            file_id,
+                            alias_map,
+                        )?;
                     }
                 }
 
@@ -226,7 +260,7 @@ impl TypeChecker {
                 body,
                 span: _,
             } => {
-                let cond_type = self.check_expression(condition, &env, file_id)?;
+                let cond_type = self.check_expression(condition, &env, file_id, alias_map)?;
                 if !matches!(cond_type, AstType::Boolean) {
                     return Err(TypeError::TypeMismatch {
                         expected: "Boolean".to_string(),
@@ -238,12 +272,13 @@ impl TypeChecker {
 
                 let mut child_env = env.create_child();
                 for stmt in body {
-                    child_env = self.check_statement(stmt, child_env, function_name, file_id)?;
+                    child_env =
+                        self.check_statement(stmt, child_env, function_name, file_id, alias_map)?;
                 }
                 Ok(env)
             }
             Statement::Return(expr) => {
-                let return_type = self.check_expression(expr, &env, file_id)?;
+                let return_type = self.check_expression(expr, &env, file_id, alias_map)?;
                 let expected_type = &self
                     .function_signatures
                     .get(function_name)
@@ -269,6 +304,7 @@ impl TypeChecker {
         expression: &Expression,
         env: &TypeEnvironment,
         file_id: FileId,
+        alias_map: &HashMap<String, String>,
     ) -> Result<AstType, TypeError> {
         match expression {
             Expression::Call {
@@ -276,7 +312,11 @@ impl TypeChecker {
                 arguments,
                 span,
             } => {
-                let func_sig = self.function_signatures.get(function).ok_or_else(|| {
+                let resolved = alias_map
+                    .get(function)
+                    .map(String::as_str)
+                    .unwrap_or(function);
+                let func_sig = self.function_signatures.get(resolved).ok_or_else(|| {
                     TypeError::UnknownFunction {
                         name: function.clone(),
                         span: *span,
@@ -298,7 +338,7 @@ impl TypeChecker {
                     match arg {
                         Expression::Placeholder { .. } => {}
                         _ => {
-                            let arg_type = self.check_expression(arg, env, file_id)?;
+                            let arg_type = self.check_expression(arg, env, file_id, alias_map)?;
                             if arg_type != param.param_type {
                                 return Err(TypeError::ArgumentTypeMismatch {
                                     function: function.clone(),
@@ -337,10 +377,10 @@ impl TypeChecker {
                     });
                 }
 
-                let first_type = self.check_expression(&elements[0], env, file_id)?;
+                let first_type = self.check_expression(&elements[0], env, file_id, alias_map)?;
 
                 for elem in elements.iter().skip(1) {
-                    let elem_type = self.check_expression(elem, env, file_id)?;
+                    let elem_type = self.check_expression(elem, env, file_id, alias_map)?;
                     if first_type != elem_type {
                         return Err(TypeError::TypeMismatch {
                             expected: format!("{}", first_type),
@@ -370,8 +410,12 @@ impl TypeChecker {
                 }
 
                 let first_clause = &select_expr.clauses[0];
-                let first_result_type =
-                    self.check_expression(&first_clause.expression_to_run, env, file_id)?;
+                let first_result_type = self.check_expression(
+                    &first_clause.expression_to_run,
+                    env,
+                    file_id,
+                    alias_map,
+                )?;
                 let mut first_clause_env = env.create_child();
                 first_clause_env.declare_variable(
                     first_clause.result_variable.clone(),
@@ -382,19 +426,24 @@ impl TypeChecker {
                     &first_clause.expression_next,
                     &first_clause_env,
                     file_id,
+                    alias_map,
                 )?;
 
                 for (i, clause) in select_expr.clauses.iter().enumerate().skip(1) {
                     let result_type =
-                        self.check_expression(&clause.expression_to_run, env, file_id)?;
+                        self.check_expression(&clause.expression_to_run, env, file_id, alias_map)?;
                     let mut clause_env = env.create_child();
                     clause_env.declare_variable(
                         clause.result_variable.clone(),
                         result_type,
                         clause.expression_to_run.span(),
                     );
-                    let clause_type =
-                        self.check_expression(&clause.expression_next, &clause_env, file_id)?;
+                    let clause_type = self.check_expression(
+                        &clause.expression_next,
+                        &clause_env,
+                        file_id,
+                        alias_map,
+                    )?;
                     if first_type != clause_type {
                         return Err(TypeError::SelectBranchTypeMismatch {
                             expected: format!("{}", first_type),
@@ -415,7 +464,7 @@ impl TypeChecker {
                 else_expr,
                 span: _,
             } => {
-                let condition_type = self.check_expression(condition, env, file_id)?;
+                let condition_type = self.check_expression(condition, env, file_id, alias_map)?;
                 if !matches!(condition_type, AstType::Boolean) {
                     return Err(TypeError::TypeMismatch {
                         expected: "Boolean".to_string(),
@@ -425,8 +474,8 @@ impl TypeChecker {
                     });
                 }
 
-                let then_type = self.check_expression(then_expr, env, file_id)?;
-                let else_type = self.check_expression(else_expr, env, file_id)?;
+                let then_type = self.check_expression(then_expr, env, file_id, alias_map)?;
+                let else_type = self.check_expression(else_expr, env, file_id, alias_map)?;
 
                 if then_type != else_type {
                     return Err(TypeError::TypeMismatch {
@@ -465,7 +514,7 @@ impl TypeChecker {
                             span: value_expr.span(),
                             file_id,
                         })?;
-                    let actual_type = self.check_expression(value_expr, env, file_id)?;
+                    let actual_type = self.check_expression(value_expr, env, file_id, alias_map)?;
                     if actual_type != declared_type {
                         return Err(TypeError::StructFieldTypeMismatch {
                             struct_name: struct_name.clone(),
@@ -504,7 +553,7 @@ impl TypeChecker {
                 Ok(AstType::Struct(struct_name.clone()))
             }
             Expression::FieldAccess { base, field, span } => {
-                let base_type = self.check_expression(base, env, file_id)?;
+                let base_type = self.check_expression(base, env, file_id, alias_map)?;
                 match base_type {
                     AstType::Struct(name) => {
                         let definition = self.struct_definitions.get(&name).ok_or_else(|| {

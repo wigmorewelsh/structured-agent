@@ -13,6 +13,12 @@ pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
     Struct(StructDefinition),
+    Use {
+        path: Vec<String>,
+        alias: Option<String>,
+        is_pub: bool,
+        span: Span,
+    },
 }
 
 impl Spanned for Definition {
@@ -21,6 +27,7 @@ impl Spanned for Definition {
             Definition::Function(f) => f.span,
             Definition::ExternalFunction(f) => f.span,
             Definition::Struct(s) => s.span,
+            Definition::Use { span, .. } => *span,
         }
     }
 }
@@ -46,6 +53,7 @@ pub struct Function {
     pub return_type: Type,
     pub body: FunctionBody,
     pub documentation: Option<String>,
+    pub is_pub: bool,
     pub span: Span,
 }
 
@@ -61,6 +69,7 @@ pub struct ExternalFunction {
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
+    pub is_pub: bool,
     pub span: Span,
 }
 
@@ -247,6 +256,9 @@ impl fmt::Display for Function {
                 writeln!(f, "## {}", line)?;
             }
         }
+        if self.is_pub {
+            write!(f, "pub ")?;
+        }
         write!(f, "fn {}(", self.name)?;
         for (i, param) in self.parameters.iter().enumerate() {
             if i > 0 {
@@ -350,12 +362,30 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "\n}}")
             }
+            Definition::Use {
+                path,
+                alias,
+                is_pub,
+                ..
+            } => {
+                if *is_pub {
+                    write!(f, "pub ")?;
+                }
+                write!(f, "use {}", path.join("."))?;
+                if let Some(a) = alias {
+                    write!(f, " as {}", a)?;
+                }
+                Ok(())
+            }
         }
     }
 }
 
 impl fmt::Display for ExternalFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_pub {
+            write!(f, "pub ")?;
+        }
         write!(f, "extern fn {}(", self.name)?;
         for (i, param) in self.parameters.iter().enumerate() {
             if i > 0 {

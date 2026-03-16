@@ -324,6 +324,7 @@ impl Compiler {
                         .collect();
                     compiled_program.add_struct_definition(ast_struct.name.clone(), fields);
                 }
+                Definition::Use { .. } => {}
             }
         }
 
