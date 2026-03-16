@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use crate::ast::Definition;
-use crate::ast::Module;
+use crate::ast::{Definition, Module};
+use crate::types::FileId;
 
-#[derive(Debug, Clone)]
-pub(crate) struct DiscoveredFile {
+#[derive(Debug)]
+pub(crate) struct ParsedModule {
     pub(crate) name: String,
-    pub(crate) path: String,
-    pub(crate) source: String,
+    pub(crate) module: Module,
     pub(crate) is_entry: bool,
+    pub(crate) file_id: FileId,
 }
 
 pub(crate) trait Discoverer {
@@ -56,8 +56,8 @@ pub(crate) fn discover(
     entry_path: &str,
     entry_source: &str,
     discoverer: &impl Discoverer,
-    mut parse_refs: impl FnMut(&str, &str) -> Result<Module, String>,
-) -> Result<Vec<DiscoveredFile>, String> {
+    mut parse: impl FnMut(&str, &str) -> Result<(FileId, Module), String>,
+) -> Result<Vec<ParsedModule>, String> {
     let entry_dir = Path::new(entry_path)
         .parent()
         .map(|p| p.to_string_lossy().to_string())
@@ -73,7 +73,7 @@ pub(crate) fn discover(
     queue.push_back((entry_stem, entry_path.to_string(), true));
 
     let mut visited: HashSet<String> = HashSet::new();
-    let mut result: Vec<DiscoveredFile> = Vec::new();
+    let mut result: Vec<ParsedModule> = Vec::new();
 
     while let Some((name, file_path, is_entry)) = queue.pop_front() {
         if !visited.insert(name.clone()) {
@@ -86,7 +86,7 @@ pub(crate) fn discover(
             discoverer.resolve(&file_path)?
         };
 
-        let module = parse_refs(&file_path, &source)?;
+        let (file_id, module) = parse(&file_path, &source)?;
 
         for dep in referenced_module_names(&module) {
             if !visited.contains(&dep) {
@@ -95,10 +95,10 @@ pub(crate) fn discover(
             }
         }
 
-        result.push(DiscoveredFile {
+        result.push(ParsedModule {
             name,
-            path: file_path,
-            source,
+            file_id,
+            module,
             is_entry,
         });
     }

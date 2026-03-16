@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::Definition;
 use crate::typecheck::checker::{FunctionSignatureTuple, ModuleVisibility};
 
-use super::parse::ParsedModule;
+use super::discovery::ParsedModule;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SigTable {

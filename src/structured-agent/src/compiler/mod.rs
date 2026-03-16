@@ -1,5 +1,4 @@
 pub(crate) mod discovery;
-pub(crate) mod parse;
 pub mod parser;
 pub(crate) mod sigs;
 
@@ -22,7 +21,6 @@ use crate::types::{
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
-use parse::parse_modules;
 use sigs::{SigTable, collect_sigs, sigs_visible_to_module};
 use std::collections::HashMap;
 
@@ -201,22 +199,25 @@ impl Compiler {
     ) -> Result<CompiledProgram, String> {
         debug!("Compiling: {}", entry_path);
 
+        let parser = &self.parser;
         let mut diagnostics = DiagnosticManager::new();
 
-        let files = {
-            let parser = &self.parser;
-            let mut tmp_diagnostics = DiagnosticManager::new();
-            discover(entry_path, entry_source, discoverer, |path, source| {
-                let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
-                let file_id = tmp_diagnostics.add_file(path.to_string(), source.to_string());
-                let reporter = tmp_diagnostics.reporter().clone();
-                parser.parse(&unit, file_id, &reporter)
-            })?
-        };
-
-        let modules = parse_modules(&files, &mut diagnostics, &self.parser)?;
+        let modules = discover(entry_path, entry_source, discoverer, |path, source| {
+            let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
+            let file_id = diagnostics.add_file(path.to_string(), source.to_string());
+            let reporter = diagnostics.reporter().clone();
+            parser
+                .parse(&unit, file_id, &reporter)
+                .map(|m| (file_id, m))
+        })?;
 
         let sig_table: SigTable = collect_sigs(&modules);
+
+        for parsed in &modules {
+            let reporter = diagnostics.reporter().clone();
+            check_module(parsed, &sig_table, &reporter)
+                .map_err(|e| format!("In {}: {}", parsed.name, e))?;
+        }
 
         let mut compiled = CompiledProgram {
             module_visibility: sig_table.visibility.clone(),
@@ -224,41 +225,32 @@ impl Compiler {
         };
 
         for parsed in &modules {
-            let external_sigs = if parsed.is_entry {
-                sigs_visible_to_module(&parsed.module, &sig_table)
-            } else {
-                sig_table.external_sigs.clone()
-            };
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
-            let reporter = diagnostics.reporter().clone();
-            compile_module(
-                &parsed.module,
-                parsed.file_id,
-                &external_sigs,
-                &sig_table.visibility,
-                &reporter,
-                prefix,
-                &mut compiled,
-            )
-            .map_err(|e| format!("In {}: {}", parsed.name, e))?;
+            emit_definitions(&parsed.module, prefix, &mut compiled)?;
         }
 
         Ok(compiled)
     }
 }
 
-fn compile_module(
-    module: &Module,
-    file_id: FileId,
-    external_sigs: &HashMap<String, FunctionSignatureTuple>,
-    visibility: &ModuleVisibility,
+fn check_module(
+    parsed: &discovery::ParsedModule,
+    sig_table: &SigTable,
     reporter: &DiagnosticReporter,
-    prefix: Option<&str>,
-    compiled: &mut CompiledProgram,
 ) -> Result<(), String> {
+    let external_sigs = if parsed.is_entry {
+        sigs_visible_to_module(&parsed.module, sig_table)
+    } else {
+        sig_table.external_sigs.clone()
+    };
     let mut checker = TypeChecker::new();
     checker
-        .check_module_with_external_sigs(module, file_id, external_sigs, visibility)
+        .check_module_with_external_sigs(
+            &parsed.module,
+            parsed.file_id,
+            &external_sigs,
+            &sig_table.visibility,
+        )
         .map_err(|e| {
             error!("Type checking failed: {}", e);
             if let Err(io_err) = reporter.emit_type_error(&e) {
@@ -267,7 +259,7 @@ fn compile_module(
             format!("Type error: {}", e)
         })?;
 
-    let warnings = build_analysis_runner().run(module, file_id);
+    let warnings = build_analysis_runner().run(&parsed.module, parsed.file_id);
     if !warnings.is_empty() {
         warn!("Analysis found {} warnings", warnings.len());
     }
@@ -277,7 +269,7 @@ fn compile_module(
         }
     }
 
-    emit_definitions(module, prefix, compiled)
+    Ok(())
 }
 
 fn emit_definitions(
