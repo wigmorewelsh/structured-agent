@@ -265,9 +265,7 @@ impl Runtime {
     pub async fn run(&self) -> Result<ExpressionValue, RuntimeError> {
         debug!("Starting program execution");
 
-        let compiled_program = self
-            .compile()
-            .map_err(|e| RuntimeError::ExecutionError(e))?;
+        let compiled_program = self.compile().map_err(RuntimeError::ExecutionError)?;
 
         let mut runtime = self.create_runtime_ref();
         runtime.vtables = compiled_program.vtables().clone();

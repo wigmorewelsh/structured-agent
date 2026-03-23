@@ -38,6 +38,7 @@ libc6 = { version = "*" }
 [profile.dev]
 opt-level = 0
 debug = true
+split-debuginfo = "unpacked"
 
 # The profile that 'dist' will build with
 [profile.dist]

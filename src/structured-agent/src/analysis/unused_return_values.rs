@@ -44,16 +44,15 @@ impl UnusedReturnValueAnalyzer {
     fn analyze_statement(&mut self, statement: &Statement) {
         match statement {
             Statement::ExpressionStatement(expr) => {
-                if let Expression::Call { function, span, .. } = expr {
-                    if let Some(&returns_value) = self.function_return_types.get(function) {
-                        if returns_value {
-                            self.warnings.push(Warning::UnusedReturnValue {
-                                function_name: function.clone(),
-                                span: *span,
-                                file_id: self.file_id,
-                            });
-                        }
-                    }
+                if let Expression::Call { function, span, .. } = expr
+                    && let Some(&returns_value) = self.function_return_types.get(function)
+                    && returns_value
+                {
+                    self.warnings.push(Warning::UnusedReturnValue {
+                        function_name: function.clone(),
+                        span: *span,
+                        file_id: self.file_id,
+                    });
                 }
                 self.analyze_expression(expr);
             }

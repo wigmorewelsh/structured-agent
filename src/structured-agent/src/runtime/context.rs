@@ -107,8 +107,10 @@ impl Context {
         name: String,
         result: ExpressionResult,
     ) -> Result<(), String> {
-        if self.variables.contains_key(&name) {
-            self.variables.insert(name, result);
+        if let std::collections::hash_map::Entry::Occupied(mut e) =
+            self.variables.entry(name.clone())
+        {
+            e.insert(result);
             Ok(())
         } else if self.is_scope_boundary {
             Err(format!("Variable '{}' not found", name))

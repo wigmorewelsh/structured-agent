@@ -440,10 +440,10 @@ impl ExpressionValue {
             DataType::Int64 => "Int",
             DataType::List(_) => "List",
             DataType::Struct(_) => {
-                if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
-                    if Self::is_metadata_struct(struct_array) {
-                        return "Metadata";
-                    }
+                if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>()
+                    && Self::is_metadata_struct(struct_array)
+                {
+                    return "Metadata";
                 }
                 "Struct"
             }
@@ -527,25 +527,25 @@ impl ExpressionValue {
     }
 
     pub fn format_for_llm(&self) -> String {
-        if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
-            if !Self::is_metadata_struct(struct_array) {
-                let mut obj = serde_json::Map::new();
-                for (i, field) in struct_array.fields().iter().enumerate() {
-                    let col = struct_array.column(i);
-                    let val = ExpressionValue { data: col.clone() };
-                    let json_val = if let Ok(s) = val.as_string() {
-                        serde_json::Value::String(s.to_string())
-                    } else if let Ok(b) = val.as_boolean() {
-                        serde_json::Value::Bool(b)
-                    } else if let Ok(n) = val.as_integer() {
-                        serde_json::Value::Number(n.into())
-                    } else {
-                        serde_json::Value::String(val.format_for_llm())
-                    };
-                    obj.insert(field.name().clone(), json_val);
-                }
-                return serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string());
+        if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>()
+            && !Self::is_metadata_struct(struct_array)
+        {
+            let mut obj = serde_json::Map::new();
+            for (i, field) in struct_array.fields().iter().enumerate() {
+                let col = struct_array.column(i);
+                let val = ExpressionValue { data: col.clone() };
+                let json_val = if let Ok(s) = val.as_string() {
+                    serde_json::Value::String(s.to_string())
+                } else if let Ok(b) = val.as_boolean() {
+                    serde_json::Value::Bool(b)
+                } else if let Ok(n) = val.as_integer() {
+                    serde_json::Value::Number(n.into())
+                } else {
+                    serde_json::Value::String(val.format_for_llm())
+                };
+                obj.insert(field.name().clone(), json_val);
             }
+            return serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string());
         }
         if self.data.as_any().is::<NullArray>() {
             "()".to_string()

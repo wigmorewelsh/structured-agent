@@ -25,14 +25,14 @@ impl Analyzer for EmptyFunctionAnalyzer {
         let mut warnings = Vec::new();
 
         for definition in &module.definitions {
-            if let Definition::Function(func) = definition {
-                if func.body.statements.is_empty() {
-                    warnings.push(Warning::EmptyFunction {
-                        name: func.name.clone(),
-                        span: func.span,
-                        file_id,
-                    });
-                }
+            if let Definition::Function(func) = definition
+                && func.body.statements.is_empty()
+            {
+                warnings.push(Warning::EmptyFunction {
+                    name: func.name.clone(),
+                    span: func.span,
+                    file_id,
+                });
             }
         }
 

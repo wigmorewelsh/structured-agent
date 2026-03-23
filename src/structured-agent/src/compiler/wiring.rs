@@ -10,86 +10,100 @@ pub(crate) type Vtables = HashMap<String, HashMap<String, String>>;
 pub(crate) fn resolve_vtables(modules: &[ParsedModule], sig_table: &SigTable) -> Vtables {
     let bindings = collect_bindings(modules);
     let wiring_sites = collect_wiring_sites(modules);
-    let mut vtables: Vtables = HashMap::new();
 
-    for parsed in modules {
-        let params = match header_params(parsed) {
-            Some(p) => p,
-            None => continue,
-        };
+    modules
+        .iter()
+        .filter_map(|parsed| {
+            let params = header_params(parsed)?;
+            let site_args = wiring_sites.get(&parsed.name).map(Vec::as_slice);
+            let vtable = build_vtable(params, site_args, &bindings, sig_table);
+            (!vtable.is_empty()).then(|| (parsed.name.clone(), vtable))
+        })
+        .collect()
+}
 
-        let site_args = wiring_sites.get(&parsed.name);
-
-        let mut vtable: HashMap<String, String> = HashMap::new();
-
-        for (i, param) in params.iter().enumerate() {
-            if param.path.len() < 2 {
-                continue;
-            }
-
-            let concrete_module = site_args
-                .and_then(|args| args.get(i))
-                .and_then(|bound_name| bindings.get(bound_name))
-                .map(|s| s.as_str())
-                .unwrap_or(&param.path[0]);
-
-            let sig_name = param.path.last().unwrap();
-
-            let fn_names: Vec<String> = if let Some(fns) = sig_table.sig_definitions.get(sig_name) {
-                fns.iter().map(|f| f.name.clone()).collect()
-            } else {
-                sig_table
-                    .external_sigs
-                    .keys()
-                    .filter_map(|k| {
-                        k.strip_prefix(&format!("{}::", concrete_module))
-                            .map(str::to_string)
-                    })
-                    .collect()
-            };
-
-            for fn_name in fn_names {
+fn build_vtable(
+    params: &[crate::ast::ModuleParam],
+    site_args: Option<&[String]>,
+    bindings: &HashMap<String, String>,
+    sig_table: &SigTable,
+) -> HashMap<String, String> {
+    params
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.path.len() >= 2)
+        .flat_map(|(i, param)| {
+            let concrete = concrete_module_for_param(i, param, site_args, bindings);
+            let fn_names = fn_names_for_param(param, concrete, sig_table);
+            fn_names.into_iter().map(move |fn_name| {
                 let param_key = format!("{}::{}", param.name, fn_name);
-                let concrete_val = format!("{}::{}", concrete_module, fn_name);
-                vtable.insert(param_key, concrete_val);
-            }
-        }
+                let concrete_val = format!("{}::{}", concrete, fn_name);
+                (param_key, concrete_val)
+            })
+        })
+        .collect()
+}
 
-        if !vtable.is_empty() {
-            vtables.insert(parsed.name.clone(), vtable);
-        }
+fn concrete_module_for_param<'a>(
+    index: usize,
+    param: &'a crate::ast::ModuleParam,
+    site_args: Option<&'a [String]>,
+    bindings: &'a HashMap<String, String>,
+) -> &'a str {
+    site_args
+        .and_then(|args| args.get(index))
+        .and_then(|bound_name| bindings.get(bound_name))
+        .map(|s| s.as_str())
+        .unwrap_or(&param.path[0])
+}
+
+fn fn_names_for_param(
+    param: &crate::ast::ModuleParam,
+    concrete_module: &str,
+    sig_table: &SigTable,
+) -> Vec<String> {
+    let sig_name = param.path.last().unwrap();
+    if let Some(fns) = sig_table.sig_definitions.get(sig_name) {
+        fns.iter().map(|f| f.name.clone()).collect()
+    } else {
+        let prefix = format!("{}::", concrete_module);
+        sig_table
+            .external_sigs
+            .keys()
+            .filter_map(|k| k.strip_prefix(&prefix).map(str::to_string))
+            .collect()
     }
-
-    vtables
 }
 
 fn collect_bindings(modules: &[ParsedModule]) -> HashMap<String, String> {
-    let mut bindings = HashMap::new();
-    for parsed in modules {
-        for def in &parsed.module.definitions {
+    modules
+        .iter()
+        .flat_map(|parsed| &parsed.module.definitions)
+        .filter_map(|def| {
             if let Definition::ModuleBinding {
                 name, impl_path, ..
             } = def
             {
-                if !impl_path.is_empty() {
-                    bindings.insert(name.clone(), impl_path[0].clone());
-                }
+                impl_path.first().map(|m| (name.clone(), m.clone()))
+            } else {
+                None
             }
-        }
-    }
-    bindings
+        })
+        .collect()
 }
 
 fn collect_wiring_sites(modules: &[ParsedModule]) -> HashMap<String, Vec<String>> {
-    let mut sites: HashMap<String, Vec<String>> = HashMap::new();
-    for parsed in modules {
-        for def in &parsed.module.definitions {
+    modules
+        .iter()
+        .flat_map(|parsed| &parsed.module.definitions)
+        .filter_map(|def| {
             if let Definition::WiringSite { name, args, .. } = def {
-                sites.insert(name.clone(), args.clone());
+                Some((name.clone(), args.clone()))
+            } else {
+                None
             }
-        }
-    }
-    sites
+        })
+        .collect()
 }
 
 fn header_params(parsed: &ParsedModule) -> Option<&Vec<crate::ast::ModuleParam>> {
@@ -232,5 +246,116 @@ mod tests {
         let vtable = vtables.get("tasks").unwrap();
         assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
         assert_eq!(vtable.get("log::write").unwrap(), "logger::write");
+    }
+
+    fn make_entry_module(definitions: Vec<Definition>) -> ParsedModule {
+        ParsedModule {
+            name: "main".to_string(),
+            module: crate::ast::Module {
+                definitions,
+                span: dummy_span(),
+                file_id: file_id(),
+            },
+            is_entry: true,
+            file_id: file_id(),
+        }
+    }
+
+    fn binding(name: &str, sig_path: &[&str], impl_path: &[&str]) -> Definition {
+        Definition::ModuleBinding {
+            name: name.to_string(),
+            sig_path: sig_path.iter().map(|s| s.to_string()).collect(),
+            impl_path: impl_path.iter().map(|s| s.to_string()).collect(),
+            span: dummy_span(),
+        }
+    }
+
+    fn wiring_site(module_name: &str, args: &[&str]) -> Definition {
+        Definition::WiringSite {
+            name: module_name.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            span: dummy_span(),
+        }
+    }
+
+    #[test]
+    fn test_explicit_binding_overrides_inferred_concrete_module() {
+        let p = param("io", &["real_store", "Store"]);
+        let tasks = make_module("tasks", vec![p]);
+        let entry = make_entry_module(vec![
+            binding("io", &["real_store", "Store"], &["mock_store"]),
+            wiring_site("tasks", &["io"]),
+        ]);
+
+        let mut table = empty_sig_table();
+        table
+            .sig_definitions
+            .insert("Store".to_string(), vec![sig_fn("read")]);
+
+        let vtables = resolve_vtables(&[tasks, entry], &table);
+        let vtable = vtables.get("tasks").expect("expected vtable for tasks");
+        assert_eq!(
+            vtable.get("io::read").unwrap(),
+            "mock_store::read",
+            "vtable should use the bound impl, not the param path"
+        );
+    }
+
+    #[test]
+    fn test_wiring_site_without_binding_falls_back_to_param_path() {
+        let p = param("io", &["storage", "Store"]);
+        let tasks = make_module("tasks", vec![p]);
+        let entry = make_entry_module(vec![wiring_site("tasks", &["io"])]);
+
+        let mut table = empty_sig_table();
+        table
+            .sig_definitions
+            .insert("Store".to_string(), vec![sig_fn("read")]);
+
+        let vtables = resolve_vtables(&[tasks, entry], &table);
+        let vtable = vtables.get("tasks").expect("expected vtable for tasks");
+        assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
+    }
+
+    #[test]
+    fn test_collect_bindings_extracts_impl_path() {
+        let entry = make_entry_module(vec![binding(
+            "fmt",
+            &["formatter", "Formatter"],
+            &["mock_formatter"],
+        )]);
+        let bindings = collect_bindings(&[entry]);
+        assert_eq!(
+            bindings.get("fmt").map(String::as_str),
+            Some("mock_formatter")
+        );
+    }
+
+    #[test]
+    fn test_collect_wiring_sites_extracts_args() {
+        let entry = make_entry_module(vec![wiring_site("reporter", &["fmt"])]);
+        let sites = collect_wiring_sites(&[entry]);
+        assert_eq!(
+            sites.get("reporter").map(Vec::as_slice),
+            Some(vec!["fmt".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn test_module_without_header_produces_no_vtable_entry() {
+        let entry = make_entry_module(vec![
+            binding("io", &["storage", "Store"], &["mock_store"]),
+            wiring_site("tasks", &["io"]),
+        ]);
+        let vtables = resolve_vtables(&[entry], &empty_sig_table());
+        assert!(vtables.is_empty());
+    }
+
+    #[test]
+    fn test_param_with_single_segment_path_skipped() {
+        let p = param("io", &["storage"]);
+        let parsed = make_module("tasks", vec![p]);
+        let vtables = resolve_vtables(&[parsed], &empty_sig_table());
+        assert!(vtables.is_empty());
     }
 }

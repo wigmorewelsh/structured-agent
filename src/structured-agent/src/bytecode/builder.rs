@@ -118,10 +118,9 @@ impl InstructionBuilder {
                         var: switch_var,
                         offsets,
                     } = &mut self.instructions[position]
+                        && switch_var == &var
                     {
-                        if switch_var == &var {
-                            offsets[index] = target_position;
-                        }
+                        offsets[index] = target_position;
                     }
                 }
             }

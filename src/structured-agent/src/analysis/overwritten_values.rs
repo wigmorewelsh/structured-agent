@@ -95,14 +95,14 @@ impl OverwrittenValueAnalyzer {
                     expression,
                     span,
                 } => {
-                    if let Some(&old_span) = assignments.get(variable) {
-                        if !reads.contains(variable) {
-                            warnings.push(Warning::OverwrittenValue {
-                                name: variable.clone(),
-                                span: old_span,
-                                file_id,
-                            });
-                        }
+                    if let Some(&old_span) = assignments.get(variable)
+                        && !reads.contains(variable)
+                    {
+                        warnings.push(Warning::OverwrittenValue {
+                            name: variable.clone(),
+                            span: old_span,
+                            file_id,
+                        });
                     }
                     reads.remove(variable);
                     assignments.insert(variable.clone(), *span);
