@@ -2,6 +2,8 @@ mod variable_allocation;
 mod variable_drop;
 
 use crate::bytecode::Instruction;
+use crate::types::FileId;
+use codespan_reporting::diagnostic::Diagnostic;
 
 #[cfg(test)]
 mod variable_allocation_test;
@@ -86,6 +88,10 @@ impl IlWarning {
                 format!("variable `{}` is allocated but never dropped", name)
             }
         }
+    }
+
+    pub fn to_diagnostic(&self) -> Diagnostic<FileId> {
+        Diagnostic::warning().with_message(self.message())
     }
 }
 

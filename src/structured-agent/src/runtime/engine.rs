@@ -1,3 +1,4 @@
+use crate::bytecode::BytecodeFunctionExpr;
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::functions::{
@@ -276,9 +277,10 @@ impl Runtime {
 
         for (name, function) in compiled_program.functions() {
             debug!("Registering function: {}", name);
-            runtime
-                .function_registry
-                .insert(name.clone(), Arc::from(function.clone_executable()));
+            runtime.function_registry.insert(
+                name.clone(),
+                Arc::new(BytecodeFunctionExpr::new(function.clone())),
+            );
         }
         for external_function in compiled_program.external_functions().values() {
             debug!("Registering external function: {}", external_function.name);
@@ -292,10 +294,8 @@ impl Runtime {
 
         if let Some(main_function) = compiled_program.main_function() {
             debug!("Executing main function");
-            match runtime
-                .run_expression(main_function.as_ref() as &dyn crate::types::Function)
-                .await
-            {
+            let main_expr = BytecodeFunctionExpr::new(main_function.clone());
+            match runtime.run_expression(&main_expr).await {
                 Ok(result) => {
                     debug!("Program execution completed successfully");
                     debug!("Result type: {}", result.type_name());

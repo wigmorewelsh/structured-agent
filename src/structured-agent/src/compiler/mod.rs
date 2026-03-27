@@ -12,13 +12,14 @@ use crate::analysis::{
     VariableShadowingAnalyzer,
 };
 use crate::ast::{Definition, Module, SigFunction};
-use crate::bytecode::BytecodeCompiler;
+use crate::bytecode::{BytecodeCompiler, CompiledFunction};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
+use crate::il_analysis::{
+    IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
+};
 use crate::typecheck::TypeChecker;
 use crate::typecheck::checker::ModuleVisibility;
-use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, FileId, Function, Parameter, Type,
-};
+use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use wiring::Vtables;
 
 use combine::Parser as CombineParser;
@@ -67,7 +68,7 @@ impl CompilationUnit {
 }
 
 struct ModuleArtifact {
-    functions: Vec<Box<dyn ExecutableFunction>>,
+    functions: Vec<CompiledFunction>,
     external_functions: Vec<ExternalFunctionDefinition>,
     struct_definitions: Vec<(String, Vec<(String, Type)>)>,
     sig_definitions: Vec<(String, Vec<SigFunction>)>,
@@ -76,7 +77,7 @@ struct ModuleArtifact {
 
 #[derive(Debug)]
 pub struct CompiledProgram {
-    functions: HashMap<String, Box<dyn ExecutableFunction>>,
+    functions: HashMap<String, CompiledFunction>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
@@ -129,13 +130,13 @@ impl CompiledProgram {
         self.source_path.as_deref()
     }
 
-    pub fn main_function(&self) -> Option<&Box<dyn ExecutableFunction>> {
+    pub fn main_function(&self) -> Option<&CompiledFunction> {
         self.main_function
             .as_ref()
             .and_then(|name| self.functions.get(name))
     }
 
-    pub fn functions(&self) -> &HashMap<String, Box<dyn ExecutableFunction>> {
+    pub fn functions(&self) -> &HashMap<String, CompiledFunction> {
         &self.functions
     }
 
@@ -161,7 +162,7 @@ impl CompiledProgram {
 
     fn merge(&mut self, artifact: ModuleArtifact) {
         for f in artifact.functions {
-            let name = Function::name(f.as_ref()).to_string();
+            let name = f.name.clone();
             if name == "main" {
                 self.main_function = Some(name.clone());
             }
@@ -185,7 +186,7 @@ impl CompiledProgram {
         let aliases = std::mem::take(&mut self.pending_aliases);
         self.use_aliases = aliases.clone();
         for (alias, qualified) in aliases {
-            if let Some(f) = self.functions.get(&qualified).map(|f| f.clone_executable()) {
+            if let Some(f) = self.functions.get(&qualified).cloned() {
                 self.functions.insert(alias, f);
             }
         }
@@ -291,6 +292,13 @@ impl Compiler {
 
         compiled.apply_pending_aliases();
 
+        let il_reporter = diagnostics.reporter().clone();
+        for warning in analyse_il(compiled.functions()) {
+            if let Err(io_err) = il_reporter.emit_diagnostic(&warning.to_diagnostic()) {
+                eprintln!("Failed to emit IL warning: {}", io_err);
+            }
+        }
+
         Ok(compiled)
     }
 }
@@ -341,11 +349,7 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
                 debug!("Emitting function: {}", f.name);
                 let mut compiled = BytecodeCompiler::compile_to_bytecode(&f)?;
                 compiled.module_name = prefix.map(str::to_string);
-                artifact
-                    .functions
-                    .push(Box::new(crate::bytecode::BytecodeFunctionExpr::new(
-                        compiled,
-                    )));
+                artifact.functions.push(compiled);
             }
             Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
@@ -416,6 +420,13 @@ fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
         crate::ast::Type::Int => Type::int(),
         crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
     }
+}
+
+fn analyse_il(functions: &HashMap<String, CompiledFunction>) -> Vec<IlWarning> {
+    let mut runner = IlAnalysisRunner::new()
+        .with_analyzer(Box::new(VariableAllocationAnalyzer::new()))
+        .with_analyzer(Box::new(VariableDropAnalyzer::new()));
+    functions.values().flat_map(|f| runner.run(f)).collect()
 }
 
 fn build_analysis_runner() -> AnalysisRunner {

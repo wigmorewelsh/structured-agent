@@ -770,7 +770,7 @@ fn test(): Int {
 #[cfg(test)]
 mod vm_execution_tests {
     use crate::ast::Module;
-    use crate::bytecode::{BytecodeCompiler, VM};
+    use crate::bytecode::{BytecodeCompiler, BytecodeFunctionExpr, VM};
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
@@ -1102,7 +1102,7 @@ mod vm_execution_tests {
         let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
 
         for function in compiled_program.functions().values() {
-            runtime.register_function(function.clone_executable());
+            runtime.register_function(Box::new(BytecodeFunctionExpr::new(function.clone())));
         }
 
         let runtime = Arc::new(runtime);

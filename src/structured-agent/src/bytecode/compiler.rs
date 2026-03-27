@@ -3,7 +3,7 @@ use crate::ast::{self, Expression, Statement};
 use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CompiledFunction {
     pub name: String,
     pub module_name: Option<String>,

@@ -8,6 +8,7 @@ mod diagnostics;
 mod expressions;
 mod functions;
 mod gemini;
+mod il_analysis;
 mod mcp;
 mod runtime;
 mod typecheck;
