@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod expressions;
 pub mod functions;
 pub mod gemini;
+pub mod il_analysis;
 pub mod mcp;
 pub mod runtime;
 pub mod typecheck;
