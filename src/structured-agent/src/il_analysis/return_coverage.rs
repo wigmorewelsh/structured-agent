@@ -1,0 +1,39 @@
+use crate::bytecode::{CompiledFunction, Instruction};
+use crate::il_analysis::{IlAnalyzer, IlWarning};
+
+pub struct ReturnCoverageAnalyzer;
+
+impl ReturnCoverageAnalyzer {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ReturnCoverageAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl IlAnalyzer for ReturnCoverageAnalyzer {
+    fn name(&self) -> &str {
+        "return-coverage"
+    }
+
+    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+        if function.instructions.is_empty() {
+            return vec![];
+        }
+
+        let has_ret = function
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Ret { .. }));
+
+        if has_ret {
+            vec![]
+        } else {
+            vec![IlWarning::NoReturnPath]
+        }
+    }
+}
