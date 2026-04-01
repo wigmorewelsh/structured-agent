@@ -1,3 +1,4 @@
+pub mod actor;
 mod context;
 mod engine;
 mod native_provider;
@@ -18,6 +19,7 @@ mod control_flow_test;
 #[cfg(test)]
 mod signature_mismatch_test;
 
+pub use actor::{Agent, AgentError, AgentHandle, AgentId, AgentMessage, AgentMessageContent};
 pub use context::{Context, Event};
 pub use engine::{Runtime, RuntimeError};
 pub use native_provider::NativeFunctionProvider;

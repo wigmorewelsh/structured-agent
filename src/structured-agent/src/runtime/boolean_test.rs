@@ -47,7 +47,11 @@ impl NativeFunction for BooleanLoggingFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        _agent: &crate::runtime::AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err("Expected 1 argument".to_string());
         }
@@ -93,7 +97,11 @@ impl NativeFunction for BooleanReturnFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        _args: Vec<ExpressionValue>,
+        _agent: &crate::runtime::AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         Ok(ExpressionValue::boolean(self.return_value))
     }
 }

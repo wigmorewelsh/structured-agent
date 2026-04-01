@@ -101,7 +101,11 @@ mod tests {
             &self.return_type
         }
 
-        async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        async fn execute(
+            &self,
+            _args: Vec<ExpressionValue>,
+            _agent: &crate::runtime::AgentHandle,
+        ) -> Result<ExpressionValue, String> {
             Ok(ExpressionValue::string("test_result"))
         }
 

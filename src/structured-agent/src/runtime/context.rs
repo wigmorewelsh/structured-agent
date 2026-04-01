@@ -1,4 +1,5 @@
 use crate::runtime::Runtime;
+use crate::runtime::actor::AgentHandle;
 use crate::runtime::types::{ExpressionParameter, ExpressionResult, ExpressionValue};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub struct Context {
     is_scope_boundary: bool,
     return_value: Option<ExpressionResult>,
     runtime: Arc<Runtime>,
+    agent_handle: AgentHandle,
 }
 
 impl Context {
@@ -28,7 +30,24 @@ impl Context {
             is_scope_boundary: true,
             return_value: None,
             runtime,
+            agent_handle: AgentHandle::detached(),
         }
+    }
+
+    pub fn with_runtime_and_handle(runtime: Arc<Runtime>, agent_handle: AgentHandle) -> Self {
+        Self {
+            parent: None,
+            events: Vec::new(),
+            variables: HashMap::new(),
+            is_scope_boundary: true,
+            return_value: None,
+            runtime,
+            agent_handle,
+        }
+    }
+
+    pub fn agent_handle(&self) -> &AgentHandle {
+        &self.agent_handle
     }
 
     pub fn add_event(
@@ -127,6 +146,7 @@ impl Context {
 
     pub fn create_child(self, is_scope_boundary: bool) -> Self {
         let runtime = self.runtime.clone();
+        let agent_handle = self.agent_handle.clone();
         Self {
             parent: Some(Box::new(self)),
             events: Vec::new(),
@@ -134,6 +154,7 @@ impl Context {
             is_scope_boundary,
             return_value: None,
             runtime,
+            agent_handle,
         }
     }
 
@@ -188,6 +209,7 @@ impl std::fmt::Debug for Context {
             .field("is_scope_boundary", &self.is_scope_boundary)
             .field("return_value", &self.return_value)
             .field("runtime", &"<Runtime>")
+            .field("agent_handle", &"<AgentHandle>")
             .finish()
     }
 }

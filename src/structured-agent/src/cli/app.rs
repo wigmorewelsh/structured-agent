@@ -1,7 +1,9 @@
 use crate::acp;
 use crate::cli::config::{Config, Mode};
 use crate::cli::errors::CliError;
+use crate::cli::user::User;
 use crate::runtime::Runtime;
+use std::sync::Arc;
 
 pub struct App;
 
@@ -29,7 +31,8 @@ impl App {
         let runtime = Self::build_runtime(&config).await?;
 
         println!("Executing program...");
-        match runtime.run().await {
+        let user = User::new(Arc::new(runtime));
+        match user.run().await {
             Ok(result) => {
                 println!("Program executed successfully");
                 Self::display_result(&result);

@@ -1,9 +1,9 @@
 use agent_client_protocol as acp;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use structured_agent::acp::agent::{Agent, PromptMessage};
+use structured_agent::acp::session::AcpSession;
 use structured_agent::cli::config::{Config, EngineType, Mode, ProgramSource};
-use structured_agent::runtime::ExpressionValue;
+use structured_agent::runtime::{AgentError, ExpressionValue};
 use tokio::sync::{mpsc, oneshot};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -14,8 +14,7 @@ fn next_test_id() -> String {
 }
 
 pub struct TestAgent {
-    pub agent: Agent,
-    prompt_tx: mpsc::UnboundedSender<PromptMessage>,
+    session: AcpSession,
     updates: Option<Arc<Mutex<Vec<String>>>>,
     _notification_task: tokio::task::JoinHandle<()>,
 }
@@ -28,10 +27,9 @@ impl TestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: false,
+            with_acp_functions: true,
             mode: Mode::Acp,
         };
-
         Self::from_config(config).await
     }
 
@@ -46,10 +44,9 @@ impl TestAgent {
             mcp_servers: vec![],
             with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: false,
+            with_acp_functions: true,
             mode: Mode::Acp,
         };
-
         Self::from_config_with_tracing(config, true).await
     }
 
@@ -79,57 +76,42 @@ impl TestAgent {
 
         let session_id = acp::SessionId::new(next_test_id());
 
-        let mut agent = Agent::from_config(&config, &config.program_source, session_id, tx)
+        let mut session = AcpSession::from_config(&config, &config.program_source, session_id, tx)
             .await
             .unwrap();
 
-        agent.start().unwrap();
-
-        let prompt_tx = agent.prompt_channel();
+        session.start().unwrap();
 
         Self {
-            agent,
-            prompt_tx,
+            session,
             updates,
             _notification_task: notification_task,
         }
     }
 
     pub async fn send_prompt(&self, content: impl Into<String>) {
-        let (response_tx, response_rx) = oneshot::channel();
-        self.prompt_tx
-            .send(PromptMessage {
-                content: content.into(),
-                response_tx,
-            })
-            .unwrap();
-
-        response_rx.await.unwrap();
+        self.session.send_prompt(content.into()).await.unwrap();
     }
 
     pub async fn wait(self) -> ExpressionValue {
-        self.agent.wait().await.unwrap()
+        self.session.wait().await.unwrap()
     }
 
     pub async fn wait_with_updates(self) -> (ExpressionValue, Vec<String>) {
-        let result = self.agent.wait().await.unwrap();
-        let updates = self
-            .updates
+        let updates = self.updates.clone();
+        let result = self.session.wait().await.unwrap();
+        let updates = updates
             .map(|u| u.lock().unwrap().clone())
             .unwrap_or_default();
         (result, updates)
     }
 
-    pub fn prompt_tx(&self) -> mpsc::UnboundedSender<PromptMessage> {
-        self.prompt_tx.clone()
-    }
-
     pub async fn reload(&mut self) {
-        self.agent.reload_scripts().await.unwrap();
+        self.session.reload_scripts().await.unwrap();
     }
 
-    pub async fn try_reload(&mut self) -> Result<(), structured_agent::acp::agent::AgentError> {
-        self.agent.reload_scripts().await
+    pub async fn try_reload(&mut self) -> Result<(), AgentError> {
+        self.session.reload_scripts().await
     }
 
     pub fn get_updates(&self) -> Vec<String> {

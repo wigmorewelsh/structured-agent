@@ -88,15 +88,33 @@ mod tests {
     #[test]
     fn detects_multiple_double_drops() {
         let instructions = vec![
-            Instruction::Decl { name: "a".to_string() },
-            Instruction::Decl { name: "b".to_string() },
-            Instruction::Drop { name: "a".to_string() },
-            Instruction::Drop { name: "b".to_string() },
-            Instruction::Drop { name: "a".to_string() },
-            Instruction::Drop { name: "b".to_string() },
-            Instruction::Decl { name: "$ret".to_string() },
-            Instruction::LdcUnit { dest: "$ret".to_string() },
-            Instruction::Ret { var: "$ret".to_string() },
+            Instruction::Decl {
+                name: "a".to_string(),
+            },
+            Instruction::Decl {
+                name: "b".to_string(),
+            },
+            Instruction::Drop {
+                name: "a".to_string(),
+            },
+            Instruction::Drop {
+                name: "b".to_string(),
+            },
+            Instruction::Drop {
+                name: "a".to_string(),
+            },
+            Instruction::Drop {
+                name: "b".to_string(),
+            },
+            Instruction::Decl {
+                name: "$ret".to_string(),
+            },
+            Instruction::LdcUnit {
+                dest: "$ret".to_string(),
+            },
+            Instruction::Ret {
+                var: "$ret".to_string(),
+            },
         ];
         let function = make_function(instructions);
         let mut analyzer = DoubleDropAnalyzer::new();

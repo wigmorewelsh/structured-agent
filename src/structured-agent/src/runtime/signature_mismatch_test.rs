@@ -36,7 +36,11 @@ impl NativeFunction for WrongSignatureFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        _args: Vec<ExpressionValue>,
+        _agent: &crate::runtime::AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         Ok(ExpressionValue::unit())
     }
 }
@@ -101,7 +105,11 @@ async fn test_wrong_parameter_type_error_message() {
             &self.return_type
         }
 
-        async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        async fn execute(
+            &self,
+            _args: Vec<ExpressionValue>,
+            _agent: &crate::runtime::AgentHandle,
+        ) -> Result<ExpressionValue, String> {
             Ok(ExpressionValue::unit())
         }
     }
@@ -161,7 +169,11 @@ async fn test_wrong_return_type_error_message() {
             &self.return_type
         }
 
-        async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+        async fn execute(
+            &self,
+            _args: Vec<ExpressionValue>,
+            _agent: &crate::runtime::AgentHandle,
+        ) -> Result<ExpressionValue, String> {
             Ok(ExpressionValue::string("test"))
         }
     }

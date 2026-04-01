@@ -45,7 +45,10 @@ impl<F: NativeFunction + 'static> Function for NativeFunctionExpr<F> {
         args: Vec<ExpressionResult>,
     ) -> Result<(Context, ExpressionResult), String> {
         let values: Vec<ExpressionValue> = args.into_iter().map(|r| r.value).collect();
-        let result = self.native_function.execute(values).await?;
+        let result = self
+            .native_function
+            .execute(values, context.agent_handle())
+            .await?;
         Ok((context, ExpressionResult::new(result)))
     }
 
@@ -122,6 +125,7 @@ mod tests {
         async fn execute(
             &self,
             _args: Vec<crate::runtime::ExpressionValue>,
+            _agent: &crate::runtime::AgentHandle,
         ) -> Result<crate::runtime::ExpressionValue, String> {
             Ok(crate::runtime::ExpressionValue::string("test_result"))
         }
@@ -161,6 +165,7 @@ mod tests {
         async fn execute(
             &self,
             _args: Vec<crate::runtime::ExpressionValue>,
+            _agent: &crate::runtime::AgentHandle,
         ) -> Result<crate::runtime::ExpressionValue, String> {
             Ok(crate::runtime::ExpressionValue::string(
                 "undocumented_result",

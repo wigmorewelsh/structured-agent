@@ -1,4 +1,4 @@
-use crate::runtime::ExpressionValue;
+use crate::runtime::{AgentHandle, ExpressionValue};
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
@@ -52,7 +52,11 @@ impl NativeFunction for IsSomeFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        _agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err(format!(
                 "{} expects 1 argument, got {}",
@@ -102,9 +106,12 @@ mod tests {
     async fn test_is_some_string_with_some() {
         let f = IsSomeFunction::for_string();
         let result = f
-            .execute(vec![ExpressionValue::option_some(ExpressionValue::string(
-                "value",
-            ))])
+            .execute(
+                vec![ExpressionValue::option_some(ExpressionValue::string(
+                    "value",
+                ))],
+                &AgentHandle::detached(),
+            )
             .await
             .unwrap();
         assert_eq!(result.as_boolean().unwrap(), true);
@@ -114,7 +121,10 @@ mod tests {
     async fn test_is_some_string_with_none() {
         let f = IsSomeFunction::for_string();
         let result = f
-            .execute(vec![ExpressionValue::option_none()])
+            .execute(
+                vec![ExpressionValue::option_none()],
+                &AgentHandle::detached(),
+            )
             .await
             .unwrap();
         assert_eq!(result.as_boolean().unwrap(), false);
@@ -128,9 +138,12 @@ mod tests {
         builder.append(true);
         let list_array = Arc::new(builder.finish());
         let result = f
-            .execute(vec![ExpressionValue::option_some(ExpressionValue::list(
-                list_array,
-            ))])
+            .execute(
+                vec![ExpressionValue::option_some(ExpressionValue::list(
+                    list_array,
+                ))],
+                &AgentHandle::detached(),
+            )
             .await
             .unwrap();
         assert_eq!(result.as_boolean().unwrap(), true);
@@ -140,7 +153,10 @@ mod tests {
     async fn test_is_some_list_with_none() {
         let f = IsSomeFunction::for_list();
         let result = f
-            .execute(vec![ExpressionValue::option_none()])
+            .execute(
+                vec![ExpressionValue::option_none()],
+                &AgentHandle::detached(),
+            )
             .await
             .unwrap();
         assert_eq!(result.as_boolean().unwrap(), false);
@@ -150,7 +166,10 @@ mod tests {
     async fn test_is_some_wrong_argument_type() {
         let f = IsSomeFunction::for_string();
         let result = f
-            .execute(vec![ExpressionValue::string("not an option")])
+            .execute(
+                vec![ExpressionValue::string("not an option")],
+                &AgentHandle::detached(),
+            )
             .await;
         assert!(result.is_err());
     }
@@ -158,7 +177,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_some_wrong_args_count() {
         let f = IsSomeFunction::for_string();
-        let result = f.execute(vec![]).await;
+        let result = f.execute(vec![], &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("expects 1 argument"));
     }

@@ -2,8 +2,8 @@ use crate::bytecode::BytecodeFunctionExpr;
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::functions::{
-    HeadFunction, InputFunction, IsSomeFunction, PrintFunction, SomeValueFunction, TailFunction,
-    acp_shim,
+    HeadFunction, InputFunction, IsSomeFunction, PrintFunction, ReceiveFunction, SomeValueFunction,
+    TailFunction, TryReceiveFunction,
 };
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
@@ -188,8 +188,8 @@ impl RuntimeBuilder {
 
         if config.with_acp_functions {
             self = self
-                .with_native_function(Arc::new(acp_shim::ReceiveFunction::new()))
-                .with_native_function(Arc::new(acp_shim::TryReceiveFunction::new()));
+                .with_native_function(Arc::new(ReceiveFunction::new()))
+                .with_native_function(Arc::new(TryReceiveFunction::new()));
         }
 
         Ok(self.build())
@@ -264,6 +264,14 @@ impl Runtime {
     }
 
     pub async fn run(&self) -> Result<ExpressionValue, RuntimeError> {
+        self.run_with_handle(crate::runtime::AgentHandle::detached())
+            .await
+    }
+
+    pub async fn run_with_handle(
+        &self,
+        handle: crate::runtime::AgentHandle,
+    ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Starting program execution");
 
         let compiled_program = self.compile().map_err(RuntimeError::ExecutionError)?;
@@ -295,15 +303,16 @@ impl Runtime {
         if let Some(main_function) = compiled_program.main_function() {
             debug!("Executing main function");
             let main_expr = BytecodeFunctionExpr::new(main_function.clone());
-            match runtime.run_expression(&main_expr).await {
-                Ok(result) => {
+            let initial_context = Context::with_runtime_and_handle(Arc::new(runtime), handle);
+            match main_expr.execute(initial_context, vec![]).await {
+                Ok((_, result)) => {
                     debug!("Program execution completed successfully");
-                    debug!("Result type: {}", result.type_name());
-                    Ok(result)
+                    debug!("Result type: {}", result.value.type_name());
+                    Ok(result.value)
                 }
                 Err(e) => {
                     error!("Runtime execution failed: {:?}", e);
-                    Err(e)
+                    Err(RuntimeError::ExecutionError(e))
                 }
             }
         } else {

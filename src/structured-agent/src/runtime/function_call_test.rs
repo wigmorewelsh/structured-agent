@@ -44,7 +44,11 @@ impl NativeFunction for TestExternFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        _agent: &crate::runtime::AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if !args.is_empty() {
             return Err("Expected no arguments".to_string());
         }

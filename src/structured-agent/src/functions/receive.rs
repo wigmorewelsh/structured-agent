@@ -1,7 +1,6 @@
-use crate::runtime::ExpressionValue;
+use crate::runtime::{AgentHandle, AgentMessageContent, ExpressionValue};
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
-use std::io::{self, Write};
 
 #[derive(Debug)]
 pub struct ReceiveFunction {
@@ -38,23 +37,21 @@ impl NativeFunction for ReceiveFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if !args.is_empty() {
             return Err(format!("receive expects 0 arguments, got {}", args.len()));
         }
-
-        print!("> ");
-        io::stdout()
-            .flush()
-            .map_err(|e| format!("Failed to flush stdout: {}", e))?;
-
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| format!("Failed to read input: {}", e))?;
-
-        let trimmed = input.trim().to_string();
-        Ok(ExpressionValue::string(trimmed))
+        let (msg, ack) = agent.recv_message().await?;
+        let content = match &msg.content {
+            AgentMessageContent::String(s) => s.clone(),
+            _ => return Err("Unexpected message type in receive".to_string()),
+        };
+        ack.send(()).ok();
+        Ok(ExpressionValue::string(content))
     }
 }
 
@@ -64,19 +61,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_receive_function_properties() {
-        let receive_fn = ReceiveFunction::new();
-
-        assert_eq!(receive_fn.name(), "receive");
-        assert_eq!(receive_fn.parameters().len(), 0);
-        assert_eq!(receive_fn.return_type().name(), "String");
+        let f = ReceiveFunction::new();
+        assert_eq!(f.name(), "receive");
+        assert_eq!(f.parameters().len(), 0);
+        assert_eq!(f.return_type().name(), "String");
     }
 
     #[tokio::test]
     async fn test_receive_function_wrong_args_count() {
-        let receive_fn = ReceiveFunction::new();
-
-        let result = receive_fn
-            .execute(vec![ExpressionValue::string("unexpected")])
+        let f = ReceiveFunction::new();
+        let result = f
+            .execute(vec![ExpressionValue::string("x")], &AgentHandle::detached())
             .await;
         assert!(result.is_err());
         assert!(
@@ -86,10 +81,10 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_receive_function_debug() {
-        let receive_fn = ReceiveFunction::new();
-        let debug_output = format!("{:?}", receive_fn);
-        assert!(debug_output.contains("ReceiveFunction"));
+    #[test]
+    fn test_receive_function_debug() {
+        let f = ReceiveFunction::new();
+        let debug = format!("{:?}", f);
+        assert!(debug.contains("ReceiveFunction"));
     }
 }

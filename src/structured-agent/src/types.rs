@@ -294,6 +294,7 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     async fn execute(
         &self,
         args: Vec<crate::runtime::ExpressionValue>,
+        agent: &crate::runtime::AgentHandle,
     ) -> Result<crate::runtime::ExpressionValue, String>;
     fn documentation(&self) -> Option<&str> {
         None

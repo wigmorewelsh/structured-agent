@@ -1,4 +1,4 @@
-use crate::runtime::ExpressionValue;
+use crate::runtime::{AgentHandle, ExpressionValue};
 use crate::types::{NativeFunction, Parameter, Type};
 use arrow::array::{Array, ListArray};
 use arrow::buffer::OffsetBuffer;
@@ -44,7 +44,11 @@ impl NativeFunction for TailFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        _agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err(format!("tail expects 1 argument, got {}", args.len()));
         }
@@ -108,7 +112,10 @@ mod tests {
         let list_array = Arc::new(builder.finish());
         let args = vec![ExpressionValue::list(list_array)];
 
-        let result = tail_fn.execute(args).await.unwrap();
+        let result = tail_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         let inner = result.as_option().unwrap().unwrap();
         let tail_list = inner.as_list().unwrap();
         assert_eq!(tail_list.len(), 1);
@@ -130,7 +137,10 @@ mod tests {
         let list_array = Arc::new(builder.finish());
         let args = vec![ExpressionValue::list(list_array)];
 
-        let result = tail_fn.execute(args).await.unwrap();
+        let result = tail_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         let inner = result.as_option().unwrap().unwrap();
         let tail_list = inner.as_list().unwrap();
         assert_eq!(tail_list.len(), 1);
@@ -146,7 +156,10 @@ mod tests {
         let list_array = Arc::new(builder.finish());
         let args = vec![ExpressionValue::list(list_array)];
 
-        let result = tail_fn.execute(args).await.unwrap();
+        let result = tail_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         assert!(result.as_option().unwrap().is_none());
     }
 
@@ -155,7 +168,7 @@ mod tests {
         let tail_fn = TailFunction::new();
         let args = vec![ExpressionValue::string("not a list")];
 
-        let result = tail_fn.execute(args).await;
+        let result = tail_fn.execute(args, &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("tail expects a list argument"));
     }
@@ -164,7 +177,7 @@ mod tests {
     async fn test_tail_function_wrong_args_count() {
         let tail_fn = TailFunction::new();
 
-        let result = tail_fn.execute(vec![]).await;
+        let result = tail_fn.execute(vec![], &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("tail expects 1 argument"));
     }

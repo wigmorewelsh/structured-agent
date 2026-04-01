@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
-use super::agent::Agent;
+use super::session::AcpSession;
 use crate::cli::config::Config;
 
 const ACP_INTERNAL_ERROR: i32 = -32603;
@@ -17,7 +17,7 @@ pub struct AcpServer {
     config: Arc<Config>,
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     next_session_id: AtomicU64,
-    agents: Arc<Mutex<HashMap<String, Agent>>>,
+    agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
     agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
@@ -67,7 +67,7 @@ impl AcpServer {
     }
 
     async fn spawn_agent_creation(&self, session_id: acp::SessionId) {
-        debug!("Spawning agent creation for session: {}", session_id.0);
+        debug!("Spawning session creation for: {}", session_id.0);
 
         let config = self.config.clone();
         let program_source = self.config.program_source.clone();
@@ -96,26 +96,27 @@ impl AcpServer {
         program_source: crate::cli::config::ProgramSource,
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
-        agents: Arc<Mutex<HashMap<String, Agent>>>,
+        agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
         agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     ) {
         let result: Result<(), String> = async {
-            let mut agent =
-                Agent::from_config(&config, &program_source, session_id.clone(), update_tx).await?;
+            let mut session =
+                AcpSession::from_config(&config, &program_source, session_id.clone(), update_tx)
+                    .await?;
 
-            agent.start().map_err(|e| e.to_string())?;
+            session.start().map_err(|e| e.to_string())?;
 
-            agents.lock().await.insert(session_id.0.to_string(), agent);
+            agents
+                .lock()
+                .await
+                .insert(session_id.0.to_string(), Arc::new(Mutex::new(session)));
 
             Ok(())
         }
         .await;
 
         if let Err(e) = result {
-            error!(
-                "Failed to create/start agent for session {}: {}",
-                session_id.0, e
-            );
+            error!("Failed to create/start session for {}: {}", session_id.0, e);
         }
 
         agent_tasks.lock().await.remove(&session_id.0.to_string());
@@ -182,53 +183,53 @@ impl acp::Agent for AcpServer {
         debug!("Prompt content: {}", prompt_content);
 
         if prompt_content.contains("/reload") {
-            info!("Reload command detected for session: {}", args.session_id.0);
+            info!("Reload command for session: {}", args.session_id.0);
 
-            let mut agents = self.agents.lock().await;
-            let agent = agents
-                .get_mut(&args.session_id.0.to_string())
-                .ok_or_else(|| {
-                    error!("Agent not found for session: {}", args.session_id.0);
-                    acp::Error::new(ACP_INTERNAL_ERROR, "Agent not found")
+            let session_arc = {
+                let agents = self.agents.lock().await;
+                agents
+                    .get(&args.session_id.0.to_string())
+                    .cloned()
+                    .ok_or_else(|| {
+                        error!("Session not found: {}", args.session_id.0);
+                        acp::Error::new(ACP_INTERNAL_ERROR, "Session not found")
+                    })?
+            };
+
+            session_arc
+                .lock()
+                .await
+                .reload_scripts()
+                .await
+                .map_err(|e| {
+                    error!("Failed to reload scripts: {}", e);
+                    acp::Error::new(ACP_INTERNAL_ERROR, format!("Reload failed: {}", e))
                 })?;
 
-            agent.reload_scripts().await.map_err(|e| {
-                error!("Failed to reload scripts: {}", e);
-                acp::Error::new(ACP_INTERNAL_ERROR, format!("Reload failed: {}", e))
-            })?;
-
-            info!(
-                "Scripts reloaded successfully for session: {}",
-                args.session_id.0
-            );
+            info!("Scripts reloaded for session: {}", args.session_id.0);
             return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
         }
 
-        let prompt_tx = {
+        let session_arc = {
             let agents = self.agents.lock().await;
-            let agent = agents.get(&args.session_id.0.to_string()).ok_or_else(|| {
-                error!("Agent not found for session: {}", args.session_id.0);
-                acp::Error::new(ACP_INTERNAL_ERROR, "Agent not found")
+            agents
+                .get(&args.session_id.0.to_string())
+                .cloned()
+                .ok_or_else(|| {
+                    error!("Session not found: {}", args.session_id.0);
+                    acp::Error::new(ACP_INTERNAL_ERROR, "Session not found")
+                })?
+        };
+
+        session_arc
+            .lock()
+            .await
+            .send_prompt(prompt_content)
+            .await
+            .map_err(|e| {
+                error!("Failed to send prompt: {}", e);
+                acp::Error::new(ACP_INTERNAL_ERROR, format!("Send failed: {}", e))
             })?;
-            agent.prompt_channel()
-        };
-
-        let (response_tx, response_rx) = oneshot::channel();
-        let message = super::agent::PromptMessage {
-            content: prompt_content,
-            response_tx,
-        };
-
-        prompt_tx.send(message).map_err(|_| {
-            error!("Failed to send prompt to agent");
-            acp::Error::new(ACP_INTERNAL_ERROR, "Agent cancelled")
-        })?;
-
-        debug!("Waiting for agent response");
-        response_rx.await.map_err(|_| {
-            error!("Agent cancelled or failed to respond");
-            acp::Error::new(ACP_INTERNAL_ERROR, "Agent cancelled")
-        })?;
 
         debug!("Prompt handled successfully");
         Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))

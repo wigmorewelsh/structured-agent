@@ -1,7 +1,6 @@
-use crate::runtime::ExpressionValue;
+use crate::runtime::{AgentHandle, ExpressionValue};
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
-use std::io::{self, Write};
 
 #[derive(Debug)]
 pub struct InputFunction {
@@ -36,19 +35,13 @@ impl NativeFunction for InputFunction {
         &self.return_type
     }
 
-    async fn execute(&self, _args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
-        print!("> ");
-        io::stdout()
-            .flush()
-            .map_err(|e| format!("Failed to flush stdout: {}", e))?;
-
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| format!("Failed to read input: {}", e))?;
-
-        let trimmed = input.trim().to_string();
-        Ok(ExpressionValue::string(trimmed))
+    async fn execute(
+        &self,
+        _args: Vec<ExpressionValue>,
+        agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
+        let response = agent.publish_input_request(String::new()).await?;
+        Ok(ExpressionValue::string(response))
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::runtime::ExpressionValue;
+use crate::runtime::{AgentHandle, AgentMessageContent, ExpressionValue};
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
 
@@ -37,17 +37,16 @@ impl NativeFunction for PrintFunction {
         &self.return_type
     }
 
-    async fn execute(&self, args: Vec<ExpressionValue>) -> Result<ExpressionValue, String> {
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
         if args.len() != 1 {
             return Err(format!("print expects 1 argument, got {}", args.len()));
         }
-
-        fn format_expr_result(result: &ExpressionValue) -> String {
-            result.format_for_llm()
-        }
-
-        let value = format_expr_result(&args[0]);
-        println!("{}", value);
+        let value = args[0].format_for_llm();
+        agent.publish(AgentMessageContent::String(value));
         Ok(ExpressionValue::unit())
     }
 }
@@ -59,7 +58,6 @@ mod tests {
     #[tokio::test]
     async fn test_print_function_properties() {
         let print_fn = PrintFunction::new();
-
         assert_eq!(print_fn.name(), "print");
         assert_eq!(print_fn.parameters().len(), 1);
         assert_eq!(print_fn.parameters()[0].name, "value");
@@ -71,8 +69,10 @@ mod tests {
     async fn test_print_function_execute_string() {
         let print_fn = PrintFunction::new();
         let args = vec![ExpressionValue::string("Hello, World!")];
-
-        let result = print_fn.execute(args).await.unwrap();
+        let result = print_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         assert_eq!(result, ExpressionValue::unit());
     }
 
@@ -80,8 +80,10 @@ mod tests {
     async fn test_print_function_execute_boolean() {
         let print_fn = PrintFunction::new();
         let args = vec![ExpressionValue::boolean(true)];
-
-        let result = print_fn.execute(args).await.unwrap();
+        let result = print_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         assert_eq!(result, ExpressionValue::unit());
     }
 
@@ -89,16 +91,19 @@ mod tests {
     async fn test_print_function_execute_unit() {
         let print_fn = PrintFunction::new();
         let args = vec![ExpressionValue::unit()];
-
-        let result = print_fn.execute(args).await.unwrap();
+        let result = print_fn
+            .execute(args, &AgentHandle::detached())
+            .await
+            .unwrap();
         assert_eq!(result, ExpressionValue::unit());
     }
 
     #[tokio::test]
     async fn test_print_function_wrong_args_count() {
         let print_fn = PrintFunction::new();
+        let handle = AgentHandle::detached();
 
-        let result = print_fn.execute(vec![]).await;
+        let result = print_fn.execute(vec![], &handle).await;
         assert!(result.is_err());
         assert!(
             result
@@ -107,10 +112,10 @@ mod tests {
         );
 
         let result = print_fn
-            .execute(vec![
-                ExpressionValue::string("a"),
-                ExpressionValue::string("b"),
-            ])
+            .execute(
+                vec![ExpressionValue::string("a"), ExpressionValue::string("b")],
+                &handle,
+            )
             .await;
         assert!(result.is_err());
         assert!(
