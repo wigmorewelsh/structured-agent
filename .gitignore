@@ -148,3 +148,5 @@ src/structured-agent/execution-slides.pdf
 .agent_sessions.db
 .env.development
 docs/eval/
+mutants.out/
+sweep.timestamp
