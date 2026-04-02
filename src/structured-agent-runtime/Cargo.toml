@@ -1,0 +1,11 @@
+[package]
+name = "structured-agent-runtime"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["sync", "rt", "macros"] }
+arrow = { version = "57.2.0", default-features = false }
+serde_json = "1.0"

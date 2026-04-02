@@ -1,4 +1,5 @@
 extern fn receive(): String
+extern fn print(value: String): ()
 # extern fn head(list: List<String>): Option<String>
 # extern fn tail(list: List<String>): Option<List<String>>
 # extern fn is_some(option: Option<String>): Boolean
@@ -12,11 +13,6 @@ extern fn list_directory(path: String): String
 extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
 extern fn copy_path(source_path: String, destination_path: String): String
 extern fn execute_command(command: String): String
-
-## send messages back to the user to report results to queries
-fn print(message: String): String {
-    return message
-}
 
 ## Ask user for more information if there isn't enough context
 fn ask_for_more_info(prompt: String): String {
@@ -173,6 +169,8 @@ fn main(): () {
     Use print to respond to users queries or questions.
     The current working directory is "<<placeholder>>" youll have to prefix that to most calls to read/write/edit files.
     '''!
+
+    print("Starting agent loop...")
 
     let history = read_file("<<placeholder>>/history.md")
 

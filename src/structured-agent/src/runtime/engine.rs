@@ -35,24 +35,7 @@ pub struct RuntimeBuilder {
     program_source: ProgramSource,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum RuntimeError {
-    FunctionNotFound(String),
-    InvalidArguments(String),
-    ExecutionError(String),
-}
-
-impl std::fmt::Display for RuntimeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeError::FunctionNotFound(name) => write!(f, "Function not found: {}", name),
-            RuntimeError::InvalidArguments(msg) => write!(f, "Invalid arguments: {}", msg),
-            RuntimeError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for RuntimeError {}
+pub use structured_agent_runtime::RuntimeError;
 
 impl RuntimeBuilder {
     pub fn new(source: ProgramSource) -> Self {

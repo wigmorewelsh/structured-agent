@@ -2003,6 +2003,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "structured-agent-runtime",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2010,6 +2011,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "structured-agent-runtime"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
