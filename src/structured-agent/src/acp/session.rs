@@ -28,14 +28,17 @@ impl AcpSession {
         program_source: &ProgramSource,
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        working_dir: Option<String>,
     ) -> Result<Self, String> {
         debug!("Creating session for {}", session_id.0);
 
         let mut acp_config = config.clone();
         acp_config.with_acp_functions = true;
-        let runtime = Runtime::builder(program_source.clone())
-            .with_config(&acp_config)
-            .await?;
+        let mut builder = Runtime::builder(program_source.clone());
+        if let Some(ref dir) = working_dir {
+            builder = builder.with_mcp_working_dir(dir.clone());
+        }
+        let runtime = builder.with_config(&acp_config).await?;
 
         let agent = Agent::new(Arc::new(runtime));
 
@@ -323,13 +326,17 @@ impl AcpSession {
 
         let mut acp_config = (**config).clone();
         acp_config.with_acp_functions = true;
-        let runtime = Runtime::builder(self.program_source.clone())
-            .with_config(&acp_config)
-            .await
-            .map_err(|e| {
-                error!("Failed to rebuild runtime: {}", e);
-                AgentError::RuntimeError(RuntimeError::ExecutionError(e))
-            })?;
+        let current_dir = std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned());
+        let mut builder = Runtime::builder(self.program_source.clone());
+        if let Some(ref dir) = current_dir {
+            builder = builder.with_mcp_working_dir(dir.clone());
+        }
+        let runtime = builder.with_config(&acp_config).await.map_err(|e| {
+            error!("Failed to rebuild runtime: {}", e);
+            AgentError::RuntimeError(RuntimeError::ExecutionError(e))
+        })?;
 
         if let Some(handle) = self.task_handle.take() {
             handle.abort();

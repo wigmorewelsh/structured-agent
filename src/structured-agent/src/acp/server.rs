@@ -66,7 +66,7 @@ impl AcpServer {
         }
     }
 
-    async fn spawn_agent_creation(&self, session_id: acp::SessionId) {
+    async fn spawn_agent_creation(&self, session_id: acp::SessionId, working_dir: Option<String>) {
         debug!("Spawning session creation for: {}", session_id.0);
 
         let config = self.config.clone();
@@ -83,6 +83,7 @@ impl AcpServer {
             update_tx,
             agents,
             agent_tasks,
+            working_dir,
         ));
 
         self.agent_tasks
@@ -98,11 +99,17 @@ impl AcpServer {
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
         agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
         agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+        working_dir: Option<String>,
     ) {
         let result: Result<(), String> = async {
-            let mut session =
-                AcpSession::from_config(&config, &program_source, session_id.clone(), update_tx)
-                    .await?;
+            let mut session = AcpSession::from_config(
+                &config,
+                &program_source,
+                session_id.clone(),
+                update_tx,
+                working_dir,
+            )
+            .await?;
 
             session.start().map_err(|e| e.to_string())?;
 
@@ -163,6 +170,7 @@ impl acp::Agent for AcpServer {
         &self,
         args: acp::NewSessionRequest,
     ) -> Result<acp::NewSessionResponse, acp::Error> {
+        let working_dir = args.cwd.to_string_lossy().into_owned();
         if let Err(e) = std::env::set_current_dir(&args.cwd) {
             error!("Failed to set working directory to {:?}: {}", args.cwd, e);
         }
@@ -171,7 +179,8 @@ impl acp::Agent for AcpServer {
 
         debug!("New session request: {}", session_id.0);
 
-        self.spawn_agent_creation(session_id.clone()).await;
+        self.spawn_agent_creation(session_id.clone(), Some(working_dir))
+            .await;
 
         debug!("Session {} creation initiated", session_id.0);
 

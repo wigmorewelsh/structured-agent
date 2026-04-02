@@ -76,9 +76,10 @@ impl TestAgent {
 
         let session_id = acp::SessionId::new(next_test_id());
 
-        let mut session = AcpSession::from_config(&config, &config.program_source, session_id, tx)
-            .await
-            .unwrap();
+        let mut session =
+            AcpSession::from_config(&config, &config.program_source, session_id, tx, None)
+                .await
+                .unwrap();
 
         session.start().unwrap();
 

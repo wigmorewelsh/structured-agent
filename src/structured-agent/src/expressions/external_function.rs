@@ -166,7 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_external_function_documentation() {
-        let client = Arc::new(McpClient::new_stdio("echo", vec![]).await.unwrap());
+        let client = Arc::new(McpClient::new_stdio("echo", vec![], None).await.unwrap());
 
         let expr_with_docs = ExternalFunctionExpr {
             name: "test_function".to_string(),

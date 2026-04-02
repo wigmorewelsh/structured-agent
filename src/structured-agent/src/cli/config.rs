@@ -40,6 +40,7 @@ pub enum EngineType {
 pub struct McpServerConfig {
     pub command: String,
     pub args: Vec<String>,
+    pub working_dir: Option<String>,
 }
 
 impl Config {
@@ -205,6 +206,7 @@ impl Config {
                 .map(|entry| McpServerConfig {
                     command: entry.command.clone(),
                     args: entry.args.clone(),
+                    working_dir: entry.working_dir.clone(),
                 })
                 .collect()
         } else {
@@ -222,6 +224,7 @@ impl Config {
         McpServerConfig {
             command: parts[0].to_string(),
             args: parts[1..].iter().map(|s| s.to_string()).collect(),
+            working_dir: None,
         }
     }
 

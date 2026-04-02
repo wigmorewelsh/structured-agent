@@ -51,17 +51,20 @@ pub struct McpClient {
     client: Arc<RwLock<Option<RmcpClient>>>,
     command: String,
     args: Vec<String>,
+    working_dir: Option<String>,
 }
 
 impl McpClient {
     pub async fn new_stdio(
         command: &str,
         args: Vec<String>,
+        working_dir: Option<String>,
     ) -> std::result::Result<Self, McpError> {
         Ok(Self {
             client: Arc::new(RwLock::new(None)),
             command: command.to_string(),
             args,
+            working_dir,
         })
     }
 
@@ -81,6 +84,9 @@ impl McpClient {
         let transport = TokioChildProcess::new(Command::new(&self.command).configure(|cmd| {
             for arg in &self.args {
                 cmd.arg(arg);
+            }
+            if let Some(ref dir) = self.working_dir {
+                cmd.current_dir(dir);
             }
         }))?;
 
@@ -210,6 +216,7 @@ impl Clone for McpClient {
             client: self.client.clone(),
             command: self.command.clone(),
             args: self.args.clone(),
+            working_dir: self.working_dir.clone(),
         }
     }
 }
@@ -239,20 +246,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_client_creation() {
-        let result = McpClient::new_stdio("echo", vec![]).await;
+        let result = McpClient::new_stdio("echo", vec![], None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_list_tools_with_invalid_server() {
-        let client = McpClient::new_stdio("echo", vec![]).await.unwrap();
+        let client = McpClient::new_stdio("echo", vec![], None).await.unwrap();
         let result = client.list_tools().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_call_tool_with_invalid_server() {
-        let client = McpClient::new_stdio("echo", vec![]).await.unwrap();
+        let client = McpClient::new_stdio("echo", vec![], None).await.unwrap();
         let result = client.call_tool("test_tool", json!({"arg": "value"})).await;
         assert!(result.is_err());
     }

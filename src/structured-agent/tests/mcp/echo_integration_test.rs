@@ -13,6 +13,7 @@ async fn test_mcp_client_basic_creation() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await;
 
@@ -59,6 +60,7 @@ async fn test_runtime_with_mcp_client() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await
     .unwrap();
@@ -98,6 +100,7 @@ async fn test_mcp_echo_external_function_parsing() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await
     .unwrap();
@@ -133,6 +136,7 @@ async fn test_mcp_echo_integration_full_pipeline() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await
     .unwrap();
@@ -180,6 +184,7 @@ async fn test_mcp_complete_integration_workflow() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await
     .unwrap();
@@ -240,6 +245,7 @@ async fn test_mcp_echo_with_prefix_tool() {
             "python".to_string(),
             "tests/mcp/mcp_echo_server.py".to_string(),
         ],
+        None,
     )
     .await
     .unwrap();

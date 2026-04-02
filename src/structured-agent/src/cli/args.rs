@@ -174,4 +174,5 @@ pub struct FileConfig {
 pub struct McpServerEntry {
     pub command: String,
     pub args: Vec<String>,
+    pub working_dir: Option<String>,
 }

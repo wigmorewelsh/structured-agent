@@ -67,7 +67,11 @@ impl App {
     }
 
     async fn build_runtime(config: &Config) -> Result<Runtime, CliError> {
-        Runtime::builder(config.program_source.clone())
+        let mut builder = Runtime::builder(config.program_source.clone());
+        if let Ok(cwd) = std::env::current_dir() {
+            builder = builder.with_mcp_working_dir(cwd.to_string_lossy().into_owned());
+        }
+        builder
             .with_config(config)
             .await
             .map_err(CliError::RuntimeError)

@@ -33,6 +33,7 @@ pub struct RuntimeBuilder {
     language_engine: Option<Arc<dyn LanguageEngine>>,
     compiler: Option<Arc<Compiler>>,
     program_source: ProgramSource,
+    mcp_working_dir: Option<String>,
 }
 
 pub use structured_agent_runtime::RuntimeError;
@@ -45,7 +46,13 @@ impl RuntimeBuilder {
             language_engine: None,
             compiler: None,
             program_source: source,
+            mcp_working_dir: None,
         }
+    }
+
+    pub fn with_mcp_working_dir(mut self, dir: impl Into<String>) -> Self {
+        self.mcp_working_dir = Some(dir.into());
+        self
     }
 
     pub fn with_language_engine(mut self, engine: Arc<dyn LanguageEngine>) -> Self {
@@ -95,7 +102,11 @@ impl RuntimeBuilder {
         configs: &[McpServerConfig],
     ) -> Result<Self, String> {
         for config in configs {
-            match McpClient::new_stdio(&config.command, config.args.clone()).await {
+            let working_dir = config
+                .working_dir
+                .clone()
+                .or_else(|| self.mcp_working_dir.clone());
+            match McpClient::new_stdio(&config.command, config.args.clone(), working_dir).await {
                 Ok(client) => {
                     self.providers.push(Arc::new(client));
                 }
