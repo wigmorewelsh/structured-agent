@@ -111,3 +111,8 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
         None
     }
 }
+
+pub trait Module: Send + Sync {
+    fn name(&self) -> &str;
+    fn functions(&self) -> Vec<std::sync::Arc<dyn NativeFunction>>;
+}

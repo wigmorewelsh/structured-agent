@@ -2014,6 +2014,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "structured-agent-macros"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "proc-macro2",
+ "quote",
+ "structured-agent-runtime",
+ "syn",
+ "tokio",
+]
+
+[[package]]
 name = "structured-agent-runtime"
 version = "0.1.0"
 dependencies = [

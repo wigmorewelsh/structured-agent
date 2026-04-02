@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "src/structured-agent",
     "src/structured-agent-runtime",
+    "src/structured-agent-macros",
     "src/structured-agent-zed/tree-sitter-structured-agent",
 ]
 
