@@ -123,7 +123,7 @@ mod tests {
         Definition, Function, FunctionBody, ModuleParam, SigFunction, Type as AstType,
     };
     use crate::compiler::sigs::SigTable;
-    use crate::typecheck::checker::FunctionKind;
+    use crate::typecheck::checker::{ExternalSig, FunctionKind};
     use crate::types::{FileId, Span};
 
     fn dummy_span() -> Span {
@@ -219,11 +219,11 @@ mod tests {
         let mut table = empty_sig_table();
         table.external_sigs.insert(
             "storage::read".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
         table.external_sigs.insert(
             "storage::write".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let vtables = resolve_vtables(&[parsed], &table);

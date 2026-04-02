@@ -69,18 +69,18 @@ impl TypeChecker {
         &mut self,
         module: &Module,
         file_id: FileId,
-        external_sigs: &HashMap<String, FunctionSignatureTuple>,
+        external_sigs: &HashMap<String, ExternalSig>,
         module_visibility: &ModuleVisibility,
         sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
     ) -> Result<(), TypeError> {
-        for (name, (params, ret, is_pub, kind)) in external_sigs {
+        for (name, sig) in external_sigs {
             self.function_signatures.insert(
                 name.clone(),
                 FunctionSignature {
-                    parameters: params.clone(),
-                    return_type: ret.clone(),
-                    is_pub: *is_pub,
-                    kind: kind.clone(),
+                    parameters: sig.parameters.clone(),
+                    return_type: sig.return_type.clone(),
+                    is_pub: sig.is_pub,
+                    kind: sig.kind.clone(),
                 },
             );
         }
@@ -112,7 +112,7 @@ impl TypeChecker {
         &mut self,
         module: &Module,
         sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
-        external_sigs: &HashMap<String, FunctionSignatureTuple>,
+        external_sigs: &HashMap<String, ExternalSig>,
     ) {
         let params = module.definitions.iter().find_map(|def| {
             if let Definition::ModuleHeader { params, .. } = def {
@@ -142,9 +142,15 @@ impl TypeChecker {
                 } else {
                     external_sigs
                         .iter()
-                        .filter_map(|(k, (ps, ret, _, _))| {
+                        .filter_map(|(k, sig)| {
                             k.strip_prefix(&format!("{}::", concrete_module))
-                                .map(|fn_name| (fn_name.to_string(), ps.clone(), ret.clone()))
+                                .map(|fn_name| {
+                                    (
+                                        fn_name.to_string(),
+                                        sig.parameters.clone(),
+                                        sig.return_type.clone(),
+                                    )
+                                })
                         })
                         .collect()
                 };
@@ -795,7 +801,29 @@ impl TypeChecker {
     }
 }
 
-pub type FunctionSignatureTuple = (Vec<Parameter>, AstType, bool, FunctionKind);
+#[derive(Debug, Clone)]
+pub struct ExternalSig {
+    pub parameters: Vec<Parameter>,
+    pub return_type: AstType,
+    pub is_pub: bool,
+    pub kind: FunctionKind,
+}
+
+impl ExternalSig {
+    pub fn new(
+        parameters: Vec<Parameter>,
+        return_type: AstType,
+        is_pub: bool,
+        kind: FunctionKind,
+    ) -> Self {
+        Self {
+            parameters,
+            return_type,
+            is_pub,
+            kind,
+        }
+    }
+}
 
 impl TypeChecker {
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {

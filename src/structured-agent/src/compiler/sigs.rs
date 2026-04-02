@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
 use crate::ast::{Definition, SigFunction};
-use crate::typecheck::checker::{FunctionKind, FunctionSignatureTuple, ModuleVisibility};
+use crate::typecheck::checker::{ExternalSig, FunctionKind, ModuleVisibility};
 
 use super::discovery::ParsedModule;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SigTable {
     pub(crate) visibility: ModuleVisibility,
-    pub(crate) external_sigs: HashMap<String, FunctionSignatureTuple>,
+    pub(crate) external_sigs: HashMap<String, ExternalSig>,
     pub(crate) sig_definitions: HashMap<String, Vec<SigFunction>>,
 }
 
 pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
     let mut visibility: ModuleVisibility = HashMap::new();
-    let mut external_sigs: HashMap<String, FunctionSignatureTuple> = HashMap::new();
+    let mut external_sigs: HashMap<String, ExternalSig> = HashMap::new();
     let mut sig_definitions: HashMap<String, Vec<SigFunction>> = HashMap::new();
 
     for parsed in modules {
@@ -26,7 +26,7 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                     if !parsed.is_entry {
                         external_sigs.insert(
                             qname,
-                            (
+                            ExternalSig::new(
                                 f.parameters.clone(),
                                 f.return_type.clone(),
                                 f.is_pub,
@@ -41,7 +41,7 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                     if !parsed.is_entry {
                         external_sigs.insert(
                             qname,
-                            (
+                            ExternalSig::new(
                                 f.parameters.clone(),
                                 f.return_type.clone(),
                                 f.is_pub,
@@ -70,7 +70,7 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
 pub(crate) fn sigs_visible_to_module(
     module: &crate::ast::Module,
     sig_table: &SigTable,
-) -> HashMap<String, FunctionSignatureTuple> {
+) -> HashMap<String, ExternalSig> {
     module
         .definitions
         .iter()
@@ -223,7 +223,7 @@ mod tests {
         };
         table.external_sigs.insert(
             "storage::read".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let module = Module {
@@ -253,7 +253,7 @@ mod tests {
         };
         table.external_sigs.insert(
             "storage::read".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let module = Module {
@@ -284,7 +284,7 @@ mod tests {
         };
         table.external_sigs.insert(
             "foo::baz".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let module = Module {
@@ -314,7 +314,7 @@ mod tests {
         };
         table.external_sigs.insert(
             "storage::read".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let module = Module {
@@ -344,7 +344,7 @@ mod tests {
         };
         table.external_sigs.insert(
             "read".to_string(),
-            (vec![], AstType::Unit, true, FunctionKind::External),
+            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
         );
 
         let module = Module {
