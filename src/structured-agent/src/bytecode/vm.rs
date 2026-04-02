@@ -1,7 +1,9 @@
 use super::{CompiledFunction, Instruction};
-use crate::runtime::{Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime};
+use crate::runtime::{
+    AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
+};
 use std::sync::Arc;
-use tracing::info;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct VMState {
     pc: usize,
@@ -57,13 +59,22 @@ impl VM {
                     function_name,
                     params,
                     dest,
+                } => {
+                    self.execute_call(
+                        state,
+                        function_name,
+                        params,
+                        dest,
+                        function.module_name.as_deref(),
+                    )
+                    .await?
                 }
-                | Instruction::CallExternal {
+                Instruction::CallExternal {
                     function_name,
                     params,
                     dest,
                 } => {
-                    self.execute_call(
+                    self.execute_external_call(
                         state,
                         function_name,
                         params,
@@ -255,15 +266,45 @@ impl VM {
             value: result.value.clone(),
         };
 
-        let result_display = result.value.value_string();
-
-        info!(
-            "<result function=\"{}\">\n{}\n</result>",
-            function_name, result_display
-        );
-
         Self::write_variable(&mut state, dest, result_with_metadata);
         Ok(Self::advance_pc(state))
+    }
+
+    async fn execute_external_call(
+        &self,
+        state: VMState,
+        function_name: &str,
+        params: &[String],
+        dest: &str,
+        module_name: Option<&str>,
+    ) -> Result<VMState, String> {
+        static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+
+        state
+            .context
+            .agent_handle()
+            .publish(AgentMessageContent::ToolCallStarted {
+                tool_name: function_name.to_string(),
+                call_id: call_id.clone(),
+            });
+
+        let state = self
+            .execute_call(state, function_name, params, dest, module_name)
+            .await?;
+
+        let result = Self::read_variable(&state, dest)?;
+
+        state
+            .context
+            .agent_handle()
+            .publish(AgentMessageContent::ToolCallFinished {
+                tool_name: function_name.to_string(),
+                call_id,
+                result: result.value.clone(),
+            });
+
+        Ok(state)
     }
 
     fn execute_ctx_event(&self, mut state: VMState, var: &str) -> Result<VMState, String> {

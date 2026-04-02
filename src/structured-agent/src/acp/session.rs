@@ -4,14 +4,11 @@ use crate::runtime::{
     RuntimeError,
 };
 use agent_client_protocol as acp;
-use std::fs::OpenOptions;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
-use tracing::{debug, error, info, warn};
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{debug, error, warn};
 
 use super::AGENT_RUNTIME;
-use super::tracing::SessionTracingLayer;
 
 pub struct AcpSession {
     agent: Agent,
@@ -95,51 +92,8 @@ impl AcpSession {
 
         let runtime_arc = self.agent.runtime.clone();
         let handle = self.agent.handle.clone();
-        let update_tx_for_tracing = self.update_tx.clone();
-        let session_id_for_tracing = self.session_id.clone();
 
         self.task_handle = Some(AGENT_RUNTIME.spawn(async move {
-            let tracing_layer =
-                SessionTracingLayer::new(session_id_for_tracing.clone(), update_tx_for_tracing);
-
-            let log_dir = dirs::home_dir()
-                .map(|home| home.join(".structured-agent").join("acp-logs"))
-                .unwrap_or_else(|| std::path::PathBuf::from("acp-logs"));
-
-            if let Err(e) = std::fs::create_dir_all(&log_dir) {
-                error!("Failed to create log directory {:?}: {}", log_dir, e);
-            }
-
-            let log_path = log_dir.join(format!("session-{}.log", session_id_for_tracing.0));
-
-            let file_layer =
-                if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
-                    Some(
-                        fmt::layer()
-                            .with_writer(Arc::new(file))
-                            .with_ansi(false)
-                            .with_target(true)
-                            .with_thread_ids(true)
-                            .with_line_number(true),
-                    )
-                } else {
-                    error!("Failed to create log file at {:?}", log_path);
-                    None
-                };
-
-            let env_filter =
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-            let registry = tracing_subscriber::registry()
-                .with(env_filter)
-                .with(tracing_layer);
-
-            let _guard = if let Some(file_layer) = file_layer {
-                registry.with(file_layer).set_default()
-            } else {
-                registry.set_default()
-            };
-
             runtime_arc
                 .run_with_handle(handle)
                 .await
@@ -266,7 +220,6 @@ impl AcpSession {
 
         self.start()?;
 
-        info!("Scripts reloaded for session {}", self.session_id.0);
         Ok(())
     }
 }

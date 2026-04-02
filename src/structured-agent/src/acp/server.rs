@@ -183,7 +183,7 @@ impl acp::Agent for AcpServer {
         debug!("Prompt content: {}", prompt_content);
 
         if prompt_content.contains("/reload") {
-            info!("Reload command for session: {}", args.session_id.0);
+            debug!("Reload command for session: {}", args.session_id.0);
 
             let session_arc = {
                 let agents = self.agents.lock().await;
@@ -206,7 +206,7 @@ impl acp::Agent for AcpServer {
                     acp::Error::new(ACP_INTERNAL_ERROR, format!("Reload failed: {}", e))
                 })?;
 
-            info!("Scripts reloaded for session: {}", args.session_id.0);
+            debug!("Scripts reloaded for session: {}", args.session_id.0);
             return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
         }
 

@@ -1,7 +1,6 @@
 pub mod runtime;
 pub mod server;
 pub mod session;
-mod tracing;
 
 pub use runtime::AGENT_RUNTIME;
 pub use server::run_acp_server;

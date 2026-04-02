@@ -15,11 +15,11 @@ async fn test_session_starts_and_runs() {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    assert!(!updates.is_empty(), "Should have captured tracing updates");
+    assert!(!updates.is_empty(), "Should have captured updates");
     let all_updates = updates.join("\n");
     assert!(
-        all_updates.contains("result") || all_updates.contains("function=\"print\""),
-        "Should contain result or function print: {}",
+        all_updates.contains("Hello from session"),
+        "Should contain print output: {}",
         all_updates
     );
 }
