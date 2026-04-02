@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
@@ -24,6 +25,7 @@ pub enum AgentMessageContent {
     ToolCallStarted {
         tool_name: String,
         call_id: String,
+        params: HashMap<String, ExpressionValue>,
     },
     ToolCallFinished {
         tool_name: String,

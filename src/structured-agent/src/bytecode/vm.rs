@@ -2,6 +2,7 @@ use super::{CompiledFunction, Instruction};
 use crate::runtime::{
     AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -281,12 +282,22 @@ impl VM {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
 
+        let resolved_params: HashMap<String, ExpressionValue> = params
+            .iter()
+            .filter_map(|name| {
+                Self::read_variable(&state, name)
+                    .ok()
+                    .map(|r| (name.clone(), r.value))
+            })
+            .collect();
+
         state
             .context
             .agent_handle()
             .publish(AgentMessageContent::ToolCallStarted {
                 tool_name: function_name.to_string(),
                 call_id: call_id.clone(),
+                params: resolved_params,
             });
 
         let state = self
@@ -435,6 +446,11 @@ impl VM {
             .engine()
             .typed(&state.context, &return_type_obj)
             .await?;
+
+        state
+            .context
+            .agent_handle()
+            .publish(AgentMessageContent::String(value.format_for_llm()));
 
         Self::write_variable(&mut state, dest, ExpressionResult::new(value));
         Ok(Self::advance_pc(state))

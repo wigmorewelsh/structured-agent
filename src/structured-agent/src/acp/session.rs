@@ -151,13 +151,24 @@ impl AcpSession {
                         }
                         ack_rx.await.ok();
                     }
-                    AgentMessageContent::ToolCallStarted { tool_name, call_id } => {
+                    AgentMessageContent::ToolCallStarted {
+                        tool_name,
+                        call_id,
+                        params,
+                    } => {
                         let (tx, rx) = oneshot::channel();
+                        let raw_input = serde_json::Value::Object(
+                            params
+                                .into_iter()
+                                .map(|(k, v)| (k, serde_json::Value::String(v.value_string())))
+                                .collect(),
+                        );
                         let notification = acp::SessionNotification::new(
                             session_id.clone(),
                             acp::SessionUpdate::ToolCall(
                                 acp::ToolCall::new(call_id, tool_name)
-                                    .status(acp::ToolCallStatus::InProgress),
+                                    .status(acp::ToolCallStatus::InProgress)
+                                    .raw_input(raw_input),
                             ),
                         );
                         if update_tx.send((notification, tx)).is_err() {
