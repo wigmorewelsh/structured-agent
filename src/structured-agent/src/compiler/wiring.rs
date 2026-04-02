@@ -123,6 +123,7 @@ mod tests {
         Definition, Function, FunctionBody, ModuleParam, SigFunction, Type as AstType,
     };
     use crate::compiler::sigs::SigTable;
+    use crate::typecheck::checker::FunctionKind;
     use crate::types::{FileId, Span};
 
     fn dummy_span() -> Span {
@@ -216,12 +217,14 @@ mod tests {
         let p = param("io", &["storage", "disk"]);
         let parsed = make_module("tasks", vec![p]);
         let mut table = empty_sig_table();
-        table
-            .external_sigs
-            .insert("storage::read".to_string(), (vec![], AstType::Unit, true));
-        table
-            .external_sigs
-            .insert("storage::write".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "storage::read".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
+        table.external_sigs.insert(
+            "storage::write".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let vtables = resolve_vtables(&[parsed], &table);
         let vtable = vtables.get("tasks").expect("expected vtable for tasks");

@@ -35,8 +35,14 @@ pub enum Instruction {
     /// Pause execution for durable execution checkpoint
     Yield,
 
-    /// Call function with parameters and store result in destination
-    Call {
+    /// Call a bytecode function with parameters and store result in destination
+    CallBytecode {
+        function_name: String,
+        params: Vec<String>,
+        dest: String,
+    },
+    /// Call an external function with parameters and store result in destination
+    CallExternal {
         function_name: String,
         params: Vec<String>,
         dest: String,
@@ -136,12 +142,26 @@ impl fmt::Display for Instruction {
                 write!(f, "yield")
             }
 
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name,
                 params,
                 dest,
             } => {
-                write!(f, "call {}, [", function_name)?;
+                write!(f, "call.bytecode {}, [", function_name)?;
+                for (i, var) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
+            }
+            Instruction::CallExternal {
+                function_name,
+                params,
+                dest,
+            } => {
+                write!(f, "call.external {}, [", function_name)?;
                 for (i, var) in params.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;

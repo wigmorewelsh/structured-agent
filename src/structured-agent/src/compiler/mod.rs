@@ -18,7 +18,7 @@ use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::ModuleVisibility;
+use crate::typecheck::checker::{FunctionKind, ModuleVisibility};
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use wiring::Vtables;
 
@@ -260,14 +260,21 @@ impl Compiler {
 
         let sig_table: SigTable = collect_sigs(&modules);
 
+        let mut module_kinds: HashMap<String, HashMap<String, FunctionKind>> = HashMap::new();
+
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
-            if let Err(e) = type_check_module(parsed, &sig_table) {
-                error!("Type checking failed: {}", e);
-                if let Err(io_err) = reporter.emit_type_error(&e) {
-                    eprintln!("Failed to emit type error: {}", io_err);
+            match type_check_module(parsed, &sig_table) {
+                Ok(kinds) => {
+                    module_kinds.insert(parsed.name.clone(), kinds);
                 }
-                return Err(format!("In {}: Type error: {}", parsed.name, e));
+                Err(e) => {
+                    error!("Type checking failed: {}", e);
+                    if let Err(io_err) = reporter.emit_type_error(&e) {
+                        eprintln!("Failed to emit type error: {}", io_err);
+                    }
+                    return Err(format!("In {}: Type error: {}", parsed.name, e));
+                }
             }
 
             for warning in analyse_module(parsed) {
@@ -286,7 +293,12 @@ impl Compiler {
 
         for parsed in &modules {
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
-            let artifact = emit_module(&parsed.module, prefix)?;
+            let empty = HashMap::new();
+            let kinds = module_kinds
+                .get(&parsed.name)
+                .map(|k| k as &HashMap<String, FunctionKind>)
+                .unwrap_or(&empty);
+            let artifact = emit_module(&parsed.module, prefix, kinds)?;
             compiled.merge(artifact);
         }
 
@@ -306,7 +318,7 @@ impl Compiler {
 fn type_check_module(
     parsed: &discovery::ParsedModule,
     sig_table: &SigTable,
-) -> Result<(), crate::typecheck::TypeError> {
+) -> Result<HashMap<String, FunctionKind>, crate::typecheck::TypeError> {
     let external_sigs = if parsed.is_entry {
         sigs_visible_to_module(&parsed.module, sig_table)
     } else {
@@ -319,7 +331,8 @@ fn type_check_module(
         &external_sigs,
         &sig_table.visibility,
         &sig_table.sig_definitions,
-    )
+    )?;
+    Ok(checker.function_kinds())
 }
 
 fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warning> {
@@ -330,7 +343,11 @@ fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warn
     warnings
 }
 
-fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, String> {
+fn emit_module(
+    module: &Module,
+    prefix: Option<&str>,
+    kinds: &HashMap<String, FunctionKind>,
+) -> Result<ModuleArtifact, String> {
     let mut artifact = ModuleArtifact {
         functions: Vec::new(),
         external_functions: Vec::new(),
@@ -338,6 +355,8 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
         sig_definitions: Vec::new(),
         use_aliases: Vec::new(),
     };
+
+    let compiler = BytecodeCompiler::new(kinds.clone());
 
     for definition in &module.definitions {
         match definition {
@@ -347,7 +366,7 @@ fn emit_module(module: &Module, prefix: Option<&str>) -> Result<ModuleArtifact, 
                     f.name = format!("{}::{}", p, f.name);
                 }
                 debug!("Emitting function: {}", f.name);
-                let mut compiled = BytecodeCompiler::compile_to_bytecode(&f)?;
+                let mut compiled = compiler.compile_to_bytecode(&f)?;
                 compiled.module_name = prefix.map(str::to_string);
                 artifact.functions.push(compiled);
             }

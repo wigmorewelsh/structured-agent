@@ -38,7 +38,7 @@ mod tests {
                 dest: "$arg0".to_string(),
                 value: "hello".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "greet".to_string(),
                 params: vec!["$arg0".to_string()],
                 dest: "$tmp0".to_string(),
@@ -59,7 +59,7 @@ mod tests {
             Instruction::Decl {
                 name: "$tmp0".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "get_value".to_string(),
                 params: vec![],
                 dest: "$tmp0".to_string(),
@@ -80,7 +80,7 @@ mod tests {
             Instruction::Decl {
                 name: "$tmp0".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "add".to_string(),
                 params: vec!["$a".to_string()],
                 dest: "$tmp0".to_string(),
@@ -110,7 +110,7 @@ mod tests {
             Instruction::Decl {
                 name: "$tmp0".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "negate".to_string(),
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$tmp0".to_string(),
@@ -140,7 +140,7 @@ mod tests {
             Instruction::Decl {
                 name: "$tmp0".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallExternal {
                 function_name: "external_tool".to_string(),
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
                 dest: "$tmp0".to_string(),
@@ -164,12 +164,12 @@ mod tests {
             Instruction::Decl {
                 name: "$b".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "foo".to_string(),
                 params: vec![],
                 dest: "$a".to_string(),
             },
-            Instruction::Call {
+            Instruction::CallBytecode {
                 function_name: "bar".to_string(),
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$b".to_string(),

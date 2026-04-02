@@ -47,7 +47,8 @@ fn test_assignment(): () {
     assert_eq!(function.name, "test_assignment");
     assert_eq!(function.body.statements.len(), 2);
 
-    let compilation_result = BytecodeCompiler::compile_function(function);
+    let compilation_result =
+        BytecodeCompiler::new(std::collections::HashMap::new()).compile_function(function);
     assert!(compilation_result.is_ok());
     let compiled_function = compilation_result.unwrap();
 
@@ -90,7 +91,9 @@ fn test_var_assignment(): () {
         .collect();
     assert_eq!(functions.len(), 1);
     let function = functions[0];
-    let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
+    let compiled_function = BytecodeCompiler::new(std::collections::HashMap::new())
+        .compile_function(function)
+        .unwrap();
 
     let runtime =
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
@@ -139,7 +142,9 @@ fn test_return(): () {
         .collect();
     assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
-    let compiled_function = BytecodeCompiler::compile_function(function).unwrap();
+    let compiled_function = BytecodeCompiler::new(std::collections::HashMap::new())
+        .compile_function(function)
+        .unwrap();
 
     let runtime =
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());

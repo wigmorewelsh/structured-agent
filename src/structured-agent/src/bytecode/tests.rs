@@ -12,13 +12,23 @@ mod instruction_display_tests {
     }
 
     #[test]
-    fn test_call_display() {
-        let instr = Instruction::Call {
+    fn test_call_bytecode_display() {
+        let instr = Instruction::CallBytecode {
             function_name: "foo".to_string(),
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
-        assert_eq!(format!("{}", instr), "call foo, [x, y], result");
+        assert_eq!(format!("{}", instr), "call.bytecode foo, [x, y], result");
+    }
+
+    #[test]
+    fn test_call_external_display() {
+        let instr = Instruction::CallExternal {
+            function_name: "foo".to_string(),
+            params: vec!["x".to_string(), "y".to_string()],
+            dest: "result".to_string(),
+        };
+        assert_eq!(format!("{}", instr), "call.external foo, [x, y], result");
     }
 
     #[test]
@@ -93,7 +103,9 @@ fn main(): String {
 
         for def in &module.definitions {
             if let crate::ast::Definition::Function(func) = def {
-                let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+                let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+                    .compile_to_bytecode(func)
+                    .unwrap();
                 println!("\n{}", compiled);
             }
         }
@@ -127,7 +139,9 @@ fn main(): String {
 
         for def in &module.definitions {
             if let crate::ast::Definition::Function(func) = def {
-                let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+                let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+                    .compile_to_bytecode(func)
+                    .unwrap();
                 println!("\n{}", compiled);
             }
         }
@@ -147,14 +161,18 @@ fn main(): String {
     fn compile_and_check(code: &str, expected: &str) {
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
     fn compile_and_check_named(code: &str, function_name: &str, expected: &str) {
         let module = parse_code(code);
         let func = get_function(&module, function_name);
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
@@ -259,7 +277,7 @@ fn main(): String {
       2: ldc.str $tmp1, "arg1"
       3: decl $tmp2
       4: ldc.bool $tmp2, true
-      5: call foo, [$tmp1, $tmp2], $tmp0
+      5: call.external foo, [$tmp1, $tmp2], $tmp0
       6: ret $tmp0
 }
 "#;
@@ -412,7 +430,7 @@ fn greet(name: String): () {
       0: decl $tmp0
       1: decl $tmp1
       2: mov $tmp1, x
-      3: call process, [$tmp1], $tmp0
+      3: call.external process, [$tmp1], $tmp0
       4: decl result
       5: mov result, $tmp0
       6: drop $tmp0
@@ -456,7 +474,7 @@ fn greet(name: String): () {
       9: decl $tmp5
      10: decl $tmp6
      11: mov $tmp6, items
-     12: call transform, [$tmp6], $tmp5
+     12: call.external transform, [$tmp6], $tmp5
      13: mov result, $tmp5
      14: drop $tmp5
      15: decl $tmp7
@@ -514,7 +532,7 @@ fn greet(name: String): () {
      13: decl $tmp8
      14: decl $tmp9
      15: ldc.str $tmp9, "code"
-     16: call analyze, [$tmp9], $tmp8
+     16: call.external analyze, [$tmp9], $tmp8
      17: decl result
      18: mov result, $tmp8
      19: mov $tmp0, result
@@ -525,7 +543,7 @@ fn greet(name: String): () {
      23: decl $tmp10
      24: decl $tmp11
      25: ldc.str $tmp11, "text"
-     26: call summarize, [$tmp11], $tmp10
+     26: call.external summarize, [$tmp11], $tmp10
      27: decl summary
      28: mov summary, $tmp10
      29: mov $tmp0, summary
@@ -693,7 +711,7 @@ fn test(): Int {
 ): Int {
       0: decl $tmp0
       1: decl $tmp1
-      2: call make_point, [], $tmp1
+      2: call.external make_point, [], $tmp1
       3: struct.get $tmp0, $tmp1, x
       4: ret $tmp0
 }
@@ -715,7 +733,7 @@ fn test(): Int {
       0: decl $tmp0
       1: decl $tmp1
       2: llm.placeholder $tmp1, placeholder, Unknown
-      3: call foo, [$tmp1], $tmp0
+      3: call.external foo, [$tmp1], $tmp0
       4: ret $tmp0
 }
 "#;
@@ -806,7 +824,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -826,7 +846,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -846,7 +868,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -867,7 +891,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -889,7 +915,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -909,7 +937,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let mut context = Context::with_runtime(runtime.clone());
@@ -935,7 +965,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -959,7 +991,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -982,7 +1016,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1003,7 +1039,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1027,7 +1065,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1048,7 +1088,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1068,7 +1110,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1093,7 +1137,9 @@ mod vm_execution_tests {
 
         let module = parse_code(code);
         let test_func = get_function(&module, "test");
-        let test_compiled = BytecodeCompiler::compile_to_bytecode(test_func).unwrap();
+        let test_compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(test_func)
+            .unwrap();
 
         let program = CompilationUnit::from_string(code.to_string());
         let compiler = crate::compiler::Compiler::new();
@@ -1156,7 +1202,9 @@ fn make(): Point {
 "#;
         let module = parse_code(code);
         let func = get_function(&module, "make");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
         let has_struct_new = compiled
             .instructions
             .iter()
@@ -1177,7 +1225,9 @@ fn get_x(p: Point): Int {
 "#;
         let module = parse_code(code);
         let func = get_function(&module, "get_x");
-        let compiled = BytecodeCompiler::compile_to_bytecode(func).unwrap();
+        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+            .compile_to_bytecode(func)
+            .unwrap();
         let has_struct_get = compiled.instructions.iter().any(
             |i| matches!(i, crate::bytecode::Instruction::StructGet { field, .. } if field == "x"),
         );

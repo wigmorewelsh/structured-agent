@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast::{Definition, SigFunction};
-use crate::typecheck::checker::{FunctionSignatureTuple, ModuleVisibility};
+use crate::typecheck::checker::{FunctionKind, FunctionSignatureTuple, ModuleVisibility};
 
 use super::discovery::ParsedModule;
 
@@ -26,7 +26,12 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                     if !parsed.is_entry {
                         external_sigs.insert(
                             qname,
-                            (f.parameters.clone(), f.return_type.clone(), f.is_pub),
+                            (
+                                f.parameters.clone(),
+                                f.return_type.clone(),
+                                f.is_pub,
+                                FunctionKind::Bytecode,
+                            ),
                         );
                     }
                 }
@@ -36,7 +41,12 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                     if !parsed.is_entry {
                         external_sigs.insert(
                             qname,
-                            (f.parameters.clone(), f.return_type.clone(), f.is_pub),
+                            (
+                                f.parameters.clone(),
+                                f.return_type.clone(),
+                                f.is_pub,
+                                FunctionKind::External,
+                            ),
                         );
                     }
                 }
@@ -211,9 +221,10 @@ mod tests {
             external_sigs: HashMap::new(),
             sig_definitions: HashMap::new(),
         };
-        table
-            .external_sigs
-            .insert("storage::read".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "storage::read".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let module = Module {
             definitions: vec![Definition::Use {
@@ -240,9 +251,10 @@ mod tests {
             external_sigs: HashMap::new(),
             sig_definitions: HashMap::new(),
         };
-        table
-            .external_sigs
-            .insert("storage::read".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "storage::read".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let module = Module {
             definitions: vec![Definition::Use {
@@ -270,9 +282,10 @@ mod tests {
             external_sigs: HashMap::new(),
             sig_definitions: HashMap::new(),
         };
-        table
-            .external_sigs
-            .insert("foo::baz".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "foo::baz".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let module = Module {
             definitions: vec![Definition::Use {
@@ -299,9 +312,10 @@ mod tests {
             external_sigs: HashMap::new(),
             sig_definitions: HashMap::new(),
         };
-        table
-            .external_sigs
-            .insert("storage::read".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "storage::read".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let module = Module {
             definitions: vec![Definition::Use {
@@ -328,9 +342,10 @@ mod tests {
             external_sigs: HashMap::new(),
             sig_definitions: HashMap::new(),
         };
-        table
-            .external_sigs
-            .insert("read".to_string(), (vec![], AstType::Unit, true));
+        table.external_sigs.insert(
+            "read".to_string(),
+            (vec![], AstType::Unit, true, FunctionKind::External),
+        );
 
         let module = Module {
             definitions: vec![Definition::Use {

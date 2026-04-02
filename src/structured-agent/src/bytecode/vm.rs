@@ -53,7 +53,12 @@ impl VM {
                     return Ok((state.context, result));
                 }
                 Instruction::Yield => return Err("Yield not yet implemented".to_string()),
-                Instruction::Call {
+                Instruction::CallBytecode {
+                    function_name,
+                    params,
+                    dest,
+                }
+                | Instruction::CallExternal {
                     function_name,
                     params,
                     dest,

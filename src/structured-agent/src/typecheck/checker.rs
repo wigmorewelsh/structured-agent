@@ -8,6 +8,12 @@ use std::collections::HashMap;
 pub type ModuleVisibility = HashMap<String, bool>;
 pub type AliasToQualified = HashMap<String, String>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionKind {
+    Bytecode,
+    External,
+}
+
 #[derive(Debug)]
 pub struct TypeChecker {
     function_signatures: HashMap<String, FunctionSignature>,
@@ -19,6 +25,7 @@ struct FunctionSignature {
     parameters: Vec<Parameter>,
     return_type: AstType,
     is_pub: bool,
+    kind: FunctionKind,
 }
 
 #[derive(Debug, Clone)]
@@ -66,13 +73,14 @@ impl TypeChecker {
         module_visibility: &ModuleVisibility,
         sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
     ) -> Result<(), TypeError> {
-        for (name, (params, ret, is_pub)) in external_sigs {
+        for (name, (params, ret, is_pub, kind)) in external_sigs {
             self.function_signatures.insert(
                 name.clone(),
                 FunctionSignature {
                     parameters: params.clone(),
                     return_type: ret.clone(),
                     is_pub: *is_pub,
+                    kind: kind.clone(),
                 },
             );
         }
@@ -134,7 +142,7 @@ impl TypeChecker {
                 } else {
                     external_sigs
                         .iter()
-                        .filter_map(|(k, (ps, ret, _))| {
+                        .filter_map(|(k, (ps, ret, _, _))| {
                             k.strip_prefix(&format!("{}::", concrete_module))
                                 .map(|fn_name| (fn_name.to_string(), ps.clone(), ret.clone()))
                         })
@@ -149,6 +157,7 @@ impl TypeChecker {
                         parameters: fn_params,
                         return_type: ret_type,
                         is_pub: true,
+                        kind: FunctionKind::External,
                     },
                 );
             }
@@ -185,6 +194,7 @@ impl TypeChecker {
                             parameters: func.parameters.clone(),
                             return_type: func.return_type.clone(),
                             is_pub: func.is_pub,
+                            kind: FunctionKind::Bytecode,
                         },
                     );
                 }
@@ -199,6 +209,7 @@ impl TypeChecker {
                             parameters: ext_func.parameters.clone(),
                             return_type: ext_func.return_type.clone(),
                             is_pub: ext_func.is_pub,
+                            kind: FunctionKind::External,
                         },
                     );
                 }
@@ -784,7 +795,16 @@ impl TypeChecker {
     }
 }
 
-pub type FunctionSignatureTuple = (Vec<Parameter>, AstType, bool);
+pub type FunctionSignatureTuple = (Vec<Parameter>, AstType, bool, FunctionKind);
+
+impl TypeChecker {
+    pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
+        self.function_signatures
+            .iter()
+            .map(|(name, sig)| (name.clone(), sig.kind.clone()))
+            .collect()
+    }
+}
 
 impl TypeEnvironment {
     fn new() -> Self {

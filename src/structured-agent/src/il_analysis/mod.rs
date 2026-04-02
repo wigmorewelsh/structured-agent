@@ -59,7 +59,9 @@ pub(crate) fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
         Instruction::BrTrue { var, .. } => vec![var.as_str()],
         Instruction::Switch { var, .. } => vec![var.as_str()],
         Instruction::Ret { var } => vec![var.as_str()],
-        Instruction::Call { params, .. } => params.iter().map(String::as_str).collect(),
+        Instruction::CallBytecode { params, .. } | Instruction::CallExternal { params, .. } => {
+            params.iter().map(String::as_str).collect()
+        }
         Instruction::CtxEvent { var } => vec![var.as_str()],
         Instruction::ListCreate { elements, .. } => elements.iter().map(String::as_str).collect(),
         Instruction::LlmSelect { metadata_vars, .. } => {
@@ -81,7 +83,9 @@ pub(crate) fn instruction_writes(instruction: &Instruction) -> Option<&str> {
         Instruction::LdcInt { dest, .. } => Some(dest.as_str()),
         Instruction::LdcUnit { dest } => Some(dest.as_str()),
         Instruction::Mov { dest, .. } => Some(dest.as_str()),
-        Instruction::Call { dest, .. } => Some(dest.as_str()),
+        Instruction::CallBytecode { dest, .. } | Instruction::CallExternal { dest, .. } => {
+            Some(dest.as_str())
+        }
         Instruction::MetaFunction { dest, .. } => Some(dest.as_str()),
         Instruction::ListCreate { dest, .. } => Some(dest.as_str()),
         Instruction::LlmPlaceholder { dest, .. } => Some(dest.as_str()),

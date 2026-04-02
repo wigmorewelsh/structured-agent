@@ -1,6 +1,8 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast::{self, Expression, Statement};
+use crate::typecheck::checker::FunctionKind;
 use crate::types::{ExecutableFunction, Parameter};
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -14,10 +16,19 @@ pub struct CompiledFunction {
     pub documentation: Option<String>,
 }
 
-pub struct BytecodeCompiler;
+pub struct BytecodeCompiler {
+    kinds: HashMap<String, FunctionKind>,
+}
 
 impl BytecodeCompiler {
-    pub fn compile_to_bytecode(ast_func: &ast::Function) -> Result<CompiledFunction, String> {
+    pub fn new(kinds: HashMap<String, FunctionKind>) -> Self {
+        Self { kinds }
+    }
+
+    pub fn compile_to_bytecode(
+        &self,
+        ast_func: &ast::Function,
+    ) -> Result<CompiledFunction, String> {
         let mut builder = InstructionBuilder::new();
 
         let mut has_explicit_return = false;
@@ -25,7 +36,7 @@ impl BytecodeCompiler {
             if matches!(stmt, Statement::Return(_)) {
                 has_explicit_return = true;
             }
-            Self::compile_statement(&mut builder, stmt)?;
+            self.compile_statement(&mut builder, stmt)?;
         }
 
         if !has_explicit_return {
@@ -64,52 +75,58 @@ impl BytecodeCompiler {
         })
     }
 
-    fn compile_statement(builder: &mut InstructionBuilder, stmt: &Statement) -> Result<(), String> {
+    fn compile_statement(
+        &self,
+        builder: &mut InstructionBuilder,
+        stmt: &Statement,
+    ) -> Result<(), String> {
         match stmt {
-            Statement::Injection(expr) => Self::compile_injection(builder, expr),
+            Statement::Injection(expr) => self.compile_injection(builder, expr),
             Statement::Assignment {
                 variable,
                 expression,
                 ..
-            } => Self::compile_assignment(builder, variable, expression),
+            } => self.compile_assignment(builder, variable, expression),
             Statement::VariableAssignment {
                 variable,
                 expression,
                 ..
-            } => Self::compile_variable_assignment(builder, variable, expression),
+            } => self.compile_variable_assignment(builder, variable, expression),
             Statement::ExpressionStatement(expr) => {
-                Self::compile_expression_statement(builder, expr)
+                self.compile_expression_statement(builder, expr)
             }
             Statement::If {
                 condition,
                 body,
                 else_body,
                 ..
-            } => Self::compile_if_statement(builder, condition, body, else_body.as_deref()),
+            } => self.compile_if_statement(builder, condition, body, else_body.as_deref()),
             Statement::While {
                 condition, body, ..
-            } => Self::compile_while_statement(builder, condition, body),
-            Statement::Return(expr) => Self::compile_return_statement(builder, expr),
+            } => self.compile_while_statement(builder, condition, body),
+            Statement::Return(expr) => self.compile_return_statement(builder, expr),
         }
     }
 
     fn compile_injection(
+        &self,
         builder: &mut InstructionBuilder,
         expr: &Expression,
     ) -> Result<(), String> {
-        let dest_var = builder.next_temp();
+        let temp_var = builder.next_temp();
         builder.emit(Instruction::Decl {
-            name: dest_var.clone(),
+            name: temp_var.clone(),
         });
-        Self::compile_expression(builder, expr, &dest_var)?;
+        self.compile_expression(builder, expr, &temp_var)?;
         builder.emit(Instruction::CtxEvent {
-            var: dest_var.clone(),
+            var: temp_var.clone(),
         });
-        builder.emit_drop(dest_var);
+        builder.emit(Instruction::Drop { name: temp_var });
         Ok(())
     }
 
     fn compile_assignment(
+        &self,
         builder: &mut InstructionBuilder,
         variable: &str,
         expression: &Expression,
@@ -118,7 +135,7 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: temp_var.clone(),
         });
-        Self::compile_expression(builder, expression, &temp_var)?;
+        self.compile_expression(builder, expression, &temp_var)?;
         builder.emit(Instruction::Decl {
             name: variable.to_string(),
         });
@@ -126,11 +143,12 @@ impl BytecodeCompiler {
             dest: variable.to_string(),
             src: temp_var.clone(),
         });
-        builder.emit_drop(temp_var);
+        builder.emit(Instruction::Drop { name: temp_var });
         Ok(())
     }
 
     fn compile_variable_assignment(
+        &self,
         builder: &mut InstructionBuilder,
         variable: &str,
         expression: &Expression,
@@ -139,16 +157,17 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: temp_var.clone(),
         });
-        Self::compile_expression(builder, expression, &temp_var)?;
+        self.compile_expression(builder, expression, &temp_var)?;
         builder.emit(Instruction::Mov {
             dest: variable.to_string(),
             src: temp_var.clone(),
         });
-        builder.emit_drop(temp_var);
+        builder.emit(Instruction::Drop { name: temp_var });
         Ok(())
     }
 
     fn compile_expression_statement(
+        &self,
         builder: &mut InstructionBuilder,
         expr: &Expression,
     ) -> Result<(), String> {
@@ -156,12 +175,13 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: temp_var.clone(),
         });
-        Self::compile_expression(builder, expr, &temp_var)?;
-        builder.emit_drop(temp_var);
+        self.compile_expression(builder, expr, &temp_var)?;
+        builder.emit(Instruction::Drop { name: temp_var });
         Ok(())
     }
 
     fn compile_if_statement(
+        &self,
         builder: &mut InstructionBuilder,
         condition: &Expression,
         body: &[Statement],
@@ -174,7 +194,7 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: cond_var.clone(),
         });
-        Self::compile_expression(builder, condition, &cond_var)?;
+        self.compile_expression(builder, condition, &cond_var)?;
 
         let else_label = format!("else_{}", builder.next_temp());
         let end_label = format!("end_{}", builder.next_temp());
@@ -185,7 +205,7 @@ impl BytecodeCompiler {
             is_scope_boundary: false,
         });
         for stmt in body {
-            Self::compile_statement(builder, stmt)?;
+            self.compile_statement(builder, stmt)?;
         }
         builder.emit(Instruction::CtxRestore);
         builder.emit_br(&end_label);
@@ -196,7 +216,7 @@ impl BytecodeCompiler {
                 is_scope_boundary: false,
             });
             for stmt in else_stmts {
-                Self::compile_statement(builder, stmt)?;
+                self.compile_statement(builder, stmt)?;
             }
             builder.emit(Instruction::CtxRestore);
         }
@@ -207,6 +227,7 @@ impl BytecodeCompiler {
     }
 
     fn compile_while_statement(
+        &self,
         builder: &mut InstructionBuilder,
         condition: &Expression,
         body: &[Statement],
@@ -220,14 +241,14 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: cond_var.clone(),
         });
-        Self::compile_expression(builder, condition, &cond_var)?;
+        self.compile_expression(builder, condition, &cond_var)?;
         builder.emit_brfalse(cond_var, &loop_end);
 
         builder.emit(Instruction::CtxChild {
             is_scope_boundary: false,
         });
         for stmt in body {
-            Self::compile_statement(builder, stmt)?;
+            self.compile_statement(builder, stmt)?;
         }
         builder.emit(Instruction::CtxRestore);
         builder.emit_br(&loop_start);
@@ -238,19 +259,21 @@ impl BytecodeCompiler {
     }
 
     fn compile_return_statement(
+        &self,
         builder: &mut InstructionBuilder,
         expr: &Expression,
     ) -> Result<(), String> {
-        let result_var = builder.next_temp();
+        let return_temp = builder.next_temp();
         builder.emit(Instruction::Decl {
-            name: result_var.clone(),
+            name: return_temp.clone(),
         });
-        Self::compile_expression(builder, expr, &result_var)?;
-        builder.emit(Instruction::Ret { var: result_var });
+        self.compile_expression(builder, expr, &return_temp)?;
+        builder.emit(Instruction::Ret { var: return_temp });
         Ok(())
     }
 
     fn compile_expression(
+        &self,
         builder: &mut InstructionBuilder,
         expr: &Expression,
         dest_var: &str,
@@ -260,7 +283,7 @@ impl BytecodeCompiler {
                 function,
                 arguments,
                 ..
-            } => Self::compile_call_expression(builder, function, arguments, dest_var),
+            } => self.compile_call_expression(builder, function, arguments, dest_var),
             Expression::Variable { name, .. } => {
                 Self::compile_variable_expression(builder, name, dest_var)
             }
@@ -273,34 +296,33 @@ impl BytecodeCompiler {
             Expression::IntLiteral { value, .. } => {
                 Self::compile_int_literal(builder, *value, dest_var)
             }
-            Expression::UnitLiteral { .. } => Self::compile_unit_literal(builder, dest_var),
             Expression::ListLiteral { elements, .. } => {
-                Self::compile_list_literal(builder, elements, dest_var)
+                self.compile_list_literal(builder, elements, dest_var)
             }
             Expression::Placeholder { .. } => Self::compile_placeholder(builder, dest_var),
-            Expression::Select(select_expr) => {
-                Self::compile_select_expression(builder, select_expr, dest_var)
-            }
+            Expression::UnitLiteral { .. } => Self::compile_unit_literal(builder, dest_var),
+            Expression::Select(select) => self.compile_select_expression(builder, select, dest_var),
             Expression::IfElse {
                 condition,
                 then_expr,
                 else_expr,
                 ..
             } => {
-                Self::compile_if_else_expression(builder, condition, then_expr, else_expr, dest_var)
+                self.compile_if_else_expression(builder, condition, then_expr, else_expr, dest_var)
             }
             Expression::StructLiteral {
                 struct_name,
                 fields,
                 ..
-            } => Self::compile_struct_literal(builder, struct_name, fields, dest_var),
+            } => self.compile_struct_literal(builder, struct_name, fields, dest_var),
             Expression::FieldAccess { base, field, .. } => {
-                Self::compile_field_access(builder, base.as_ref(), field, dest_var)
+                self.compile_field_access(builder, base, field, dest_var)
             }
         }
     }
 
     fn compile_call_expression(
+        &self,
         builder: &mut InstructionBuilder,
         function: &str,
         arguments: &[Expression],
@@ -313,15 +335,28 @@ impl BytecodeCompiler {
             builder.emit(Instruction::Decl {
                 name: temp_var.clone(),
             });
-            Self::compile_expression(builder, arg_expr, &temp_var)?;
+            self.compile_expression(builder, arg_expr, &temp_var)?;
             params.push(temp_var);
         }
 
-        builder.emit(Instruction::Call {
-            function_name: function.to_string(),
-            params,
-            dest: dest_var.to_string(),
-        });
+        let kind = self
+            .kinds
+            .get(function)
+            .cloned()
+            .unwrap_or(FunctionKind::External);
+        let instruction = match kind {
+            FunctionKind::Bytecode => Instruction::CallBytecode {
+                function_name: function.to_string(),
+                params,
+                dest: dest_var.to_string(),
+            },
+            FunctionKind::External => Instruction::CallExternal {
+                function_name: function.to_string(),
+                params,
+                dest: dest_var.to_string(),
+            },
+        };
+        builder.emit(instruction);
         Ok(())
     }
 
@@ -384,21 +419,20 @@ impl BytecodeCompiler {
     }
 
     fn compile_list_literal(
+        &self,
         builder: &mut InstructionBuilder,
         elements: &[Expression],
         dest_var: &str,
     ) -> Result<(), String> {
         let mut element_vars = Vec::new();
-
         for elem in elements {
             let temp_var = builder.next_temp();
             builder.emit(Instruction::Decl {
                 name: temp_var.clone(),
             });
-            Self::compile_expression(builder, elem, &temp_var)?;
+            self.compile_expression(builder, elem, &temp_var)?;
             element_vars.push(temp_var);
         }
-
         builder.emit(Instruction::ListCreate {
             dest: dest_var.to_string(),
             elements: element_vars,
@@ -416,8 +450,9 @@ impl BytecodeCompiler {
     }
 
     fn compile_select_expression(
+        &self,
         builder: &mut InstructionBuilder,
-        select_expr: &ast::SelectExpression,
+        select: &ast::SelectExpression,
         dest_var: &str,
     ) -> Result<(), String> {
         let select_start = format!("select_start_{}", builder.next_temp());
@@ -430,17 +465,16 @@ impl BytecodeCompiler {
         let mut clause_labels = Vec::new();
         let mut metadata_vars = Vec::new();
 
-        for i in 0..select_expr.clauses.len() {
+        for i in 0..select.clauses.len() {
             let label = format!("clause_{}_{}", i, builder.next_temp());
             clause_labels.push(label.clone());
 
-            let function_name = if let Expression::Call { function, .. } =
-                &select_expr.clauses[i].expression_to_run
-            {
-                function.clone()
-            } else {
-                "unknown".to_string()
-            };
+            let function_name =
+                if let Expression::Call { function, .. } = &select.clauses[i].expression_to_run {
+                    function.clone()
+                } else {
+                    "unknown".to_string()
+                };
 
             let meta_var = builder.next_temp();
             builder.emit(Instruction::Decl {
@@ -469,12 +503,11 @@ impl BytecodeCompiler {
         }
 
         builder.emit_switch(choice_var.clone(), clause_labels.clone());
-
         builder.emit(Instruction::Drop { name: choice_var });
 
         let end_label = format!("select_end_{}", builder.next_temp());
 
-        for (i, clause) in select_expr.clauses.iter().enumerate() {
+        for (i, clause) in select.clauses.iter().enumerate() {
             builder.emit_label(&clause_labels[i]);
 
             builder.emit(Instruction::CtxChild {
@@ -485,7 +518,7 @@ impl BytecodeCompiler {
             builder.emit(Instruction::Decl {
                 name: temp_result.clone(),
             });
-            Self::compile_expression(builder, &clause.expression_to_run, &temp_result)?;
+            self.compile_expression(builder, &clause.expression_to_run, &temp_result)?;
 
             builder.emit(Instruction::Decl {
                 name: clause.result_variable.clone(),
@@ -495,10 +528,9 @@ impl BytecodeCompiler {
                 src: temp_result,
             });
 
-            Self::compile_expression(builder, &clause.expression_next, dest_var)?;
+            self.compile_expression(builder, &clause.expression_next, dest_var)?;
 
             builder.emit(Instruction::CtxRestore);
-
             builder.emit_br(&end_label);
         }
 
@@ -508,6 +540,7 @@ impl BytecodeCompiler {
     }
 
     fn compile_if_else_expression(
+        &self,
         builder: &mut InstructionBuilder,
         condition: &Expression,
         then_expr: &Expression,
@@ -518,18 +551,18 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: cond_var.clone(),
         });
-        Self::compile_expression(builder, condition, &cond_var)?;
+        self.compile_expression(builder, condition, &cond_var)?;
 
         let else_label = format!("ifelse_else_{}", builder.next_temp());
         let end_label = format!("ifelse_end_{}", builder.next_temp());
 
         builder.emit_brfalse(cond_var, &else_label);
 
-        Self::compile_expression(builder, then_expr, dest_var)?;
+        self.compile_expression(builder, then_expr, dest_var)?;
         builder.emit_br(&end_label);
 
         builder.emit_label(&else_label);
-        Self::compile_expression(builder, else_expr, dest_var)?;
+        self.compile_expression(builder, else_expr, dest_var)?;
 
         builder.emit_label(&end_label);
         builder.emit(Instruction::Nop);
@@ -537,18 +570,19 @@ impl BytecodeCompiler {
     }
 
     fn compile_struct_literal(
+        &self,
         builder: &mut InstructionBuilder,
         struct_name: &str,
         fields: &[(String, Expression)],
         dest_var: &str,
     ) -> Result<(), String> {
-        let mut field_vars: Vec<(String, String)> = Vec::new();
+        let mut field_vars = Vec::new();
         for (field_name, field_expr) in fields {
             let temp_var = builder.next_temp();
             builder.emit(Instruction::Decl {
                 name: temp_var.clone(),
             });
-            Self::compile_expression(builder, field_expr, &temp_var)?;
+            self.compile_expression(builder, field_expr, &temp_var)?;
             field_vars.push((field_name.clone(), temp_var));
         }
         builder.emit(Instruction::StructNew {
@@ -560,8 +594,9 @@ impl BytecodeCompiler {
     }
 
     fn compile_field_access(
+        &self,
         builder: &mut InstructionBuilder,
-        base: &ast::Expression,
+        base: &Expression,
         field: &str,
         dest_var: &str,
     ) -> Result<(), String> {
@@ -569,7 +604,7 @@ impl BytecodeCompiler {
         builder.emit(Instruction::Decl {
             name: base_var.clone(),
         });
-        Self::compile_expression(builder, base, &base_var)?;
+        self.compile_expression(builder, base, &base_var)?;
         builder.emit(Instruction::StructGet {
             dest: dest_var.to_string(),
             src: base_var,
@@ -599,9 +634,10 @@ impl BytecodeCompiler {
 
 impl BytecodeCompiler {
     pub fn compile_function(
+        &self,
         ast_func: &ast::Function,
     ) -> Result<Box<dyn ExecutableFunction>, String> {
-        let compiled = Self::compile_to_bytecode(ast_func)?;
+        let compiled = self.compile_to_bytecode(ast_func)?;
         let bytecode_expr = BytecodeFunctionExpr::new(compiled);
         Ok(Box::new(bytecode_expr))
     }
