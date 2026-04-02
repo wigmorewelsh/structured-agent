@@ -151,6 +151,44 @@ impl AcpSession {
                         }
                         ack_rx.await.ok();
                     }
+                    AgentMessageContent::ToolCallStarted { tool_name, call_id } => {
+                        let (tx, rx) = oneshot::channel();
+                        let notification = acp::SessionNotification::new(
+                            session_id.clone(),
+                            acp::SessionUpdate::ToolCall(
+                                acp::ToolCall::new(call_id, tool_name)
+                                    .status(acp::ToolCallStatus::InProgress),
+                            ),
+                        );
+                        if update_tx.send((notification, tx)).is_err() {
+                            break;
+                        }
+                        rx.await.ok();
+                    }
+                    AgentMessageContent::ToolCallFinished {
+                        tool_name,
+                        call_id,
+                        result,
+                    } => {
+                        let (tx, rx) = oneshot::channel();
+                        let content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
+                            acp::TextContent::new(result.value_string()),
+                        ))];
+                        let notification = acp::SessionNotification::new(
+                            session_id.clone(),
+                            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                                call_id,
+                                acp::ToolCallUpdateFields::new()
+                                    .status(acp::ToolCallStatus::Completed)
+                                    .title(tool_name)
+                                    .content(content),
+                            )),
+                        );
+                        if update_tx.send((notification, tx)).is_err() {
+                            break;
+                        }
+                        rx.await.ok();
+                    }
                     _ => {}
                 },
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -181,8 +219,14 @@ impl AcpSession {
     }
 
     pub async fn wait(mut self) -> Result<ExpressionValue, AgentError> {
+        let event_task = self.event_task_handle.take();
         if let Some(task) = self.task_handle.take() {
-            task.await.map_err(|_| AgentError::Cancelled)?
+            let result = task.await.map_err(|_| AgentError::Cancelled)?;
+            drop(self);
+            if let Some(t) = event_task {
+                t.await.ok();
+            }
+            result
         } else {
             Err(AgentError::Cancelled)
         }
