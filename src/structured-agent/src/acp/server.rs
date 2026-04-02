@@ -161,8 +161,11 @@ impl acp::Agent for AcpServer {
 
     async fn new_session(
         &self,
-        _args: acp::NewSessionRequest,
+        args: acp::NewSessionRequest,
     ) -> Result<acp::NewSessionResponse, acp::Error> {
+        if let Err(e) = std::env::set_current_dir(&args.cwd) {
+            error!("Failed to set working directory to {:?}: {}", args.cwd, e);
+        }
         let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
         let session_id = acp::SessionId::new(session_id.to_string());
 

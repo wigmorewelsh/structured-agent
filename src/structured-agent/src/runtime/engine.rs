@@ -2,8 +2,8 @@ use crate::bytecode::BytecodeFunctionExpr;
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::functions::{
-    HeadFunction, InputFunction, IsSomeFunction, PrintFunction, ReceiveFunction, SomeValueFunction,
-    TailFunction, TryReceiveFunction,
+    GetWorkingDirFunction, HeadFunction, InputFunction, IsSomeFunction, PrintFunction,
+    ReceiveFunction, SetWorkingDirFunction, SomeValueFunction, TailFunction, TryReceiveFunction,
 };
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
@@ -189,7 +189,9 @@ impl RuntimeBuilder {
         if config.with_acp_functions {
             self = self
                 .with_native_function(Arc::new(ReceiveFunction::new()))
-                .with_native_function(Arc::new(TryReceiveFunction::new()));
+                .with_native_function(Arc::new(TryReceiveFunction::new()))
+                .with_native_function(Arc::new(GetWorkingDirFunction::new()))
+                .with_native_function(Arc::new(SetWorkingDirFunction::new()));
         }
 
         Ok(self.build())
