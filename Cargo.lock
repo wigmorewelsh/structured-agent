@@ -2004,6 +2004,7 @@ dependencies = [
  "serde",
  "serde_json",
  "structured-agent-runtime",
+ "structured-agent-stdlib",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2032,6 +2033,17 @@ dependencies = [
  "arrow",
  "async-trait",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "structured-agent-stdlib"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "structured-agent-macros",
+ "structured-agent-runtime",
  "tokio",
 ]
 

@@ -6,7 +6,7 @@ pub mod cli;
 pub mod compiler;
 pub mod diagnostics;
 pub mod expressions;
-pub mod functions;
+
 pub mod gemini;
 pub mod il_analysis;
 pub mod mcp;

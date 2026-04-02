@@ -1,7 +1,6 @@
-use crate::runtime::{AgentHandle, ExpressionValue};
-use crate::types::{NativeFunction, Parameter, Type};
 use arrow::array::Array;
 use async_trait::async_trait;
+use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction, Parameter, Type};
 
 #[derive(Debug)]
 pub struct HeadFunction {
@@ -41,6 +40,10 @@ impl NativeFunction for HeadFunction {
         &self.return_type
     }
 
+    fn documentation(&self) -> Option<&str> {
+        Some("Returns the first element of a list as Option, or None if the list is empty")
+    }
+
     async fn execute(
         &self,
         args: Vec<ExpressionValue>,
@@ -68,10 +71,6 @@ impl NativeFunction for HeadFunction {
             first,
         )))
     }
-
-    fn documentation(&self) -> Option<&str> {
-        Some("Returns the first element of a list as Option, or None if the list is empty")
-    }
 }
 
 #[cfg(test)]
@@ -82,17 +81,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_head_function_properties() {
-        let head_fn = HeadFunction::new();
-
-        assert_eq!(head_fn.name(), "head");
-        assert_eq!(head_fn.parameters().len(), 1);
-        assert_eq!(head_fn.parameters()[0].name, "list");
-        assert_eq!(head_fn.return_type().name(), "Option<String>");
+        let f = HeadFunction::new();
+        assert_eq!(f.name(), "head");
+        assert_eq!(f.parameters().len(), 1);
+        assert_eq!(f.parameters()[0].name, "list");
+        assert_eq!(f.return_type().name(), "Option<String>");
     }
 
     #[tokio::test]
     async fn test_head_function_with_non_empty_list() {
-        let head_fn = HeadFunction::new();
+        let f = HeadFunction::new();
 
         let mut builder = ListBuilder::new(StringBuilder::new());
         builder.values().append_value("first");
@@ -102,45 +100,39 @@ mod tests {
         let list_array = Arc::new(builder.finish());
         let args = vec![ExpressionValue::list(list_array)];
 
-        let result = head_fn
-            .execute(args, &AgentHandle::detached())
-            .await
-            .unwrap();
+        let result = f.execute(args, &AgentHandle::detached()).await.unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "first");
     }
 
     #[tokio::test]
     async fn test_head_function_with_empty_list() {
-        let head_fn = HeadFunction::new();
+        let f = HeadFunction::new();
 
         let mut builder = ListBuilder::new(StringBuilder::new());
         builder.append(true);
         let list_array = Arc::new(builder.finish());
         let args = vec![ExpressionValue::list(list_array)];
 
-        let result = head_fn
-            .execute(args, &AgentHandle::detached())
-            .await
-            .unwrap();
+        let result = f.execute(args, &AgentHandle::detached()).await.unwrap();
         assert!(result.as_option().unwrap().is_none());
     }
 
     #[tokio::test]
     async fn test_head_function_wrong_argument_type() {
-        let head_fn = HeadFunction::new();
+        let f = HeadFunction::new();
         let args = vec![ExpressionValue::string("not a list")];
 
-        let result = head_fn.execute(args, &AgentHandle::detached()).await;
+        let result = f.execute(args, &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("head expects a list argument"));
     }
 
     #[tokio::test]
     async fn test_head_function_wrong_args_count() {
-        let head_fn = HeadFunction::new();
+        let f = HeadFunction::new();
 
-        let result = head_fn.execute(vec![], &AgentHandle::detached()).await;
+        let result = f.execute(vec![], &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(
             result

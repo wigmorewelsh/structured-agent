@@ -1,25 +1,23 @@
-use crate::runtime::{AgentHandle, ExpressionValue};
-use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
+use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction, Parameter, Type};
 
 #[derive(Debug)]
-pub struct SomeValueFunction {
+pub struct IsSomeFunction {
     name: String,
     parameters: Vec<Parameter>,
     return_type: Type,
 }
 
-impl SomeValueFunction {
+impl IsSomeFunction {
     pub fn new(inner_type: Type) -> Self {
-        let name = format!("some_value_{}", Self::type_suffix(&inner_type));
-        let return_type = inner_type.clone();
+        let name = format!("is_some_{}", Self::type_suffix(&inner_type));
         Self {
             name,
             parameters: vec![Parameter::new(
                 "option".to_string(),
                 Type::option(inner_type),
             )],
-            return_type,
+            return_type: Type::Boolean,
         }
     }
 
@@ -40,7 +38,7 @@ impl SomeValueFunction {
 }
 
 #[async_trait]
-impl NativeFunction for SomeValueFunction {
+impl NativeFunction for IsSomeFunction {
     fn name(&self) -> &str {
         &self.name
     }
@@ -51,6 +49,10 @@ impl NativeFunction for SomeValueFunction {
 
     fn return_type(&self) -> &Type {
         &self.return_type
+    }
+
+    fn documentation(&self) -> Option<&str> {
+        Some("Returns true if the Option contains a value, false if it is None")
     }
 
     async fn execute(
@@ -68,79 +70,70 @@ impl NativeFunction for SomeValueFunction {
         let opt = args[0]
             .as_option()
             .map_err(|_| format!("{} expects an option argument", self.name))?;
-        opt.ok_or_else(|| format!("Cannot unwrap None value with {}", self.name))
-    }
-
-    fn documentation(&self) -> Option<&str> {
-        Some("Unwraps an Option and returns its value. Fails if the Option is None")
+        Ok(ExpressionValue::boolean(opt.is_some()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Array, ListBuilder, StringBuilder};
+    use arrow::array::{ListBuilder, StringBuilder};
     use std::sync::Arc;
 
     #[tokio::test]
-    async fn test_some_value_string_properties() {
-        let f = SomeValueFunction::for_string();
-        assert_eq!(f.name(), "some_value_string");
+    async fn test_is_some_string_properties() {
+        let f = IsSomeFunction::for_string();
+        assert_eq!(f.name(), "is_some_string");
         assert_eq!(f.parameters().len(), 1);
         assert_eq!(f.parameters()[0].param_type, Type::option(Type::String));
-        assert_eq!(f.return_type().name(), "String");
+        assert_eq!(f.return_type().name(), "Boolean");
     }
 
     #[tokio::test]
-    async fn test_some_value_list_properties() {
-        let f = SomeValueFunction::for_list();
-        assert_eq!(f.name(), "some_value_list");
+    async fn test_is_some_list_properties() {
+        let f = IsSomeFunction::for_list();
+        assert_eq!(f.name(), "is_some_list");
         assert_eq!(f.parameters().len(), 1);
         assert_eq!(
             f.parameters()[0].param_type,
             Type::option(Type::list(Type::String))
         );
-        assert_eq!(f.return_type().name(), "List<String>");
+        assert_eq!(f.return_type().name(), "Boolean");
     }
 
     #[tokio::test]
-    async fn test_some_value_string_with_some() {
-        let f = SomeValueFunction::for_string();
+    async fn test_is_some_string_with_some() {
+        let f = IsSomeFunction::for_string();
         let result = f
             .execute(
                 vec![ExpressionValue::option_some(ExpressionValue::string(
-                    "test_value",
+                    "value",
                 ))],
                 &AgentHandle::detached(),
             )
             .await
             .unwrap();
-        assert_eq!(result.as_string().unwrap(), "test_value");
+        assert_eq!(result.as_boolean().unwrap(), true);
     }
 
     #[tokio::test]
-    async fn test_some_value_string_with_none() {
-        let f = SomeValueFunction::for_string();
+    async fn test_is_some_string_with_none() {
+        let f = IsSomeFunction::for_string();
         let result = f
             .execute(
                 vec![ExpressionValue::option_none()],
                 &AgentHandle::detached(),
             )
-            .await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("Cannot unwrap None value with")
-        );
+            .await
+            .unwrap();
+        assert_eq!(result.as_boolean().unwrap(), false);
     }
 
     #[tokio::test]
-    async fn test_some_value_list_with_some() {
-        let f = SomeValueFunction::for_list();
+    async fn test_is_some_list_with_some() {
+        let f = IsSomeFunction::for_list();
         let mut builder = ListBuilder::new(StringBuilder::new());
-        builder.values().append_value("first");
-        builder.values().append_value("second");
+        builder.values().append_value("test");
         builder.append(true);
         let list_array = Arc::new(builder.finish());
         let result = f
@@ -152,31 +145,25 @@ mod tests {
             )
             .await
             .unwrap();
-        let list = result.as_list().unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list.value(0).len(), 2);
+        assert_eq!(result.as_boolean().unwrap(), true);
     }
 
     #[tokio::test]
-    async fn test_some_value_list_with_none() {
-        let f = SomeValueFunction::for_list();
+    async fn test_is_some_list_with_none() {
+        let f = IsSomeFunction::for_list();
         let result = f
             .execute(
                 vec![ExpressionValue::option_none()],
                 &AgentHandle::detached(),
             )
-            .await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("Cannot unwrap None value with")
-        );
+            .await
+            .unwrap();
+        assert_eq!(result.as_boolean().unwrap(), false);
     }
 
     #[tokio::test]
-    async fn test_some_value_wrong_argument_type() {
-        let f = SomeValueFunction::for_string();
+    async fn test_is_some_wrong_argument_type() {
+        let f = IsSomeFunction::for_string();
         let result = f
             .execute(
                 vec![ExpressionValue::string("not an option")],
@@ -187,8 +174,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_some_value_wrong_args_count() {
-        let f = SomeValueFunction::for_string();
+    async fn test_is_some_wrong_args_count() {
+        let f = IsSomeFunction::for_string();
         let result = f.execute(vec![], &AgentHandle::detached()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("expects 1 argument"));

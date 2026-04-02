@@ -6,7 +6,7 @@ mod cli;
 mod compiler;
 mod diagnostics;
 mod expressions;
-mod functions;
+
 mod gemini;
 mod il_analysis;
 mod mcp;

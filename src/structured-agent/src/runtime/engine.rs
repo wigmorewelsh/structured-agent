@@ -1,10 +1,6 @@
 use crate::bytecode::BytecodeFunctionExpr;
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
-use crate::functions::{
-    GetWorkingDirFunction, HeadFunction, InputFunction, IsSomeFunction, PrintFunction,
-    ReceiveFunction, SetWorkingDirFunction, SomeValueFunction, TailFunction, TryReceiveFunction,
-};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
@@ -14,6 +10,10 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_runtime::Module;
+use structured_agent_stdlib::{
+    fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
+};
 use tracing::{debug, error};
 
 pub struct Runtime {
@@ -68,6 +68,13 @@ impl RuntimeBuilder {
         native_function: Arc<F>,
     ) -> Self {
         self.native_provider.add_function(native_function);
+        self
+    }
+
+    pub fn with_module(mut self, module: &dyn Module) -> Self {
+        for func in module.functions() {
+            self.native_provider.add_dyn_function(func);
+        }
         self
     }
 
@@ -154,27 +161,15 @@ impl RuntimeBuilder {
         self = self.with_language_engine(engine);
 
         if config.with_default_functions {
-            self = self
-                .with_native_function(Arc::new(InputFunction::new()))
-                .with_native_function(Arc::new(PrintFunction::new()));
+            self = self.with_module(&IoModule);
         }
 
         if config.with_unstable_functions {
-            self = self
-                .with_native_function(Arc::new(HeadFunction::new()))
-                .with_native_function(Arc::new(TailFunction::new()))
-                .with_native_function(Arc::new(IsSomeFunction::for_string()))
-                .with_native_function(Arc::new(SomeValueFunction::for_string()))
-                .with_native_function(Arc::new(IsSomeFunction::for_list()))
-                .with_native_function(Arc::new(SomeValueFunction::for_list()));
+            self = self.with_module(&UnstableModule);
         }
 
         if config.with_acp_functions {
-            self = self
-                .with_native_function(Arc::new(ReceiveFunction::new()))
-                .with_native_function(Arc::new(TryReceiveFunction::new()))
-                .with_native_function(Arc::new(GetWorkingDirFunction::new()))
-                .with_native_function(Arc::new(SetWorkingDirFunction::new()));
+            self = self.with_module(&MessagingModule).with_module(&FsModule);
         }
 
         Ok(self.build())

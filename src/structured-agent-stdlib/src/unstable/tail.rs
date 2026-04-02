@@ -1,10 +1,9 @@
-use crate::runtime::{AgentHandle, ExpressionValue};
-use crate::types::{NativeFunction, Parameter, Type};
 use arrow::array::{Array, ListArray};
 use arrow::buffer::OffsetBuffer;
 use arrow::datatypes::{Field, FieldRef};
 use async_trait::async_trait;
 use std::sync::Arc;
+use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction, Parameter, Type};
 
 #[derive(Debug)]
 pub struct TailFunction {

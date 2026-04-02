@@ -5,6 +5,7 @@ members = [
     "src/structured-agent",
     "src/structured-agent-runtime",
     "src/structured-agent-macros",
+    "src/structured-agent-stdlib",
     "src/structured-agent-zed/tree-sitter-structured-agent",
 ]
 

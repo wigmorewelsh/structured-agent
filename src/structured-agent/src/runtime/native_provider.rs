@@ -1,11 +1,42 @@
 use crate::expressions::NativeFunctionExpr;
-use crate::runtime::RuntimeError;
+use crate::runtime::{AgentHandle, ExpressionValue, RuntimeError};
 use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, NativeFunction,
+    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, NativeFunction, Parameter,
+    Type,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+#[derive(Debug)]
+struct DynNativeFunctionWrapper(Arc<dyn NativeFunction>);
+
+#[async_trait]
+impl NativeFunction for DynNativeFunctionWrapper {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    fn parameters(&self) -> &[Parameter] {
+        self.0.parameters()
+    }
+
+    fn return_type(&self) -> &Type {
+        self.0.return_type()
+    }
+
+    async fn execute(
+        &self,
+        args: Vec<ExpressionValue>,
+        agent: &AgentHandle,
+    ) -> Result<ExpressionValue, String> {
+        self.0.execute(args, agent).await
+    }
+
+    fn documentation(&self) -> Option<&str> {
+        self.0.documentation()
+    }
+}
 
 pub struct NativeFunctionProvider {
     pub(crate) native_functions: HashMap<String, Arc<dyn ExecutableFunction>>,
@@ -22,6 +53,10 @@ impl NativeFunctionProvider {
         let name = native_function.name().to_string();
         let expr = NativeFunctionExpr::new(native_function);
         self.native_functions.insert(name, Arc::new(expr));
+    }
+
+    pub fn add_dyn_function(&mut self, native_function: Arc<dyn NativeFunction>) {
+        self.add_function(Arc::new(DynNativeFunctionWrapper(native_function)));
     }
 }
 
