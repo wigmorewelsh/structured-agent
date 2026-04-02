@@ -4,6 +4,7 @@ use crate::runtime::{
     RuntimeError,
 };
 use agent_client_protocol as acp;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tracing::{debug, error, warn};
@@ -18,7 +19,7 @@ pub struct AcpSession {
     update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     pending_input: Arc<Mutex<Option<oneshot::Sender<String>>>>,
     task_handle: Option<tokio::task::JoinHandle<Result<ExpressionValue, AgentError>>>,
-    event_task_handle: Option<tokio::task::JoinHandle<()>>,
+    event_task_handle: Option<tokio::task::JoinHandle<Result<(), ()>>>,
 }
 
 impl AcpSession {
@@ -82,6 +83,8 @@ impl AcpSession {
         let events_rx = self.agent.subscribe();
         let pending_input = self.pending_input.clone();
         let update_tx_clone = self.update_tx.clone();
+        let update_tx_for_task = self.update_tx.clone();
+        let session_id_for_task = self.session_id.clone();
 
         self.event_task_handle = Some(tokio::spawn(Self::run_event_loop(
             events_rx,
@@ -94,10 +97,22 @@ impl AcpSession {
         let handle = self.agent.handle.clone();
 
         self.task_handle = Some(AGENT_RUNTIME.spawn(async move {
-            runtime_arc
+            let result = runtime_arc
                 .run_with_handle(handle)
                 .await
-                .map_err(AgentError::from)
+                .map_err(AgentError::from);
+
+            if let Err(ref e) = result {
+                let (tx, _) = oneshot::channel();
+                let notification = acp::SessionNotification::new(
+                    session_id_for_task,
+                    acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
+                        acp::ContentBlock::Text(acp::TextContent::new(e.to_string())),
+                    )),
+                );
+                update_tx_for_task.send((notification, tx)).ok();
+            }
+            result
         }));
 
         debug!("Session {} started", self.session_id.0);
@@ -109,103 +124,156 @@ impl AcpSession {
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
         session_id: acp::SessionId,
         pending_input: Arc<Mutex<Option<oneshot::Sender<String>>>>,
-    ) {
+    ) -> Result<(), ()> {
         loop {
             match events_rx.recv().await {
                 Ok(msg) => match msg.content {
                     AgentMessageContent::String(s) => {
-                        let (tx, rx) = oneshot::channel();
-                        let notification = acp::SessionNotification::new(
-                            session_id.clone(),
-                            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                                acp::ContentBlock::Text(acp::TextContent::new(s)),
-                            )),
-                        );
-                        if update_tx.send((notification, tx)).is_err() {
-                            break;
-                        }
-                        rx.await.ok();
+                        Self::handle_string(s, &session_id, &update_tx).await?;
                     }
                     AgentMessageContent::RequestUserInput {
                         prompt,
                         response_channel,
                     } => {
-                        if let Some(tx) = response_channel.lock().await.take() {
-                            *pending_input.lock().await = Some(tx);
-                        }
-                        let (ack_tx, ack_rx) = oneshot::channel();
-                        let notification = acp::SessionNotification::new(
-                            session_id.clone(),
-                            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                                acp::ContentBlock::Text(acp::TextContent::new(
-                                    if prompt.is_empty() {
-                                        "> ".to_string()
-                                    } else {
-                                        prompt
-                                    },
-                                )),
-                            )),
-                        );
-                        if update_tx.send((notification, ack_tx)).is_err() {
-                            break;
-                        }
-                        ack_rx.await.ok();
+                        Self::handle_request_user_input(
+                            prompt,
+                            response_channel,
+                            &session_id,
+                            &update_tx,
+                            &pending_input,
+                        )
+                        .await?;
                     }
                     AgentMessageContent::ToolCallStarted {
                         tool_name,
                         call_id,
                         params,
                     } => {
-                        let (tx, rx) = oneshot::channel();
-                        let raw_input = serde_json::Value::Object(
-                            params
-                                .into_iter()
-                                .map(|(k, v)| (k, serde_json::Value::String(v.value_string())))
-                                .collect(),
-                        );
-                        let notification = acp::SessionNotification::new(
-                            session_id.clone(),
-                            acp::SessionUpdate::ToolCall(
-                                acp::ToolCall::new(call_id, tool_name)
-                                    .status(acp::ToolCallStatus::InProgress)
-                                    .raw_input(raw_input),
-                            ),
-                        );
-                        if update_tx.send((notification, tx)).is_err() {
-                            break;
-                        }
-                        rx.await.ok();
+                        Self::handle_tool_call_started(
+                            tool_name,
+                            call_id,
+                            params,
+                            &session_id,
+                            &update_tx,
+                        )
+                        .await?;
                     }
                     AgentMessageContent::ToolCallFinished {
                         tool_name,
                         call_id,
                         result,
                     } => {
-                        let (tx, rx) = oneshot::channel();
-                        let content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
-                            acp::TextContent::new(result.value_string()),
-                        ))];
-                        let notification = acp::SessionNotification::new(
-                            session_id.clone(),
-                            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-                                call_id,
-                                acp::ToolCallUpdateFields::new()
-                                    .status(acp::ToolCallStatus::Completed)
-                                    .title(tool_name)
-                                    .content(content),
-                            )),
-                        );
-                        if update_tx.send((notification, tx)).is_err() {
-                            break;
-                        }
-                        rx.await.ok();
+                        Self::handle_tool_call_finished(
+                            tool_name,
+                            call_id,
+                            result,
+                            &session_id,
+                            &update_tx,
+                        )
+                        .await?;
                     }
                     _ => {}
                 },
-                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Closed) => return Ok(()),
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
             }
         }
+    }
+
+    async fn handle_string(
+        s: String,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let notification = acp::SessionNotification::new(
+            session_id.clone(),
+            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+                acp::TextContent::new(s),
+            ))),
+        );
+        update_tx.send((notification, tx)).map_err(|_| ())?;
+        rx.await.ok();
+        Ok(())
+    }
+
+    async fn handle_request_user_input(
+        prompt: String,
+        response_channel: Arc<Mutex<Option<oneshot::Sender<String>>>>,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        pending_input: &Arc<Mutex<Option<oneshot::Sender<String>>>>,
+    ) -> Result<(), ()> {
+        if let Some(tx) = response_channel.lock().await.take() {
+            *pending_input.lock().await = Some(tx);
+        }
+        let (ack_tx, ack_rx) = oneshot::channel();
+        let notification = acp::SessionNotification::new(
+            session_id.clone(),
+            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+                acp::TextContent::new(if prompt.is_empty() {
+                    "> ".to_string()
+                } else {
+                    prompt
+                }),
+            ))),
+        );
+        update_tx.send((notification, ack_tx)).map_err(|_| ())?;
+        ack_rx.await.ok();
+        Ok(())
+    }
+
+    async fn handle_tool_call_started(
+        tool_name: String,
+        call_id: String,
+        params: HashMap<String, ExpressionValue>,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let raw_input = serde_json::Value::Object(
+            params
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::Value::String(v.value_string())))
+                .collect(),
+        );
+        let notification = acp::SessionNotification::new(
+            session_id.clone(),
+            acp::SessionUpdate::ToolCall(
+                acp::ToolCall::new(call_id, tool_name)
+                    .status(acp::ToolCallStatus::InProgress)
+                    .raw_input(raw_input),
+            ),
+        );
+        update_tx.send((notification, tx)).map_err(|_| ())?;
+        rx.await.ok();
+        Ok(())
+    }
+
+    async fn handle_tool_call_finished(
+        tool_name: String,
+        call_id: String,
+        result: ExpressionValue,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
+            acp::TextContent::new(result.value_string()),
+        ))];
+        let notification = acp::SessionNotification::new(
+            session_id.clone(),
+            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                call_id,
+                acp::ToolCallUpdateFields::new()
+                    .status(acp::ToolCallStatus::Completed)
+                    .title(tool_name)
+                    .content(content),
+            )),
+        );
+        update_tx.send((notification, tx)).map_err(|_| ())?;
+        rx.await.ok();
+        Ok(())
     }
 
     pub async fn send_prompt(&self, content: String) -> Result<(), AgentError> {
