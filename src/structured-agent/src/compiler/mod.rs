@@ -261,11 +261,13 @@ impl Compiler {
         let sig_table: SigTable = collect_sigs(&modules);
 
         let mut module_kinds: HashMap<String, HashMap<String, FunctionKind>> = HashMap::new();
+        let mut _typed_modules: HashMap<String, crate::typed_ast::Module> = HashMap::new();
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
             match type_check_module(parsed, &sig_table) {
-                Ok(kinds) => {
+                Ok((typed_module, kinds)) => {
+                    _typed_modules.insert(parsed.name.clone(), typed_module);
                     module_kinds.insert(parsed.name.clone(), kinds);
                 }
                 Err(e) => {
@@ -318,7 +320,8 @@ impl Compiler {
 fn type_check_module(
     parsed: &discovery::ParsedModule,
     sig_table: &SigTable,
-) -> Result<HashMap<String, FunctionKind>, crate::typecheck::TypeError> {
+) -> Result<(crate::typed_ast::Module, HashMap<String, FunctionKind>), crate::typecheck::TypeError>
+{
     let external_sigs = if parsed.is_entry {
         sigs_visible_to_module(&parsed.module, sig_table)
     } else {
@@ -331,8 +334,7 @@ fn type_check_module(
         &external_sigs,
         &sig_table.visibility,
         &sig_table.sig_definitions,
-    )?;
-    Ok(checker.function_kinds())
+    )
 }
 
 fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warning> {

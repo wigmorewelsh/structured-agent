@@ -1260,3 +1260,530 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod typed_ast_tests {
+    use super::*;
+    use crate::typecheck::checker::FunctionKind;
+    use crate::typed_ast;
+    use std::collections::HashMap;
+
+    fn check_typed(module: &Module) -> typed_ast::Module {
+        let mut checker = TypeChecker::new();
+        checker
+            .check_module_with_external_sigs(
+                module,
+                0,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap()
+            .0
+    }
+
+    fn first_function(module: &typed_ast::Module) -> &typed_ast::Function {
+        module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    Some(f)
+                } else {
+                    None
+                }
+            })
+            .unwrap()
+    }
+
+    fn first_stmt(module: &typed_ast::Module) -> &typed_ast::Statement {
+        first_function(module).body.statements.first().unwrap()
+    }
+
+    fn stmt_expr(stmt: &typed_ast::Statement) -> &typed_ast::Expression {
+        match stmt {
+            typed_ast::Statement::ExpressionStatement(e) => e,
+            typed_ast::Statement::Return(e) => e,
+            typed_ast::Statement::Injection(e) => e,
+            _ => panic!("expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn string_literal_has_string_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::String,
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "hello".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::String);
+    }
+
+    #[test]
+    fn boolean_literal_has_boolean_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Boolean,
+            vec![Statement::Return(Expression::BooleanLiteral {
+                value: true,
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Boolean);
+    }
+
+    #[test]
+    fn int_literal_has_int_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Int,
+            vec![Statement::Return(Expression::IntLiteral {
+                value: 42,
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Int);
+    }
+
+    #[test]
+    fn unit_literal_has_unit_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Unit,
+            vec![Statement::Return(Expression::UnitLiteral {
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Unit);
+    }
+
+    #[test]
+    fn variable_expression_carries_declared_type() {
+        let func = create_test_function(
+            "f",
+            vec![create_parameter("x", AstType::Int)],
+            AstType::Int,
+            vec![Statement::Return(Expression::Variable {
+                name: "x".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Int);
+        assert!(matches!(expr, typed_ast::Expression::Variable { name, .. } if name == "x"));
+    }
+
+    #[test]
+    fn call_carries_return_type_and_resolved_name() {
+        let callee = create_test_function(
+            "get_value",
+            vec![],
+            AstType::String,
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "v".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![],
+            AstType::String,
+            vec![Statement::Return(Expression::Call {
+                function: "get_value".to_string(),
+                arguments: vec![],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(callee),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::String);
+        assert!(matches!(
+            expr,
+            typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
+            if resolved == "get_value"
+        ));
+    }
+
+    #[test]
+    fn placeholder_in_call_carries_parameter_type() {
+        let callee = create_test_function(
+            "process",
+            vec![create_parameter("s", AstType::String)],
+            AstType::Unit,
+            vec![Statement::Return(Expression::UnitLiteral {
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![],
+            AstType::Unit,
+            vec![Statement::Return(Expression::Call {
+                function: "process".to_string(),
+                arguments: vec![Expression::Placeholder {
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(callee),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        if let typed_ast::Expression::Call { arguments, .. } = expr {
+            assert_eq!(arguments[0].ty(), &AstType::String);
+            assert!(matches!(
+                arguments[0],
+                typed_ast::Expression::Placeholder { .. }
+            ));
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn assignment_statement_wraps_typed_expression() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Unit,
+            vec![
+                Statement::Assignment {
+                    variable: "x".to_string(),
+                    expression: Expression::IntLiteral {
+                        value: 1,
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
+                },
+                Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                }),
+            ],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let stmt = first_function(&module).body.statements.first().unwrap();
+        if let typed_ast::Statement::Assignment { expression, .. } = stmt {
+            assert_eq!(expression.ty(), &AstType::Int);
+        } else {
+            panic!("expected Assignment");
+        }
+    }
+
+    #[test]
+    fn list_literal_has_list_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::List(Box::new(AstType::Int)),
+            vec![Statement::Return(Expression::ListLiteral {
+                elements: vec![
+                    Expression::IntLiteral {
+                        value: 1,
+                        span: crate::types::Span::dummy(),
+                    },
+                    Expression::IntLiteral {
+                        value: 2,
+                        span: crate::types::Span::dummy(),
+                    },
+                ],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::List(Box::new(AstType::Int)));
+    }
+
+    #[test]
+    fn if_else_expression_has_branch_type() {
+        let func = create_test_function(
+            "f",
+            vec![create_parameter("flag", AstType::Boolean)],
+            AstType::Int,
+            vec![Statement::Return(Expression::IfElse {
+                condition: Box::new(Expression::Variable {
+                    name: "flag".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
+                then_expr: Box::new(Expression::IntLiteral {
+                    value: 1,
+                    span: crate::types::Span::dummy(),
+                }),
+                else_expr: Box::new(Expression::IntLiteral {
+                    value: 2,
+                    span: crate::types::Span::dummy(),
+                }),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Int);
+        assert!(matches!(expr, typed_ast::Expression::IfElse { .. }));
+    }
+
+    #[test]
+    fn if_statement_wraps_typed_condition_and_body() {
+        let func = create_test_function(
+            "f",
+            vec![create_parameter("flag", AstType::Boolean)],
+            AstType::Unit,
+            vec![
+                Statement::If {
+                    condition: Expression::Variable {
+                        name: "flag".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    body: vec![Statement::Return(Expression::UnitLiteral {
+                        span: crate::types::Span::dummy(),
+                    })],
+                    else_body: None,
+                    span: crate::types::Span::dummy(),
+                },
+                Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                }),
+            ],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let stmt = first_function(&module).body.statements.first().unwrap();
+        if let typed_ast::Statement::If {
+            condition, body, ..
+        } = stmt
+        {
+            assert_eq!(condition.ty(), &AstType::Boolean);
+            assert!(!body.is_empty());
+        } else {
+            panic!("expected If");
+        }
+    }
+
+    #[test]
+    fn struct_literal_has_struct_type() {
+        let struct_def = crate::ast::StructDefinition {
+            name: "Point".to_string(),
+            fields: vec![
+                crate::ast::StructField {
+                    name: "x".to_string(),
+                    field_type: AstType::Int,
+                    span: crate::types::Span::dummy(),
+                },
+                crate::ast::StructField {
+                    name: "y".to_string(),
+                    field_type: AstType::Int,
+                    span: crate::types::Span::dummy(),
+                },
+            ],
+            span: crate::types::Span::dummy(),
+        };
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Struct("Point".to_string()),
+            vec![Statement::Return(Expression::StructLiteral {
+                struct_name: "Point".to_string(),
+                fields: vec![
+                    (
+                        "x".to_string(),
+                        Expression::IntLiteral {
+                            value: 1,
+                            span: crate::types::Span::dummy(),
+                        },
+                    ),
+                    (
+                        "y".to_string(),
+                        Expression::IntLiteral {
+                            value: 2,
+                            span: crate::types::Span::dummy(),
+                        },
+                    ),
+                ],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Struct(struct_def),
+            Definition::Function(func),
+        ]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Struct("Point".to_string()));
+    }
+
+    #[test]
+    fn field_access_has_field_type() {
+        let struct_def = crate::ast::StructDefinition {
+            name: "Point".to_string(),
+            fields: vec![
+                crate::ast::StructField {
+                    name: "x".to_string(),
+                    field_type: AstType::Int,
+                    span: crate::types::Span::dummy(),
+                },
+                crate::ast::StructField {
+                    name: "y".to_string(),
+                    field_type: AstType::Int,
+                    span: crate::types::Span::dummy(),
+                },
+            ],
+            span: crate::types::Span::dummy(),
+        };
+        let func = create_test_function(
+            "f",
+            vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+            AstType::Int,
+            vec![Statement::Return(Expression::FieldAccess {
+                base: Box::new(Expression::Variable {
+                    name: "p".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
+                field: "x".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Struct(struct_def),
+            Definition::Function(func),
+        ]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Int);
+    }
+
+    #[test]
+    fn select_expression_has_branch_type() {
+        let callee = create_test_function(
+            "get_str",
+            vec![],
+            AstType::String,
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "v".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::String,
+            vec![Statement::Return(Expression::Select(SelectExpression {
+                clauses: vec![SelectClause {
+                    expression_to_run: Expression::Call {
+                        function: "get_str".to_string(),
+                        arguments: vec![],
+                        span: crate::types::Span::dummy(),
+                    },
+                    result_variable: "s".to_string(),
+                    expression_next: Expression::Variable {
+                        name: "s".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            }))],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(callee),
+            Definition::Function(func),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::String);
+        assert!(matches!(expr, typed_ast::Expression::Select(_, _)));
+    }
+
+    #[test]
+    fn external_call_carries_external_kind() {
+        let ext = crate::ast::ExternalFunction {
+            name: "native_fn".to_string(),
+            parameters: vec![],
+            return_type: AstType::Int,
+            is_pub: false,
+            span: crate::types::Span::dummy(),
+        };
+        let caller = create_test_function(
+            "f",
+            vec![],
+            AstType::Int,
+            vec![Statement::Return(Expression::Call {
+                function: "native_fn".to_string(),
+                arguments: vec![],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::ExternalFunction(ext),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert!(matches!(
+            expr,
+            typed_ast::Expression::Call {
+                kind: FunctionKind::External,
+                ..
+            }
+        ));
+    }
+}

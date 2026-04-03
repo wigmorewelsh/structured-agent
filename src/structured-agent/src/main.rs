@@ -12,6 +12,7 @@ mod il_analysis;
 mod mcp;
 mod runtime;
 mod typecheck;
+mod typed_ast;
 mod types;
 
 use clap::Parser;

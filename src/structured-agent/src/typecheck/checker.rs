@@ -2,6 +2,7 @@ use crate::ast::{
     Definition, Expression, Function, Module, Parameter, SelectClause, Statement, Type as AstType,
 };
 use crate::typecheck::error::TypeError;
+use crate::typed_ast;
 use crate::types::{FileId, Span, Spanned};
 use std::collections::HashMap;
 
@@ -63,6 +64,7 @@ impl TypeChecker {
             &HashMap::new(),
             &HashMap::new(),
         )
+        .map(|_| ())
     }
 
     pub fn check_module_with_external_sigs(
@@ -72,7 +74,7 @@ impl TypeChecker {
         external_sigs: &HashMap<String, ExternalSig>,
         module_visibility: &ModuleVisibility,
         sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
-    ) -> Result<(), TypeError> {
+    ) -> Result<(typed_ast::Module, HashMap<String, FunctionKind>), TypeError> {
         for (name, sig) in external_sigs {
             self.function_signatures.insert(
                 name.clone(),
@@ -99,13 +101,70 @@ impl TypeChecker {
             alias_to_qualified: &alias_to_qualified,
         };
 
+        let mut typed_definitions = Vec::new();
         for definition in &module.definitions {
-            if let Definition::Function(func) = definition {
-                self.check_function(func, &ctx)?;
-            }
+            let typed_def = match definition {
+                Definition::Function(func) => {
+                    typed_ast::Definition::Function(self.check_function(func, &ctx)?)
+                }
+                Definition::ExternalFunction(f) => {
+                    typed_ast::Definition::ExternalFunction(f.clone())
+                }
+                Definition::Struct(s) => typed_ast::Definition::Struct(s.clone()),
+                Definition::Use {
+                    path,
+                    alias,
+                    is_pub,
+                    span,
+                } => typed_ast::Definition::Use {
+                    path: path.clone(),
+                    alias: alias.clone(),
+                    is_pub: *is_pub,
+                    span: *span,
+                },
+                Definition::ModuleHeader { name, params, span } => {
+                    typed_ast::Definition::ModuleHeader {
+                        name: name.clone(),
+                        params: params.clone(),
+                        span: *span,
+                    }
+                }
+                Definition::ModuleBinding {
+                    name,
+                    sig_path,
+                    impl_path,
+                    span,
+                } => typed_ast::Definition::ModuleBinding {
+                    name: name.clone(),
+                    sig_path: sig_path.clone(),
+                    impl_path: impl_path.clone(),
+                    span: *span,
+                },
+                Definition::WiringSite { name, args, span } => typed_ast::Definition::WiringSite {
+                    name: name.clone(),
+                    args: args.clone(),
+                    span: *span,
+                },
+                Definition::Signature {
+                    name,
+                    functions,
+                    span,
+                } => typed_ast::Definition::Signature {
+                    name: name.clone(),
+                    functions: functions.clone(),
+                    span: *span,
+                },
+            };
+            typed_definitions.push(typed_def);
         }
 
-        Ok(())
+        let typed_module = typed_ast::Module {
+            definitions: typed_definitions,
+            span: module.span,
+            file_id,
+        };
+
+        Ok((typed_module, self.function_kinds()))
     }
 
     fn register_param_sigs(
@@ -301,15 +360,33 @@ impl TypeChecker {
         }
     }
 
-    fn check_function(&self, func: &Function, ctx: &CheckContext) -> Result<(), TypeError> {
+    fn check_function(
+        &self,
+        func: &Function,
+        ctx: &CheckContext,
+    ) -> Result<typed_ast::Function, TypeError> {
         let mut env = TypeEnvironment::new();
         for param in &func.parameters {
             env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
         }
+        let mut typed_stmts = Vec::new();
         for statement in &func.body.statements {
-            env = self.check_statement(statement, env, &func.name, ctx)?;
+            let (typed_stmt, new_env) = self.check_statement(statement, env, &func.name, ctx)?;
+            typed_stmts.push(typed_stmt);
+            env = new_env;
         }
-        Ok(())
+        Ok(typed_ast::Function {
+            name: func.name.clone(),
+            parameters: func.parameters.clone(),
+            return_type: func.return_type.clone(),
+            body: typed_ast::FunctionBody {
+                statements: typed_stmts,
+                span: func.body.span,
+            },
+            documentation: func.documentation.clone(),
+            is_pub: func.is_pub,
+            span: func.span,
+        })
     }
 
     fn check_statement(
@@ -318,27 +395,36 @@ impl TypeChecker {
         mut env: TypeEnvironment,
         function_name: &str,
         ctx: &CheckContext,
-    ) -> Result<TypeEnvironment, TypeError> {
+    ) -> Result<(typed_ast::Statement, TypeEnvironment), TypeError> {
         match statement {
             Statement::Injection(expr) => {
-                self.check_expression(expr, &env, ctx)?;
-                Ok(env)
+                let typed_expr = self.check_expression(expr, &env, ctx)?;
+                Ok((typed_ast::Statement::Injection(typed_expr), env))
             }
             Statement::Assignment {
                 variable,
                 expression,
-                ..
+                span,
             } => {
-                let expr_type = self.check_expression(expression, &env, ctx)?;
+                let typed_expr = self.check_expression(expression, &env, ctx)?;
+                let expr_type = typed_expr.ty().clone();
                 env.declare_variable(variable.clone(), expr_type, expression.span());
-                Ok(env)
+                Ok((
+                    typed_ast::Statement::Assignment {
+                        variable: variable.clone(),
+                        expression: typed_expr,
+                        span: *span,
+                    },
+                    env,
+                ))
             }
             Statement::VariableAssignment {
                 variable,
                 expression,
                 span,
             } => {
-                let expr_type = self.check_expression(expression, &env, ctx)?;
+                let typed_expr = self.check_expression(expression, &env, ctx)?;
+                let expr_type = typed_expr.ty().clone();
                 let (existing_type, declaration_span) = env
                     .lookup_variable_with_span(variable)
                     .ok_or_else(|| TypeError::UnknownVariable {
@@ -357,50 +443,77 @@ impl TypeChecker {
                         file_id: ctx.file_id,
                     });
                 }
-                Ok(env)
+                Ok((
+                    typed_ast::Statement::VariableAssignment {
+                        variable: variable.clone(),
+                        expression: typed_expr,
+                        span: *span,
+                    },
+                    env,
+                ))
             }
             Statement::ExpressionStatement(expr) => {
-                self.check_expression(expr, &env, ctx)?;
-                Ok(env)
+                let typed_expr = self.check_expression(expr, &env, ctx)?;
+                Ok((typed_ast::Statement::ExpressionStatement(typed_expr), env))
             }
             Statement::If {
                 condition,
                 body,
                 else_body,
-                ..
+                span,
             } => {
-                self.check_boolean_condition(condition, &env, ctx)?;
-                self.check_block(body, env.create_child(), function_name, ctx)?;
-                if let Some(else_stmts) = else_body {
-                    self.check_block(else_stmts, env.create_child(), function_name, ctx)?;
-                }
-                Ok(env)
+                let typed_condition = self.check_boolean_condition(condition, &env, ctx)?;
+                let typed_body = self.check_block(body, env.create_child(), function_name, ctx)?;
+                let typed_else = if let Some(else_stmts) = else_body {
+                    Some(self.check_block(else_stmts, env.create_child(), function_name, ctx)?)
+                } else {
+                    None
+                };
+                Ok((
+                    typed_ast::Statement::If {
+                        condition: typed_condition,
+                        body: typed_body,
+                        else_body: typed_else,
+                        span: *span,
+                    },
+                    env,
+                ))
             }
             Statement::While {
-                condition, body, ..
+                condition,
+                body,
+                span,
             } => {
-                self.check_boolean_condition(condition, &env, ctx)?;
-                self.check_block(body, env.create_child(), function_name, ctx)?;
-                Ok(env)
+                let typed_condition = self.check_boolean_condition(condition, &env, ctx)?;
+                let typed_body = self.check_block(body, env.create_child(), function_name, ctx)?;
+                Ok((
+                    typed_ast::Statement::While {
+                        condition: typed_condition,
+                        body: typed_body,
+                        span: *span,
+                    },
+                    env,
+                ))
             }
             Statement::Return(expr) => {
-                let return_type = self.check_expression(expr, &env, ctx)?;
-                let expected_type = &self
+                let typed_expr = self.check_expression(expr, &env, ctx)?;
+                let expected_type = self
                     .function_signatures
                     .get(function_name)
                     .expect("function signature not found")
-                    .return_type;
+                    .return_type
+                    .clone();
 
-                if return_type != *expected_type {
+                if *typed_expr.ty() != expected_type {
                     return Err(TypeError::ReturnTypeMismatch {
                         function: function_name.to_string(),
                         expected: format!("{}", expected_type),
-                        found: format!("{}", return_type),
+                        found: format!("{}", typed_expr.ty()),
                         span: expr.span(),
                         file_id: ctx.file_id,
                     });
                 }
-                Ok(env)
+                Ok((typed_ast::Statement::Return(typed_expr), env))
             }
         }
     }
@@ -410,14 +523,14 @@ impl TypeChecker {
         condition: &Expression,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<(), TypeError> {
-        let cond_type = self.check_expression(condition, env, ctx)?;
-        if matches!(cond_type, AstType::Boolean) {
-            Ok(())
+    ) -> Result<typed_ast::Expression, TypeError> {
+        let typed_cond = self.check_expression(condition, env, ctx)?;
+        if matches!(typed_cond.ty(), AstType::Boolean) {
+            Ok(typed_cond)
         } else {
             Err(TypeError::TypeMismatch {
                 expected: "Boolean".to_string(),
-                found: format!("{}", cond_type),
+                found: format!("{}", typed_cond.ty()),
                 span: condition.span(),
                 file_id: ctx.file_id,
             })
@@ -430,11 +543,14 @@ impl TypeChecker {
         mut env: TypeEnvironment,
         function_name: &str,
         ctx: &CheckContext,
-    ) -> Result<(), TypeError> {
+    ) -> Result<Vec<typed_ast::Statement>, TypeError> {
+        let mut typed_stmts = Vec::new();
         for stmt in stmts {
-            env = self.check_statement(stmt, env, function_name, ctx)?;
+            let (typed_stmt, new_env) = self.check_statement(stmt, env, function_name, ctx)?;
+            typed_stmts.push(typed_stmt);
+            env = new_env;
         }
-        Ok(())
+        Ok(typed_stmts)
     }
 
     fn check_expression(
@@ -442,7 +558,7 @@ impl TypeChecker {
         expression: &Expression,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
+    ) -> Result<typed_ast::Expression, TypeError> {
         match expression {
             Expression::Call {
                 function,
@@ -450,17 +566,40 @@ impl TypeChecker {
                 span,
             } => self.check_call(function, arguments, *span, env, ctx),
             Expression::Variable { name, span } => {
-                env.lookup_variable(name)
+                let ty = env
+                    .lookup_variable(name)
                     .ok_or_else(|| TypeError::UnknownVariable {
                         name: name.clone(),
                         span: *span,
                         file_id: ctx.file_id,
-                    })
+                    })?;
+                Ok(typed_ast::Expression::Variable {
+                    name: name.clone(),
+                    ty,
+                    span: *span,
+                })
             }
-            Expression::StringLiteral { .. } => Ok(AstType::String),
-            Expression::BooleanLiteral { .. } => Ok(AstType::Boolean),
-            Expression::IntLiteral { .. } => Ok(AstType::Int),
-            Expression::UnitLiteral { .. } => Ok(AstType::Unit),
+            Expression::StringLiteral { value, span } => Ok(typed_ast::Expression::StringLiteral {
+                value: value.clone(),
+                ty: AstType::String,
+                span: *span,
+            }),
+            Expression::BooleanLiteral { value, span } => {
+                Ok(typed_ast::Expression::BooleanLiteral {
+                    value: *value,
+                    ty: AstType::Boolean,
+                    span: *span,
+                })
+            }
+            Expression::IntLiteral { value, span } => Ok(typed_ast::Expression::IntLiteral {
+                value: *value,
+                ty: AstType::Int,
+                span: *span,
+            }),
+            Expression::UnitLiteral { span } => Ok(typed_ast::Expression::UnitLiteral {
+                ty: AstType::Unit,
+                span: *span,
+            }),
             Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
                 expected: "concrete type".to_string(),
                 found: "placeholder".to_string(),
@@ -477,8 +616,8 @@ impl TypeChecker {
                 condition,
                 then_expr,
                 else_expr,
-                ..
-            } => self.check_if_else_expression(condition, then_expr, else_expr, env, ctx),
+                span,
+            } => self.check_if_else_expression(condition, then_expr, else_expr, *span, env, ctx),
             Expression::StructLiteral {
                 struct_name,
                 fields,
@@ -497,7 +636,7 @@ impl TypeChecker {
         span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
+    ) -> Result<typed_ast::Expression, TypeError> {
         let resolved = ctx
             .alias_map
             .get(function)
@@ -513,43 +652,62 @@ impl TypeChecker {
 
         self.check_visibility(qualified_for_vis, resolved, span, ctx)?;
 
-        let func_sig =
-            self.function_signatures
-                .get(resolved)
-                .ok_or_else(|| TypeError::UnknownFunction {
+        let (kind, return_type, parameters) = {
+            let func_sig = self.function_signatures.get(resolved).ok_or_else(|| {
+                TypeError::UnknownFunction {
                     name: function.to_string(),
                     span,
                     file_id: ctx.file_id,
-                })?;
+                }
+            })?;
+            (
+                func_sig.kind.clone(),
+                func_sig.return_type.clone(),
+                func_sig.parameters.clone(),
+            )
+        };
 
-        if arguments.len() != func_sig.parameters.len() {
+        if arguments.len() != parameters.len() {
             return Err(TypeError::ArgumentCountMismatch {
                 function: function.to_string(),
-                expected: func_sig.parameters.len(),
+                expected: parameters.len(),
                 found: arguments.len(),
                 span,
                 file_id: ctx.file_id,
             });
         }
 
-        for (arg, param) in arguments.iter().zip(&func_sig.parameters) {
+        let mut typed_args = Vec::new();
+        for (arg, param) in arguments.iter().zip(&parameters) {
             if matches!(arg, Expression::Placeholder { .. }) {
+                typed_args.push(typed_ast::Expression::Placeholder {
+                    ty: param.param_type.clone(),
+                    span: arg.span(),
+                });
                 continue;
             }
-            let arg_type = self.check_expression(arg, env, ctx)?;
-            if arg_type != param.param_type {
+            let typed_arg = self.check_expression(arg, env, ctx)?;
+            if typed_arg.ty() != &param.param_type {
                 return Err(TypeError::ArgumentTypeMismatch {
                     function: function.to_string(),
                     parameter: param.name.clone(),
                     expected: format!("{}", param.param_type),
-                    found: format!("{}", arg_type),
+                    found: format!("{}", typed_arg.ty()),
                     span: arg.span(),
                     file_id: ctx.file_id,
                 });
             }
+            typed_args.push(typed_arg);
         }
 
-        Ok(func_sig.return_type.clone())
+        Ok(typed_ast::Expression::Call {
+            function: function.to_string(),
+            resolved: resolved.to_string(),
+            kind,
+            arguments: typed_args,
+            ty: return_type,
+            span,
+        })
     }
 
     fn check_visibility(
@@ -593,7 +751,7 @@ impl TypeChecker {
         span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
+    ) -> Result<typed_ast::Expression, TypeError> {
         if elements.is_empty() {
             return Err(TypeError::TypeMismatch {
                 expected: "non-empty list or type annotation".to_string(),
@@ -603,21 +761,28 @@ impl TypeChecker {
             });
         }
 
-        let first_type = self.check_expression(&elements[0], env, ctx)?;
+        let typed_first = self.check_expression(&elements[0], env, ctx)?;
+        let first_type = typed_first.ty().clone();
+        let mut typed_elements = vec![typed_first];
 
         for elem in elements.iter().skip(1) {
-            let elem_type = self.check_expression(elem, env, ctx)?;
-            if first_type != elem_type {
+            let typed_elem = self.check_expression(elem, env, ctx)?;
+            if *typed_elem.ty() != first_type {
                 return Err(TypeError::TypeMismatch {
                     expected: format!("{}", first_type),
-                    found: format!("{}", elem_type),
+                    found: format!("{}", typed_elem.ty()),
                     span: elem.span(),
                     file_id: ctx.file_id,
                 });
             }
+            typed_elements.push(typed_elem);
         }
 
-        Ok(AstType::List(Box::new(first_type)))
+        Ok(typed_ast::Expression::ListLiteral {
+            elements: typed_elements,
+            ty: AstType::List(Box::new(first_type)),
+            span,
+        })
     }
 
     fn check_select(
@@ -626,7 +791,7 @@ impl TypeChecker {
         span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
+    ) -> Result<typed_ast::Expression, TypeError> {
         if clauses.is_empty() {
             return Err(TypeError::TypeMismatch {
                 expected: "non-empty select".to_string(),
@@ -637,37 +802,59 @@ impl TypeChecker {
         }
 
         let first = &clauses[0];
-        let first_result_type = self.check_expression(&first.expression_to_run, env, ctx)?;
+        let typed_first_run = self.check_expression(&first.expression_to_run, env, ctx)?;
+        let first_result_type = typed_first_run.ty().clone();
         let mut first_env = env.create_child();
         first_env.declare_variable(
             first.result_variable.clone(),
             first_result_type,
             first.expression_to_run.span(),
         );
-        let first_type = self.check_expression(&first.expression_next, &first_env, ctx)?;
+        let typed_first_next = self.check_expression(&first.expression_next, &first_env, ctx)?;
+        let first_type = typed_first_next.ty().clone();
+
+        let mut typed_clauses = vec![typed_ast::SelectClause {
+            expression_to_run: typed_first_run,
+            result_variable: first.result_variable.clone(),
+            expression_next: typed_first_next,
+            span: first.span,
+        }];
 
         for (i, clause) in clauses.iter().enumerate().skip(1) {
-            let result_type = self.check_expression(&clause.expression_to_run, env, ctx)?;
+            let typed_run = self.check_expression(&clause.expression_to_run, env, ctx)?;
+            let result_type = typed_run.ty().clone();
             let mut clause_env = env.create_child();
             clause_env.declare_variable(
                 clause.result_variable.clone(),
                 result_type,
                 clause.expression_to_run.span(),
             );
-            let clause_type = self.check_expression(&clause.expression_next, &clause_env, ctx)?;
-            if first_type != clause_type {
+            let typed_next = self.check_expression(&clause.expression_next, &clause_env, ctx)?;
+            if first_type != *typed_next.ty() {
                 return Err(TypeError::SelectBranchTypeMismatch {
                     expected: format!("{}", first_type),
-                    found: format!("{}", clause_type),
+                    found: format!("{}", typed_next.ty()),
                     branch_index: i,
                     span: clause.expression_next.span(),
                     first_branch_span: first.expression_next.span(),
                     file_id: ctx.file_id,
                 });
             }
+            typed_clauses.push(typed_ast::SelectClause {
+                expression_to_run: typed_run,
+                result_variable: clause.result_variable.clone(),
+                expression_next: typed_next,
+                span: clause.span,
+            });
         }
 
-        Ok(first_type)
+        Ok(typed_ast::Expression::Select(
+            typed_ast::SelectExpression {
+                clauses: typed_clauses,
+                span,
+            },
+            first_type,
+        ))
     }
 
     fn check_if_else_expression(
@@ -675,24 +862,31 @@ impl TypeChecker {
         condition: &Expression,
         then_expr: &Expression,
         else_expr: &Expression,
+        span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
-        self.check_boolean_condition(condition, env, ctx)?;
+    ) -> Result<typed_ast::Expression, TypeError> {
+        let typed_condition = self.check_boolean_condition(condition, env, ctx)?;
+        let typed_then = self.check_expression(then_expr, env, ctx)?;
+        let typed_else = self.check_expression(else_expr, env, ctx)?;
 
-        let then_type = self.check_expression(then_expr, env, ctx)?;
-        let else_type = self.check_expression(else_expr, env, ctx)?;
-
-        if then_type != else_type {
+        if typed_then.ty() != typed_else.ty() {
             return Err(TypeError::TypeMismatch {
-                expected: format!("{}", then_type),
-                found: format!("{}", else_type),
+                expected: format!("{}", typed_then.ty()),
+                found: format!("{}", typed_else.ty()),
                 span: else_expr.span(),
                 file_id: ctx.file_id,
             });
         }
 
-        Ok(then_type)
+        let ty = typed_then.ty().clone();
+        Ok(typed_ast::Expression::IfElse {
+            condition: Box::new(typed_condition),
+            then_expr: Box::new(typed_then),
+            else_expr: Box::new(typed_else),
+            ty,
+            span,
+        })
     }
 
     fn check_struct_literal(
@@ -702,7 +896,7 @@ impl TypeChecker {
         span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
+    ) -> Result<typed_ast::Expression, TypeError> {
         let definition = self
             .struct_definitions
             .get(struct_name)
@@ -714,6 +908,8 @@ impl TypeChecker {
             .clone();
 
         let mut seen = std::collections::HashSet::new();
+        let mut typed_fields = Vec::new();
+
         for (field_name, value_expr) in fields {
             if !seen.insert(field_name.clone()) {
                 return Err(TypeError::DuplicateField {
@@ -735,17 +931,18 @@ impl TypeChecker {
                     file_id: ctx.file_id,
                 })?;
 
-            let actual_type = self.check_expression(value_expr, env, ctx)?;
-            if actual_type != declared_type {
+            let typed_value = self.check_expression(value_expr, env, ctx)?;
+            if typed_value.ty() != &declared_type {
                 return Err(TypeError::StructFieldTypeMismatch {
                     struct_name: struct_name.to_string(),
                     field_name: field_name.clone(),
                     expected: format!("{}", declared_type),
-                    found: format!("{}", actual_type),
+                    found: format!("{}", typed_value.ty()),
                     span: value_expr.span(),
                     file_id: ctx.file_id,
                 });
             }
+            typed_fields.push((field_name.clone(), typed_value));
         }
 
         for (required_field, _) in &definition {
@@ -759,7 +956,12 @@ impl TypeChecker {
             }
         }
 
-        Ok(AstType::Struct(struct_name.to_string()))
+        Ok(typed_ast::Expression::StructLiteral {
+            struct_name: struct_name.to_string(),
+            fields: typed_fields,
+            ty: AstType::Struct(struct_name.to_string()),
+            span,
+        })
     }
 
     fn check_field_access(
@@ -769,8 +971,9 @@ impl TypeChecker {
         span: Span,
         env: &TypeEnvironment,
         ctx: &CheckContext,
-    ) -> Result<AstType, TypeError> {
-        let base_type = self.check_expression(base, env, ctx)?;
+    ) -> Result<typed_ast::Expression, TypeError> {
+        let typed_base = self.check_expression(base, env, ctx)?;
+        let base_type = typed_base.ty().clone();
         match base_type {
             AstType::Struct(name) => {
                 let definition = self.struct_definitions.get(&name).ok_or_else(|| {
@@ -780,7 +983,7 @@ impl TypeChecker {
                         file_id: ctx.file_id,
                     }
                 })?;
-                definition
+                let field_type = definition
                     .iter()
                     .find(|(n, _)| n == field)
                     .map(|(_, t)| t.clone())
@@ -789,7 +992,13 @@ impl TypeChecker {
                         field_name: field.to_string(),
                         span,
                         file_id: ctx.file_id,
-                    })
+                    })?;
+                Ok(typed_ast::Expression::FieldAccess {
+                    base: Box::new(typed_base),
+                    field: field.to_string(),
+                    ty: field_type,
+                    span,
+                })
             }
             other => Err(TypeError::TypeMismatch {
                 expected: "struct".to_string(),
@@ -811,8 +1020,8 @@ pub struct ExternalSig {
 
 impl ExternalSig {
     pub fn new(
-        parameters: Vec<Parameter>,
-        return_type: AstType,
+        parameters: Vec<crate::ast::Parameter>,
+        return_type: crate::ast::Type,
         is_pub: bool,
         kind: FunctionKind,
     ) -> Self {
@@ -854,16 +1063,22 @@ impl TypeEnvironment {
     }
 
     fn lookup_variable(&self, name: &str) -> Option<AstType> {
-        self.variables
-            .get(name)
-            .map(|(t, _)| t.clone())
-            .or_else(|| self.parent.as_ref()?.lookup_variable(name))
+        if let Some((ty, _)) = self.variables.get(name) {
+            Some(ty.clone())
+        } else if let Some(parent) = &self.parent {
+            parent.lookup_variable(name)
+        } else {
+            None
+        }
     }
 
     fn lookup_variable_with_span(&self, name: &str) -> Option<(AstType, Span)> {
-        self.variables
-            .get(name)
-            .cloned()
-            .or_else(|| self.parent.as_ref()?.lookup_variable_with_span(name))
+        if let Some((ty, span)) = self.variables.get(name) {
+            Some((ty.clone(), *span))
+        } else if let Some(parent) = &self.parent {
+            parent.lookup_variable_with_span(name)
+        } else {
+            None
+        }
     }
 }

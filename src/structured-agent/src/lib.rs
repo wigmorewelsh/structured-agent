@@ -12,6 +12,7 @@ pub mod il_analysis;
 pub mod mcp;
 pub mod runtime;
 pub mod typecheck;
+pub mod typed_ast;
 pub mod types;
 
 #[cfg(test)]
