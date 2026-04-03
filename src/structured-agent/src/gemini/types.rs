@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum ModelName {
     Gemini25Pro,
+    #[default]
     Gemini25Flash,
     Gemini25FlashLite,
     Gemini3FlashPreview,
@@ -32,12 +33,6 @@ impl ModelName {
             location,
             self.as_str()
         )
-    }
-}
-
-impl Default for ModelName {
-    fn default() -> Self {
-        Self::Gemini25Flash
     }
 }
 
@@ -383,12 +378,16 @@ pub struct JsonSchemaBuilder;
 
 impl JsonSchemaBuilder {
     pub fn integer_selection(max_value: u32) -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Object)));
+        let mut schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            ..Default::default()
+        };
 
         let mut properties = BTreeMap::new();
-        let mut selection_schema = SchemaObject::default();
-        selection_schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Integer)));
+        let mut selection_schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Integer))),
+            ..Default::default()
+        };
         let number_validation = selection_schema.number();
         number_validation.minimum = Some(0.0);
         number_validation.maximum = Some(max_value as f64);
@@ -401,9 +400,10 @@ impl JsonSchemaBuilder {
     }
 
     pub fn object() -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Object)));
-        schema
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            ..Default::default()
+        }
     }
 
     pub fn with_property(
@@ -423,26 +423,31 @@ impl JsonSchemaBuilder {
     }
 
     pub fn string() -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::String)));
-        schema
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+            ..Default::default()
+        }
     }
 
     pub fn boolean() -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Boolean)));
-        schema
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Boolean))),
+            ..Default::default()
+        }
     }
 
     pub fn integer() -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Integer)));
-        schema
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Integer))),
+            ..Default::default()
+        }
     }
 
     pub fn array(items: SchemaObject) -> SchemaObject {
-        let mut schema = SchemaObject::default();
-        schema.instance_type = Some(SingleOrVec::Single(Box::new(InstanceType::Array)));
+        let mut schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Array))),
+            ..Default::default()
+        };
         let array_validation = schema.array();
         array_validation.items = Some(SingleOrVec::Single(Box::new(Schema::Object(items))));
         schema

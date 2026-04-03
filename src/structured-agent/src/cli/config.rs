@@ -145,15 +145,15 @@ impl Config {
             process::exit(1);
         });
 
-        if let Some(parent) = absolute_path.parent() {
-            if let Err(e) = env::set_current_dir(parent) {
-                eprintln!(
-                    "Error changing to config directory '{}': {}",
-                    parent.display(),
-                    e
-                );
-                process::exit(1);
-            }
+        if let Some(parent) = absolute_path.parent()
+            && let Err(e) = env::set_current_dir(parent)
+        {
+            eprintln!(
+                "Error changing to config directory '{}': {}",
+                parent.display(),
+                e
+            );
+            process::exit(1);
         }
 
         let content = fs::read_to_string(&absolute_path).unwrap_or_else(|e| {

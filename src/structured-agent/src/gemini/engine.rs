@@ -106,7 +106,7 @@ impl GeminiEngine {
         } else {
             events
                 .iter()
-                .map(|event| ChatMessage::system(&Self::format_event(event)))
+                .map(|event| ChatMessage::system(Self::format_event(event)))
                 .collect()
         }
     }

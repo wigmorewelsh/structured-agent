@@ -72,27 +72,22 @@ impl User {
         let stdin = tokio::io::stdin();
         let reader = tokio::io::BufReader::new(stdin);
         let mut lines = reader.lines();
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let mut pending = pending_input.lock().await;
-                    if let Some(tx) = pending.take() {
-                        drop(pending);
-                        tx.send(line).ok();
-                    } else {
-                        drop(pending);
-                        let (ack_tx, ack_rx) = oneshot::channel();
-                        let msg = AgentMessage {
-                            source: AgentId("user".to_string()),
-                            content: AgentMessageContent::String(line),
-                        };
-                        if messagebox_tx.send((msg, ack_tx)).is_err() {
-                            break;
-                        }
-                        ack_rx.await.ok();
-                    }
+        while let Ok(Some(line)) = lines.next_line().await {
+            let mut pending = pending_input.lock().await;
+            if let Some(tx) = pending.take() {
+                drop(pending);
+                tx.send(line).ok();
+            } else {
+                drop(pending);
+                let (ack_tx, ack_rx) = oneshot::channel();
+                let msg = AgentMessage {
+                    source: AgentId("user".to_string()),
+                    content: AgentMessageContent::String(line),
+                };
+                if messagebox_tx.send((msg, ack_tx)).is_err() {
+                    break;
                 }
-                _ => break,
+                ack_rx.await.ok();
             }
         }
     }

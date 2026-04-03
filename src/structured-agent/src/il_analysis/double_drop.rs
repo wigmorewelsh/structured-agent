@@ -27,13 +27,13 @@ impl IlAnalyzer for DoubleDropAnalyzer {
         let mut warnings = Vec::new();
 
         for (index, instruction) in function.instructions.iter().enumerate() {
-            if let Instruction::Drop { name } = instruction {
-                if !dropped.insert(name.clone()) {
-                    warnings.push(IlWarning::DoubleDrop {
-                        name: name.clone(),
-                        instruction_index: index,
-                    });
-                }
+            if let Instruction::Drop { name } = instruction
+                && !dropped.insert(name.clone())
+            {
+                warnings.push(IlWarning::DoubleDrop {
+                    name: name.clone(),
+                    instruction_index: index,
+                });
             }
         }
 

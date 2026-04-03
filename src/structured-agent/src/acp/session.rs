@@ -175,7 +175,6 @@ impl AcpSession {
                         )
                         .await?;
                     }
-                    _ => {}
                 },
                 Err(broadcast::error::RecvError::Closed) => return Ok(()),
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
