@@ -3,9 +3,10 @@ use combine::stream::position;
 use std::sync::Arc;
 use structured_agent::bytecode::BytecodeCompiler;
 use structured_agent::cli::config::ProgramSource;
-
 use structured_agent::compiler::parser;
 use structured_agent::runtime::{Context, Runtime};
+use structured_agent::typecheck::TypeChecker;
+use structured_agent::typed_ast;
 use structured_agent::types::FileId;
 
 const TEST_FILE_ID: FileId = 0;
@@ -24,19 +25,30 @@ fn test_assignment(): () {
     assert!(parse_result.is_ok());
 
     let (module, _) = parse_result.unwrap();
-    let functions: Vec<_> = module
+
+    let (typed_module, _) = TypeChecker::new()
+        .check_module_with_external_sigs(
+            &module,
+            TEST_FILE_ID,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+
+    let functions: Vec<_> = typed_module
         .definitions
         .iter()
         .filter_map(|def| match def {
-            structured_agent::ast::Definition::Function(f) => Some(f),
+            typed_ast::Definition::Function(f) => Some(f),
             _ => None,
         })
         .collect();
-    let external_functions: Vec<_> = module
+    let external_functions: Vec<_> = typed_module
         .definitions
         .iter()
         .filter_map(|def| match def {
-            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            typed_ast::Definition::ExternalFunction(f) => Some(f),
             _ => None,
         })
         .collect();
@@ -47,8 +59,7 @@ fn test_assignment(): () {
     assert_eq!(function.name, "test_assignment");
     assert_eq!(function.body.statements.len(), 2);
 
-    let compilation_result =
-        BytecodeCompiler::new(std::collections::HashMap::new()).compile_function(function);
+    let compilation_result = BytecodeCompiler::new().compile_function(function);
     assert!(compilation_result.is_ok());
     let compiled_function = compilation_result.unwrap();
 
@@ -81,19 +92,28 @@ fn test_var_assignment(): () {
 
     let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
-    let functions: Vec<_> = module
+
+    let (typed_module, _) = TypeChecker::new()
+        .check_module_with_external_sigs(
+            &module,
+            TEST_FILE_ID,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+
+    let functions: Vec<_> = typed_module
         .definitions
         .iter()
         .filter_map(|def| match def {
-            structured_agent::ast::Definition::Function(f) => Some(f),
+            typed_ast::Definition::Function(f) => Some(f),
             _ => None,
         })
         .collect();
     assert_eq!(functions.len(), 1);
     let function = functions[0];
-    let compiled_function = BytecodeCompiler::new(std::collections::HashMap::new())
-        .compile_function(function)
-        .unwrap();
+    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
 
     let runtime =
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
@@ -103,7 +123,6 @@ fn test_var_assignment(): () {
 
     let (context, _) = result.unwrap();
 
-    // Note: Bytecode compiler handles events, verify we have the expected count
     assert_eq!(
         context.events_count(),
         2,
@@ -124,27 +143,36 @@ fn test_return(): () {
 
     let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
-    let functions: Vec<_> = module
+
+    let (typed_module, _) = TypeChecker::new()
+        .check_module_with_external_sigs(
+            &module,
+            TEST_FILE_ID,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+
+    let functions: Vec<_> = typed_module
         .definitions
         .iter()
         .filter_map(|def| match def {
-            structured_agent::ast::Definition::Function(f) => Some(f),
+            typed_ast::Definition::Function(f) => Some(f),
             _ => None,
         })
         .collect();
-    let external_functions: Vec<_> = module
+    let external_functions: Vec<_> = typed_module
         .definitions
         .iter()
         .filter_map(|def| match def {
-            structured_agent::ast::Definition::ExternalFunction(f) => Some(f),
+            typed_ast::Definition::ExternalFunction(f) => Some(f),
             _ => None,
         })
         .collect();
     assert_eq!(external_functions.len(), 0);
     let function = &functions[0];
-    let compiled_function = BytecodeCompiler::new(std::collections::HashMap::new())
-        .compile_function(function)
-        .unwrap();
+    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
 
     let runtime =
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());

@@ -74,17 +74,35 @@ mod instruction_display_tests {
 
 #[cfg(test)]
 mod compilation_tests {
-    use crate::ast::Module;
     use crate::bytecode::BytecodeCompiler;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
+    use crate::typecheck::TypeChecker;
+    use crate::typed_ast;
+    use std::collections::HashMap;
 
-    fn parse_code(code: &str) -> Module {
+    fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parser = CodespanParser::new();
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
+    }
+
+    fn parse_and_typecheck(code: &str) -> typed_ast::Module {
+        let module = parse_code(code);
+        let mut manager = DiagnosticManager::new();
+        let file_id = manager.add_file("test.sa".to_string(), code.to_string());
+        TypeChecker::new()
+            .check_module_with_external_sigs(
+                &module,
+                file_id,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap()
+            .0
     }
 
     #[test]
@@ -99,13 +117,11 @@ fn main(): String {
     message!
 }
 "#;
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
 
         for def in &module.definitions {
-            if let crate::ast::Definition::Function(func) = def {
-                let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-                    .compile_to_bytecode(func)
-                    .unwrap();
+            if let typed_ast::Definition::Function(func) = def {
+                let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
                 println!("\n{}", compiled);
             }
         }
@@ -135,21 +151,19 @@ fn main(): String {
     result!
 }
 "#;
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
 
         for def in &module.definitions {
-            if let crate::ast::Definition::Function(func) = def {
-                let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-                    .compile_to_bytecode(func)
-                    .unwrap();
+            if let typed_ast::Definition::Function(func) = def {
+                let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
                 println!("\n{}", compiled);
             }
         }
     }
 
-    fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
+    fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {
         for def in &module.definitions {
-            if let crate::ast::Definition::Function(f) = def {
+            if let typed_ast::Definition::Function(f) = def {
                 if f.name == name {
                     return f;
                 }
@@ -159,20 +173,16 @@ fn main(): String {
     }
 
     fn compile_and_check(code: &str, expected: &str) {
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
     fn compile_and_check_named(code: &str, function_name: &str, expected: &str) {
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, function_name);
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
         assert_eq!(format!("{}", compiled), expected);
     }
 
@@ -264,6 +274,7 @@ fn main(): String {
     #[test]
     fn test_compile_function_call() {
         let code = r#"
+            extern fn foo(a: String, b: Boolean): String
             fn test(): String {
                 return foo("arg1", true)
             }
@@ -417,6 +428,7 @@ fn greet(name: String): () {
     #[test]
     fn test_pretty_print_function() {
         let code = r#"
+            extern fn process(x: String): String
             fn calculate(x: String, y: Boolean): String {
                 let result = process(x)
                 return result
@@ -445,6 +457,7 @@ fn greet(name: String): () {
     #[test]
     fn test_complex_function_pretty_print() {
         let code = r#"
+            extern fn transform(items: List<String>): String
             fn process_items(items: List<String>, filter: Boolean): String {
                 let result = "initial"
                 if filter {
@@ -503,6 +516,8 @@ fn greet(name: String): () {
     #[test]
     fn test_select_expression() {
         let code = r#"
+            extern fn analyze(code: String): String
+            extern fn summarize(text: String): String
             fn test(): String {
                 return select {
                     analyze("code") as result => result,
@@ -711,7 +726,7 @@ fn test(): Int {
 ): Int {
       0: decl $tmp0
       1: decl $tmp1
-      2: call.external make_point, [], $tmp1
+      2: call.bytecode make_point, [], $tmp1
       3: struct.get $tmp0, $tmp1, x
       4: ret $tmp0
 }
@@ -722,6 +737,7 @@ fn test(): Int {
     #[test]
     fn test_compile_placeholder() {
         let code = r#"
+            extern fn foo(x: String): String
             fn test(): String {
                 return foo(_)
             }
@@ -787,15 +803,17 @@ fn test(): Int {
 
 #[cfg(test)]
 mod vm_execution_tests {
-    use crate::ast::Module;
     use crate::bytecode::{BytecodeCompiler, BytecodeFunctionExpr, VM};
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{Context, ExpressionValue, Runtime};
+    use crate::typecheck::TypeChecker;
+    use crate::typed_ast;
+    use std::collections::HashMap;
     use std::sync::Arc;
 
-    fn parse_code(code: &str) -> Module {
+    fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
@@ -803,7 +821,37 @@ mod vm_execution_tests {
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
     }
 
-    fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
+    fn parse_and_typecheck(code: &str) -> typed_ast::Module {
+        let module = parse_code(code);
+        let mut manager = DiagnosticManager::new();
+        let file_id = manager.add_file("test.sa".to_string(), code.to_string());
+        TypeChecker::new()
+            .check_module_with_external_sigs(
+                &module,
+                file_id,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap()
+            .0
+    }
+
+    fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {
+        for def in &module.definitions {
+            if let typed_ast::Definition::Function(f) = def {
+                if f.name == name {
+                    return f;
+                }
+            }
+        }
+        panic!("Function '{}' not found in module", name);
+    }
+
+    fn get_ast_function<'a>(
+        module: &'a crate::ast::Module,
+        name: &str,
+    ) -> &'a crate::ast::Function {
         for def in &module.definitions {
             if let crate::ast::Definition::Function(f) = def {
                 if f.name == name {
@@ -814,6 +862,172 @@ mod vm_execution_tests {
         panic!("Function '{}' not found in module", name);
     }
 
+    fn ast_expr_to_typed(expr: &crate::ast::Expression) -> typed_ast::Expression {
+        use crate::ast::Expression as AE;
+        use crate::ast::Type;
+        let dummy = crate::types::Span::dummy();
+        match expr {
+            AE::StringLiteral { value, span } => typed_ast::Expression::StringLiteral {
+                value: value.clone(),
+                ty: Type::String,
+                span: *span,
+            },
+            AE::BooleanLiteral { value, span } => typed_ast::Expression::BooleanLiteral {
+                value: *value,
+                ty: Type::Boolean,
+                span: *span,
+            },
+            AE::IntLiteral { value, span } => typed_ast::Expression::IntLiteral {
+                value: *value,
+                ty: Type::Int,
+                span: *span,
+            },
+            AE::Variable { name, span } => typed_ast::Expression::Variable {
+                name: name.clone(),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::UnitLiteral { span } => typed_ast::Expression::UnitLiteral {
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::Placeholder { span } => typed_ast::Expression::Placeholder {
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::Call {
+                function,
+                arguments,
+                span,
+            } => typed_ast::Expression::Call {
+                function: function.clone(),
+                resolved: function.clone(),
+                kind: crate::typecheck::checker::FunctionKind::External,
+                arguments: arguments.iter().map(ast_expr_to_typed).collect(),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::ListLiteral { elements, span } => typed_ast::Expression::ListLiteral {
+                elements: elements.iter().map(ast_expr_to_typed).collect(),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::StructLiteral {
+                struct_name,
+                fields,
+                span,
+            } => typed_ast::Expression::StructLiteral {
+                struct_name: struct_name.clone(),
+                fields: fields
+                    .iter()
+                    .map(|(n, e)| (n.clone(), ast_expr_to_typed(e)))
+                    .collect(),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::FieldAccess { base, field, span } => typed_ast::Expression::FieldAccess {
+                base: Box::new(ast_expr_to_typed(base)),
+                field: field.clone(),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::IfElse {
+                condition,
+                then_expr,
+                else_expr,
+                span,
+            } => typed_ast::Expression::IfElse {
+                condition: Box::new(ast_expr_to_typed(condition)),
+                then_expr: Box::new(ast_expr_to_typed(then_expr)),
+                else_expr: Box::new(ast_expr_to_typed(else_expr)),
+                ty: Type::Unit,
+                span: *span,
+            },
+            AE::Select(select) => typed_ast::Expression::Select(
+                typed_ast::SelectExpression {
+                    clauses: select
+                        .clauses
+                        .iter()
+                        .map(|c| typed_ast::SelectClause {
+                            expression_to_run: ast_expr_to_typed(&c.expression_to_run),
+                            result_variable: c.result_variable.clone(),
+                            expression_next: ast_expr_to_typed(&c.expression_next),
+                            span: c.span,
+                        })
+                        .collect(),
+                    span: select.span,
+                },
+                crate::ast::Type::Unit,
+            ),
+        }
+    }
+
+    fn ast_stmt_to_typed(stmt: &crate::ast::Statement) -> typed_ast::Statement {
+        use crate::ast::Statement as AS;
+        match stmt {
+            AS::Injection(expr) => typed_ast::Statement::Injection(ast_expr_to_typed(expr)),
+            AS::Assignment {
+                variable,
+                expression,
+                span,
+            } => typed_ast::Statement::Assignment {
+                variable: variable.clone(),
+                expression: ast_expr_to_typed(expression),
+                span: *span,
+            },
+            AS::VariableAssignment {
+                variable,
+                expression,
+                span,
+            } => typed_ast::Statement::VariableAssignment {
+                variable: variable.clone(),
+                expression: ast_expr_to_typed(expression),
+                span: *span,
+            },
+            AS::ExpressionStatement(expr) => {
+                typed_ast::Statement::ExpressionStatement(ast_expr_to_typed(expr))
+            }
+            AS::If {
+                condition,
+                body,
+                else_body,
+                span,
+            } => typed_ast::Statement::If {
+                condition: ast_expr_to_typed(condition),
+                body: body.iter().map(ast_stmt_to_typed).collect(),
+                else_body: else_body
+                    .as_ref()
+                    .map(|stmts| stmts.iter().map(ast_stmt_to_typed).collect()),
+                span: *span,
+            },
+            AS::While {
+                condition,
+                body,
+                span,
+            } => typed_ast::Statement::While {
+                condition: ast_expr_to_typed(condition),
+                body: body.iter().map(ast_stmt_to_typed).collect(),
+                span: *span,
+            },
+            AS::Return(expr) => typed_ast::Statement::Return(ast_expr_to_typed(expr)),
+        }
+    }
+
+    fn ast_func_to_typed(f: &crate::ast::Function) -> typed_ast::Function {
+        typed_ast::Function {
+            name: f.name.clone(),
+            parameters: f.parameters.clone(),
+            return_type: f.return_type.clone(),
+            body: typed_ast::FunctionBody {
+                statements: f.body.statements.iter().map(ast_stmt_to_typed).collect(),
+                span: f.body.span,
+            },
+            documentation: f.documentation.clone(),
+            is_pub: f.is_pub,
+            span: f.span,
+        }
+    }
+
     #[tokio::test]
     async fn test_vm_string_literal() {
         let code = r#"
@@ -822,11 +1036,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -844,11 +1056,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -866,11 +1076,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -889,11 +1097,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -913,11 +1119,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -935,11 +1139,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let mut context = Context::with_runtime(runtime.clone());
@@ -963,11 +1165,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -989,11 +1189,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1014,11 +1212,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1037,10 +1233,11 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
-        let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
+        let ast_module = parse_code(code);
+        let ast_func = get_ast_function(&ast_module, "test");
+        let typed_func = ast_func_to_typed(ast_func);
+        let compiled = BytecodeCompiler::new()
+            .compile_to_bytecode(&typed_func)
             .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
@@ -1063,10 +1260,11 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
-        let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
+        let ast_module = parse_code(code);
+        let ast_func = get_ast_function(&ast_module, "test");
+        let typed_func = ast_func_to_typed(ast_func);
+        let compiled = BytecodeCompiler::new()
+            .compile_to_bytecode(&typed_func)
             .unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
@@ -1086,11 +1284,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1108,11 +1304,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
         let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
@@ -1135,9 +1329,9 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let test_func = get_function(&module, "test");
-        let test_compiled = BytecodeCompiler::new(std::collections::HashMap::new())
+        let test_compiled = BytecodeCompiler::new()
             .compile_to_bytecode(test_func)
             .unwrap();
 
@@ -1162,15 +1356,17 @@ mod vm_execution_tests {
 
 #[cfg(test)]
 mod struct_bytecode_tests {
-    use crate::ast::Module;
     use crate::bytecode::BytecodeCompiler;
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{ExpressionValue, Runtime};
+    use crate::typecheck::TypeChecker;
+    use crate::typed_ast;
     use arrow::array::Array;
+    use std::collections::HashMap;
 
-    fn parse_code(code: &str) -> Module {
+    fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
@@ -1178,9 +1374,25 @@ mod struct_bytecode_tests {
         parser.parse(&unit, file_id, manager.reporter()).unwrap()
     }
 
-    fn get_function<'a>(module: &'a Module, name: &str) -> &'a crate::ast::Function {
+    fn parse_and_typecheck(code: &str) -> typed_ast::Module {
+        let module = parse_code(code);
+        let mut manager = DiagnosticManager::new();
+        let file_id = manager.add_file("test.sa".to_string(), code.to_string());
+        TypeChecker::new()
+            .check_module_with_external_sigs(
+                &module,
+                file_id,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap()
+            .0
+    }
+
+    fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {
         for def in &module.definitions {
-            if let crate::ast::Definition::Function(f) = def {
+            if let typed_ast::Definition::Function(f) = def {
                 if f.name == name {
                     return f;
                 }
@@ -1200,11 +1412,9 @@ fn make(): Point {
     return Point { x: 1, y: 2 }
 }
 "#;
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "make");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
         let has_struct_new = compiled
             .instructions
             .iter()
@@ -1223,11 +1433,9 @@ fn get_x(p: Point): Int {
     return p.x
 }
 "#;
-        let module = parse_code(code);
+        let module = parse_and_typecheck(code);
         let func = get_function(&module, "get_x");
-        let compiled = BytecodeCompiler::new(std::collections::HashMap::new())
-            .compile_to_bytecode(func)
-            .unwrap();
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
         let has_struct_get = compiled.instructions.iter().any(
             |i| matches!(i, crate::bytecode::Instruction::StructGet { field, .. } if field == "x"),
         );

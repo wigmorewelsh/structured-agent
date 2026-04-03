@@ -11,7 +11,7 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{Definition, Module, SigFunction};
+use crate::ast::{Module, SigFunction};
 use crate::bytecode::{BytecodeCompiler, CompiledFunction};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
@@ -19,6 +19,7 @@ use crate::il_analysis::{
 };
 use crate::typecheck::TypeChecker;
 use crate::typecheck::checker::{FunctionKind, ModuleVisibility};
+use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use wiring::Vtables;
 
@@ -260,15 +261,13 @@ impl Compiler {
 
         let sig_table: SigTable = collect_sigs(&modules);
 
-        let mut module_kinds: HashMap<String, HashMap<String, FunctionKind>> = HashMap::new();
-        let mut _typed_modules: HashMap<String, crate::typed_ast::Module> = HashMap::new();
+        let mut typed_modules: HashMap<String, typed_ast::Module> = HashMap::new();
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
             match type_check_module(parsed, &sig_table) {
-                Ok((typed_module, kinds)) => {
-                    _typed_modules.insert(parsed.name.clone(), typed_module);
-                    module_kinds.insert(parsed.name.clone(), kinds);
+                Ok((typed_module, _)) => {
+                    typed_modules.insert(parsed.name.clone(), typed_module);
                 }
                 Err(e) => {
                     error!("Type checking failed: {}", e);
@@ -295,12 +294,10 @@ impl Compiler {
 
         for parsed in &modules {
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
-            let empty = HashMap::new();
-            let kinds = module_kinds
+            let typed_module = typed_modules
                 .get(&parsed.name)
-                .map(|k| k as &HashMap<String, FunctionKind>)
-                .unwrap_or(&empty);
-            let artifact = emit_module(&parsed.module, prefix, kinds)?;
+                .expect("typed module missing");
+            let artifact = emit_module(typed_module, prefix)?;
             compiled.merge(artifact);
         }
 
@@ -345,11 +342,7 @@ fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warn
     warnings
 }
 
-fn emit_module(
-    module: &Module,
-    prefix: Option<&str>,
-    kinds: &HashMap<String, FunctionKind>,
-) -> Result<ModuleArtifact, String> {
+fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<ModuleArtifact, String> {
     let mut artifact = ModuleArtifact {
         functions: Vec::new(),
         external_functions: Vec::new(),
@@ -358,21 +351,20 @@ fn emit_module(
         use_aliases: Vec::new(),
     };
 
-    let compiler = BytecodeCompiler::new(kinds.clone());
+    let compiler = BytecodeCompiler::new();
 
     for definition in &module.definitions {
         match definition {
-            Definition::Function(f) => {
-                let mut f = f.clone();
+            typed_ast::Definition::Function(f) => {
+                let mut compiled = compiler.compile_to_bytecode(f)?;
                 if let Some(p) = prefix {
-                    f.name = format!("{}::{}", p, f.name);
+                    compiled.name = format!("{}::{}", p, compiled.name);
                 }
-                debug!("Emitting function: {}", f.name);
-                let mut compiled = compiler.compile_to_bytecode(&f)?;
+                debug!("Emitting function: {}", compiled.name);
                 compiled.module_name = prefix.map(str::to_string);
                 artifact.functions.push(compiled);
             }
-            Definition::ExternalFunction(f) => {
+            typed_ast::Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
                 if let Some(p) = prefix {
                     f.name = format!("{}::{}", p, f.name);
@@ -382,7 +374,7 @@ fn emit_module(
                     .external_functions
                     .push(compile_external_function(&f)?);
             }
-            Definition::Struct(s) => {
+            typed_ast::Definition::Struct(s) => {
                 let fields = s
                     .fields
                     .iter()
@@ -390,14 +382,14 @@ fn emit_module(
                     .collect();
                 artifact.struct_definitions.push((s.name.clone(), fields));
             }
-            Definition::Signature {
+            typed_ast::Definition::Signature {
                 name, functions, ..
             } => {
                 artifact
                     .sig_definitions
                     .push((name.clone(), functions.clone()));
             }
-            Definition::Use { path, alias, .. } if prefix.is_none() => {
+            typed_ast::Definition::Use { path, alias, .. } if prefix.is_none() => {
                 if path.len() >= 2 {
                     let qualified = format!("{}::{}", path[0], path.last().unwrap());
                     let local = alias
@@ -406,10 +398,10 @@ fn emit_module(
                     artifact.use_aliases.push((local, qualified));
                 }
             }
-            Definition::Use { .. }
-            | Definition::ModuleHeader { .. }
-            | Definition::ModuleBinding { .. }
-            | Definition::WiringSite { .. } => {}
+            typed_ast::Definition::Use { .. }
+            | typed_ast::Definition::ModuleHeader { .. }
+            | typed_ast::Definition::ModuleBinding { .. }
+            | typed_ast::Definition::WiringSite { .. } => {}
         }
     }
 
