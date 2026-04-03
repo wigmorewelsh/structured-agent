@@ -278,11 +278,11 @@ impl BytecodeCompiler {
     ) -> Result<(), String> {
         match expr {
             typed_ast::Expression::Call {
-                function,
+                resolved,
                 kind,
                 arguments,
                 ..
-            } => self.compile_call_expression(builder, function, kind.clone(), arguments, dest_var),
+            } => self.compile_call_expression(builder, resolved, kind.clone(), arguments, dest_var),
             typed_ast::Expression::Variable { name, .. } => {
                 Self::compile_variable_expression(builder, name, dest_var)
             }
@@ -631,6 +631,12 @@ impl BytecodeCompiler {
 
     fn type_to_string(ast_type: &ast::Type) -> String {
         format!("{}", ast_type)
+    }
+}
+
+impl Default for BytecodeCompiler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

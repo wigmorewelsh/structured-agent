@@ -61,28 +61,16 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_call(
-                        state,
-                        function_name,
-                        params,
-                        dest,
-                        function.module_name.as_deref(),
-                    )
-                    .await?
+                    self.execute_call(state, function_name, params, dest)
+                        .await?
                 }
                 Instruction::CallExternal {
                     function_name,
                     params,
                     dest,
                 } => {
-                    self.execute_external_call(
-                        state,
-                        function_name,
-                        params,
-                        dest,
-                        function.module_name.as_deref(),
-                    )
-                    .await?
+                    self.execute_external_call(state, function_name, params, dest)
+                        .await?
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
@@ -220,13 +208,8 @@ impl VM {
         function_name: &str,
         params: &[String],
         dest: &str,
-        module_name: Option<&str>,
     ) -> Result<VMState, String> {
-        let resolved_name = module_name
-            .and_then(|m| self.runtime.vtables().get(m))
-            .and_then(|vtable| vtable.get(function_name))
-            .map(String::as_str)
-            .unwrap_or(function_name);
+        let resolved_name = function_name;
 
         let func = self
             .runtime
@@ -277,7 +260,6 @@ impl VM {
         function_name: &str,
         params: &[String],
         dest: &str,
-        module_name: Option<&str>,
     ) -> Result<VMState, String> {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
@@ -301,7 +283,7 @@ impl VM {
             });
 
         let state = self
-            .execute_call(state, function_name, params, dest, module_name)
+            .execute_call(state, function_name, params, dest)
             .await?;
 
         let result = Self::read_variable(&state, dest)?;

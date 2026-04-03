@@ -2,7 +2,7 @@ pub(crate) mod discovery;
 pub mod parser;
 pub(crate) mod sigs;
 pub(crate) mod wiring;
-use wiring::resolve_vtables;
+use wiring::{lower_typed_module, resolve_vtables};
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
@@ -21,7 +21,6 @@ use crate::typecheck::TypeChecker;
 use crate::typecheck::checker::{FunctionKind, ModuleVisibility};
 use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
-use wiring::Vtables;
 
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
@@ -83,7 +82,6 @@ pub struct CompiledProgram {
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
     module_visibility: ModuleVisibility,
-    vtables: Vtables,
     pending_aliases: Vec<(String, String)>,
     use_aliases: Vec<(String, String)>,
     main_function: Option<String>,
@@ -104,7 +102,6 @@ impl CompiledProgram {
             struct_definitions: HashMap::new(),
             sig_definitions: HashMap::new(),
             module_visibility: HashMap::new(),
-            vtables: HashMap::new(),
             pending_aliases: Vec::new(),
             use_aliases: Vec::new(),
             main_function: None,
@@ -119,11 +116,6 @@ impl CompiledProgram {
 
     fn with_module_visibility(mut self, visibility: ModuleVisibility) -> Self {
         self.module_visibility = visibility;
-        self
-    }
-
-    fn with_vtables(mut self, vtables: Vtables) -> Self {
-        self.vtables = vtables;
         self
     }
 
@@ -155,10 +147,6 @@ impl CompiledProgram {
 
     pub fn module_visibility(&self) -> &ModuleVisibility {
         &self.module_visibility
-    }
-
-    pub fn vtables(&self) -> &Vtables {
-        &self.vtables
     }
 
     fn merge(&mut self, artifact: ModuleArtifact) {
@@ -286,11 +274,17 @@ impl Compiler {
         }
 
         let vtables = resolve_vtables(&modules, &sig_table);
+        for parsed in &modules {
+            if let Some(vtable) = vtables.get(&parsed.name)
+                && let Some(typed_module) = typed_modules.get_mut(&parsed.name)
+            {
+                lower_typed_module(typed_module, vtable);
+            }
+        }
 
         let mut compiled = CompiledProgram::new()
             .with_source_path(source_path)
-            .with_module_visibility(sig_table.visibility.clone())
-            .with_vtables(vtables);
+            .with_module_visibility(sig_table.visibility.clone());
 
         for parsed in &modules {
             let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
@@ -798,16 +792,9 @@ fn main(): String {
             .write_all(b"use vttasks::run\n\nfn main(): String {\n    return run()\n}\n")
             .unwrap();
 
-        let compiled = Compiler::new()
+        Compiler::new()
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
-
-        let vtable = compiled.vtables().get("vttasks");
-        assert!(vtable.is_some(), "expected vtable for vttasks");
-        assert_eq!(
-            vtable.unwrap().get("io::read").map(String::as_str),
-            Some("vtstore::read")
-        );
     }
 
     #[test]
@@ -834,16 +821,9 @@ fn main(): String {
             .write_all(b"mod io: eb_impl::Store = eb_impl\nmod eb_tasks(io)\nuse eb_tasks::run\n\nfn main(): String {\n    return run()\n}\n")
             .unwrap();
 
-        let compiled = Compiler::new()
+        Compiler::new()
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
-
-        let vtable = compiled.vtables().get("eb_tasks");
-        assert!(vtable.is_some(), "expected vtable for eb_tasks");
-        assert_eq!(
-            vtable.unwrap().get("io::read").map(String::as_str),
-            Some("eb_impl::read")
-        );
     }
 
     #[tokio::test]

@@ -116,6 +116,109 @@ fn header_params(parsed: &ParsedModule) -> Option<&Vec<crate::ast::ModuleParam>>
     })
 }
 
+pub(crate) fn lower_typed_module(
+    module: &mut crate::typed_ast::Module,
+    vtable: &std::collections::HashMap<String, String>,
+) {
+    for def in &mut module.definitions {
+        if let crate::typed_ast::Definition::Function(f) = def {
+            lower_statements(&mut f.body.statements, vtable);
+        }
+    }
+}
+
+fn lower_statements(
+    stmts: &mut Vec<crate::typed_ast::Statement>,
+    vtable: &std::collections::HashMap<String, String>,
+) {
+    for stmt in stmts {
+        match stmt {
+            crate::typed_ast::Statement::Injection(e) => lower_expression(e, vtable),
+            crate::typed_ast::Statement::Assignment { expression, .. } => {
+                lower_expression(expression, vtable)
+            }
+            crate::typed_ast::Statement::VariableAssignment { expression, .. } => {
+                lower_expression(expression, vtable)
+            }
+            crate::typed_ast::Statement::ExpressionStatement(e) => lower_expression(e, vtable),
+            crate::typed_ast::Statement::Return(e) => lower_expression(e, vtable),
+            crate::typed_ast::Statement::If {
+                condition,
+                body,
+                else_body,
+                ..
+            } => {
+                lower_expression(condition, vtable);
+                lower_statements(body, vtable);
+                if let Some(eb) = else_body {
+                    lower_statements(eb, vtable);
+                }
+            }
+            crate::typed_ast::Statement::While {
+                condition, body, ..
+            } => {
+                lower_expression(condition, vtable);
+                lower_statements(body, vtable);
+            }
+        }
+    }
+}
+
+fn lower_expression(
+    expr: &mut crate::typed_ast::Expression,
+    vtable: &std::collections::HashMap<String, String>,
+) {
+    match expr {
+        crate::typed_ast::Expression::Call {
+            resolved,
+            arguments,
+            ..
+        } => {
+            if let Some(concrete) = vtable.get(resolved.as_str()) {
+                *resolved = concrete.clone();
+            }
+            for arg in arguments {
+                lower_expression(arg, vtable);
+            }
+        }
+        crate::typed_ast::Expression::StructLiteral { fields, .. } => {
+            for (_, e) in fields {
+                lower_expression(e, vtable);
+            }
+        }
+        crate::typed_ast::Expression::FieldAccess { base, .. } => {
+            lower_expression(base, vtable);
+        }
+        crate::typed_ast::Expression::ListLiteral { elements, .. } => {
+            for e in elements {
+                lower_expression(e, vtable);
+            }
+        }
+        crate::typed_ast::Expression::IfElse {
+            condition,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            lower_expression(condition, vtable);
+            lower_expression(then_expr, vtable);
+            lower_expression(else_expr, vtable);
+        }
+        crate::typed_ast::Expression::Select(select, _) => {
+            for clause in &mut select.clauses {
+                lower_expression(&mut clause.expression_to_run, vtable);
+                lower_expression(&mut clause.expression_next, vtable);
+            }
+        }
+        crate::typed_ast::Expression::Variable { .. }
+        | crate::typed_ast::Expression::StringLiteral { .. }
+        | crate::typed_ast::Expression::BooleanLiteral { .. }
+        | crate::typed_ast::Expression::IntLiteral { .. }
+        | crate::typed_ast::Expression::Placeholder { .. }
+        | crate::typed_ast::Expression::UnitLiteral { .. } => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +463,55 @@ mod tests {
         let parsed = make_module("tasks", vec![p]);
         let vtables = resolve_vtables(&[parsed], &empty_sig_table());
         assert!(vtables.is_empty());
+    }
+
+    #[test]
+    fn test_lower_typed_module_substitutes_call() {
+        let span = Span::dummy();
+        let call = crate::typed_ast::Expression::Call {
+            function: "io::read".to_string(),
+            resolved: "io::read".to_string(),
+            kind: FunctionKind::External,
+            arguments: vec![],
+            ty: AstType::String,
+            span,
+        };
+        let mut module = crate::typed_ast::Module {
+            definitions: vec![crate::typed_ast::Definition::Function(
+                crate::typed_ast::Function {
+                    name: "run".to_string(),
+                    parameters: vec![],
+                    return_type: AstType::Unit,
+                    body: crate::typed_ast::FunctionBody {
+                        statements: vec![crate::typed_ast::Statement::Return(call)],
+                        span,
+                    },
+                    documentation: None,
+                    is_pub: true,
+                    span,
+                },
+            )],
+            span,
+            file_id: 0,
+        };
+
+        let mut vtable = std::collections::HashMap::new();
+        vtable.insert("io::read".to_string(), "storage::read".to_string());
+
+        lower_typed_module(&mut module, &vtable);
+
+        if let crate::typed_ast::Definition::Function(f) = &module.definitions[0] {
+            if let crate::typed_ast::Statement::Return(crate::typed_ast::Expression::Call {
+                resolved,
+                ..
+            }) = &f.body.statements[0]
+            {
+                assert_eq!(resolved, "storage::read");
+            } else {
+                panic!("expected return with call");
+            }
+        } else {
+            panic!("expected function definition");
+        }
     }
 }

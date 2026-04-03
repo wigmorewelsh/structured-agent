@@ -24,7 +24,6 @@ pub struct Runtime {
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
     program_source: ProgramSource,
-    vtables: HashMap<String, HashMap<String, String>>,
 }
 
 pub struct RuntimeBuilder {
@@ -203,7 +202,6 @@ impl RuntimeBuilder {
             compiler: self.compiler.unwrap_or_else(|| Arc::new(Compiler::new())),
             providers,
             program_source: self.program_source,
-            vtables: HashMap::new(),
         }
     }
 }
@@ -268,7 +266,6 @@ impl Runtime {
         let compiled_program = self.compile().map_err(RuntimeError::ExecutionError)?;
 
         let mut runtime = self.create_runtime_ref();
-        runtime.vtables = compiled_program.vtables().clone();
 
         for (name, fields) in compiled_program.struct_definitions() {
             runtime.register_struct(name.clone(), fields.clone());
@@ -357,12 +354,7 @@ impl Runtime {
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
             program_source: self.program_source.clone(),
-            vtables: self.vtables.clone(),
         }
-    }
-
-    pub fn vtables(&self) -> &HashMap<String, HashMap<String, String>> {
-        &self.vtables
     }
 
     fn signatures_match(
