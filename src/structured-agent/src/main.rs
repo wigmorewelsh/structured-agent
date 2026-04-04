@@ -1,23 +1,6 @@
-mod acp;
-mod analysis;
-mod ast;
-mod bytecode;
-mod cli;
-mod compiler;
-mod diagnostics;
-mod expressions;
-
-mod gemini;
-mod il_analysis;
-mod mcp;
-mod runtime;
-mod typecheck;
-mod typed_ast;
-mod types;
-
 use clap::Parser;
-use cli::{App, Args, Config};
 use std::process;
+use structured_agent::cli::{App, Args, Config};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]

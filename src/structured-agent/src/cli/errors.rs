@@ -4,17 +4,17 @@ use std::io;
 
 #[derive(Debug)]
 pub enum CliError {
-    IoError(io::Error),
-    McpError(String),
-    RuntimeError(String),
+    Io(io::Error),
+    Mcp(String),
+    Runtime(String),
 }
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CliError::IoError(e) => write!(f, "File I/O error: {}", e),
-            CliError::McpError(e) => write!(f, "MCP connection error: {}", e),
-            CliError::RuntimeError(e) => {
+            CliError::Io(e) => write!(f, "File I/O error: {}", e),
+            CliError::Mcp(e) => write!(f, "MCP connection error: {}", e),
+            CliError::Runtime(e) => {
                 if e.contains("ExecutionError") && e.contains("Parse error at line") {
                     if let Some(start) = e.find("Parse error at line") {
                         let error_part = &e[start..];
@@ -38,6 +38,6 @@ impl Error for CliError {}
 
 impl From<io::Error> for CliError {
     fn from(err: io::Error) -> Self {
-        CliError::IoError(err)
+        CliError::Io(err)
     }
 }

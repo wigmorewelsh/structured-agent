@@ -38,7 +38,7 @@ impl App {
                 Self::display_result(&result);
                 Ok(())
             }
-            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+            Err(e) => Err(CliError::Runtime(format!("{}", e))),
         }
     }
 
@@ -62,7 +62,7 @@ impl App {
                 println!("All checks passed");
                 Ok(())
             }
-            Err(e) => Err(CliError::RuntimeError(format!("{}", e))),
+            Err(e) => Err(CliError::Runtime(format!("{}", e))),
         }
     }
 
@@ -71,16 +71,13 @@ impl App {
         if let Ok(cwd) = std::env::current_dir() {
             builder = builder.with_mcp_working_dir(cwd.to_string_lossy().into_owned());
         }
-        builder
-            .with_config(config)
-            .await
-            .map_err(CliError::RuntimeError)
+        builder.with_config(config).await.map_err(CliError::Runtime)
     }
 
     async fn run_acp_mode(config: Config) -> Result<(), CliError> {
         acp::run_acp_server(config)
             .await
-            .map_err(|e| CliError::RuntimeError(format!("ACP server error: {}", e)))
+            .map_err(|e| CliError::Runtime(format!("ACP server error: {}", e)))
     }
 
     fn display_result(result: &crate::runtime::ExpressionValue) {

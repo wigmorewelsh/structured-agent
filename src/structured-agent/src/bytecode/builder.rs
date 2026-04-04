@@ -11,7 +11,6 @@ pub struct InstructionBuilder {
 enum PendingJumpKind {
     Br,
     BrFalse(String),
-    BrTrue(String),
     SwitchCase(String, usize),
 }
 
@@ -52,17 +51,6 @@ impl InstructionBuilder {
             .push(Instruction::BrFalse { var, offset: 0 });
     }
 
-    pub fn emit_brtrue(&mut self, var: String, label: &str) {
-        let position = self.instructions.len();
-        self.pending_labels.push((
-            position,
-            label.to_string(),
-            PendingJumpKind::BrTrue(var.clone()),
-        ));
-        self.instructions
-            .push(Instruction::BrTrue { var, offset: 0 });
-    }
-
     pub fn emit_switch(&mut self, var: String, case_labels: Vec<String>) {
         let position = self.instructions.len();
         for (index, label) in case_labels.iter().enumerate() {
@@ -82,10 +70,6 @@ impl InstructionBuilder {
         temp
     }
 
-    pub fn emit_drop(&mut self, var: String) {
-        self.instructions.push(Instruction::Drop { name: var });
-    }
-
     pub fn build(mut self) -> Result<(Vec<Instruction>, HashMap<String, usize>), String> {
         for (position, label, kind) in self.pending_labels {
             let target = self
@@ -103,12 +87,6 @@ impl InstructionBuilder {
                 }
                 PendingJumpKind::BrFalse(var) => {
                     self.instructions[position] = Instruction::BrFalse {
-                        var,
-                        offset: target_position,
-                    };
-                }
-                PendingJumpKind::BrTrue(var) => {
-                    self.instructions[position] = Instruction::BrTrue {
                         var,
                         offset: target_position,
                     };

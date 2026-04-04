@@ -684,7 +684,7 @@ where
     (
         position(),
         satisfy(|c: char| c.is_uppercase()),
-        many(combine::parser::char::alpha_num()),
+        many::<Vec<char>, _, _>(combine::parser::char::alpha_num()),
         skip_spaces(),
         lex_char('{'),
         sep_by(parse_struct_field_assignment(), lex_char(',')),
@@ -693,26 +693,14 @@ where
         position(),
     )
         .skip(skip_spaces())
-        .map(
-            |(start, first, rest, _, _, fields, _, _, end): (
-                usize,
-                char,
-                Vec<char>,
-                (),
-                _,
-                Vec<(String, Expression)>,
-                _,
-                _,
-                usize,
-            )| {
-                let struct_name: String = std::iter::once(first).chain(rest).collect();
-                Expression::StructLiteral {
-                    struct_name,
-                    fields,
-                    span: Span::new(start, end),
-                }
-            },
-        )
+        .map(|(start, first, rest, _, _, fields, _, _, end)| {
+            let struct_name: String = std::iter::once(first).chain(rest).collect();
+            Expression::StructLiteral {
+                struct_name,
+                fields,
+                span: Span::new(start, end),
+            }
+        })
 }
 
 fn parse_struct_field_assignment<Input>() -> impl Parser<Input, Output = (String, Expression)>

@@ -25,7 +25,6 @@ pub struct TypeChecker {
 struct FunctionSignature {
     parameters: Vec<Parameter>,
     return_type: AstType,
-    is_pub: bool,
     kind: FunctionKind,
     type_params: Vec<String>,
 }
@@ -82,7 +81,6 @@ impl TypeChecker {
                 FunctionSignature {
                     parameters: sig.parameters.clone(),
                     return_type: sig.return_type.clone(),
-                    is_pub: sig.is_pub,
                     kind: sig.kind.clone(),
                     type_params: vec![],
                 },
@@ -223,7 +221,6 @@ impl TypeChecker {
                     FunctionSignature {
                         parameters: fn_params,
                         return_type: ret_type,
-                        is_pub: true,
                         kind: FunctionKind::External,
                         type_params: vec![],
                     },
@@ -282,7 +279,6 @@ impl TypeChecker {
                         FunctionSignature {
                             parameters: resolved_params,
                             return_type: resolved_return,
-                            is_pub: func.is_pub,
                             kind: FunctionKind::Bytecode,
                             type_params: func.type_params.clone(),
                         },
@@ -317,7 +313,6 @@ impl TypeChecker {
                         FunctionSignature {
                             parameters: resolved_params,
                             return_type: self.resolve_type(&ext_func.return_type),
-                            is_pub: ext_func.is_pub,
                             kind: FunctionKind::External,
                             type_params: ext_func.type_params.clone(),
                         },
