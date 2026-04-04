@@ -279,6 +279,11 @@ where
         position(),
         lex_string("fn"),
         identifier(),
+        optional(attempt(between(
+            lex_char('<'),
+            lex_char('>'),
+            sep_by1(identifier(), lex_char(',')),
+        ))),
         between(
             lex_char('('),
             lex_char(')'),
@@ -289,9 +294,9 @@ where
         position(),
     )
         .map(
-            |(start, _, name, parameters, _, return_type, end)| SigFunction {
+            |(start, _, name, type_params_opt, parameters, _, return_type, end)| SigFunction {
                 name,
-                type_params: vec![],
+                type_params: type_params_opt.unwrap_or_default(),
                 parameters,
                 return_type,
                 span: Span::new(start, end),
@@ -351,6 +356,11 @@ where
         optional(attempt(lex_string("pub"))),
         lex_string("fn"),
         identifier(),
+        optional(attempt(between(
+            lex_char('<'),
+            lex_char('>'),
+            sep_by1(identifier(), lex_char(',')),
+        ))),
         between(
             lex_char('('),
             lex_char(')'),
@@ -362,15 +372,17 @@ where
         position(),
     )
         .map(
-            |(start, pub_kw, _, name, params, _, return_type, body, end)| Function {
-                name,
-                type_params: vec![],
-                parameters: params,
-                return_type,
-                body,
-                documentation: None,
-                is_pub: pub_kw.is_some(),
-                span: Span::new(start, end),
+            |(start, pub_kw, _, name, type_params_opt, params, _, return_type, body, end)| {
+                Function {
+                    name,
+                    type_params: type_params_opt.unwrap_or_default(),
+                    parameters: params,
+                    return_type,
+                    body,
+                    documentation: None,
+                    is_pub: pub_kw.is_some(),
+                    span: Span::new(start, end),
+                }
             },
         )
 }
@@ -440,10 +452,10 @@ combine::parser! {
                 )
                     .map(|(_, _, inner, _)| Type::Option(Box::new(inner))),
             ),
-            lex_string("()").map(|_| Type::Unit),
-            lex_string("Boolean").map(|_| Type::Boolean),
-            lex_string("String").map(|_| Type::String),
-            lex_string("Int").map(|_| Type::Int),
+            attempt(lex_string("()").map(|_| Type::Unit)),
+            attempt(lex_string("Boolean").map(|_| Type::Boolean)),
+            attempt(lex_string("String").map(|_| Type::String)),
+            attempt(lex_string("Int").map(|_| Type::Int)),
             attempt(
                 (
                     satisfy(|c: char| c.is_uppercase()),
@@ -451,7 +463,7 @@ combine::parser! {
                 )
                     .skip(skip_spaces())
                     .map(|(first, rest): (char, Vec<char>)| {
-                        Type::Struct(std::iter::once(first).chain(rest).collect())
+                        Type::Generic(std::iter::once(first).chain(rest).collect())
                     }),
             ),
         ))
@@ -2440,7 +2452,7 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 2);
         if let Definition::ExternalFunction(f) = &module.definitions[1] {
-            assert!(matches!(&f.return_type, Type::Struct(n) if n == "Point"));
+            assert!(matches!(&f.return_type, Type::Generic(n) if n == "Point"));
         } else {
             panic!("Expected external function");
         }
@@ -2454,7 +2466,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[1] {
-            assert!(matches!(&f.parameters[0].param_type, Type::Struct(n) if n == "Point"));
+            assert!(matches!(&f.parameters[0].param_type, Type::Generic(n) if n == "Point"));
         } else {
             panic!("Expected function");
         }
@@ -2534,7 +2546,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[1] {
-            assert!(matches!(&f.return_type, Type::Struct(n) if n == "Point"));
+            assert!(matches!(&f.return_type, Type::Generic(n) if n == "Point"));
         } else {
             panic!("Expected function");
         }
@@ -2960,6 +2972,76 @@ fn main(): String {
                 assert_eq!(args, &vec!["fmt"]);
             }
             other => panic!("Expected WiringSite, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_single_type_param() {
+        let input = "fn identity<T>(x: T): T {\n    return x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params, vec!["T"]);
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_multiple_type_params() {
+        let input = "fn pair<T, U>(a: T, b: U): T {\n    return a\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params, vec!["T", "U"]);
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_without_type_params_has_empty_list() {
+        let input = "fn greet(name: String): String {\n    return name\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            assert!(f.type_params.is_empty());
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_sig_function_with_single_type_param() {
+        let input = "sig Container {\n    fn wrap<T>(value: T): T\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Signature { functions, .. } = &module.definitions[0] {
+            assert_eq!(functions[0].type_params, vec!["T"]);
+        } else {
+            panic!("Expected signature");
+        }
+    }
+
+    #[test]
+    fn test_parse_sig_function_with_multiple_type_params() {
+        let input = "sig Mapper {\n    fn map<A, B>(input: A): B\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Signature { functions, .. } = &module.definitions[0] {
+            assert_eq!(functions[0].type_params, vec!["A", "B"]);
+        } else {
+            panic!("Expected signature");
         }
     }
 }

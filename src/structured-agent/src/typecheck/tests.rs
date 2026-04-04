@@ -1260,6 +1260,59 @@ mod tests {
             TypeError::UnsupportedType { .. }
         ));
     }
+
+    #[test]
+    fn test_struct_typed_function_typechecks_via_parser() {
+        let input = "struct MyStruct {\n    value: String,\n}\nfn foo(x: MyStruct): MyStruct {\n    return x\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            result.is_ok(),
+            "struct-typed function should type-check: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_generic_type_param_single_parsed_correctly() {
+        let input = "fn identity<T>(x: T): T {\n    return x\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        if let crate::ast::Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params, vec!["T"]);
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_generic_type_param_multiple_parsed_correctly() {
+        let input = "fn pair<T, U>(a: T, b: U): T {\n    return a\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        if let crate::ast::Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params, vec!["T", "U"]);
+        } else {
+            panic!("Expected function");
+        }
+    }
 }
 
 #[cfg(test)]

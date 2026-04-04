@@ -253,11 +253,20 @@ impl TypeChecker {
                     for param in &func.parameters {
                         self.validate_type(&param.param_type, param.span, file_id)?;
                     }
+                    let resolved_params: Vec<_> = func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self.resolve_type(&p.param_type),
+                            span: p.span,
+                        })
+                        .collect();
                     self.function_signatures.insert(
                         func.name.clone(),
                         FunctionSignature {
-                            parameters: func.parameters.clone(),
-                            return_type: func.return_type.clone(),
+                            parameters: resolved_params,
+                            return_type: self.resolve_type(&func.return_type),
                             is_pub: func.is_pub,
                             kind: FunctionKind::Bytecode,
                         },
@@ -268,11 +277,20 @@ impl TypeChecker {
                     for param in &ext_func.parameters {
                         self.validate_type(&param.param_type, param.span, file_id)?;
                     }
+                    let resolved_params: Vec<_> = ext_func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self.resolve_type(&p.param_type),
+                            span: p.span,
+                        })
+                        .collect();
                     self.function_signatures.insert(
                         ext_func.name.clone(),
                         FunctionSignature {
-                            parameters: ext_func.parameters.clone(),
-                            return_type: ext_func.return_type.clone(),
+                            parameters: resolved_params,
+                            return_type: self.resolve_type(&ext_func.return_type),
                             is_pub: ext_func.is_pub,
                             kind: FunctionKind::External,
                         },
@@ -335,6 +353,17 @@ impl TypeChecker {
         map
     }
 
+    fn resolve_type(&self, t: &AstType) -> AstType {
+        match t {
+            AstType::Generic(name) if self.struct_definitions.contains_key(name) => {
+                AstType::Struct(name.clone())
+            }
+            AstType::List(inner) => AstType::List(Box::new(self.resolve_type(inner))),
+            AstType::Option(inner) => AstType::Option(Box::new(self.resolve_type(inner))),
+            other => other.clone(),
+        }
+    }
+
     fn validate_type(
         &self,
         ast_type: &AstType,
@@ -371,7 +400,11 @@ impl TypeChecker {
     ) -> Result<typed_ast::Function, TypeError> {
         let mut env = TypeEnvironment::new();
         for param in &func.parameters {
-            env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
+            env.declare_variable(
+                param.name.clone(),
+                self.resolve_type(&param.param_type),
+                param.span,
+            );
         }
         let mut typed_stmts = Vec::new();
         for statement in &func.body.statements {
@@ -979,7 +1012,7 @@ impl TypeChecker {
         let typed_base = self.check_expression(base, env, ctx)?;
         let base_type = typed_base.ty().clone();
         match base_type {
-            AstType::Struct(name) => {
+            AstType::Struct(name) | AstType::Generic(name) => {
                 let definition = self.struct_definitions.get(&name).ok_or_else(|| {
                     TypeError::UnsupportedType {
                         type_name: name.clone(),
