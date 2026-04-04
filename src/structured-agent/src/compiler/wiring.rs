@@ -249,6 +249,7 @@ mod tests {
                     },
                     Definition::Function(Function {
                         name: "run".to_string(),
+                        type_params: vec![],
                         parameters: vec![],
                         return_type: AstType::Unit,
                         body: FunctionBody {
@@ -279,6 +280,7 @@ mod tests {
     fn sig_fn(name: &str) -> SigFunction {
         SigFunction {
             name: name.to_string(),
+            type_params: vec![],
             parameters: vec![],
             return_type: AstType::Unit,
             span: dummy_span(),

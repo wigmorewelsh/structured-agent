@@ -1,0 +1,17 @@
+struct Task {
+    title: String,
+    done: Boolean,
+}
+
+fn describe(t: Task): String {
+    if t.done {
+        return "complete"
+    } else {
+        return "pending"
+    }
+}
+
+fn main(): String {
+    let t = Task { title: "write tests", done: true }
+    return describe(t)
+}

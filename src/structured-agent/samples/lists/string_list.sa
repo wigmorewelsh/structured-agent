@@ -1,0 +1,3 @@
+fn main(): List<String> {
+    return ["apple", "banana", "cherry"]
+}

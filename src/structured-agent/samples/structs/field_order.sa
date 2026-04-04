@@ -1,0 +1,9 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+fn main(): Int {
+    let p = Point { y: 99, x: 1 }
+    return p.y
+}

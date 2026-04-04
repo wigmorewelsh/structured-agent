@@ -1,0 +1,13 @@
+struct Report {
+    title: String,
+    score: Int,
+}
+
+fn summarise(r: Report): () {
+    r!
+}
+
+fn main(): () {
+    let r = Report { title: "quarterly", score: 42 }
+    summarise(r)
+}

@@ -1,0 +1,18 @@
+struct Counter {
+    value: Int,
+    limit: Int,
+}
+
+fn done(c: Counter): Boolean {
+    "Is the counter done?"!
+    c.value!
+    c.limit!
+}
+
+fn main(): String {
+    let c = Counter { value: 0, limit: 5 }
+    while done(c) {
+        "still running"!
+    }
+    return "finished"
+}

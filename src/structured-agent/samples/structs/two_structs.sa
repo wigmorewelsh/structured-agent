@@ -1,0 +1,19 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+struct Label {
+    text: String,
+}
+
+fn describe(p: Point, l: Label): String {
+    l.text!
+    return l.text
+}
+
+fn main(): String {
+    let p = Point { x: 3, y: 4 }
+    let l = Label { text: "origin" }
+    return describe(p, l)
+}

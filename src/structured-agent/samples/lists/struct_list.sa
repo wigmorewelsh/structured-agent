@@ -1,0 +1,12 @@
+struct Task {
+    title: String,
+    done: Boolean,
+}
+
+fn main(): List<Task> {
+    return [
+        Task { title: "write tests", done: true },
+        Task { title: "fix bugs", done: false },
+        Task { title: "deploy", done: false }
+    ]
+}

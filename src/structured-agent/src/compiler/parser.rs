@@ -291,6 +291,7 @@ where
         .map(
             |(start, _, name, parameters, _, return_type, end)| SigFunction {
                 name,
+                type_params: vec![],
                 parameters,
                 return_type,
                 span: Span::new(start, end),
@@ -363,6 +364,7 @@ where
         .map(
             |(start, pub_kw, _, name, params, _, return_type, body, end)| Function {
                 name,
+                type_params: vec![],
                 parameters: params,
                 return_type,
                 body,

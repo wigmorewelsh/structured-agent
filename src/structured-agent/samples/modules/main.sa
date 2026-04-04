@@ -1,0 +1,11 @@
+use greeter::greet
+use greeter::farewell
+
+fn main(): () {
+    "Starting multi-module demo"!
+    let result = greet("Alice")
+    result!
+    let bye = farewell("Alice")
+    bye!
+    "Done"!
+}

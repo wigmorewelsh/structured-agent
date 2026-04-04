@@ -1,0 +1,30 @@
+
+struct ActorState {
+    // Define any state variables for the actor here
+}
+
+mod SomeActor(state: ActorState) {
+    pub fn push_state(): () {
+        "Did something"!
+
+        while true {
+            "Doing something in a loop"!
+            yield # this allows the actor to run other tasks, i.e callers can call other functions and this will run in the same context
+            # this is essentially explicit reentrancy, allowing the actor to yield control to other tasks while still maintaining its state and context. This is useful for long-running operations or when waiting for external events, as it allows the actor to remain responsive and efficient without blocking other tasks.
+        }
+    }
+
+    pub fn push_state_with_value(): String {
+        "Did something with a value"!
+    }
+
+}
+
+pub fn main(): String {
+    let actor = spawn<SomeActor>("MyActor", ActorState{})
+
+    defer actor::push_state()
+
+    let value = actor::push_state_with_value()
+    return "Got value: {value}"
+}

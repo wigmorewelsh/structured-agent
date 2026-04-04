@@ -22,6 +22,7 @@ fn create_test_function(
 ) -> Function {
     Function {
         name: name.to_string(),
+        type_params: vec![],
         parameters,
         return_type,
         body: FunctionBody {

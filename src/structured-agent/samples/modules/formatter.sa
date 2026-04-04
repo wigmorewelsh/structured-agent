@@ -1,0 +1,9 @@
+mod formatter
+
+sig Formatter {
+    fn format(value: String): String
+}
+
+pub fn format(value: String): String {
+    return value
+}

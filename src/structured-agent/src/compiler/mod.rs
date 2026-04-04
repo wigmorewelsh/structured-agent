@@ -426,6 +426,7 @@ fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
         crate::ast::Type::Option(inner) => Type::option(ast_type_to_type(inner)),
         crate::ast::Type::Int => Type::int(),
         crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
+        crate::ast::Type::Generic(name) => Type::Struct(name.clone()),
     }
 }
 

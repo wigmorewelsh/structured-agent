@@ -1,0 +1,12 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+fn get_x(p: Point): Int {
+    return p.x
+}
+
+fn main(): Int {
+    return get_x(Point { x: 7, y: 3 })
+}

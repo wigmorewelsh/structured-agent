@@ -1,0 +1,9 @@
+extern fn head(list: List<String>): Option<String>
+
+fn main(): List<Option<String>> {
+    let fruits = ["apple", "banana", "cherry"]
+    let names = ["alice", "bob"]
+    let first_fruit = head(fruits)
+    let first_name = head(names)
+    return [first_fruit, first_name]
+}

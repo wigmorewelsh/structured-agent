@@ -1,0 +1,16 @@
+struct Dog {
+    name: String,
+}
+
+struct Cat {
+    name: String,
+}
+
+fn pet_dog(d: Dog): String {
+    return d.name
+}
+
+fn main(): String {
+    let c = Cat { name: "Whiskers" }
+    return pet_dog(c)
+}

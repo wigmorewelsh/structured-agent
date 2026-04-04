@@ -1,0 +1,14 @@
+struct Address {
+    city: String,
+}
+
+struct Person {
+    name: String,
+    address: Address,
+}
+
+fn main(): String {
+    let addr = Address { city: "London" }
+    let p = Person { name: "Alice", address: addr }
+    return p.address.city
+}

@@ -1,0 +1,9 @@
+mod greeter
+
+pub fn greet(name: String): String {
+    return name
+}
+
+pub fn farewell(name: String): String {
+    return name
+}

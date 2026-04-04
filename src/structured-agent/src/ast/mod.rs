@@ -18,6 +18,7 @@ pub struct ModuleParam {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SigFunction {
     pub name: String,
+    pub type_params: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub span: Span,
@@ -89,6 +90,7 @@ pub struct StructField {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
+    pub type_params: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub body: FunctionBody,
@@ -122,6 +124,7 @@ pub enum Type {
     Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
+    Generic(std::string::String),
 }
 
 impl Spanned for Type {
@@ -285,6 +288,7 @@ impl fmt::Display for Type {
             Type::Struct(name) => write!(f, "{}", name),
             Type::List(inner) => write!(f, "List<{}>", inner),
             Type::Option(inner) => write!(f, "Option<{}>", inner),
+            Type::Generic(name) => write!(f, "{}", name),
         }
     }
 }

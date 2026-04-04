@@ -1,0 +1,22 @@
+struct Metric {
+    value: Int,
+}
+
+struct Flag {
+    value: Boolean,
+}
+
+fn read_metric(m: Metric): Int {
+    return m.value
+}
+
+fn read_flag(f: Flag): Boolean {
+    return f.value
+}
+
+fn main(): Boolean {
+    let m = Metric { value: 42 }
+    let f = Flag { value: true }
+    let n = read_metric(m)
+    return read_flag(f)
+}

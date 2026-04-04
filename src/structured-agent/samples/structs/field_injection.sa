@@ -1,0 +1,13 @@
+struct Person {
+    name: String,
+    age: Int,
+}
+
+fn introduce(p: Person): () {
+    p.name!
+}
+
+fn main(): () {
+    let p = Person { name: "Alice", age: 30 }
+    introduce(p)
+}

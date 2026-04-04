@@ -342,7 +342,11 @@ impl TypeChecker {
         file_id: FileId,
     ) -> Result<(), TypeError> {
         match ast_type {
-            AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
+            AstType::Unit
+            | AstType::Boolean
+            | AstType::String
+            | AstType::Int
+            | AstType::Generic(_) => Ok(()),
             AstType::List(inner) | AstType::Option(inner) => {
                 self.validate_type(inner, span, file_id)
             }

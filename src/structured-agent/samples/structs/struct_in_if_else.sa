@@ -1,0 +1,12 @@
+struct Config {
+    debug: Boolean,
+}
+
+fn get_config(verbose: Boolean): Config {
+    return if verbose { Config { debug: true } } else { Config { debug: false } }
+}
+
+fn main(): Boolean {
+    let cfg = get_config(true)
+    return cfg.debug
+}

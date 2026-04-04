@@ -1,0 +1,16 @@
+struct Playlist {
+    name: String,
+    tracks: List<String>,
+}
+
+fn describe(p: Playlist): String {
+    p.name!
+    p.tracks!
+    return p.name
+}
+
+fn main(): String {
+    let tracks = ["one", "two", "three"]
+    let p = Playlist { name: "favourites", tracks: tracks }
+    return describe(p)
+}

@@ -626,6 +626,7 @@ impl BytecodeCompiler {
             ast::Type::Option(inner) => {
                 crate::types::Type::Option(Box::new(Self::convert_type(inner)))
             }
+            ast::Type::Generic(name) => crate::types::Type::Struct(name.clone()),
         }
     }
 

@@ -1,0 +1,9 @@
+struct Profile {
+    name: String,
+    bio: Option<String>,
+}
+
+fn main(): String {
+    let p = Profile { name: "Alice", bio: "Engineer" }
+    return p.name
+}

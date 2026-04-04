@@ -128,6 +128,7 @@ mod tests {
     fn pub_fn(name: &str) -> Definition {
         Definition::Function(Function {
             name: name.to_string(),
+            type_params: vec![],
             parameters: vec![],
             return_type: AstType::Unit,
             body: FunctionBody {
@@ -157,6 +158,7 @@ mod tests {
                 .iter()
                 .map(|n| SigFunction {
                     name: n.to_string(),
+                    type_params: vec![],
                     parameters: vec![],
                     return_type: AstType::Unit,
                     span: dummy_span(),

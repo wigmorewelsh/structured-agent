@@ -1,0 +1,10 @@
+mod fmt: formatter::Formatter = formatter
+mod reporter(fmt)
+
+use reporter::report
+
+fn main(): () {
+    "Demonstrating vtable dispatch via module parameters"!
+    report("hello from wired modules")
+    "Done"!
+}

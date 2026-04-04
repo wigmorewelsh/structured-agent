@@ -1,0 +1,11 @@
+fn scores(): List<Int> {
+    return [10, 20, 30, 40, 50]
+}
+
+fn flags(): List<Boolean> {
+    return [true, false, true, true, false]
+}
+
+fn main(): List<Int> {
+    return scores()
+}
