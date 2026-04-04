@@ -1,4 +1,4 @@
-extern fn receive(): String
+use messaging::receive
 
 extern fn read_file(path: String): String
 extern fn write_file(path: String, content: String): ()

@@ -1,11 +1,5 @@
-extern fn receive(): String
-extern fn print(value: String): ()
-# extern fn head(list: List<String>): Option<String>
-# extern fn tail(list: List<String>): Option<List<String>>
-# extern fn is_some(option: Option<String>): Boolean
-# extern fn some_value(option: Option<String>): String
-# extern fn is_some_list(option: Option<List<String>>): Boolean
-# extern fn some_value_list(option: Option<List<String>>): List<String>
+use messaging::receive
+use io::print
 
 extern fn read_file(path: String): String
 extern fn write_file(path: String, content: String): String

@@ -1,4 +1,4 @@
-extern fn head(list: List<String>): Option<String>
+use unstable::head
 
 fn main(): List<Option<String>> {
     let fruits = ["apple", "banana", "cherry"]

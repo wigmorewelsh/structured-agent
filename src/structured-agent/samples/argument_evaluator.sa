@@ -1,7 +1,8 @@
+use io::print
+use io::input
+
 extern fn fetch(url: String): String
 extern fn websearch(query: String): String
-extern fn print(message: String): ()
-extern fn input(): String
 
 fn select_best_profile_url(author_name: String, search_results: String): String {
     "From these search results, select the URL that best represents the author's professional background."!

@@ -1,6 +1,5 @@
-
-extern fn input(): String
-extern fn print(message: String): ()
+use io::input
+use io::print
 
 fn agent_response(history: String, user_input: String): String {
     "You are an agent responding to user requests and queries."!

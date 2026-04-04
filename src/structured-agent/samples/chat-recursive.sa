@@ -1,4 +1,4 @@
-extern fn receive(): String
+use messaging::receive
 
 fn answer_question(question: String): String {
     "answer the following question"!
