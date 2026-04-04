@@ -160,6 +160,7 @@ impl LanguageEngine for PrintEngine {
             }
             Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
             Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
+            Type::Generic(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
     }
 
@@ -189,7 +190,9 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
-            Type::Unit | Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
+            Type::Unit | Type::Struct(_) | Type::Generic(_) => {
+                Ok(crate::runtime::ExpressionValue::unit())
+            }
         }
     }
 }

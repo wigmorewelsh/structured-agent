@@ -56,6 +56,7 @@ impl GeminiEngine {
             Type::List(_) => Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string())),
             Type::Option(inner_type) => Self::build_value_schema(inner_type, context),
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
+            Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
             Type::Struct(name) => {
                 let fields = context
                     .runtime()
@@ -215,6 +216,9 @@ impl GeminiEngine {
                         Self::parse_json_value(value_field.clone(), return_type, context)
                     }
                     Type::Unit => Err("Unit type cannot be used as return type".to_string()),
+                    Type::Generic(_) => {
+                        Err("Generic type cannot be used as return type".to_string())
+                    }
                     Type::Struct(_) => unreachable!(),
                 }
             }

@@ -27,21 +27,25 @@ pub fn generic_arg(ty: &SynType) -> syn::Result<&SynType> {
     Err(syn::Error::new_spanned(ty, "type has no generic argument"))
 }
 
-pub fn map_type_to_runtime(ty: &SynType) -> syn::Result<TokenStream2> {
+pub fn map_type_to_runtime(ty: &SynType, type_params: &[String]) -> syn::Result<TokenStream2> {
     if is_unit_type(ty) {
         return Ok(quote! { ::structured_agent_runtime::Type::unit() });
     }
     let ident = path_ident(ty)?;
-    Ok(match ident.to_string().as_str() {
+    let ident_str = ident.to_string();
+    if type_params.contains(&ident_str) {
+        return Ok(quote! { ::structured_agent_runtime::Type::generic(#ident_str) });
+    }
+    Ok(match ident_str.as_str() {
         "String" => quote! { ::structured_agent_runtime::Type::string() },
         "bool" => quote! { ::structured_agent_runtime::Type::boolean() },
         "i64" => quote! { ::structured_agent_runtime::Type::int() },
         "Option" => {
-            let inner = map_type_to_runtime(generic_arg(ty)?)?;
+            let inner = map_type_to_runtime(generic_arg(ty)?, type_params)?;
             quote! { ::structured_agent_runtime::Type::option(#inner) }
         }
         "Vec" => {
-            let inner = map_type_to_runtime(generic_arg(ty)?)?;
+            let inner = map_type_to_runtime(generic_arg(ty)?, type_params)?;
             quote! { ::structured_agent_runtime::Type::list(#inner) }
         }
         other => {

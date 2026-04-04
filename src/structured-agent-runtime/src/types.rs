@@ -12,6 +12,7 @@ pub enum Type {
     Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
+    Generic(std::string::String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +54,10 @@ impl Type {
         Self::Option(Box::new(inner))
     }
 
+    pub fn generic(name: impl Into<std::string::String>) -> Self {
+        Self::Generic(name.into())
+    }
+
     pub fn name(&self) -> String {
         match self {
             Type::String => "String".to_string(),
@@ -62,6 +67,7 @@ impl Type {
             Type::Struct(name) => name.clone(),
             Type::List(inner) => format!("List<{}>", inner.name()),
             Type::Option(inner) => format!("Option<{}>", inner.name()),
+            Type::Generic(name) => name.clone(),
         }
     }
 }
@@ -109,6 +115,10 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
     ) -> Result<ExpressionValue, String>;
     fn documentation(&self) -> Option<&str> {
         None
+    }
+
+    fn type_params(&self) -> &[String] {
+        &[]
     }
 }
 

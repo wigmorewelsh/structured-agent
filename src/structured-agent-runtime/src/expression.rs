@@ -111,6 +111,7 @@ impl ExpressionValue {
         if elements.is_empty() {
             let mut builder: ListBuilder<Box<dyn arrow::array::ArrayBuilder>> =
                 ListBuilder::new(Box::new(StringBuilder::new()));
+            builder.append(true);
             return Ok(Self::list(Arc::new(builder.finish())));
         }
 
@@ -404,6 +405,17 @@ impl ExpressionValue {
             .as_any()
             .downcast_ref::<ListArray>()
             .ok_or_else(|| "Expected list".to_string())
+    }
+
+    pub fn as_list_elements(&self) -> Result<Vec<ExpressionValue>, String> {
+        let list = self.as_list()?;
+        if list.is_empty() {
+            return Ok(vec![]);
+        }
+        let values = list.value(0);
+        Ok((0..values.len())
+            .map(|i| ExpressionValue::from_array(values.slice(i, 1)))
+            .collect())
     }
 
     pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {

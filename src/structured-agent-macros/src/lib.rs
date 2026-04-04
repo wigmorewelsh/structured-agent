@@ -10,9 +10,9 @@ use proc_macro::TokenStream;
 use syn::{ItemFn, ItemMod, parse_macro_input};
 
 #[proc_macro_attribute]
-pub fn sa_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn sa_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
-    generate_native_function(input)
+    generate_native_function(attr.into(), input)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }

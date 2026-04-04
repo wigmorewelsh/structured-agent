@@ -65,9 +65,13 @@ fn partition_items(
                 .iter()
                 .position(|a| a.path().is_ident("sa_fn"));
             if let Some(pos) = sa_fn_pos {
+                let attr_tokens = match &item_fn.attrs[pos].meta {
+                    syn::Meta::List(ml) => ml.tokens.clone(),
+                    _ => proc_macro2::TokenStream::new(),
+                };
                 item_fn.attrs.remove(pos);
                 fn_struct_names.push(fn_struct_ident(&item_fn.sig.ident.to_string()));
-                generated_fns.push(generate_native_function(item_fn)?);
+                generated_fns.push(generate_native_function(attr_tokens, item_fn)?);
                 continue;
             }
             other_items.push(quote! { #item_fn });
