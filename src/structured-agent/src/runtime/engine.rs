@@ -33,6 +33,7 @@ pub struct RuntimeBuilder {
     compiler: Option<Arc<Compiler>>,
     program_source: ProgramSource,
     mcp_working_dir: Option<String>,
+    modules: Vec<Arc<dyn Module>>,
 }
 
 pub use structured_agent_runtime::RuntimeError;
@@ -46,6 +47,7 @@ impl RuntimeBuilder {
             compiler: None,
             program_source: source,
             mcp_working_dir: None,
+            modules: Vec::new(),
         }
     }
 
@@ -77,10 +79,11 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn with_module(mut self, module: &dyn Module) -> Self {
+    pub fn with_module(mut self, module: Arc<dyn Module>) -> Self {
         for func in module.functions() {
             self.native_provider.add_dyn_function(func);
         }
+        self.modules.push(module);
         self
     }
 
@@ -171,15 +174,17 @@ impl RuntimeBuilder {
         self = self.with_language_engine(engine);
 
         if config.with_default_functions {
-            self = self.with_module(&IoModule);
+            self = self.with_module(Arc::new(IoModule));
         }
 
         if config.with_unstable_functions {
-            self = self.with_module(&UnstableModule);
+            self = self.with_module(Arc::new(UnstableModule));
         }
 
         if config.with_acp_functions {
-            self = self.with_module(&MessagingModule).with_module(&FsModule);
+            self = self
+                .with_module(Arc::new(MessagingModule))
+                .with_module(Arc::new(FsModule));
         }
 
         Ok(self.build())
@@ -192,6 +197,11 @@ impl RuntimeBuilder {
 
         let function_registry = native_provider_rc.native_functions.clone();
 
+        let default_compiler = self
+            .modules
+            .iter()
+            .fold(Compiler::new(), |c, m| c.with_module(Arc::clone(m)));
+
         Runtime {
             function_registry,
             external_function_registry: HashMap::new(),
@@ -199,7 +209,7 @@ impl RuntimeBuilder {
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Arc::new(crate::types::PrintEngine {})),
-            compiler: self.compiler.unwrap_or_else(|| Arc::new(Compiler::new())),
+            compiler: self.compiler.unwrap_or_else(|| Arc::new(default_compiler)),
             providers,
             program_source: self.program_source,
         }

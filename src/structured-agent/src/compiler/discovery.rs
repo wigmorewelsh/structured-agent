@@ -56,6 +56,7 @@ pub(crate) fn discover(
     entry_path: &str,
     entry_source: &str,
     discoverer: &impl Discoverer,
+    native_module_names: &std::collections::HashSet<String>,
     mut parse: impl FnMut(&str, &str) -> Result<(FileId, Module), String>,
 ) -> Result<Vec<ParsedModule>, String> {
     let entry_dir = Path::new(entry_path)
@@ -89,7 +90,7 @@ pub(crate) fn discover(
         let (file_id, module) = parse(&file_path, &source)?;
 
         for dep in referenced_module_names(&module) {
-            if !visited.contains(&dep) {
+            if !visited.contains(&dep) && !native_module_names.contains(&dep) {
                 let dep_path = discoverer.dep_path(&entry_dir, &dep);
                 queue.push_back((dep.clone(), dep_path, false));
             }

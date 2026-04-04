@@ -82,7 +82,7 @@ impl TypeChecker {
                     parameters: sig.parameters.clone(),
                     return_type: sig.return_type.clone(),
                     kind: sig.kind.clone(),
-                    type_params: vec![],
+                    type_params: sig.type_params.clone(),
                 },
             );
         }
@@ -1162,6 +1162,7 @@ pub struct ExternalSig {
     pub return_type: AstType,
     pub is_pub: bool,
     pub kind: FunctionKind,
+    pub type_params: Vec<String>,
 }
 
 impl ExternalSig {
@@ -1176,7 +1177,13 @@ impl ExternalSig {
             return_type,
             is_pub,
             kind,
+            type_params: vec![],
         }
+    }
+
+    pub fn with_type_params(mut self, type_params: Vec<String>) -> Self {
+        self.type_params = type_params;
+        self
     }
 }
 

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ast::{Definition, SigFunction};
 use crate::typecheck::checker::{ExternalSig, FunctionKind, ModuleVisibility};
+use crate::types::Span;
+use structured_agent_runtime::types::Module as RuntimeModule;
 
 use super::discovery::ParsedModule;
 
@@ -12,7 +15,10 @@ pub(crate) struct SigTable {
     pub(crate) sig_definitions: HashMap<String, Vec<SigFunction>>,
 }
 
-pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
+pub(crate) fn collect_sigs(
+    modules: &[ParsedModule],
+    native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+) -> SigTable {
     let mut visibility: ModuleVisibility = HashMap::new();
     let mut external_sigs: HashMap<String, ExternalSig> = HashMap::new();
     let mut sig_definitions: HashMap<String, Vec<SigFunction>> = HashMap::new();
@@ -49,6 +55,37 @@ pub(crate) fn collect_sigs(modules: &[ParsedModule]) -> SigTable {
                             ),
                         );
                     }
+                }
+                Definition::Use { path, .. } => {
+                    if path.len() < 2 {
+                        continue;
+                    }
+                    let module_name = &path[0];
+                    let fn_name = path.last().unwrap();
+                    let Some(module) = native_modules.get(module_name) else {
+                        continue;
+                    };
+                    let Some(func) = module.functions().into_iter().find(|f| f.name() == fn_name)
+                    else {
+                        continue;
+                    };
+                    let qname = format!("{}::{}", module_name, fn_name);
+                    let parameters: Vec<crate::ast::Parameter> = func
+                        .parameters()
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: super::runtime_type_to_ast(&p.param_type),
+                            span: Span::dummy(),
+                        })
+                        .collect();
+                    let return_type = super::runtime_type_to_ast(func.return_type());
+                    visibility.insert(qname.clone(), true);
+                    external_sigs.insert(
+                        qname,
+                        ExternalSig::new(parameters, return_type, true, FunctionKind::External)
+                            .with_type_params(func.type_params().to_vec()),
+                    );
                 }
                 Definition::Signature {
                     name, functions, ..
@@ -172,7 +209,7 @@ mod tests {
     #[test]
     fn test_entry_module_fns_in_visibility_not_external_sigs() {
         let modules = vec![make_parsed("main", true, vec![pub_fn("run")])];
-        let table = collect_sigs(&modules);
+        let table = collect_sigs(&modules, &HashMap::new());
         assert!(table.visibility.contains_key("run"));
         assert!(!table.external_sigs.contains_key("run"));
     }
@@ -180,7 +217,7 @@ mod tests {
     #[test]
     fn test_non_entry_module_fns_in_both_visibility_and_external_sigs() {
         let modules = vec![make_parsed("lib", false, vec![pub_fn("read")])];
-        let table = collect_sigs(&modules);
+        let table = collect_sigs(&modules, &HashMap::new());
         assert!(table.visibility.contains_key("lib::read"));
         assert!(table.external_sigs.contains_key("lib::read"));
     }
@@ -188,7 +225,7 @@ mod tests {
     #[test]
     fn test_external_function_collected_in_external_sigs() {
         let modules = vec![make_parsed("lib", false, vec![pub_ext_fn("fetch")])];
-        let table = collect_sigs(&modules);
+        let table = collect_sigs(&modules, &HashMap::new());
         assert!(table.external_sigs.contains_key("lib::fetch"));
     }
 
@@ -199,7 +236,7 @@ mod tests {
             false,
             vec![sig_def("Store", &["read", "write"])],
         )];
-        let table = collect_sigs(&modules);
+        let table = collect_sigs(&modules, &HashMap::new());
         let fns = table
             .sig_definitions
             .get("Store")
@@ -212,7 +249,7 @@ mod tests {
     #[test]
     fn test_qualified_name_is_module_prefixed_for_non_entry() {
         let modules = vec![make_parsed("mymod", false, vec![pub_fn("greet")])];
-        let table = collect_sigs(&modules);
+        let table = collect_sigs(&modules, &HashMap::new());
         assert!(table.external_sigs.contains_key("mymod::greet"));
         assert!(!table.external_sigs.contains_key("greet"));
     }

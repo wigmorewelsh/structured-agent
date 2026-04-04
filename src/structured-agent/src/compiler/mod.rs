@@ -27,6 +27,8 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use sigs::{SigTable, collect_sigs, sigs_visible_to_module};
 use std::collections::HashMap;
+use std::sync::Arc;
+use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
 
@@ -188,6 +190,7 @@ impl CompiledProgram {
 
 pub struct Compiler {
     parser: CodespanParser,
+    modules: HashMap<String, Arc<dyn RuntimeModule>>,
 }
 
 impl Default for Compiler {
@@ -200,7 +203,13 @@ impl Compiler {
     pub fn new() -> Self {
         Self {
             parser: CodespanParser::new(),
+            modules: HashMap::new(),
         }
+    }
+
+    pub fn with_module(mut self, module: Arc<dyn RuntimeModule>) -> Self {
+        self.modules.insert(module.name().to_string(), module);
+        self
     }
 
     pub fn compile_source(&self, unit: &CompilationUnit) -> Result<CompiledProgram, String> {
@@ -238,16 +247,24 @@ impl Compiler {
         let parser = &self.parser;
         let mut diagnostics = DiagnosticManager::new();
 
-        let modules = discover(entry_path, entry_source, discoverer, |path, source| {
-            let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
-            let file_id = diagnostics.add_file(path.to_string(), source.to_string());
-            let reporter = diagnostics.reporter().clone();
-            parser
-                .parse(&unit, file_id, &reporter)
-                .map(|m| (file_id, m))
-        })?;
+        let native_names: std::collections::HashSet<String> =
+            self.modules.keys().cloned().collect();
+        let modules = discover(
+            entry_path,
+            entry_source,
+            discoverer,
+            &native_names,
+            |path, source| {
+                let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
+                let file_id = diagnostics.add_file(path.to_string(), source.to_string());
+                let reporter = diagnostics.reporter().clone();
+                parser
+                    .parse(&unit, file_id, &reporter)
+                    .map(|m| (file_id, m))
+            },
+        )?;
 
-        let sig_table: SigTable = collect_sigs(&modules);
+        let sig_table: SigTable = collect_sigs(&modules, &self.modules);
 
         let mut typed_modules: HashMap<String, typed_ast::Module> = HashMap::new();
 
@@ -400,6 +417,20 @@ fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<Modul
     }
 
     Ok(artifact)
+}
+
+pub(crate) fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> crate::ast::Type {
+    use structured_agent_runtime::types::Type as RT;
+    match ty {
+        RT::String => crate::ast::Type::String,
+        RT::Boolean => crate::ast::Type::Boolean,
+        RT::Int => crate::ast::Type::Int,
+        RT::Unit => crate::ast::Type::Unit,
+        RT::List(inner) => crate::ast::Type::List(Box::new(runtime_type_to_ast(inner))),
+        RT::Option(inner) => crate::ast::Type::Option(Box::new(runtime_type_to_ast(inner))),
+        RT::Struct(name) => crate::ast::Type::Struct(name.clone()),
+        RT::Generic(name) => crate::ast::Type::Generic(name.clone()),
+    }
 }
 
 pub fn compile_external_function(
