@@ -215,4 +215,29 @@ fn main(): () {
         let err = result.unwrap_err();
         assert!(err.contains("Type error"));
     }
+
+    #[test]
+    fn test_generic_function_call_typechecks_end_to_end() {
+        let code = r#"
+fn head<T>(list: List<T>): Option<T> {
+    return head(list)
+}
+
+fn main(xs: List<String>): Option<String> {
+    return head(xs)
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_source(&unit);
+
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Generic function call should compile successfully"
+        );
+    }
 }

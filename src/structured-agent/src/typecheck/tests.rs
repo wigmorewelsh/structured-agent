@@ -43,6 +43,28 @@ fn create_parameter(name: &str, param_type: AstType) -> Parameter {
     }
 }
 
+fn create_generic_test_function(
+    name: &str,
+    type_params: Vec<String>,
+    parameters: Vec<Parameter>,
+    return_type: AstType,
+    statements: Vec<Statement>,
+) -> Function {
+    Function {
+        name: name.to_string(),
+        type_params,
+        parameters,
+        return_type,
+        body: FunctionBody {
+            statements,
+            span: crate::types::Span::dummy(),
+        },
+        span: crate::types::Span::dummy(),
+        documentation: None,
+        is_pub: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1313,6 +1335,64 @@ mod tests {
             panic!("Expected function");
         }
     }
+
+    #[test]
+    fn test_generic_call_wrong_type_produces_mismatch() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".to_string()],
+            vec![create_parameter(
+                "list",
+                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+            )],
+            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            vec![],
+        );
+        let caller = create_test_function(
+            "caller",
+            vec![create_parameter("s", AstType::String)],
+            AstType::Option(Box::new(AstType::String)),
+            vec![Statement::Return(Expression::Call {
+                function: "head".to_string(),
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(head),
+            Definition::Function(caller),
+        ]);
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            matches!(result, Err(TypeError::ArgumentTypeMismatch { ref expected, ref found, .. })
+                if expected == "List<T>" && found == "String"),
+            "expected ArgumentTypeMismatch with concrete type names, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_unknown_type_variable_in_non_generic_function_is_error() {
+        let bad = create_generic_test_function(
+            "bad",
+            vec![],
+            vec![create_parameter("x", AstType::Generic("T".to_string()))],
+            AstType::Generic("T".to_string()),
+            vec![],
+        );
+        let module = create_test_module(vec![Definition::Function(bad)]);
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            matches!(result, Err(TypeError::UnsupportedType { ref type_name, .. }) if type_name == "T"),
+            "expected UnsupportedType for unknown type variable, got {:?}",
+            result
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1795,6 +1875,159 @@ mod typed_ast_tests {
         let expr = stmt_expr(f.body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::String);
         assert!(matches!(expr, typed_ast::Expression::Select(_, _)));
+    }
+
+    #[test]
+    fn generic_head_with_string_list_returns_option_string() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".to_string()],
+            vec![create_parameter(
+                "list",
+                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+            )],
+            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter(
+                "xs",
+                AstType::List(Box::new(AstType::String)),
+            )],
+            AstType::Option(Box::new(AstType::String)),
+            vec![Statement::Return(Expression::Call {
+                function: "head".to_string(),
+                arguments: vec![Expression::Variable {
+                    name: "xs".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(head),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Option(Box::new(AstType::String)));
+    }
+
+    #[test]
+    fn generic_head_with_int_list_returns_option_int() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".to_string()],
+            vec![create_parameter(
+                "list",
+                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+            )],
+            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter(
+                "xs",
+                AstType::List(Box::new(AstType::Int)),
+            )],
+            AstType::Option(Box::new(AstType::Int)),
+            vec![Statement::Return(Expression::Call {
+                function: "head".to_string(),
+                arguments: vec![Expression::Variable {
+                    name: "xs".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(head),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::Option(Box::new(AstType::Int)));
+    }
+
+    #[test]
+    fn generic_zip_with_two_type_params_typechecks() {
+        let zip = create_generic_test_function(
+            "zip",
+            vec!["A".to_string(), "B".to_string()],
+            vec![
+                create_parameter(
+                    "a",
+                    AstType::List(Box::new(AstType::Generic("A".to_string()))),
+                ),
+                create_parameter(
+                    "b",
+                    AstType::List(Box::new(AstType::Generic("B".to_string()))),
+                ),
+            ],
+            AstType::List(Box::new(AstType::Generic("A".to_string()))),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![
+                create_parameter("strs", AstType::List(Box::new(AstType::String))),
+                create_parameter("ints", AstType::List(Box::new(AstType::Int))),
+            ],
+            AstType::List(Box::new(AstType::String)),
+            vec![Statement::Return(Expression::Call {
+                function: "zip".to_string(),
+                arguments: vec![
+                    Expression::Variable {
+                        name: "strs".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    Expression::Variable {
+                        name: "ints".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                ],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(zip),
+            Definition::Function(caller),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &AstType::List(Box::new(AstType::String)));
     }
 
     #[test]

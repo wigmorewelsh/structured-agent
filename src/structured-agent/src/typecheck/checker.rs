@@ -27,6 +27,7 @@ struct FunctionSignature {
     return_type: AstType,
     is_pub: bool,
     kind: FunctionKind,
+    type_params: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +84,7 @@ impl TypeChecker {
                     return_type: sig.return_type.clone(),
                     is_pub: sig.is_pub,
                     kind: sig.kind.clone(),
+                    type_params: vec![],
                 },
             );
         }
@@ -223,6 +225,7 @@ impl TypeChecker {
                         return_type: ret_type,
                         is_pub: true,
                         kind: FunctionKind::External,
+                        type_params: vec![],
                     },
                 );
             }
@@ -249,10 +252,13 @@ impl TypeChecker {
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
-                    self.validate_type(&func.return_type, func.span, file_id)?;
-                    for param in &func.parameters {
-                        self.validate_type(&param.param_type, param.span, file_id)?;
-                    }
+                    let resolved_return = self.resolve_type(&func.return_type);
+                    self.validate_type_with_params(
+                        &resolved_return,
+                        func.span,
+                        file_id,
+                        &func.type_params,
+                    )?;
                     let resolved_params: Vec<_> = func
                         .parameters
                         .iter()
@@ -262,13 +268,23 @@ impl TypeChecker {
                             span: p.span,
                         })
                         .collect();
+                    for (resolved_param, orig_param) in resolved_params.iter().zip(&func.parameters)
+                    {
+                        self.validate_type_with_params(
+                            &resolved_param.param_type,
+                            orig_param.span,
+                            file_id,
+                            &func.type_params,
+                        )?;
+                    }
                     self.function_signatures.insert(
                         func.name.clone(),
                         FunctionSignature {
                             parameters: resolved_params,
-                            return_type: self.resolve_type(&func.return_type),
+                            return_type: resolved_return,
                             is_pub: func.is_pub,
                             kind: FunctionKind::Bytecode,
+                            type_params: func.type_params.clone(),
                         },
                     );
                 }
@@ -293,6 +309,7 @@ impl TypeChecker {
                             return_type: self.resolve_type(&ext_func.return_type),
                             is_pub: ext_func.is_pub,
                             kind: FunctionKind::External,
+                            type_params: vec![],
                         },
                     );
                 }
@@ -370,14 +387,31 @@ impl TypeChecker {
         span: Span,
         file_id: FileId,
     ) -> Result<(), TypeError> {
+        self.validate_type_with_params(ast_type, span, file_id, &[])
+    }
+
+    fn validate_type_with_params(
+        &self,
+        ast_type: &AstType,
+        span: Span,
+        file_id: FileId,
+        type_params: &[String],
+    ) -> Result<(), TypeError> {
         match ast_type {
-            AstType::Unit
-            | AstType::Boolean
-            | AstType::String
-            | AstType::Int
-            | AstType::Generic(_) => Ok(()),
+            AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
+            AstType::Generic(name) => {
+                if type_params.contains(name) {
+                    Ok(())
+                } else {
+                    Err(TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span,
+                        file_id,
+                    })
+                }
+            }
             AstType::List(inner) | AstType::Option(inner) => {
-                self.validate_type(inner, span, file_id)
+                self.validate_type_with_params(inner, span, file_id, type_params)
             }
             AstType::Struct(name) => {
                 if self.struct_definitions.contains_key(name) {
@@ -390,6 +424,47 @@ impl TypeChecker {
                     })
                 }
             }
+        }
+    }
+
+    fn unify_type(
+        formal: &AstType,
+        actual: &AstType,
+        subst: &mut HashMap<String, AstType>,
+    ) -> bool {
+        match formal {
+            AstType::Generic(name) => {
+                if let Some(bound) = subst.get(name) {
+                    bound == actual
+                } else {
+                    subst.insert(name.clone(), actual.clone());
+                    true
+                }
+            }
+            AstType::List(inner_formal) => {
+                if let AstType::List(inner_actual) = actual {
+                    Self::unify_type(inner_formal, inner_actual, subst)
+                } else {
+                    false
+                }
+            }
+            AstType::Option(inner_formal) => {
+                if let AstType::Option(inner_actual) = actual {
+                    Self::unify_type(inner_formal, inner_actual, subst)
+                } else {
+                    false
+                }
+            }
+            _ => formal == actual,
+        }
+    }
+
+    fn apply_subst(ty: &AstType, subst: &HashMap<String, AstType>) -> AstType {
+        match ty {
+            AstType::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+            AstType::List(inner) => AstType::List(Box::new(Self::apply_subst(inner, subst))),
+            AstType::Option(inner) => AstType::Option(Box::new(Self::apply_subst(inner, subst))),
+            other => other.clone(),
         }
     }
 
@@ -689,7 +764,7 @@ impl TypeChecker {
 
         self.check_visibility(qualified_for_vis, resolved, span, ctx)?;
 
-        let (kind, return_type, parameters) = {
+        let (kind, return_type, parameters, type_params) = {
             let func_sig = self.function_signatures.get(resolved).ok_or_else(|| {
                 TypeError::UnknownFunction {
                     name: function.to_string(),
@@ -701,6 +776,7 @@ impl TypeChecker {
                 func_sig.kind.clone(),
                 func_sig.return_type.clone(),
                 func_sig.parameters.clone(),
+                func_sig.type_params.clone(),
             )
         };
 
@@ -715,36 +791,73 @@ impl TypeChecker {
         }
 
         let mut typed_args = Vec::new();
-        for (arg, param) in arguments.iter().zip(&parameters) {
-            if matches!(arg, Expression::Placeholder { .. }) {
-                typed_args.push(typed_ast::Expression::Placeholder {
-                    ty: param.param_type.clone(),
-                    span: arg.span(),
-                });
-                continue;
-            }
-            let typed_arg = self.check_expression(arg, env, ctx)?;
-            if typed_arg.ty() != &param.param_type {
-                return Err(TypeError::ArgumentTypeMismatch {
-                    function: function.to_string(),
-                    parameter: param.name.clone(),
-                    expected: format!("{}", param.param_type),
-                    found: format!("{}", typed_arg.ty()),
-                    span: arg.span(),
-                    file_id: ctx.file_id,
-                });
-            }
-            typed_args.push(typed_arg);
-        }
 
-        Ok(typed_ast::Expression::Call {
-            function: function.to_string(),
-            resolved: resolved.to_string(),
-            kind,
-            arguments: typed_args,
-            ty: return_type,
-            span,
-        })
+        if type_params.is_empty() {
+            for (arg, param) in arguments.iter().zip(&parameters) {
+                if matches!(arg, Expression::Placeholder { .. }) {
+                    typed_args.push(typed_ast::Expression::Placeholder {
+                        ty: param.param_type.clone(),
+                        span: arg.span(),
+                    });
+                    continue;
+                }
+                let typed_arg = self.check_expression(arg, env, ctx)?;
+                if typed_arg.ty() != &param.param_type {
+                    return Err(TypeError::ArgumentTypeMismatch {
+                        function: function.to_string(),
+                        parameter: param.name.clone(),
+                        expected: format!("{}", param.param_type),
+                        found: format!("{}", typed_arg.ty()),
+                        span: arg.span(),
+                        file_id: ctx.file_id,
+                    });
+                }
+                typed_args.push(typed_arg);
+            }
+
+            Ok(typed_ast::Expression::Call {
+                function: function.to_string(),
+                resolved: resolved.to_string(),
+                kind,
+                arguments: typed_args,
+                ty: return_type,
+                span,
+            })
+        } else {
+            let mut subst: HashMap<String, AstType> = HashMap::new();
+            for (arg, param) in arguments.iter().zip(&parameters) {
+                if matches!(arg, Expression::Placeholder { .. }) {
+                    typed_args.push(typed_ast::Expression::Placeholder {
+                        ty: param.param_type.clone(),
+                        span: arg.span(),
+                    });
+                    continue;
+                }
+                let typed_arg = self.check_expression(arg, env, ctx)?;
+                if !Self::unify_type(&param.param_type, typed_arg.ty(), &mut subst) {
+                    let expected = Self::apply_subst(&param.param_type, &subst);
+                    return Err(TypeError::ArgumentTypeMismatch {
+                        function: function.to_string(),
+                        parameter: param.name.clone(),
+                        expected: format!("{}", expected),
+                        found: format!("{}", typed_arg.ty()),
+                        span: arg.span(),
+                        file_id: ctx.file_id,
+                    });
+                }
+                typed_args.push(typed_arg);
+            }
+
+            let resolved_return = Self::apply_subst(&return_type, &subst);
+            Ok(typed_ast::Expression::Call {
+                function: function.to_string(),
+                resolved: resolved.to_string(),
+                kind,
+                arguments: typed_args,
+                ty: resolved_return,
+                span,
+            })
+        }
     }
 
     fn check_visibility(
