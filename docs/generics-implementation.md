@@ -24,15 +24,15 @@ The `extern fn` declaration follows the same syntax, allowing native functions t
 
 ## Implementation Phases
 
-### Phase G1: AST changes — not started
+### Phase G1: AST changes — done
 
 Add `Generic(String)` to `ast::Type`. Add `type_params: Vec<String>` to `ast::Function` and `ast::SigFunction`. This phase is purely additive: no existing code paths change, and all existing tests continue to pass.
 
-### Phase G2: Parser support — not started
+### Phase G2: Parser support — done
 
 Extend `parse_type()` in [`compiler/parser.rs`](../src/structured-agent/src/compiler/parser.rs) to emit `Type::Generic(name)` for identifiers that are not `List`, `Option`, or the scalar type keywords. Currently those identifiers fall through to `Type::Struct(name)`; the type checker already distinguishes struct names from other names, so parsing them uniformly and letting the checker resolve them is safe. Add `<T, U, ...>` syntax after the function name in both `parse_function` and `parse_sig_function` (sig generic function support is deferred; the parser change is minimal and may as well be consistent). The `<` and `>` characters are already handled by `lex_char` for `List<T>` and `Option<T>`, so no lexer changes are required.
 
-### Phase G3: Type checker — validation and unification — not started
+### Phase G3: Type checker — validation and unification — done
 
 Three changes to [`typecheck/checker.rs`](../src/structured-agent/src/typecheck/checker.rs).
 
@@ -42,7 +42,7 @@ Second, `validate_type` currently rejects any `Type::Generic` (or bare struct na
 
 Third, `check_call` currently uses raw `==` equality to compare each argument's resolved type against the corresponding formal parameter type. For a call to a generic function, it must instead build a substitution map by unifying each formal parameter type against the actual argument type left-to-right, then apply the substitution to the return type to produce the concrete return type written into the `TypedExpression`. The unification is bounded: type variables appear only in explicit signatures, so a single left-to-right pass without an occurs check is sufficient. Error messages name the concrete types after substitution, not the type variables.
 
-### Phase G4: End-to-end tests — not started
+### Phase G4: End-to-end tests — done
 
 Integration tests covering: calling a generic function with a concrete type, calling with a mismatched type, calling a generic `extern fn`, and calling a function that is generic in multiple type parameters. Tests live alongside the existing tests in the `typecheck` and integration test modules.
 

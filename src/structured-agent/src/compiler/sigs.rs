@@ -144,6 +144,7 @@ mod tests {
     fn pub_ext_fn(name: &str) -> Definition {
         Definition::ExternalFunction(ExternalFunction {
             name: name.to_string(),
+            type_params: vec![],
             parameters: vec![],
             return_type: AstType::Unit,
             is_pub: true,

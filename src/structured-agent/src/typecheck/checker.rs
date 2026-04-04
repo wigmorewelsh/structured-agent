@@ -289,9 +289,19 @@ impl TypeChecker {
                     );
                 }
                 Definition::ExternalFunction(ext_func) => {
-                    self.validate_type(&ext_func.return_type, ext_func.span, file_id)?;
+                    self.validate_type_with_params(
+                        &ext_func.return_type,
+                        ext_func.span,
+                        file_id,
+                        &ext_func.type_params,
+                    )?;
                     for param in &ext_func.parameters {
-                        self.validate_type(&param.param_type, param.span, file_id)?;
+                        self.validate_type_with_params(
+                            &param.param_type,
+                            param.span,
+                            file_id,
+                            &ext_func.type_params,
+                        )?;
                     }
                     let resolved_params: Vec<_> = ext_func
                         .parameters
@@ -309,7 +319,7 @@ impl TypeChecker {
                             return_type: self.resolve_type(&ext_func.return_type),
                             is_pub: ext_func.is_pub,
                             kind: FunctionKind::External,
-                            type_params: vec![],
+                            type_params: ext_func.type_params.clone(),
                         },
                     );
                 }
@@ -379,15 +389,6 @@ impl TypeChecker {
             AstType::Option(inner) => AstType::Option(Box::new(self.resolve_type(inner))),
             other => other.clone(),
         }
-    }
-
-    fn validate_type(
-        &self,
-        ast_type: &AstType,
-        span: Span,
-        file_id: FileId,
-    ) -> Result<(), TypeError> {
-        self.validate_type_with_params(ast_type, span, file_id, &[])
     }
 
     fn validate_type_with_params(

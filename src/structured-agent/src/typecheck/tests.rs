@@ -587,6 +587,7 @@ mod tests {
 
         let ext_func = ExternalFunction {
             name: "concat".to_string(),
+            type_params: vec![],
             parameters: vec![
                 create_parameter("value1", AstType::String),
                 create_parameter("id", AstType::String),
@@ -1199,6 +1200,7 @@ mod tests {
             create_struct_definition("Point", vec![("x", AstType::Int)]),
             Definition::ExternalFunction(crate::ast::ExternalFunction {
                 name: "get_point".to_string(),
+                type_params: vec![],
                 parameters: vec![],
                 return_type: AstType::Struct("Point".to_string()),
                 is_pub: false,
@@ -1269,6 +1271,7 @@ mod tests {
         let module = create_test_module(vec![Definition::ExternalFunction(
             crate::ast::ExternalFunction {
                 name: "get_ghost".to_string(),
+                type_params: vec![],
                 parameters: vec![],
                 return_type: AstType::Struct("Ghost".to_string()),
                 is_pub: false,
@@ -1373,6 +1376,127 @@ mod tests {
             "expected ArgumentTypeMismatch with concrete type names, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_generic_extern_fn_with_type_params_type_checks() {
+        let ext_func = crate::ast::ExternalFunction {
+            name: "wrap".to_string(),
+            type_params: vec!["T".to_string()],
+            parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
+            return_type: AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            is_pub: false,
+            span: crate::types::Span::dummy(),
+        };
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter("s", AstType::String)],
+            AstType::Option(Box::new(AstType::String)),
+            vec![Statement::Return(Expression::Call {
+                function: "wrap".to_string(),
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::ExternalFunction(ext_func),
+            Definition::Function(caller),
+        ]);
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_module(&module, 0).is_ok());
+    }
+
+    #[test]
+    fn test_generic_fn_type_var_only_in_return_type_call_succeeds_with_unresolved_generic() {
+        let make_none = create_generic_test_function(
+            "make_none",
+            vec!["T".to_string()],
+            vec![],
+            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![],
+            AstType::Unit,
+            vec![Statement::ExpressionStatement(Expression::Call {
+                function: "make_none".to_string(),
+                arguments: vec![],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(make_none),
+            Definition::Function(caller),
+        ]);
+        let mut checker = TypeChecker::new();
+        assert!(
+            checker.check_module(&module, 0).is_ok(),
+            "call to fn with T only in return type succeeds; T stays unresolved as Generic(\"T\")"
+        );
+    }
+
+    #[test]
+    fn test_generic_call_result_used_in_type_sensitive_context() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".to_string()],
+            vec![create_parameter(
+                "list",
+                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+            )],
+            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            vec![],
+        );
+        let consume = create_test_function(
+            "consume",
+            vec![create_parameter(
+                "item",
+                AstType::Option(Box::new(AstType::String)),
+            )],
+            AstType::Unit,
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter(
+                "xs",
+                AstType::List(Box::new(AstType::String)),
+            )],
+            AstType::Unit,
+            vec![
+                Statement::Assignment {
+                    variable: "result".to_string(),
+                    expression: Expression::Call {
+                        function: "head".to_string(),
+                        arguments: vec![Expression::Variable {
+                            name: "xs".to_string(),
+                            span: crate::types::Span::dummy(),
+                        }],
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
+                },
+                Statement::ExpressionStatement(Expression::Call {
+                    function: "consume".to_string(),
+                    arguments: vec![Expression::Variable {
+                        name: "result".to_string(),
+                        span: crate::types::Span::dummy(),
+                    }],
+                    span: crate::types::Span::dummy(),
+                }),
+            ],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(head),
+            Definition::Function(consume),
+            Definition::Function(caller),
+        ]);
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_module(&module, 0).is_ok());
     }
 
     #[test]
@@ -2034,6 +2158,7 @@ mod typed_ast_tests {
     fn external_call_carries_external_kind() {
         let ext = crate::ast::ExternalFunction {
             name: "native_fn".to_string(),
+            type_params: vec![],
             parameters: vec![],
             return_type: AstType::Int,
             is_pub: false,

@@ -109,6 +109,7 @@ pub struct Parameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternalFunction {
     pub name: String,
+    pub type_params: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub is_pub: bool,
@@ -477,7 +478,11 @@ impl fmt::Display for ExternalFunction {
         if self.is_pub {
             write!(f, "pub ")?;
         }
-        write!(f, "extern fn {}(", self.name)?;
+        write!(f, "extern fn {}", self.name)?;
+        if !self.type_params.is_empty() {
+            write!(f, "<{}>", self.type_params.join(", "))?;
+        }
+        write!(f, "(")?;
         for (i, param) in self.parameters.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;

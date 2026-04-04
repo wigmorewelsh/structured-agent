@@ -315,6 +315,11 @@ where
         lex_string("extern"),
         lex_string("fn"),
         identifier(),
+        optional(attempt(between(
+            lex_char('<'),
+            lex_char('>'),
+            sep_by1(identifier(), lex_char(',')),
+        ))),
         between(
             lex_char('('),
             lex_char(')'),
@@ -325,12 +330,15 @@ where
         position(),
     )
         .map(
-            |(start, pub_kw, _, _, name, params, _, return_type, end)| ExternalFunction {
-                name,
-                parameters: params,
-                return_type,
-                is_pub: pub_kw.is_some(),
-                span: Span::new(start, end),
+            |(start, pub_kw, _, _, name, type_params_opt, params, _, return_type, end)| {
+                ExternalFunction {
+                    name,
+                    type_params: type_params_opt.unwrap_or_default(),
+                    parameters: params,
+                    return_type,
+                    is_pub: pub_kw.is_some(),
+                    span: Span::new(start, end),
+                }
             },
         )
 }
