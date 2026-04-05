@@ -10,6 +10,8 @@ use arrow::datatypes::{DataType, Field, FieldRef, Fields, UnionFields};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::names::FunctionName;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionResult {
     pub name: Option<String>,
@@ -30,13 +32,18 @@ impl ExpressionParameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionValue {
-    data: Arc<dyn Array>,
+pub enum ExpressionValue {
+    Arrow(Arc<dyn Array>),
+    Module(FunctionName),
 }
 
 impl PartialEq for ExpressionValue {
     fn eq(&self, other: &Self) -> bool {
-        self.data.as_ref() == other.data.as_ref()
+        match (self, other) {
+            (ExpressionValue::Arrow(a), ExpressionValue::Arrow(b)) => a.as_ref() == b.as_ref(),
+            (ExpressionValue::Module(a), ExpressionValue::Module(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -80,31 +87,27 @@ impl ExpressionResult {
 
 impl ExpressionValue {
     pub fn unit() -> Self {
-        Self {
-            data: Arc::new(NullArray::new(1)),
-        }
+        Self::Arrow(Arc::new(NullArray::new(1)))
     }
 
     pub fn string(s: impl Into<String>) -> Self {
-        Self {
-            data: Arc::new(StringArray::from(vec![s.into()])),
-        }
+        Self::Arrow(Arc::new(StringArray::from(vec![s.into()])))
     }
 
     pub fn boolean(b: bool) -> Self {
-        Self {
-            data: Arc::new(BooleanArray::from(vec![b])),
-        }
+        Self::Arrow(Arc::new(BooleanArray::from(vec![b])))
     }
 
     pub fn integer(n: i64) -> Self {
-        Self {
-            data: Arc::new(Int64Array::from(vec![n])),
-        }
+        Self::Arrow(Arc::new(Int64Array::from(vec![n])))
     }
 
     pub fn list(arr: Arc<ListArray>) -> Self {
-        Self { data: arr }
+        Self::Arrow(arr)
+    }
+
+    pub fn module(name: FunctionName) -> Self {
+        Self::Module(name)
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
@@ -148,7 +151,7 @@ impl ExpressionValue {
 
     fn list_from_structs(elements: Vec<ExpressionValue>) -> Result<Self, String> {
         let first = elements[0]
-            .data
+            .arrow_data()
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or("Expected StructArray")?;
@@ -158,7 +161,7 @@ impl ExpressionValue {
 
         for elem in &elements {
             let sa = elem
-                .data
+                .arrow_data()
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .ok_or("Expected StructArray in list")?;
@@ -207,11 +210,12 @@ impl ExpressionValue {
             struct_builder.append(true);
         }
 
-        let child: Arc<dyn Array> = Arc::new(struct_builder.finish());
-        let field = Arc::new(Field::new_struct("item", fields, true)) as FieldRef;
-        let offsets = OffsetBuffer::new(vec![0i32, child.len() as i32].into());
-        let list_array =
-            ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
+        let struct_array = struct_builder.finish();
+        let field =
+            Arc::new(Field::new("item", struct_array.data_type().clone(), true)) as FieldRef;
+        let offsets = OffsetBuffer::new(vec![0i32, struct_array.len() as i32].into());
+        let list_array = ListArray::try_new(field, offsets, Arc::new(struct_array), None)
+            .map_err(|e| e.to_string())?;
         Ok(Self::list(Arc::new(list_array)))
     }
 
@@ -219,7 +223,7 @@ impl ExpressionValue {
         let inner_type = elements
             .iter()
             .find_map(|e| {
-                let ua = e.data.as_any().downcast_ref::<UnionArray>()?;
+                let ua = e.arrow_data().as_any().downcast_ref::<UnionArray>()?;
                 if ua.type_id(0) == 1 {
                     Some(ua.value(0).data_type().clone())
                 } else {
@@ -232,7 +236,7 @@ impl ExpressionValue {
             .iter()
             .map(|e| {
                 let ua = e
-                    .data
+                    .arrow_data()
                     .as_any()
                     .downcast_ref::<UnionArray>()
                     .ok_or("Expected UnionArray")?;
@@ -259,7 +263,7 @@ impl ExpressionValue {
                     .map_err(|e| e.to_string())?;
                     Ok(Arc::new(ua) as Arc<dyn Array>)
                 } else {
-                    Ok(e.data.clone())
+                    Ok(e.arrow_data().clone())
                 }
             })
             .collect::<Result<_, String>>()?;
@@ -275,24 +279,27 @@ impl ExpressionValue {
     }
 
     pub fn from_array(data: Arc<dyn Array>) -> Self {
-        Self { data }
+        Self::Arrow(data)
     }
 
     pub fn struct_value(fields: Vec<(&str, ExpressionValue)>) -> Self {
         let arrow_fields: Vec<Field> = fields
             .iter()
-            .map(|(field_name, val)| Field::new(*field_name, val.data.data_type().clone(), true))
+            .map(|(field_name, val)| {
+                Field::new(*field_name, val.arrow_data().data_type().clone(), true)
+            })
             .collect();
-        let arrays: Vec<Arc<dyn Array>> = fields.iter().map(|(_, val)| val.data.clone()).collect();
+        let arrays: Vec<Arc<dyn Array>> = fields
+            .iter()
+            .map(|(_, val)| val.arrow_data().clone())
+            .collect();
         let struct_array = StructArray::new(Fields::from(arrow_fields), arrays, None);
-        Self {
-            data: Arc::new(struct_array),
-        }
+        Self::Arrow(Arc::new(struct_array))
     }
 
     pub fn get_struct_field(&self, field: &str) -> Result<ExpressionValue, String> {
         let struct_array = self
-            .data
+            .arrow_data()
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
@@ -303,7 +310,7 @@ impl ExpressionValue {
             .find(|(_, f)| f.name() == field)
             .ok_or_else(|| format!("No field '{}' in struct", field))?;
         let col = struct_array.column(index);
-        Ok(ExpressionValue { data: col.clone() })
+        Ok(ExpressionValue::Arrow(col.clone()))
     }
 
     pub fn option_none() -> Self {
@@ -321,13 +328,12 @@ impl ExpressionValue {
             vec![Arc::new(NullArray::new(1)), Arc::new(NullArray::new(0))];
         let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
             .expect("valid option_none union");
-        Self {
-            data: Arc::new(union_array),
-        }
+        Self::Arrow(Arc::new(union_array))
     }
 
     pub fn option_some(inner: ExpressionValue) -> Self {
-        let inner_type = inner.data.data_type().clone();
+        let inner_data = inner.arrow_data().clone();
+        let inner_type = inner_data.data_type().clone();
         let union_fields = UnionFields::try_new(
             [0_i8, 1_i8],
             [
@@ -338,12 +344,10 @@ impl ExpressionValue {
         .expect("valid option_some union fields");
         let type_ids: ScalarBuffer<i8> = [1_i8].into_iter().collect();
         let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
-        let children: Vec<Arc<dyn Array>> = vec![Arc::new(NullArray::new(0)), inner.data];
+        let children: Vec<Arc<dyn Array>> = vec![Arc::new(NullArray::new(0)), inner_data];
         let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
             .expect("valid option_some union");
-        Self {
-            data: Arc::new(union_array),
-        }
+        Self::Arrow(Arc::new(union_array))
     }
 
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
@@ -363,13 +367,18 @@ impl ExpressionValue {
             None,
         );
 
-        Self {
-            data: Arc::new(struct_array),
+        Self::Arrow(Arc::new(struct_array))
+    }
+
+    fn arrow_data(&self) -> &Arc<dyn Array> {
+        match self {
+            ExpressionValue::Arrow(data) => data,
+            ExpressionValue::Module(_) => panic!("expected Arrow value, got Module"),
         }
     }
 
     fn downcast_scalar<T: Array + 'static>(&self) -> Result<&T, String> {
-        self.data
+        self.arrow_data()
             .as_any()
             .downcast_ref::<T>()
             .filter(|arr| arr.len() == 1)
@@ -401,7 +410,7 @@ impl ExpressionValue {
     }
 
     pub fn as_list(&self) -> Result<&ListArray, String> {
-        self.data
+        self.arrow_data()
             .as_any()
             .downcast_ref::<ListArray>()
             .ok_or_else(|| "Expected list".to_string())
@@ -414,13 +423,13 @@ impl ExpressionValue {
         }
         let values = list.value(0);
         Ok((0..values.len())
-            .map(|i| ExpressionValue::from_array(values.slice(i, 1)))
+            .map(|i| ExpressionValue::Arrow(values.slice(i, 1)))
             .collect())
     }
 
     pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {
         let union_array = self
-            .data
+            .arrow_data()
             .as_any()
             .downcast_ref::<UnionArray>()
             .ok_or_else(|| "Expected option (union) type".to_string())?;
@@ -434,38 +443,51 @@ impl ExpressionValue {
             0 => Ok(None),
             1 => {
                 let inner = union_array.value(0);
-                Ok(Some(ExpressionValue { data: inner }))
+                Ok(Some(ExpressionValue::Arrow(inner)))
             }
             _ => Err(format!("Unexpected union type_id: {}", type_id)),
         }
     }
 
     pub fn is_option(&self) -> bool {
-        matches!(self.data.data_type(), DataType::Union(_, _))
+        match self {
+            ExpressionValue::Arrow(data) => matches!(data.data_type(), DataType::Union(_, _)),
+            ExpressionValue::Module(_) => false,
+        }
+    }
+
+    pub fn as_module(&self) -> Result<&FunctionName, String> {
+        match self {
+            ExpressionValue::Module(name) => Ok(name),
+            _ => Err(format!("expected Module, got {}", self.type_name())),
+        }
     }
 
     pub fn type_name(&self) -> &str {
-        match self.data.data_type() {
-            DataType::Null => "Unit",
-            DataType::Utf8 => "String",
-            DataType::Boolean => "Boolean",
-            DataType::Int64 => "Int",
-            DataType::List(_) => "List",
-            DataType::Struct(_) => {
-                if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>()
-                    && Self::is_metadata_struct(struct_array)
-                {
-                    return "Metadata";
+        match self {
+            ExpressionValue::Module(_) => "Module",
+            ExpressionValue::Arrow(data) => match data.data_type() {
+                DataType::Null => "Unit",
+                DataType::Utf8 => "String",
+                DataType::Boolean => "Boolean",
+                DataType::Int64 => "Int",
+                DataType::List(_) => "List",
+                DataType::Struct(_) => {
+                    if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>()
+                        && Self::is_metadata_struct(struct_array)
+                    {
+                        return "Metadata";
+                    }
+                    "Struct"
                 }
-                "Struct"
-            }
-            DataType::Union(_, _) => "Option",
-            _ => "Unknown",
+                DataType::Union(_, _) => "Option",
+                _ => "Unknown",
+            },
         }
     }
 
     pub fn as_metadata(&self) -> Result<(String, Option<String>), String> {
-        if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>() {
+        if let Some(struct_array) = self.arrow_data().as_any().downcast_ref::<StructArray>() {
             if !Self::is_metadata_struct(struct_array) {
                 return Err("Not a metadata struct".to_string());
             }
@@ -499,7 +521,11 @@ impl ExpressionValue {
     }
 
     pub fn value_string(&self) -> String {
-        if self.data.as_any().is::<NullArray>() {
+        if let ExpressionValue::Module(name) = self {
+            return format!("Module({})", name);
+        }
+        let data = self.arrow_data();
+        if data.as_any().is::<NullArray>() {
             "()".to_string()
         } else if let Ok(s) = self.as_string() {
             s.to_string()
@@ -521,7 +547,7 @@ impl ExpressionValue {
                 Some(inner) => format!("Some({})", inner.value_string()),
             }
         } else {
-            format!("{:?}", self.data)
+            format!("{:?}", data)
         }
     }
 
@@ -539,13 +565,17 @@ impl ExpressionValue {
     }
 
     pub fn format_for_llm(&self) -> String {
-        if let Some(struct_array) = self.data.as_any().downcast_ref::<StructArray>()
+        if let ExpressionValue::Module(name) = self {
+            return format!("Module({})", name);
+        }
+        let data = self.arrow_data();
+        if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>()
             && !Self::is_metadata_struct(struct_array)
         {
             let mut obj = serde_json::Map::new();
             for (i, field) in struct_array.fields().iter().enumerate() {
                 let col = struct_array.column(i);
-                let val = ExpressionValue { data: col.clone() };
+                let val = ExpressionValue::Arrow(col.clone());
                 let json_val = if let Ok(s) = val.as_string() {
                     serde_json::Value::String(s.to_string())
                 } else if let Ok(b) = val.as_boolean() {
@@ -559,7 +589,7 @@ impl ExpressionValue {
             }
             return serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string());
         }
-        if self.data.as_any().is::<NullArray>() {
+        if data.as_any().is::<NullArray>() {
             "()".to_string()
         } else if let Ok(s) = self.as_string() {
             s.to_string()
@@ -593,9 +623,7 @@ impl ExpressionValue {
                             let mut obj = serde_json::Map::new();
                             for (j, field) in struct_array.fields().iter().enumerate() {
                                 let col = struct_array.column(j);
-                                let val = ExpressionValue {
-                                    data: col.slice(i, 1),
-                                };
+                                let val = ExpressionValue::Arrow(col.slice(i, 1));
                                 let json_val = if let Ok(s) = val.as_string() {
                                     serde_json::Value::String(s.to_string())
                                 } else if let Ok(b) = val.as_boolean() {
@@ -614,16 +642,15 @@ impl ExpressionValue {
                 } else if let Some(union_array) = values.as_any().downcast_ref::<UnionArray>() {
                     let items: Vec<String> = (0..union_array.len())
                         .map(|i| {
-                            let sliced = ExpressionValue {
-                                data: Arc::new(union_array.slice(i, 1)) as Arc<dyn Array>,
-                            };
+                            let sliced = ExpressionValue::Arrow(
+                                Arc::new(union_array.slice(i, 1)) as Arc<dyn Array>
+                            );
                             match sliced.as_option() {
                                 Ok(None) => "None".to_string(),
                                 Ok(Some(inner)) => format!("Some({})", inner.format_for_llm()),
-                                Err(_) => ExpressionValue {
-                                    data: union_array.value(i),
+                                Err(_) => {
+                                    ExpressionValue::Arrow(union_array.value(i)).format_for_llm()
                                 }
-                                .format_for_llm(),
                             }
                         })
                         .collect();

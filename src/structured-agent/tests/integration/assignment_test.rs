@@ -33,6 +33,7 @@ fn test_assignment(): () {
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
+            "",
         )
         .unwrap();
 
@@ -100,6 +101,7 @@ fn test_var_assignment(): () {
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
+            "",
         )
         .unwrap();
 
@@ -151,6 +153,7 @@ fn test_return(): () {
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
+            "",
         )
         .unwrap();
 

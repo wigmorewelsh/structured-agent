@@ -3,6 +3,7 @@
 use crate::ast::{ExternalFunction, ModuleParam, Parameter, SigFunction, StructDefinition, Type};
 use crate::typecheck::checker::FunctionKind;
 use crate::types::{FileId, Span};
+use structured_agent_runtime::FunctionName;
 
 pub struct Module {
     pub definitions: Vec<Definition>,
@@ -49,6 +50,7 @@ pub enum Definition {
     TraitImpl {
         type_name: String,
         trait_name: String,
+        functions: Vec<Function>,
         span: crate::types::Span,
     },
 }
@@ -110,7 +112,7 @@ pub struct SelectClause {
 pub enum Expression {
     Call {
         function: String,
-        resolved: String,
+        resolved: FunctionName,
         kind: FunctionKind,
         arguments: Vec<Expression>,
         ty: Type,

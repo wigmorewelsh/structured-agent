@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::Definition;
+use crate::typecheck::checker::FunctionKind;
+use structured_agent_runtime::FunctionName;
 
 use super::discovery::ParsedModule;
 use super::sigs::SigTable;
@@ -119,10 +121,19 @@ fn header_params(parsed: &ParsedModule) -> Option<&Vec<crate::ast::ModuleParam>>
 pub(crate) fn lower_typed_module(
     module: &mut crate::typed_ast::Module,
     vtable: &std::collections::HashMap<String, String>,
+    function_kinds: &std::collections::HashMap<String, FunctionKind>,
 ) {
     for def in &mut module.definitions {
-        if let crate::typed_ast::Definition::Function(f) = def {
-            lower_statements(&mut f.body.statements, vtable);
+        match def {
+            crate::typed_ast::Definition::Function(f) => {
+                lower_statements(&mut f.body.statements, vtable, function_kinds);
+            }
+            crate::typed_ast::Definition::TraitImpl { functions, .. } => {
+                for f in functions {
+                    lower_statements(&mut f.body.statements, vtable, function_kinds);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -130,35 +141,40 @@ pub(crate) fn lower_typed_module(
 fn lower_statements(
     stmts: &mut Vec<crate::typed_ast::Statement>,
     vtable: &std::collections::HashMap<String, String>,
+    function_kinds: &std::collections::HashMap<String, FunctionKind>,
 ) {
     for stmt in stmts {
         match stmt {
-            crate::typed_ast::Statement::Injection(e) => lower_expression(e, vtable),
+            crate::typed_ast::Statement::Injection(e) => {
+                lower_expression(e, vtable, function_kinds)
+            }
             crate::typed_ast::Statement::Assignment { expression, .. } => {
-                lower_expression(expression, vtable)
+                lower_expression(expression, vtable, function_kinds)
             }
             crate::typed_ast::Statement::VariableAssignment { expression, .. } => {
-                lower_expression(expression, vtable)
+                lower_expression(expression, vtable, function_kinds)
             }
-            crate::typed_ast::Statement::ExpressionStatement(e) => lower_expression(e, vtable),
-            crate::typed_ast::Statement::Return(e) => lower_expression(e, vtable),
+            crate::typed_ast::Statement::ExpressionStatement(e) => {
+                lower_expression(e, vtable, function_kinds)
+            }
+            crate::typed_ast::Statement::Return(e) => lower_expression(e, vtable, function_kinds),
             crate::typed_ast::Statement::If {
                 condition,
                 body,
                 else_body,
                 ..
             } => {
-                lower_expression(condition, vtable);
-                lower_statements(body, vtable);
+                lower_expression(condition, vtable, function_kinds);
+                lower_statements(body, vtable, function_kinds);
                 if let Some(eb) = else_body {
-                    lower_statements(eb, vtable);
+                    lower_statements(eb, vtable, function_kinds);
                 }
             }
             crate::typed_ast::Statement::While {
                 condition, body, ..
             } => {
-                lower_expression(condition, vtable);
-                lower_statements(body, vtable);
+                lower_expression(condition, vtable, function_kinds);
+                lower_statements(body, vtable, function_kinds);
             }
         }
     }
@@ -167,31 +183,37 @@ fn lower_statements(
 fn lower_expression(
     expr: &mut crate::typed_ast::Expression,
     vtable: &std::collections::HashMap<String, String>,
+    function_kinds: &std::collections::HashMap<String, FunctionKind>,
 ) {
     match expr {
         crate::typed_ast::Expression::Call {
             resolved,
+            kind,
             arguments,
             ..
         } => {
-            if let Some(concrete) = vtable.get(resolved.as_str()) {
-                *resolved = concrete.clone();
+            let key = resolved.to_string();
+            if let Some(concrete) = vtable.get(&key) {
+                *resolved = FunctionName::from_qualified_str(concrete);
+                if let Some(new_kind) = function_kinds.get(concrete) {
+                    *kind = new_kind.clone();
+                }
             }
             for arg in arguments {
-                lower_expression(arg, vtable);
+                lower_expression(arg, vtable, function_kinds);
             }
         }
         crate::typed_ast::Expression::StructLiteral { fields, .. } => {
             for (_, e) in fields {
-                lower_expression(e, vtable);
+                lower_expression(e, vtable, function_kinds);
             }
         }
         crate::typed_ast::Expression::FieldAccess { base, .. } => {
-            lower_expression(base, vtable);
+            lower_expression(base, vtable, function_kinds);
         }
         crate::typed_ast::Expression::ListLiteral { elements, .. } => {
             for e in elements {
-                lower_expression(e, vtable);
+                lower_expression(e, vtable, function_kinds);
             }
         }
         crate::typed_ast::Expression::IfElse {
@@ -200,14 +222,14 @@ fn lower_expression(
             else_expr,
             ..
         } => {
-            lower_expression(condition, vtable);
-            lower_expression(then_expr, vtable);
-            lower_expression(else_expr, vtable);
+            lower_expression(condition, vtable, function_kinds);
+            lower_expression(then_expr, vtable, function_kinds);
+            lower_expression(else_expr, vtable, function_kinds);
         }
         crate::typed_ast::Expression::Select(select, _) => {
             for clause in &mut select.clauses {
-                lower_expression(&mut clause.expression_to_run, vtable);
-                lower_expression(&mut clause.expression_next, vtable);
+                lower_expression(&mut clause.expression_to_run, vtable, function_kinds);
+                lower_expression(&mut clause.expression_next, vtable, function_kinds);
             }
         }
         crate::typed_ast::Expression::Variable { .. }
@@ -228,6 +250,7 @@ mod tests {
     use crate::compiler::sigs::SigTable;
     use crate::typecheck::checker::{ExternalSig, FunctionKind};
     use crate::types::{FileId, Span};
+    use structured_agent_runtime::FunctionName;
 
     fn dummy_span() -> Span {
         Span::dummy()
@@ -472,7 +495,7 @@ mod tests {
         let span = Span::dummy();
         let call = crate::typed_ast::Expression::Call {
             function: "io::read".to_string(),
-            resolved: "io::read".to_string(),
+            resolved: FunctionName::plain("io", "read"),
             kind: FunctionKind::External,
             arguments: vec![],
             ty: AstType::String,
@@ -500,7 +523,7 @@ mod tests {
         let mut vtable = std::collections::HashMap::new();
         vtable.insert("io::read".to_string(), "storage::read".to_string());
 
-        lower_typed_module(&mut module, &vtable);
+        lower_typed_module(&mut module, &vtable, &HashMap::new());
 
         if let crate::typed_ast::Definition::Function(f) = &module.definitions[0] {
             if let crate::typed_ast::Statement::Return(crate::typed_ast::Expression::Call {
@@ -508,7 +531,7 @@ mod tests {
                 ..
             }) = &f.body.statements[0]
             {
-                assert_eq!(resolved, "storage::read");
+                assert_eq!(resolved.to_string(), "storage::read");
             } else {
                 panic!("expected return with call");
             }

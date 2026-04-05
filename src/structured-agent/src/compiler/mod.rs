@@ -28,6 +28,7 @@ use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use sigs::{SigTable, collect_sigs, sigs_visible_to_module};
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_runtime::FunctionName;
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -79,14 +80,14 @@ struct ModuleArtifact {
 
 #[derive(Debug)]
 pub struct CompiledProgram {
-    functions: HashMap<String, CompiledFunction>,
+    functions: HashMap<FunctionName, CompiledFunction>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
     module_visibility: ModuleVisibility,
-    pending_aliases: Vec<(String, String)>,
+    aliases: HashMap<FunctionName, FunctionName>,
     use_aliases: Vec<(String, String)>,
-    main_function: Option<String>,
+    main_function: Option<FunctionName>,
     source_path: Option<String>,
 }
 
@@ -104,7 +105,7 @@ impl CompiledProgram {
             struct_definitions: HashMap::new(),
             sig_definitions: HashMap::new(),
             module_visibility: HashMap::new(),
-            pending_aliases: Vec::new(),
+            aliases: HashMap::new(),
             use_aliases: Vec::new(),
             main_function: None,
             source_path: None,
@@ -128,10 +129,18 @@ impl CompiledProgram {
     pub fn main_function(&self) -> Option<&CompiledFunction> {
         self.main_function
             .as_ref()
-            .and_then(|name| self.functions.get(name))
+            .and_then(|name| self.resolve(name))
     }
 
-    pub fn functions(&self) -> &HashMap<String, CompiledFunction> {
+    pub fn resolve(&self, name: &FunctionName) -> Option<&CompiledFunction> {
+        self.functions.get(name).or_else(|| {
+            self.aliases
+                .get(name)
+                .and_then(|canonical| self.functions.get(canonical))
+        })
+    }
+
+    pub fn functions(&self) -> &HashMap<FunctionName, CompiledFunction> {
         &self.functions
     }
 
@@ -154,7 +163,7 @@ impl CompiledProgram {
     fn merge(&mut self, artifact: ModuleArtifact) {
         for f in artifact.functions {
             let name = f.name.clone();
-            if name == "main" {
+            if name == FunctionName::plain("main", "main") {
                 self.main_function = Some(name.clone());
             }
             self.functions.insert(name, f);
@@ -169,17 +178,25 @@ impl CompiledProgram {
             self.sig_definitions.insert(name, functions);
         }
         for (alias, qualified) in artifact.use_aliases {
-            self.pending_aliases.push((alias, qualified));
+            let alias_name = FunctionName::from_qualified_str(&alias);
+            let canonical_name = FunctionName::from_qualified_str(&qualified);
+            self.aliases.insert(alias_name, canonical_name);
+            self.use_aliases.push((alias, qualified));
         }
     }
 
-    fn apply_pending_aliases(&mut self) {
-        let aliases = std::mem::take(&mut self.pending_aliases);
-        self.use_aliases = aliases.clone();
-        for (alias, qualified) in aliases {
-            if let Some(f) = self.functions.get(&qualified).cloned() {
-                self.functions.insert(alias, f);
-            }
+    fn register_entry_aliases(&mut self) {
+        let entry_fns: Vec<FunctionName> = self
+            .functions
+            .keys()
+            .filter(|n| n.module == "main")
+            .cloned()
+            .collect();
+        for canonical in entry_fns {
+            let bare = FunctionName::plain("", canonical.fn_name());
+            self.aliases
+                .entry(bare)
+                .or_insert_with(|| canonical.clone());
         }
     }
 
@@ -268,10 +285,13 @@ impl Compiler {
 
         let mut typed_modules: HashMap<String, typed_ast::Module> = HashMap::new();
 
+        let mut function_kinds_map: HashMap<String, HashMap<String, FunctionKind>> = HashMap::new();
+
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
             match type_check_module(parsed, &sig_table) {
-                Ok((typed_module, _)) => {
+                Ok((typed_module, function_kinds)) => {
+                    function_kinds_map.insert(parsed.name.clone(), function_kinds);
                     typed_modules.insert(parsed.name.clone(), typed_module);
                 }
                 Err(e) => {
@@ -295,7 +315,9 @@ impl Compiler {
             if let Some(vtable) = vtables.get(&parsed.name)
                 && let Some(typed_module) = typed_modules.get_mut(&parsed.name)
             {
-                lower_typed_module(typed_module, vtable);
+                let empty_kinds = HashMap::new();
+                let kinds = function_kinds_map.get(&parsed.name).unwrap_or(&empty_kinds);
+                lower_typed_module(typed_module, vtable, kinds);
             }
         }
 
@@ -304,15 +326,19 @@ impl Compiler {
             .with_module_visibility(sig_table.visibility.clone());
 
         for parsed in &modules {
-            let prefix = (!parsed.is_entry).then_some(parsed.name.as_str());
+            let prefix = if parsed.is_entry {
+                "main"
+            } else {
+                parsed.name.as_str()
+            };
             let typed_module = typed_modules
                 .get(&parsed.name)
                 .expect("typed module missing");
-            let artifact = emit_module(typed_module, prefix)?;
+            let artifact = emit_module(typed_module, prefix, parsed.is_entry)?;
             compiled.merge(artifact);
         }
 
-        compiled.apply_pending_aliases();
+        compiled.register_entry_aliases();
 
         let il_reporter = diagnostics.reporter().clone();
         for warning in analyse_il(compiled.functions()) {
@@ -335,6 +361,11 @@ fn type_check_module(
     } else {
         sig_table.external_sigs.clone()
     };
+    let module_name = if parsed.is_entry {
+        "main"
+    } else {
+        parsed.name.as_str()
+    };
     let mut checker = TypeChecker::new();
     checker.check_module_with_external_sigs(
         &parsed.module,
@@ -342,6 +373,7 @@ fn type_check_module(
         &external_sigs,
         &sig_table.visibility,
         &sig_table.sig_definitions,
+        module_name,
     )
 }
 
@@ -353,7 +385,11 @@ fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warn
     warnings
 }
 
-fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<ModuleArtifact, String> {
+fn emit_module(
+    module: &typed_ast::Module,
+    prefix: &str,
+    is_entry: bool,
+) -> Result<ModuleArtifact, String> {
     let mut artifact = ModuleArtifact {
         functions: Vec::new(),
         external_functions: Vec::new(),
@@ -368,17 +404,15 @@ fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<Modul
         match definition {
             typed_ast::Definition::Function(f) => {
                 let mut compiled = compiler.compile_to_bytecode(f)?;
-                if let Some(p) = prefix {
-                    compiled.name = format!("{}::{}", p, compiled.name);
-                }
+                compiled.name = FunctionName::plain(prefix, compiled.name.fn_name());
+                compiled.module_name = Some(prefix.to_string());
                 debug!("Emitting function: {}", compiled.name);
-                compiled.module_name = prefix.map(str::to_string);
                 artifact.functions.push(compiled);
             }
             typed_ast::Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
-                if let Some(p) = prefix {
-                    f.name = format!("{}::{}", p, f.name);
+                if !is_entry {
+                    f.name = format!("{}::{}", prefix, f.name);
                 }
                 debug!("Emitting external function: {}", f.name);
                 artifact
@@ -400,7 +434,7 @@ fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<Modul
                     .sig_definitions
                     .push((name.clone(), functions.clone()));
             }
-            typed_ast::Definition::Use { path, alias, .. } if prefix.is_none() => {
+            typed_ast::Definition::Use { path, alias, .. } if is_entry => {
                 if path.len() >= 2 {
                     let qualified = format!("{}::{}", path[0], path.last().unwrap());
                     let local = alias
@@ -409,12 +443,26 @@ fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<Modul
                     artifact.use_aliases.push((local, qualified));
                 }
             }
+            typed_ast::Definition::TraitImpl {
+                type_name,
+                trait_name,
+                functions,
+                ..
+            } => {
+                for f in functions {
+                    let mut compiled = compiler.compile_to_bytecode(f)?;
+                    compiled.name =
+                        FunctionName::impl_fn(prefix, type_name, trait_name, f.name.as_str());
+                    compiled.module_name = Some(prefix.to_string());
+                    debug!("Emitting impl function: {}", compiled.name);
+                    artifact.functions.push(compiled);
+                }
+            }
             typed_ast::Definition::Use { .. }
             | typed_ast::Definition::ModuleHeader { .. }
             | typed_ast::Definition::ModuleBinding { .. }
             | typed_ast::Definition::WiringSite { .. }
-            | typed_ast::Definition::Trait { .. }
-            | typed_ast::Definition::TraitImpl { .. } => {}
+            | typed_ast::Definition::Trait { .. } => {}
         }
     }
 
@@ -463,7 +511,7 @@ fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
     }
 }
 
-fn analyse_il(functions: &HashMap<String, CompiledFunction>) -> Vec<IlWarning> {
+fn analyse_il(functions: &HashMap<FunctionName, CompiledFunction>) -> Vec<IlWarning> {
     let mut runner = IlAnalysisRunner::new()
         .with_analyzer(Box::new(VariableAllocationAnalyzer::new()))
         .with_analyzer(Box::new(VariableDropAnalyzer::new()));
@@ -530,6 +578,7 @@ mod tests {
     use super::{CompilationUnit, Compiler};
     use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
+    use structured_agent_runtime::FunctionName;
 
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
@@ -587,7 +636,7 @@ fn main(): String {
     result!
 }
 "#,
-            "<calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## calculator\n    </result>\n</calculator>",
+            "<main::calculator>\n    <param name=\"x\">5</param>\n    <param name=\"y\">3</param>\n    <result>\n    ## main::calculator\n    </result>\n</main::calculator>",
         )
         .await;
     }
@@ -617,9 +666,21 @@ fn main(): String {
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(compiled.functions().contains_key("main"));
-        assert!(compiled.functions().contains_key("greetlib::greet"));
-        assert!(compiled.functions().contains_key("greetlib::internal"));
+        assert!(
+            compiled
+                .functions()
+                .contains_key(&FunctionName::plain("main", "main"))
+        );
+        assert!(
+            compiled
+                .functions()
+                .contains_key(&FunctionName::plain("greetlib", "greet"))
+        );
+        assert!(
+            compiled
+                .functions()
+                .contains_key(&FunctionName::plain("greetlib", "internal"))
+        );
         assert_eq!(
             compiled.module_visibility().get("greetlib::greet"),
             Some(&true)
@@ -744,7 +805,7 @@ fn main(): String {
     message!
 }
 "#,
-            "<choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</choose_message>",
+            "<main::choose_message>\n    <param name=\"ready\">true</param>\n    <result>\n    System ready\n    </result>\n</main::choose_message>",
         )
         .await;
     }

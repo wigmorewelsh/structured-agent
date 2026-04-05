@@ -282,11 +282,21 @@ impl Runtime {
         }
 
         for (name, function) in compiled_program.functions() {
-            debug!("Registering function: {}", name);
-            runtime.function_registry.insert(
-                name.clone(),
-                Arc::new(BytecodeFunctionExpr::new(function.clone())),
-            );
+            let key = name.to_string();
+            debug!("Registering function: {}", key);
+            runtime
+                .function_registry
+                .insert(key, Arc::new(BytecodeFunctionExpr::new(function.clone())));
+        }
+        for (alias, qualified) in compiled_program.use_aliases() {
+            let canonical = structured_agent_runtime::FunctionName::from_qualified_str(qualified);
+            if let Some(function) = compiled_program.resolve(&canonical) {
+                debug!("Registering alias: {} -> {}", alias, qualified);
+                runtime.function_registry.insert(
+                    alias.clone(),
+                    Arc::new(BytecodeFunctionExpr::new(function.clone())),
+                );
+            }
         }
         for external_function in compiled_program.external_functions().values() {
             debug!("Registering external function: {}", external_function.name);

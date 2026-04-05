@@ -5,10 +5,11 @@ mod tests {
     use crate::bytecode::{CompiledFunction, Instruction};
     use crate::il_analysis::{CallArityAnalyzer, IlAnalyzer, IlWarning};
     use crate::types::Type;
+    use structured_agent_runtime::FunctionName;
 
     fn make_function(instructions: Vec<Instruction>) -> CompiledFunction {
         CompiledFunction {
-            name: "test".to_string(),
+            name: FunctionName::plain("", "test"),
             module_name: None,
             parameters: vec![],
             return_type: Type::Unit,
@@ -39,7 +40,7 @@ mod tests {
                 value: "hello".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "greet".to_string(),
+                function_name: FunctionName::plain("", "greet"),
                 params: vec!["$arg0".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -60,7 +61,7 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "get_value".to_string(),
+                function_name: FunctionName::plain("", "get_value"),
                 params: vec![],
                 dest: "$tmp0".to_string(),
             },
@@ -81,7 +82,7 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "add".to_string(),
+                function_name: FunctionName::plain("", "add"),
                 params: vec!["$a".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -111,7 +112,7 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "negate".to_string(),
+                function_name: FunctionName::plain("", "negate"),
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -141,7 +142,7 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallExternal {
-                function_name: "external_tool".to_string(),
+                function_name: FunctionName::plain("", "external_tool"),
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -165,12 +166,12 @@ mod tests {
                 name: "$b".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "foo".to_string(),
+                function_name: FunctionName::plain("", "foo"),
                 params: vec![],
                 dest: "$a".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: "bar".to_string(),
+                function_name: FunctionName::plain("", "bar"),
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$b".to_string(),
             },

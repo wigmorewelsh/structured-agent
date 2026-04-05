@@ -6,6 +6,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{FileId, Span, Spanned};
 use std::collections::{HashMap, HashSet};
+use structured_agent_runtime::FunctionName;
 
 pub type ModuleVisibility = HashMap<String, bool>;
 pub type AliasToQualified = HashMap<String, String>;
@@ -43,6 +44,7 @@ struct CheckContext<'a> {
     alias_map: &'a HashMap<String, String>,
     module_visibility: &'a ModuleVisibility,
     alias_to_qualified: &'a AliasToQualified,
+    module_name: Option<&'a str>,
 }
 
 impl Default for TypeChecker {
@@ -107,6 +109,7 @@ impl TypeChecker {
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
+            "",
         )
         .map(|_| ())
     }
@@ -118,6 +121,7 @@ impl TypeChecker {
         external_sigs: &HashMap<String, ExternalSig>,
         module_visibility: &ModuleVisibility,
         sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
+        module_name: &str,
     ) -> Result<(typed_ast::Module, HashMap<String, FunctionKind>), TypeError> {
         for (name, sig) in external_sigs {
             self.function_signatures.insert(
@@ -143,6 +147,7 @@ impl TypeChecker {
             alias_map: &alias_map,
             module_visibility,
             alias_to_qualified: &alias_to_qualified,
+            module_name: Some(module_name),
         };
 
         let mut typed_definitions = Vec::new();
@@ -211,12 +216,22 @@ impl TypeChecker {
                     type_name,
                     trait_name,
                     span,
-                    ..
-                } => typed_ast::Definition::TraitImpl {
-                    type_name: type_name.clone(),
-                    trait_name: trait_name.clone(),
-                    span: *span,
-                },
+                    functions,
+                } => {
+                    let typed_functions: Result<Vec<typed_ast::Function>, TypeError> = functions
+                        .iter()
+                        .map(|f| {
+                            let concrete = Self::substitute_self_in_fn(f, type_name);
+                            self.check_function(&concrete, &ctx)
+                        })
+                        .collect();
+                    typed_ast::Definition::TraitImpl {
+                        type_name: type_name.clone(),
+                        trait_name: trait_name.clone(),
+                        functions: typed_functions?,
+                        span: *span,
+                    }
+                }
             };
             typed_definitions.push(typed_def);
         }
@@ -431,7 +446,10 @@ impl TypeChecker {
                             .iter()
                             .map(|p| crate::ast::Parameter {
                                 name: p.name.clone(),
-                                param_type: self.resolve_type(&p.param_type),
+                                param_type: Self::substitute_self(
+                                    &self.resolve_type(&p.param_type),
+                                    type_name,
+                                ),
                                 span: p.span,
                             })
                             .collect();
@@ -439,7 +457,10 @@ impl TypeChecker {
                             func.name.clone(),
                             FunctionSignature {
                                 parameters: resolved_params,
-                                return_type: self.resolve_type(&func.return_type),
+                                return_type: Self::substitute_self(
+                                    &self.resolve_type(&func.return_type),
+                                    type_name,
+                                ),
                                 kind: FunctionKind::Bytecode,
                                 type_params: func.type_params.clone(),
                             },
@@ -935,7 +956,7 @@ impl TypeChecker {
 
             Ok(typed_ast::Expression::Call {
                 function: function.to_string(),
-                resolved: resolved.to_string(),
+                resolved: Self::make_function_name(resolved, ctx, &kind),
                 kind,
                 arguments: typed_args,
                 ty: return_type,
@@ -1000,7 +1021,7 @@ impl TypeChecker {
             let resolved_return = Self::apply_subst(&return_type, &subst);
             Ok(typed_ast::Expression::Call {
                 function: function.to_string(),
-                resolved: resolved.to_string(),
+                resolved: Self::make_function_name(resolved, ctx, &kind),
                 kind,
                 arguments: typed_args,
                 ty: resolved_return,
@@ -1305,6 +1326,57 @@ impl TypeChecker {
                 span,
                 file_id: ctx.file_id,
             }),
+        }
+    }
+
+    fn make_function_name(resolved: &str, ctx: &CheckContext, kind: &FunctionKind) -> FunctionName {
+        if *kind == FunctionKind::External {
+            return FunctionName::from_qualified_str(resolved);
+        }
+        if let Some(qualified) = ctx.alias_to_qualified.get(resolved) {
+            FunctionName::from_qualified_str(qualified)
+        } else if resolved.contains("::") {
+            FunctionName::from_qualified_str(resolved)
+        } else if let Some(module) = ctx.module_name {
+            if module.is_empty() {
+                FunctionName::plain("", resolved)
+            } else {
+                FunctionName::plain(module, resolved)
+            }
+        } else {
+            FunctionName::plain("", resolved)
+        }
+    }
+
+    fn substitute_self(ty: &AstType, concrete: &str) -> AstType {
+        match ty {
+            AstType::Generic(name) if name == "Self" => AstType::Struct(concrete.to_string()),
+            AstType::List(inner) => AstType::List(Box::new(Self::substitute_self(inner, concrete))),
+            AstType::Option(inner) => {
+                AstType::Option(Box::new(Self::substitute_self(inner, concrete)))
+            }
+            other => other.clone(),
+        }
+    }
+
+    fn substitute_self_in_fn(func: &Function, concrete: &str) -> Function {
+        Function {
+            name: func.name.clone(),
+            parameters: func
+                .parameters
+                .iter()
+                .map(|p| Parameter {
+                    name: p.name.clone(),
+                    param_type: Self::substitute_self(&p.param_type, concrete),
+                    span: p.span,
+                })
+                .collect(),
+            return_type: Self::substitute_self(&func.return_type, concrete),
+            body: func.body.clone(),
+            documentation: func.documentation.clone(),
+            is_pub: func.is_pub,
+            span: func.span,
+            type_params: func.type_params.clone(),
         }
     }
 }

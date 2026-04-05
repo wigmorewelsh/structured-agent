@@ -4,10 +4,11 @@ use crate::typecheck::checker::FunctionKind;
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
+use structured_agent_runtime::FunctionName;
 
 #[derive(Clone, Debug)]
 pub struct CompiledFunction {
-    pub name: String,
+    pub name: FunctionName,
     pub module_name: Option<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: crate::types::Type,
@@ -59,7 +60,7 @@ impl BytecodeCompiler {
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
-            name: typed_func.name.clone(),
+            name: FunctionName::plain("", &typed_func.name),
             module_name: None,
             parameters: typed_func
                 .parameters
@@ -329,7 +330,7 @@ impl BytecodeCompiler {
     fn compile_call_expression(
         &self,
         builder: &mut InstructionBuilder,
-        function: &str,
+        function: &FunctionName,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
         dest_var: &str,
@@ -347,12 +348,12 @@ impl BytecodeCompiler {
 
         let instruction = match kind {
             FunctionKind::Bytecode => Instruction::CallBytecode {
-                function_name: function.to_string(),
+                function_name: function.clone(),
                 params,
                 dest: dest_var.to_string(),
             },
             FunctionKind::External => Instruction::CallExternal {
-                function_name: function.to_string(),
+                function_name: function.clone(),
                 params,
                 dest: dest_var.to_string(),
             },
@@ -470,10 +471,10 @@ impl BytecodeCompiler {
             let label = format!("clause_{}_{}", i, builder.next_temp());
             clause_labels.push(label.clone());
 
-            let function_name = if let typed_ast::Expression::Call { function, .. } =
+            let function_name = if let typed_ast::Expression::Call { resolved, .. } =
                 &select.clauses[i].expression_to_run
             {
-                function.clone()
+                resolved.to_string()
             } else {
                 "unknown".to_string()
             };

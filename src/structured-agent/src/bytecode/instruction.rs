@@ -1,4 +1,5 @@
 use std::fmt;
+use structured_agent_runtime::FunctionName;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -37,16 +38,18 @@ pub enum Instruction {
 
     /// Call a bytecode function with parameters and store result in destination
     CallBytecode {
-        function_name: String,
+        function_name: FunctionName,
         params: Vec<String>,
         dest: String,
     },
     /// Call an external function with parameters and store result in destination
     CallExternal {
-        function_name: String,
+        function_name: FunctionName,
         params: Vec<String>,
         dest: String,
     },
+    /// Load a module reference into a variable
+    LoadModule { name: FunctionName, dest: String },
 
     /// Inject variable's value into context events (adds Event to context)
     CtxEvent { var: String },
@@ -186,6 +189,10 @@ impl fmt::Display for Instruction {
                 dest,
             } => {
                 write!(f, "meta.function {}, {}", function_name, dest)
+            }
+
+            Instruction::LoadModule { name, dest } => {
+                write!(f, "load.module {}, {}", name, dest)
             }
 
             Instruction::ListCreate { dest, elements } => {

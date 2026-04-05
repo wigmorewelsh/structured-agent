@@ -35,17 +35,18 @@ impl IlAnalyzer for CallArityAnalyzer {
                 } => Some((function_name, params)),
                 _ => None,
             };
-            if let Some((function_name, params)) = call_parts
-                && let Some(&expected) = self.function_arities.get(function_name)
-            {
-                let got = params.len();
-                if got != expected {
-                    warnings.push(IlWarning::CallArityMismatch {
-                        function_name: function_name.clone(),
-                        expected,
-                        got,
-                        instruction_index: index,
-                    });
+            if let Some((function_name, params)) = call_parts {
+                let key = function_name.to_string();
+                if let Some(&expected) = self.function_arities.get(&key) {
+                    let got = params.len();
+                    if got != expected {
+                        warnings.push(IlWarning::CallArityMismatch {
+                            function_name: key,
+                            expected,
+                            got,
+                            instruction_index: index,
+                        });
+                    }
                 }
             }
         }

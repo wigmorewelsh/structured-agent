@@ -6,18 +6,20 @@ use std::any::Any;
 
 pub struct BytecodeFunctionExpr {
     compiled: CompiledFunction,
+    name: String,
 }
 
 impl BytecodeFunctionExpr {
     pub fn new(compiled: CompiledFunction) -> Self {
-        Self { compiled }
+        let name = compiled.name.to_string();
+        Self { compiled, name }
     }
 }
 
 impl std::fmt::Debug for BytecodeFunctionExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BytecodeFunctionExpr")
-            .field("name", &self.compiled.name)
+            .field("name", &self.name)
             .field("parameters", &self.compiled.parameters)
             .field("return_type", &self.compiled.return_type)
             .field(
@@ -32,6 +34,7 @@ impl Clone for BytecodeFunctionExpr {
     fn clone(&self) -> Self {
         BytecodeFunctionExpr {
             compiled: self.compiled.clone(),
+            name: self.name.clone(),
         }
     }
 }
@@ -39,7 +42,7 @@ impl Clone for BytecodeFunctionExpr {
 #[async_trait]
 impl Function for BytecodeFunctionExpr {
     fn name(&self) -> &str {
-        &self.compiled.name
+        &self.name
     }
 
     fn parameters(&self) -> &[Parameter] {

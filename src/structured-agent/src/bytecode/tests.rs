@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod instruction_display_tests {
     use crate::bytecode::Instruction;
+    use structured_agent_runtime::FunctionName;
 
     #[test]
     fn test_ldc_str_display() {
@@ -14,7 +15,7 @@ mod instruction_display_tests {
     #[test]
     fn test_call_bytecode_display() {
         let instr = Instruction::CallBytecode {
-            function_name: "foo".to_string(),
+            function_name: FunctionName::plain("", "foo"),
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
@@ -24,7 +25,7 @@ mod instruction_display_tests {
     #[test]
     fn test_call_external_display() {
         let instr = Instruction::CallExternal {
-            function_name: "foo".to_string(),
+            function_name: FunctionName::plain("", "foo"),
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
@@ -100,6 +101,7 @@ mod compilation_tests {
                 &HashMap::new(),
                 &HashMap::new(),
                 &HashMap::new(),
+                "",
             )
             .unwrap()
             .0
@@ -812,6 +814,7 @@ mod vm_execution_tests {
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use structured_agent_runtime::FunctionName;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -832,6 +835,7 @@ mod vm_execution_tests {
                 &HashMap::new(),
                 &HashMap::new(),
                 &HashMap::new(),
+                "",
             )
             .unwrap()
             .0
@@ -901,7 +905,7 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Expression::Call {
                 function: function.clone(),
-                resolved: function.clone(),
+                resolved: FunctionName::plain("", function),
                 kind: crate::typecheck::checker::FunctionKind::External,
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
                 ty: Type::Unit,
@@ -1329,15 +1333,16 @@ mod vm_execution_tests {
             }
         "#;
 
-        let module = parse_and_typecheck(code);
-        let test_func = get_function(&module, "test");
-        let test_compiled = BytecodeCompiler::new()
-            .compile_to_bytecode(test_func)
-            .unwrap();
-
         let program = CompilationUnit::from_string(code.to_string());
         let compiler = crate::compiler::Compiler::new();
         let compiled_program = compiler.compile_source(&program).unwrap();
+
+        let test_compiled = compiled_program
+            .resolve(&structured_agent_runtime::FunctionName::plain(
+                "main", "test",
+            ))
+            .unwrap()
+            .clone();
 
         let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
 
@@ -1385,6 +1390,7 @@ mod struct_bytecode_tests {
                 &HashMap::new(),
                 &HashMap::new(),
                 &HashMap::new(),
+                "",
             )
             .unwrap()
             .0

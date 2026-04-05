@@ -1622,6 +1622,7 @@ mod typed_ast_tests {
     use crate::typecheck::checker::FunctionKind;
     use crate::typed_ast;
     use std::collections::HashMap;
+    use structured_agent_runtime::FunctionName;
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let mut checker = TypeChecker::new();
@@ -1632,6 +1633,7 @@ mod typed_ast_tests {
                 &HashMap::new(),
                 &HashMap::new(),
                 &HashMap::new(),
+                "",
             )
             .unwrap()
             .0
@@ -1785,7 +1787,7 @@ mod typed_ast_tests {
         assert!(matches!(
             expr,
             typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
-            if resolved == "get_value"
+            if resolved == &FunctionName::plain("", "get_value")
         ));
     }
 

@@ -61,7 +61,7 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_call(state, function_name, params, dest)
+                    self.execute_call(state, &function_name.to_string(), params, dest)
                         .await?
                 }
                 Instruction::CallExternal {
@@ -69,8 +69,11 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_external_call(state, function_name, params, dest)
+                    self.execute_external_call(state, &function_name.to_string(), params, dest)
                         .await?
+                }
+                Instruction::LoadModule { name, dest } => {
+                    self.execute_load_module(state, name, dest)
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
@@ -345,6 +348,20 @@ impl VM {
 
         Self::write_variable(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))
+    }
+
+    fn execute_load_module(
+        &self,
+        mut state: VMState,
+        name: &structured_agent_runtime::FunctionName,
+        dest: &str,
+    ) -> VMState {
+        Self::write_variable(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::module(name.clone())),
+        );
+        Self::advance_pc(state)
     }
 
     fn execute_list_create(
