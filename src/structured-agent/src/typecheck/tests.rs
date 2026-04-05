@@ -45,7 +45,7 @@ fn create_parameter(name: &str, param_type: AstType) -> Parameter {
 
 fn create_generic_test_function(
     name: &str,
-    type_params: Vec<String>,
+    type_params: Vec<crate::ast::TypeParam>,
     parameters: Vec<Parameter>,
     return_type: AstType,
     statements: Vec<Statement>,
@@ -1343,7 +1343,7 @@ mod tests {
     fn test_generic_call_wrong_type_produces_mismatch() {
         let head = create_generic_test_function(
             "head",
-            vec!["T".to_string()],
+            vec!["T".into()],
             vec![create_parameter(
                 "list",
                 AstType::List(Box::new(AstType::Generic("T".to_string()))),
@@ -1382,7 +1382,7 @@ mod tests {
     fn test_generic_extern_fn_with_type_params_type_checks() {
         let ext_func = crate::ast::ExternalFunction {
             name: "wrap".to_string(),
-            type_params: vec!["T".to_string()],
+            type_params: vec!["T".into()],
             parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
             return_type: AstType::Option(Box::new(AstType::Generic("T".to_string()))),
             is_pub: false,
@@ -1413,7 +1413,7 @@ mod tests {
     fn test_generic_fn_type_var_only_in_return_type_call_succeeds_with_unresolved_generic() {
         let make_none = create_generic_test_function(
             "make_none",
-            vec!["T".to_string()],
+            vec!["T".into()],
             vec![],
             AstType::Option(Box::new(AstType::Generic("T".to_string()))),
             vec![],
@@ -1443,7 +1443,7 @@ mod tests {
     fn test_generic_call_result_used_in_type_sensitive_context() {
         let head = create_generic_test_function(
             "head",
-            vec!["T".to_string()],
+            vec!["T".into()],
             vec![create_parameter(
                 "list",
                 AstType::List(Box::new(AstType::Generic("T".to_string()))),
@@ -1514,6 +1514,103 @@ mod tests {
         assert!(
             matches!(result, Err(TypeError::UnsupportedType { ref type_name, .. }) if type_name == "T"),
             "expected UnsupportedType for unknown type variable, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_bound_satisfied_for_int() {
+        let input = "fn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): Int {\n    return double(42)\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            result.is_ok(),
+            "Int satisfies Add, should type check: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_bound_not_satisfied_for_string() {
+        let input = "fn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): String {\n    return double(\"hello\")\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            matches!(result, Err(TypeError::TraitBoundNotSatisfied { ref type_name, ref trait_name, .. })
+                if type_name == "String" && trait_name == "Add"),
+            "String does not satisfy Add, expected TraitBoundNotSatisfied, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_declaration_and_impl_valid() {
+        let input = "struct Vec2 {\n    x: Int,\n    y: Int,\n}\ntrait Add {\n    fn add(self: Self, other: Self): Self\n}\nimpl Vec2: Add {\n    fn add(self: Vec2, other: Vec2): Vec2 {\n        return self\n    }\n}\nfn combine<T: Add>(a: T, b: T): T {\n    return a\n}\nfn main(): Vec2 {\n    let v = Vec2 { x: 1, y: 2 }\n    return combine(v, v)\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            result.is_ok(),
+            "Vec2 implements Add, should type check: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_impl_missing_function_is_error() {
+        let input = "struct Foo {\n    x: Int,\n}\ntrait Add {\n    fn add(self: Self, other: Self): Self\n}\nimpl Foo: Add {\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            matches!(result, Err(TypeError::TraitImplMissingFunction { ref function_name, .. })
+                if function_name == "add"),
+            "impl missing 'add' should be error, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_unknown_trait_in_impl_is_error() {
+        let input = "struct Foo {\n    x: Int,\n}\nimpl Foo: NonExistent {\n    fn something(self: Foo): Foo { return self }\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let mut checker = TypeChecker::new();
+        let result = checker.check_module(&module, 0);
+        assert!(
+            matches!(result, Err(TypeError::UnknownTrait { ref name, .. }) if name == "NonExistent"),
+            "impl for unknown trait should error, got {:?}",
             result
         );
     }
@@ -2005,7 +2102,7 @@ mod typed_ast_tests {
     fn generic_head_with_string_list_returns_option_string() {
         let head = create_generic_test_function(
             "head",
-            vec!["T".to_string()],
+            vec!["T".into()],
             vec![create_parameter(
                 "list",
                 AstType::List(Box::new(AstType::Generic("T".to_string()))),
@@ -2052,7 +2149,7 @@ mod typed_ast_tests {
     fn generic_head_with_int_list_returns_option_int() {
         let head = create_generic_test_function(
             "head",
-            vec!["T".to_string()],
+            vec!["T".into()],
             vec![create_parameter(
                 "list",
                 AstType::List(Box::new(AstType::Generic("T".to_string()))),
@@ -2099,7 +2196,7 @@ mod typed_ast_tests {
     fn generic_zip_with_two_type_params_typechecks() {
         let zip = create_generic_test_function(
             "zip",
-            vec!["A".to_string(), "B".to_string()],
+            vec!["A".into(), "B".into()],
             vec![
                 create_parameter(
                     "a",

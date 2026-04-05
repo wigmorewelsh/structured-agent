@@ -93,6 +93,25 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    UnknownTrait {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    TraitBoundNotSatisfied {
+        type_name: String,
+        trait_name: String,
+        param_name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    TraitImplMissingFunction {
+        type_name: String,
+        trait_name: String,
+        function_name: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -112,6 +131,9 @@ impl TypeError {
             TypeError::StructFieldTypeMismatch { span, .. } => *span,
             TypeError::DuplicateField { span, .. } => *span,
             TypeError::PrivateFunction { span, .. } => *span,
+            TypeError::UnknownTrait { span, .. } => *span,
+            TypeError::TraitBoundNotSatisfied { span, .. } => *span,
+            TypeError::TraitImplMissingFunction { span, .. } => *span,
         }
     }
 
@@ -131,6 +153,9 @@ impl TypeError {
             TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
             TypeError::DuplicateField { file_id, .. } => *file_id,
             TypeError::PrivateFunction { file_id, .. } => *file_id,
+            TypeError::UnknownTrait { file_id, .. } => *file_id,
+            TypeError::TraitBoundNotSatisfied { file_id, .. } => *file_id,
+            TypeError::TraitImplMissingFunction { file_id, .. } => *file_id,
         }
     }
 
@@ -325,6 +350,46 @@ impl TypeError {
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("this function is not public"),
                 ]),
+            TypeError::UnknownTrait {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!("unknown trait `{}`", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("trait not declared"),
+                ]),
+            TypeError::TraitBoundNotSatisfied {
+                type_name,
+                trait_name,
+                span,
+                file_id,
+                ..
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "type `{}` does not implement trait `{}`",
+                    type_name, trait_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("trait bound not satisfied"),
+                ]),
+            TypeError::TraitImplMissingFunction {
+                type_name,
+                trait_name,
+                function_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "impl `{}`: `{}` missing function `{}`",
+                    type_name, trait_name, function_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("function not provided"),
+                ]),
         }
     }
 }
@@ -451,6 +516,32 @@ impl fmt::Display for TypeError {
             }
             TypeError::PrivateFunction { name, .. } => {
                 write!(f, "Function `{}` is private", name)
+            }
+            TypeError::UnknownTrait { name, .. } => {
+                write!(f, "Unknown trait: {}", name)
+            }
+            TypeError::TraitBoundNotSatisfied {
+                type_name,
+                trait_name,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Type `{}` does not implement `{}`",
+                    type_name, trait_name
+                )
+            }
+            TypeError::TraitImplMissingFunction {
+                type_name,
+                trait_name,
+                function_name,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Impl `{}`: `{}` missing `{}`",
+                    type_name, trait_name, function_name
+                )
             }
         }
     }

@@ -36,7 +36,9 @@ impl UnusedReturnValueAnalyzer {
                 | Definition::ModuleHeader { .. }
                 | Definition::ModuleBinding { .. }
                 | Definition::WiringSite { .. }
-                | Definition::Signature { .. } => {}
+                | Definition::Signature { .. }
+                | Definition::Trait { .. }
+                | Definition::TraitImpl { .. } => {}
             }
         }
     }

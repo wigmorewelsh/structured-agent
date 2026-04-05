@@ -16,9 +16,64 @@ pub struct ModuleParam {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TypeParam {
+    pub name: String,
+    pub bounds: Vec<String>,
+}
+
+impl TypeParam {
+    pub fn unbounded(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            bounds: vec![],
+        }
+    }
+}
+
+impl From<String> for TypeParam {
+    fn from(name: String) -> Self {
+        Self {
+            name,
+            bounds: vec![],
+        }
+    }
+}
+
+impl From<&str> for TypeParam {
+    fn from(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            bounds: vec![],
+        }
+    }
+}
+
+impl PartialEq<&str> for TypeParam {
+    fn eq(&self, other: &&str) -> bool {
+        self.bounds.is_empty() && self.name == *other
+    }
+}
+
+impl PartialEq<String> for TypeParam {
+    fn eq(&self, other: &String) -> bool {
+        self.bounds.is_empty() && self.name == *other
+    }
+}
+
+impl fmt::Display for TypeParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if !self.bounds.is_empty() {
+            write!(f, ": {}", self.bounds.join(" + "))?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SigFunction {
     pub name: String,
-    pub type_params: Vec<String>,
+    pub type_params: Vec<TypeParam>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub span: Span,
@@ -56,6 +111,17 @@ pub enum Definition {
         functions: Vec<SigFunction>,
         span: Span,
     },
+    Trait {
+        name: String,
+        functions: Vec<SigFunction>,
+        span: Span,
+    },
+    TraitImpl {
+        type_name: String,
+        trait_name: String,
+        functions: Vec<Function>,
+        span: Span,
+    },
 }
 
 impl Spanned for Definition {
@@ -69,6 +135,8 @@ impl Spanned for Definition {
             Definition::ModuleBinding { span, .. } => *span,
             Definition::WiringSite { span, .. } => *span,
             Definition::Signature { span, .. } => *span,
+            Definition::Trait { span, .. } => *span,
+            Definition::TraitImpl { span, .. } => *span,
         }
     }
 }
@@ -90,7 +158,7 @@ pub struct StructField {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub type_params: Vec<String>,
+    pub type_params: Vec<TypeParam>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub body: FunctionBody,
@@ -109,7 +177,7 @@ pub struct Parameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternalFunction {
     pub name: String,
-    pub type_params: Vec<String>,
+    pub type_params: Vec<TypeParam>,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub is_pub: bool,
@@ -469,6 +537,36 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "}}")
             }
+            Definition::Trait {
+                name, functions, ..
+            } => {
+                write!(f, "trait {}", name)?;
+                write!(f, " {{")?;
+                for func in functions {
+                    write!(f, "\n    fn {}(", func.name)?;
+                    for (i, p) in func.parameters.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", p.name, p.param_type)?;
+                    }
+                    write!(f, "): {}", func.return_type)?;
+                }
+                write!(f, "\n}}")
+            }
+            Definition::TraitImpl {
+                type_name,
+                trait_name,
+                functions,
+                ..
+            } => {
+                write!(f, "impl {}: {}", type_name, trait_name)?;
+                write!(f, " {{")?;
+                for func in functions {
+                    write!(f, "\n    {}", func)?;
+                }
+                write!(f, "\n}}")
+            }
         }
     }
 }
@@ -480,7 +578,14 @@ impl fmt::Display for ExternalFunction {
         }
         write!(f, "extern fn {}", self.name)?;
         if !self.type_params.is_empty() {
-            write!(f, "<{}>", self.type_params.join(", "))?;
+            write!(f, "<")?;
+            for (i, tp) in self.type_params.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", tp)?;
+            }
+            write!(f, ">")?;
         }
         write!(f, "(")?;
         for (i, param) in self.parameters.iter().enumerate() {

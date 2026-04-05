@@ -412,7 +412,9 @@ fn emit_module(module: &typed_ast::Module, prefix: Option<&str>) -> Result<Modul
             typed_ast::Definition::Use { .. }
             | typed_ast::Definition::ModuleHeader { .. }
             | typed_ast::Definition::ModuleBinding { .. }
-            | typed_ast::Definition::WiringSite { .. } => {}
+            | typed_ast::Definition::WiringSite { .. }
+            | typed_ast::Definition::Trait { .. }
+            | typed_ast::Definition::TraitImpl { .. } => {}
         }
     }
 

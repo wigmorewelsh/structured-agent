@@ -1,7 +1,7 @@
 use crate::ast::{
     Definition, Expression, ExternalFunction, Function, FunctionBody, Module, ModuleParam,
     Parameter, SelectClause, SelectExpression, SigFunction, Statement, StructDefinition,
-    StructField, Type,
+    StructField, Type, TypeParam,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -113,6 +113,28 @@ where
     identifier_raw().skip(skip_spaces())
 }
 
+fn parse_type_param<Input>() -> impl Parser<Input, Output = TypeParam>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        identifier(),
+        optional(attempt(
+            (
+                skip_spaces(),
+                lex_char(':'),
+                sep_by1(identifier(), lex_char('+')),
+            )
+                .map(|(_, _, bounds)| bounds),
+        )),
+    )
+        .map(|(name, bounds_opt)| TypeParam {
+            name,
+            bounds: bounds_opt.unwrap_or_default(),
+        })
+}
+
 pub fn parse_program<Input>(file_id: FileId) -> impl Parser<Input, Output = Module>
 where
     Input: Stream<Token = char, Position = usize>,
@@ -131,6 +153,8 @@ where
                     attempt(parse_module_binding()),
                     attempt(parse_wiring_site()),
                     attempt(parse_sig_definition()),
+                    attempt(parse_trait_impl()),
+                    attempt(parse_trait()),
                     attempt(parse_function_with_docs().map(Definition::Function)),
                     attempt(parse_external_function().map(Definition::ExternalFunction)),
                     parse_struct_definition().map(Definition::Struct),
@@ -282,7 +306,7 @@ where
         optional(attempt(between(
             lex_char('<'),
             lex_char('>'),
-            sep_by1(identifier(), lex_char(',')),
+            sep_by1(parse_type_param(), lex_char(',')),
         ))),
         between(
             lex_char('('),
@@ -294,7 +318,16 @@ where
         position(),
     )
         .map(
-            |(start, _, name, type_params_opt, parameters, _, return_type, end)| SigFunction {
+            |(start, _, name, type_params_opt, parameters, _, return_type, end): (
+                _,
+                _,
+                _,
+                Option<Vec<TypeParam>>,
+                _,
+                _,
+                _,
+                _,
+            )| SigFunction {
                 name,
                 type_params: type_params_opt.unwrap_or_default(),
                 parameters,
@@ -318,7 +351,7 @@ where
         optional(attempt(between(
             lex_char('<'),
             lex_char('>'),
-            sep_by1(identifier(), lex_char(',')),
+            sep_by1(parse_type_param(), lex_char(',')),
         ))),
         between(
             lex_char('('),
@@ -330,7 +363,18 @@ where
         position(),
     )
         .map(
-            |(start, pub_kw, _, _, name, type_params_opt, params, _, return_type, end)| {
+            |(start, pub_kw, _, _, name, type_params_opt, params, _, return_type, end): (
+                _,
+                _,
+                _,
+                _,
+                _,
+                Option<Vec<TypeParam>>,
+                _,
+                _,
+                _,
+                _,
+            )| {
                 ExternalFunction {
                     name,
                     type_params: type_params_opt.unwrap_or_default(),
@@ -367,7 +411,7 @@ where
         optional(attempt(between(
             lex_char('<'),
             lex_char('>'),
-            sep_by1(identifier(), lex_char(',')),
+            sep_by1(parse_type_param(), lex_char(',')),
         ))),
         between(
             lex_char('('),
@@ -380,7 +424,18 @@ where
         position(),
     )
         .map(
-            |(start, pub_kw, _, name, type_params_opt, params, _, return_type, body, end)| {
+            |(start, pub_kw, _, name, type_params_opt, params, _, return_type, body, end): (
+                _,
+                _,
+                _,
+                _,
+                Option<Vec<TypeParam>>,
+                _,
+                _,
+                _,
+                _,
+                _,
+            )| {
                 Function {
                     name,
                     type_params: type_params_opt.unwrap_or_default(),
@@ -391,6 +446,65 @@ where
                     is_pub: pub_kw.is_some(),
                     span: Span::new(start, end),
                 }
+            },
+        )
+}
+
+fn parse_trait<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("trait"),
+        identifier(),
+        between(
+            lex_char('{'),
+            lex_char('}'),
+            many(
+                skip_spaces_and_comments()
+                    .with(parse_sig_function())
+                    .skip(skip_spaces_and_comments()),
+            ),
+        ),
+        position(),
+    )
+        .map(|(start, _, name, functions, end)| Definition::Trait {
+            name,
+            functions,
+            span: Span::new(start, end),
+        })
+}
+
+fn parse_trait_impl<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        lex_string("impl"),
+        identifier(),
+        lex_char(':'),
+        identifier(),
+        between(
+            lex_char('{'),
+            lex_char('}'),
+            many(
+                skip_spaces_and_comments()
+                    .with(parse_function_with_docs())
+                    .skip(skip_spaces_and_comments()),
+            ),
+        ),
+        position(),
+    )
+        .map(
+            |(start, _, type_name, _, trait_name, functions, end)| Definition::TraitImpl {
+                type_name,
+                trait_name,
+                functions,
+                span: Span::new(start, end),
             },
         )
 }
@@ -3038,6 +3152,79 @@ fn main(): String {
             assert_eq!(functions[0].type_params, vec!["A", "B"]);
         } else {
             panic!("Expected signature");
+        }
+    }
+
+    #[test]
+    fn test_parse_bounded_type_param() {
+        let input = "fn foo<T: Add>(x: T): T {\n    return x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params.len(), 1);
+            assert_eq!(f.type_params[0].name, "T");
+            assert_eq!(f.type_params[0].bounds, vec!["Add"]);
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_bounds() {
+        let input = "fn foo<T: Add + Sub>(x: T): T {\n    return x\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(f) = &module.definitions[0] {
+            assert_eq!(f.type_params[0].bounds, vec!["Add", "Sub"]);
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_trait_declaration() {
+        let input = "trait Add {\n    fn add(self: Self, other: Self): Self\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Trait {
+            name, functions, ..
+        } = &module.definitions[0]
+        {
+            assert_eq!(name, "Add");
+            assert_eq!(functions.len(), 1);
+            assert_eq!(functions[0].name, "add");
+        } else {
+            panic!("expected trait, got {:?}", module.definitions[0]);
+        }
+    }
+
+    #[test]
+    fn test_parse_trait_impl() {
+        let input = "struct Foo {\n    x: Int,\n}\nimpl Foo: Add {\n    fn add(self: Foo, other: Foo): Foo {\n        return self\n    }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        if let Definition::TraitImpl {
+            type_name,
+            trait_name,
+            functions,
+            ..
+        } = &module.definitions[1]
+        {
+            assert_eq!(type_name, "Foo");
+            assert_eq!(trait_name, "Add");
+            assert_eq!(functions.len(), 1);
+            assert_eq!(functions[0].name, "add");
+        } else {
+            panic!("expected trait impl, got {:?}", module.definitions[1]);
         }
     }
 }

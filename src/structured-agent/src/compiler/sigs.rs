@@ -84,7 +84,12 @@ pub(crate) fn collect_sigs(
                     external_sigs.insert(
                         qname,
                         ExternalSig::new(parameters, return_type, true, FunctionKind::External)
-                            .with_type_params(func.type_params().to_vec()),
+                            .with_type_params(
+                                func.type_params()
+                                    .iter()
+                                    .map(|s| crate::ast::TypeParam::from(s.as_str()))
+                                    .collect(),
+                            ),
                     );
                 }
                 Definition::Signature {

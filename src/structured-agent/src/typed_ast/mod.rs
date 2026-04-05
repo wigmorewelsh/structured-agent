@@ -41,6 +41,16 @@ pub enum Definition {
         functions: Vec<SigFunction>,
         span: Span,
     },
+    Trait {
+        name: String,
+        functions: Vec<crate::ast::SigFunction>,
+        span: crate::types::Span,
+    },
+    TraitImpl {
+        type_name: String,
+        trait_name: String,
+        span: crate::types::Span,
+    },
 }
 
 pub struct Function {
