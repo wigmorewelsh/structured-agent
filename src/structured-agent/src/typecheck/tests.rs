@@ -1582,7 +1582,7 @@ mod tests {
 #[cfg(test)]
 mod typed_ast_tests {
     use super::*;
-    use crate::typecheck::checker::FunctionKind;
+    use crate::typecheck::checker::{FunctionKind, TypedCheckerAstRef};
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -1597,10 +1597,28 @@ mod typed_ast_tests {
             is_entry: false,
             file_id: 0,
         };
-        let (mut typed_modules, _, _) = TypeChecker::new()
+        let (_, typed_metadata) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
-        typed_modules.remove("main").unwrap()
+        let definitions = typed_metadata
+            .functions
+            .values()
+            .filter_map(|f| {
+                if f.name.module.to_string() != "main" {
+                    return None;
+                }
+                if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                    Some(typed_ast::Definition::Function((**func).clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        typed_ast::Module {
+            definitions,
+            span: crate::types::Span::dummy(),
+            file_id: 0,
+        }
     }
 
     fn first_function(module: &typed_ast::Module) -> &typed_ast::Function {
@@ -2358,20 +2376,20 @@ mod typed_ast_tests {
 mod metadata_query_tests {
     use super::*;
     use crate::ast::{SigFunction, StructDefinition, StructField};
-    use crate::typecheck::checker::{CheckerAstRef, CheckerRefs};
+    use crate::typecheck::checker::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
         FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName, TypeName,
     };
 
-    fn check_meta(module: crate::ast::Module) -> MetaData<CheckerRefs> {
+    fn check_meta(module: crate::ast::Module) -> MetaData<TypedRefs> {
         let parsed = crate::ast::ParsedModule {
             name: "main".to_string(),
             module,
             is_entry: true,
             file_id: 0,
         };
-        let (_, _, metadata) = TypeChecker::new()
+        let (_, metadata) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         metadata
@@ -2490,7 +2508,7 @@ mod metadata_query_tests {
             is_entry: true,
             file_id: 0,
         };
-        let (_, _, metadata) = TypeChecker::new()
+        let (_, metadata) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let type_name = TypeName {
@@ -2503,7 +2521,10 @@ mod metadata_query_tests {
         };
         let impl_def = metadata.impl_for(&type_name, &trait_name);
         assert!(impl_def.is_some());
-        assert!(matches!(impl_def.unwrap().ast_ref, CheckerAstRef::Impl(_)));
+        assert!(matches!(
+            impl_def.unwrap().ast_ref,
+            TypedCheckerAstRef::Other(CheckerAstRef::Impl(_))
+        ));
     }
 
     #[test]

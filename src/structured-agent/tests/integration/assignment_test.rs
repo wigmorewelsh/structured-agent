@@ -8,8 +8,10 @@ use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::parser;
 use structured_agent::runtime::{Context, Runtime};
 use structured_agent::typecheck::TypeChecker;
+use structured_agent::typecheck::checker::TypedCheckerAstRef;
 use structured_agent::typed_ast;
 use structured_agent::types::FileId;
+use structured_agent::types::Span;
 
 const TEST_FILE_ID: FileId = 0;
 
@@ -34,10 +36,28 @@ fn test_assignment(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let (mut typed_modules, _, _) = TypeChecker::new()
+    let (_, typed_metadata) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
-    let typed_module = typed_modules.remove("test").unwrap();
+    let definitions = typed_metadata
+        .functions
+        .values()
+        .filter_map(|f| {
+            if f.name.module.to_string() != "main" {
+                return None;
+            }
+            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                Some(typed_ast::Definition::Function((**func).clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let typed_module = typed_ast::Module {
+        definitions,
+        span: Span::dummy(),
+        file_id: TEST_FILE_ID,
+    };
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -102,10 +122,28 @@ fn test_var_assignment(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let (mut typed_modules, _, _) = TypeChecker::new()
+    let (_, typed_metadata) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
-    let typed_module = typed_modules.remove("test").unwrap();
+    let definitions = typed_metadata
+        .functions
+        .values()
+        .filter_map(|f| {
+            if f.name.module.to_string() != "main" {
+                return None;
+            }
+            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                Some(typed_ast::Definition::Function((**func).clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let typed_module = typed_ast::Module {
+        definitions,
+        span: Span::dummy(),
+        file_id: TEST_FILE_ID,
+    };
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -154,10 +192,28 @@ fn test_return(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let (mut typed_modules, _, _) = TypeChecker::new()
+    let (_, typed_metadata) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
-    let typed_module = typed_modules.remove("test").unwrap();
+    let definitions = typed_metadata
+        .functions
+        .values()
+        .filter_map(|f| {
+            if f.name.module.to_string() != "main" {
+                return None;
+            }
+            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                Some(typed_ast::Definition::Function((**func).clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let typed_module = typed_ast::Module {
+        definitions,
+        span: Span::dummy(),
+        file_id: TEST_FILE_ID,
+    };
 
     let functions: Vec<_> = typed_module
         .definitions

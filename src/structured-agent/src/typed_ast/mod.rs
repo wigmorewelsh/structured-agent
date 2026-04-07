@@ -5,12 +5,14 @@ use crate::typecheck::checker::FunctionKind;
 use crate::types::{FileId, Span};
 use structured_agent_runtime::FunctionName;
 
+#[derive(Clone)]
 pub struct Module {
     pub definitions: Vec<Definition>,
     pub span: Span,
     pub file_id: FileId,
 }
 
+#[derive(Clone)]
 pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
@@ -55,6 +57,7 @@ pub enum Definition {
     },
 }
 
+#[derive(Clone)]
 pub struct Function {
     pub name: String,
     pub parameters: Vec<Parameter>,
@@ -65,11 +68,13 @@ pub struct Function {
     pub span: Span,
 }
 
+#[derive(Clone)]
 pub struct FunctionBody {
     pub statements: Vec<Statement>,
     pub span: Span,
 }
 
+#[derive(Clone)]
 pub enum Statement {
     Injection(Expression),
     Assignment {
@@ -97,11 +102,13 @@ pub enum Statement {
     Return(Expression),
 }
 
+#[derive(Clone)]
 pub struct SelectExpression {
     pub clauses: Vec<SelectClause>,
     pub span: Span,
 }
 
+#[derive(Clone)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
     pub result_variable: String,
@@ -109,6 +116,7 @@ pub struct SelectClause {
     pub span: Span,
 }
 
+#[derive(Clone)]
 pub enum Expression {
     Call {
         function: String,

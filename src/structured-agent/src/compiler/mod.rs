@@ -17,7 +17,7 @@ use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::ModuleVisibility;
+use crate::typecheck::checker::{CheckerAstRef, ModuleVisibility, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 
@@ -28,7 +28,7 @@ use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName,
+    FunctionName, FunctionNameKind, MetaData, ModuleName, TraitName, TypeName,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -318,7 +318,7 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let (mut typed_modules, function_kinds, metadata) = checker
+        let (module_visibility, typed_metadata) = checker
             .check_modules(&modules, &self.modules)
             .map_err(|e| {
                 error!("Type checking failed: {}", e);
@@ -327,6 +327,26 @@ impl Compiler {
                 }
                 format!("Type error: {}", e)
             })?;
+
+        let function_kinds: HashMap<String, crate::typecheck::checker::FunctionKind> =
+            typed_metadata
+                .functions
+                .iter()
+                .filter_map(|(name, fdef)| match &fdef.ast_ref {
+                    TypedCheckerAstRef::Function(_, kind) => {
+                        Some((name.name.clone(), kind.clone()))
+                    }
+                    TypedCheckerAstRef::ImplFunction(_, _, kind) => {
+                        Some((name.name.clone(), kind.clone()))
+                    }
+                    TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn { kind, .. }) => {
+                        Some((name.name.clone(), kind.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+
+        let mut typed_modules = reconstruct_typed_modules(&modules, &typed_metadata);
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
@@ -337,7 +357,7 @@ impl Compiler {
             }
         }
 
-        let vtables = resolve_vtables(&modules, &metadata);
+        let vtables = resolve_vtables(&modules, &typed_metadata);
         for parsed in &modules {
             if let Some(vtable) = vtables.get(&parsed.name)
                 && let Some(typed_module) = typed_modules.get_mut(&parsed.name)
@@ -346,7 +366,6 @@ impl Compiler {
             }
         }
 
-        let module_visibility = build_module_visibility(&modules);
         let mut compiled = CompiledProgram::new()
             .with_source_path(source_path)
             .with_module_visibility(module_visibility);
@@ -377,24 +396,131 @@ impl Compiler {
     }
 }
 
-fn build_module_visibility(modules: &[ParsedModule]) -> HashMap<String, bool> {
-    let mut vis = HashMap::new();
+fn reconstruct_typed_modules(
+    modules: &[ParsedModule],
+    typed_metadata: &MetaData<TypedRefs>,
+) -> HashMap<String, typed_ast::Module> {
+    let mut result = HashMap::new();
     for parsed in modules {
-        for def in &parsed.module.definitions {
-            let (name, is_pub) = match def {
-                Definition::Function(f) => (&f.name, f.is_pub),
-                Definition::ExternalFunction(f) => (&f.name, f.is_pub),
-                _ => continue,
-            };
-            let qname = if parsed.is_entry {
-                name.clone()
-            } else {
-                format!("{}::{}", parsed.name, name)
-            };
-            vis.insert(qname, is_pub);
-        }
+        let effective_name = if parsed.is_entry {
+            "main"
+        } else {
+            parsed.name.as_str()
+        };
+        let definitions = parsed
+            .module
+            .definitions
+            .iter()
+            .map(|def| match def {
+                Definition::Function(f) => {
+                    let key = FunctionName {
+                        name: f.name.clone(),
+                        module: ModuleName::from_str(effective_name),
+                        kind: FunctionNameKind::Function,
+                    };
+                    let fn_def = typed_metadata.functions.get(&key).unwrap();
+                    if let TypedCheckerAstRef::Function(typed_fn, _) = &fn_def.ast_ref {
+                        typed_ast::Definition::Function((**typed_fn).clone())
+                    } else {
+                        panic!("expected TypedCheckerAstRef::Function");
+                    }
+                }
+                Definition::ExternalFunction(f) => {
+                    typed_ast::Definition::ExternalFunction((**f).clone())
+                }
+                Definition::Struct(s) => typed_ast::Definition::Struct((**s).clone()),
+                Definition::Use {
+                    path,
+                    alias,
+                    is_pub,
+                    span,
+                } => typed_ast::Definition::Use {
+                    path: path.clone(),
+                    alias: alias.clone(),
+                    is_pub: *is_pub,
+                    span: *span,
+                },
+                Definition::ModuleHeader { name, params, span } => {
+                    typed_ast::Definition::ModuleHeader {
+                        name: name.clone(),
+                        params: params.clone(),
+                        span: *span,
+                    }
+                }
+                Definition::ModuleBinding {
+                    name,
+                    sig_path,
+                    impl_path,
+                    span,
+                } => typed_ast::Definition::ModuleBinding {
+                    name: name.clone(),
+                    sig_path: sig_path.clone(),
+                    impl_path: impl_path.clone(),
+                    span: *span,
+                },
+                Definition::WiringSite { name, args, span } => typed_ast::Definition::WiringSite {
+                    name: name.clone(),
+                    args: args.clone(),
+                    span: *span,
+                },
+                Definition::Signature(s) => typed_ast::Definition::Signature {
+                    name: s.name.clone(),
+                    functions: s.functions.clone(),
+                    span: s.span,
+                },
+                Definition::Trait(s) => typed_ast::Definition::Trait {
+                    name: s.name.clone(),
+                    functions: s.functions.clone(),
+                    span: s.span,
+                },
+                Definition::TraitImpl(t) => {
+                    let functions = t
+                        .functions
+                        .iter()
+                        .map(|f| {
+                            let key = FunctionName {
+                                name: f.name.clone(),
+                                module: ModuleName::from_str(effective_name),
+                                kind: FunctionNameKind::Impl {
+                                    type_name: TypeName {
+                                        name: t.type_name.clone(),
+                                        module: ModuleName::from_str(effective_name),
+                                    },
+                                    trait_name: TraitName {
+                                        name: t.trait_name.clone(),
+                                        module: ModuleName::from_str(effective_name),
+                                    },
+                                },
+                            };
+                            let fn_def = typed_metadata.functions.get(&key).unwrap();
+                            if let TypedCheckerAstRef::ImplFunction(typed_fn, _, _) =
+                                &fn_def.ast_ref
+                            {
+                                (**typed_fn).clone()
+                            } else {
+                                panic!("expected TypedCheckerAstRef::ImplFunction");
+                            }
+                        })
+                        .collect();
+                    typed_ast::Definition::TraitImpl {
+                        type_name: t.type_name.clone(),
+                        trait_name: t.trait_name.clone(),
+                        functions,
+                        span: t.span,
+                    }
+                }
+            })
+            .collect();
+        result.insert(
+            parsed.name.clone(),
+            typed_ast::Module {
+                definitions,
+                span: parsed.module.span,
+                file_id: parsed.file_id,
+            },
+        );
     }
-    vis
+    result
 }
 
 fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {

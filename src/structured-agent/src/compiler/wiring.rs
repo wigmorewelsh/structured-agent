@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 use crate::ast::Definition;
-use crate::typecheck::checker::{CheckerRefs, FunctionKind};
+use crate::typecheck::checker::FunctionKind;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, MetaData, ModuleName, TypeDefinitionKind,
+    FunctionName, FunctionNameKind, MetaData, ModuleName, References, TypeDefinitionKind,
 };
 
 use crate::ast::ParsedModule;
 
 pub(crate) type Vtables = HashMap<String, HashMap<String, String>>;
 
-pub(crate) fn resolve_vtables(
+pub(crate) fn resolve_vtables<R: References>(
     modules: &[ParsedModule],
-    metadata: &MetaData<CheckerRefs>,
+    metadata: &MetaData<R>,
 ) -> Vtables {
     let bindings = collect_bindings(modules);
     let wiring_sites = collect_wiring_sites(modules);
@@ -28,11 +28,11 @@ pub(crate) fn resolve_vtables(
         .collect()
 }
 
-fn build_vtable(
+fn build_vtable<R: References>(
     params: &[crate::ast::ModuleParam],
     site_args: Option<&[String]>,
     bindings: &HashMap<String, String>,
-    metadata: &MetaData<CheckerRefs>,
+    metadata: &MetaData<R>,
 ) -> HashMap<String, String> {
     params
         .iter()
@@ -63,10 +63,10 @@ fn concrete_module_for_param<'a>(
         .unwrap_or(&param.path[0])
 }
 
-fn fn_names_for_param(
+fn fn_names_for_param<R: References>(
     param: &crate::ast::ModuleParam,
     concrete_module: &str,
-    metadata: &MetaData<CheckerRefs>,
+    metadata: &MetaData<R>,
 ) -> Vec<String> {
     let sig_name = param.path.last().unwrap();
     if let Some(type_def) = metadata.types.values().find(|td| {
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn test_no_params_produces_empty_vtables() {
         let parsed = make_module("tasks", vec![]);
-        let vtables = resolve_vtables(&[parsed], &MetaData::default());
+        let vtables = resolve_vtables(&[parsed], &MetaData::<CheckerRefs>::default());
         assert!(vtables.is_empty());
     }
 
@@ -535,7 +535,7 @@ mod tests {
             binding("io", &["storage", "Store"], &["mock_store"]),
             wiring_site("tasks", &["io"]),
         ]);
-        let vtables = resolve_vtables(&[entry], &MetaData::default());
+        let vtables = resolve_vtables(&[entry], &MetaData::<CheckerRefs>::default());
         assert!(vtables.is_empty());
     }
 
@@ -543,7 +543,7 @@ mod tests {
     fn test_param_with_single_segment_path_skipped() {
         let p = param("io", &["storage"]);
         let parsed = make_module("tasks", vec![p]);
-        let vtables = resolve_vtables(&[parsed], &MetaData::default());
+        let vtables = resolve_vtables(&[parsed], &MetaData::<CheckerRefs>::default());
         assert!(vtables.is_empty());
     }
 

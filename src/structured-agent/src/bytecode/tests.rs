@@ -93,6 +93,7 @@ mod compilation_tests {
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::typecheck::TypeChecker;
+    use crate::typecheck::checker::TypedCheckerAstRef;
     use crate::typed_ast;
     use std::collections::HashMap;
 
@@ -114,10 +115,28 @@ mod compilation_tests {
             is_entry: false,
             file_id,
         };
-        let (mut typed_modules, _, _) = TypeChecker::new()
+        let (_, typed_metadata) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
-        typed_modules.remove("").unwrap()
+        let definitions = typed_metadata
+            .functions
+            .values()
+            .filter_map(|f| {
+                if f.name.module.to_string() != "" {
+                    return None;
+                }
+                if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                    Some(typed_ast::Definition::Function((**func).clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        typed_ast::Module {
+            definitions,
+            span: crate::types::Span::dummy(),
+            file_id,
+        }
     }
 
     #[test]
@@ -824,6 +843,7 @@ mod vm_execution_tests {
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{Context, ExpressionValue, Runtime};
     use crate::typecheck::TypeChecker;
+    use crate::typecheck::checker::TypedCheckerAstRef;
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -847,10 +867,28 @@ mod vm_execution_tests {
             is_entry: false,
             file_id,
         };
-        let (mut typed_modules, _, _) = TypeChecker::new()
+        let (_, typed_metadata) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
-        typed_modules.remove("").unwrap()
+        let definitions = typed_metadata
+            .functions
+            .values()
+            .filter_map(|f| {
+                if f.name.module.to_string() != "" {
+                    return None;
+                }
+                if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                    Some(typed_ast::Definition::Function((**func).clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        typed_ast::Module {
+            definitions,
+            span: crate::types::Span::dummy(),
+            file_id,
+        }
     }
 
     fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {
@@ -1385,6 +1423,7 @@ mod struct_bytecode_tests {
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{ExpressionValue, Runtime};
     use crate::typecheck::TypeChecker;
+    use crate::typecheck::checker::TypedCheckerAstRef;
     use crate::typed_ast;
     use arrow::array::Array;
     use std::collections::HashMap;
@@ -1407,10 +1446,28 @@ mod struct_bytecode_tests {
             is_entry: false,
             file_id,
         };
-        let (mut typed_modules, _, _) = TypeChecker::new()
+        let (_, typed_metadata) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
-        typed_modules.remove("").unwrap()
+        let definitions = typed_metadata
+            .functions
+            .values()
+            .filter_map(|f| {
+                if f.name.module.to_string() != "" {
+                    return None;
+                }
+                if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
+                    Some(typed_ast::Definition::Function((**func).clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        typed_ast::Module {
+            definitions,
+            span: crate::types::Span::dummy(),
+            file_id,
+        }
     }
 
     fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {

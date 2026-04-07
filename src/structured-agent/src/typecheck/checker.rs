@@ -28,6 +28,7 @@ pub struct SourceLocation(pub FileId, pub Span);
 pub struct NoBody;
 pub struct NoWitness;
 
+#[derive(Clone)]
 pub enum CheckerAstRef {
     Function(Arc<crate::ast::Function>, FunctionKind),
     ImplFunction(Arc<crate::ast::Function>, String, FunctionKind),
@@ -55,6 +56,23 @@ pub struct CheckerRefs;
 impl References for CheckerRefs {
     type Source = SourceLocation;
     type Ast = CheckerAstRef;
+    type Body = NoBody;
+    type Witness = NoWitness;
+}
+
+pub enum TypedCheckerAstRef {
+    Function(Arc<typed_ast::Function>, FunctionKind),
+    ImplFunction(Arc<typed_ast::Function>, String, FunctionKind),
+    Other(CheckerAstRef),
+}
+
+impl AstRef for TypedCheckerAstRef {}
+
+pub struct TypedRefs;
+
+impl References for TypedRefs {
+    type Source = SourceLocation;
+    type Ast = TypedCheckerAstRef;
     type Body = NoBody;
     type Witness = NoWitness;
 }
@@ -149,14 +167,7 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<
-        (
-            HashMap<String, typed_ast::Module>,
-            HashMap<String, FunctionKind>,
-            MetaData<CheckerRefs>,
-        ),
-        TypeError,
-    > {
+    ) -> Result<(ModuleVisibility, MetaData<TypedRefs>), TypeError> {
         let mut module_visibility: ModuleVisibility = HashMap::new();
         for parsed in modules {
             let effective_name = if parsed.is_entry {
@@ -188,9 +199,129 @@ impl TypeChecker {
                 self.check_single_module_expressions(parsed, &module_visibility)?,
             );
         }
-        let metadata = std::mem::take(&mut self.metadata);
-        let function_kinds = Self::function_kinds_from_metadata(&metadata);
-        Ok((typed_modules, function_kinds, metadata))
+        let effective_name_to_typed: HashMap<String, &typed_ast::Module> = modules
+            .iter()
+            .map(|p| {
+                let eff = if p.is_entry {
+                    "main".to_string()
+                } else {
+                    p.name.clone()
+                };
+                (eff, typed_modules.get(&p.name).unwrap())
+            })
+            .collect();
+        let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
+        for (fn_key, fn_def) in &self.metadata.functions {
+            let typed_ast_ref = match &fn_def.ast_ref {
+                CheckerAstRef::Function(_, kind) => {
+                    let module_name = fn_key.module.to_string();
+                    let typed_module = effective_name_to_typed[&module_name];
+                    let typed_fn = typed_module
+                        .definitions
+                        .iter()
+                        .find_map(|d| {
+                            if let typed_ast::Definition::Function(f) = d {
+                                if f.name == fn_key.name {
+                                    Some(f.clone())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .expect("typed function not found");
+                    TypedCheckerAstRef::Function(Arc::new(typed_fn), kind.clone())
+                }
+                CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
+                    let module_name = fn_key.module.to_string();
+                    let typed_module = effective_name_to_typed[&module_name];
+                    let typed_fn = typed_module
+                        .definitions
+                        .iter()
+                        .find_map(|d| {
+                            if let typed_ast::Definition::TraitImpl {
+                                type_name,
+                                functions,
+                                ..
+                            } = d
+                            {
+                                if type_name == type_name_str {
+                                    functions.iter().find(|f| f.name == fn_key.name).cloned()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .expect("typed impl function not found");
+                    TypedCheckerAstRef::ImplFunction(
+                        Arc::new(typed_fn),
+                        type_name_str.clone(),
+                        kind.clone(),
+                    )
+                }
+                other => TypedCheckerAstRef::Other(other.clone()),
+            };
+            let typed_fn_def = FunctionDefinition {
+                name: fn_def.name.clone(),
+                type_name: fn_def.type_name.clone(),
+                source_ref: SourceLocation(fn_def.source_ref.0, fn_def.source_ref.1),
+                ast_ref: typed_ast_ref,
+                body_ref: None,
+            };
+            typed_metadata
+                .functions
+                .insert(fn_key.clone(), Arc::new(typed_fn_def));
+        }
+        for (type_key, type_def) in &self.metadata.types {
+            let new_def = TypeDefinition {
+                name: type_def.name.clone(),
+                kind: type_def.kind.clone(),
+                source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::Other(type_def.ast_ref.clone()),
+            };
+            typed_metadata
+                .types
+                .insert(type_key.clone(), Arc::new(new_def));
+        }
+        for (trait_key, trait_def) in &self.metadata.traits {
+            let new_def = TraitDefinition {
+                name: trait_def.name.clone(),
+                functions: trait_def.functions.clone(),
+                witness_ref: NoWitness,
+                source_ref: SourceLocation(trait_def.source_ref.0, trait_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::Other(trait_def.ast_ref.clone()),
+            };
+            typed_metadata
+                .traits
+                .insert(trait_key.clone(), Arc::new(new_def));
+        }
+        for (impl_key, impl_def) in &self.metadata.impls {
+            let new_def = ImplDefinition {
+                key: impl_def.key.clone(),
+                module: impl_def.module.clone(),
+                source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
+            };
+            typed_metadata
+                .impls
+                .insert(impl_key.clone(), Arc::new(new_def));
+        }
+        for (module_key, module_def) in &self.metadata.modules {
+            let new_def = ModuleDefinition {
+                name: module_def.name.clone(),
+                visibility: module_def.visibility.clone(),
+                exports: module_def.exports.clone(),
+                source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
+            };
+            typed_metadata
+                .modules
+                .insert(module_key.clone(), Arc::new(new_def));
+        }
+        Ok((module_visibility, typed_metadata))
     }
 
     #[allow(deprecated)]
