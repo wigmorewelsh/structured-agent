@@ -30,6 +30,7 @@ pub struct NoWitness;
 
 pub enum CheckerAstRef {
     Function(Arc<crate::ast::Function>, FunctionKind),
+    ImplFunction(Arc<crate::ast::Function>, String, FunctionKind),
     ExternalFn {
         params: Vec<crate::ast::Parameter>,
         return_type: AstType,
@@ -37,10 +38,11 @@ pub enum CheckerAstRef {
         kind: FunctionKind,
     },
     Struct(Arc<crate::ast::StructDefinition>),
-    Trait(Arc<Vec<crate::ast::SigFunction>>),
+    Trait(Arc<crate::ast::AstTrait>),
     Impl(Arc<crate::ast::AstTraitImpl>),
     Module(Arc<crate::ast::Module>),
-    Signature(Arc<Vec<SigFunction>>),
+    Signature(Arc<crate::ast::AstSignature>),
+    Builtin,
 }
 
 impl SourceRef for SourceLocation {}
@@ -104,8 +106,34 @@ impl Default for TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self {
+        let mut checker = Self {
             metadata: MetaData::default(),
+        };
+        checker.seed_builtin_types();
+        checker
+    }
+
+    fn seed_builtin_types(&mut self) {
+        let builtins = [
+            ("()", "builtin"),
+            ("Boolean", "builtin"),
+            ("String", "builtin"),
+            ("Int", "builtin"),
+            ("List", "builtin"),
+            ("Option", "builtin"),
+        ];
+        for (name, module) in builtins {
+            let type_name = TypeName {
+                name: name.to_string(),
+                module: ModuleName::from_str(module),
+            };
+            let entry = TypeDefinition {
+                name: type_name.clone(),
+                kind: TypeDefinitionKind::Primitive,
+                source_ref: SourceLocation(0, crate::types::Span::dummy()),
+                ast_ref: CheckerAstRef::Builtin,
+            };
+            self.metadata.types.insert(type_name, Arc::new(entry));
         }
     }
 
@@ -317,23 +345,15 @@ impl TypeChecker {
                 args: args.clone(),
                 span: *span,
             }),
-            Definition::Signature {
-                name,
-                functions,
-                span,
-            } => Ok(typed_ast::Definition::Signature {
-                name: name.clone(),
-                functions: functions.clone(),
-                span: *span,
+            Definition::Signature(s) => Ok(typed_ast::Definition::Signature {
+                name: s.name.clone(),
+                functions: s.functions.clone(),
+                span: s.span,
             }),
-            Definition::Trait {
-                name,
-                functions,
-                span,
-            } => Ok(typed_ast::Definition::Trait {
-                name: name.clone(),
-                functions: functions.clone(),
-                span: *span,
+            Definition::Trait(s) => Ok(typed_ast::Definition::Trait {
+                name: s.name.clone(),
+                functions: s.functions.clone(),
+                span: s.span,
             }),
             Definition::TraitImpl(t) => {
                 let (type_name, trait_name, functions, span) =
@@ -412,6 +432,22 @@ impl TypeChecker {
                     type_params: func.type_params.clone(),
                     kind: kind.clone(),
                 }),
+                CheckerAstRef::ImplFunction(func, concrete_type, kind) => Some(FunctionSignature {
+                    parameters: func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self
+                                .resolve_type(&Self::substitute_self(&p.param_type, concrete_type)),
+                            span: p.span,
+                        })
+                        .collect(),
+                    return_type: self
+                        .resolve_type(&Self::substitute_self(&func.return_type, concrete_type)),
+                    type_params: func.type_params.clone(),
+                    kind: kind.clone(),
+                }),
                 CheckerAstRef::ExternalFn {
                     params,
                     return_type,
@@ -452,8 +488,8 @@ impl TypeChecker {
             .iter()
             .find(|(k, _)| k.name == name)
             .and_then(|(_, td)| {
-                if let CheckerAstRef::Trait(functions) = &td.ast_ref {
-                    Some((**functions).clone())
+                if let CheckerAstRef::Trait(t) = &td.ast_ref {
+                    Some(t.functions.clone())
                 } else {
                     None
                 }
@@ -551,8 +587,8 @@ impl TypeChecker {
             .iter()
             .find(|(k, v)| k.name == name && matches!(v.kind, TypeDefinitionKind::Signature { .. }))
             .and_then(|(_, td)| {
-                if let CheckerAstRef::Signature(functions) = &td.ast_ref {
-                    Some((**functions).clone())
+                if let CheckerAstRef::Signature(s) = &td.ast_ref {
+                    Some(s.functions.clone())
                 } else {
                     None
                 }
@@ -669,19 +705,16 @@ impl TypeChecker {
                         SourceLocation(file_id, ext_func.span),
                     );
                 }
-                Definition::Signature {
-                    name,
-                    functions,
-                    span,
-                } => {
+                Definition::Signature(s) => {
                     let type_name = TypeName {
-                        name: name.clone(),
+                        name: s.name.clone(),
                         module: ModuleName::from_str(module_name),
                     };
                     let entry = TypeDefinition {
                         name: type_name.clone(),
                         kind: TypeDefinitionKind::Signature {
-                            entries: functions
+                            entries: s
+                                .functions
                                 .iter()
                                 .map(|f| SignatureEntry {
                                     name: f.name.clone(),
@@ -689,8 +722,8 @@ impl TypeChecker {
                                 })
                                 .collect(),
                         },
-                        source_ref: SourceLocation(file_id, *span),
-                        ast_ref: CheckerAstRef::Signature(Arc::new(functions.clone())),
+                        source_ref: SourceLocation(file_id, s.span),
+                        ast_ref: CheckerAstRef::Signature(Arc::clone(s)),
                     };
                     self.metadata.types.insert(type_name, Arc::new(entry));
                 }
@@ -699,18 +732,15 @@ impl TypeChecker {
                 | Definition::ModuleHeader { .. }
                 | Definition::ModuleBinding { .. }
                 | Definition::WiringSite { .. } => {}
-                Definition::Trait {
-                    name,
-                    functions,
-                    span,
-                } => {
+                Definition::Trait(s) => {
                     let trait_name = TraitName {
-                        name: name.clone(),
+                        name: s.name.clone(),
                         module: ModuleName::from_str(module_name),
                     };
                     let entry = TraitDefinition {
                         name: trait_name.clone(),
-                        functions: functions
+                        functions: s
+                            .functions
                             .iter()
                             .map(|f| SignatureEntry {
                                 name: f.name.clone(),
@@ -718,8 +748,8 @@ impl TypeChecker {
                             })
                             .collect(),
                         witness_ref: NoWitness,
-                        source_ref: SourceLocation(file_id, *span),
-                        ast_ref: CheckerAstRef::Trait(Arc::new(functions.clone())),
+                        source_ref: SourceLocation(file_id, s.span),
+                        ast_ref: CheckerAstRef::Trait(Arc::clone(s)),
                     };
                     self.metadata.traits.insert(trait_name, Arc::new(entry));
                 }
@@ -772,7 +802,6 @@ impl TypeChecker {
                     for func in functions {
                         let resolved_return =
                             Self::substitute_self(&self.resolve_type(&func.return_type), type_name);
-                        let concrete_func = Arc::new(Self::substitute_self_in_fn(func, type_name));
                         let impl_fn_key = {
                             let mn = ModuleName::from_str(module_name);
                             FunctionName {
@@ -794,7 +823,11 @@ impl TypeChecker {
                             name: impl_fn_key.clone(),
                             type_name: ast_type_to_type_name(&resolved_return, module_name),
                             source_ref: SourceLocation(file_id, func.span),
-                            ast_ref: CheckerAstRef::Function(concrete_func, FunctionKind::Bytecode),
+                            ast_ref: CheckerAstRef::ImplFunction(
+                                Arc::clone(func),
+                                type_name.to_string(),
+                                FunctionKind::Bytecode,
+                            ),
                             body_ref: None,
                         };
                         self.metadata.functions.insert(impl_fn_key, Arc::new(entry));
@@ -827,7 +860,7 @@ impl TypeChecker {
             let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
                 continue;
             };
-            if trait_fns.iter().any(|f| f.name == fn_name) {
+            if trait_fns.functions.iter().any(|f| f.name == fn_name) {
                 if self.type_implements_trait(&type_name, &trait_key.name) {
                     let module = ctx.module_name.unwrap_or("");
                     let impl_fn_name = {

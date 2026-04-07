@@ -308,6 +308,7 @@ pub enum TypeDefinitionKind {
     Signature {
         entries: Vec<SignatureEntry>,
     },
+    Primitive,
 }
 
 #[derive(Debug, Clone)]

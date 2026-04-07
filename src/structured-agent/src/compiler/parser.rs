@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::ast::{
-    AstTraitImpl, Definition, Expression, ExternalFunction, Function, FunctionBody, Module,
-    ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction, Statement,
-    StructDefinition, StructField, Type, TypeParam,
+    AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction, Function,
+    FunctionBody, Module, ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction,
+    Statement, StructDefinition, StructField, Type, TypeParam,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -292,10 +292,12 @@ where
         ),
         position(),
     )
-        .map(|(start, _, name, functions, end)| Definition::Signature {
-            name,
-            functions,
-            span: Span::new(start, end),
+        .map(|(start, _, name, functions, end)| {
+            Definition::Signature(Arc::new(AstSignature {
+                name,
+                functions,
+                span: Span::new(start, end),
+            }))
         })
 }
 
@@ -475,10 +477,12 @@ where
         ),
         position(),
     )
-        .map(|(start, _, name, functions, end)| Definition::Trait {
-            name,
-            functions,
-            span: Span::new(start, end),
+        .map(|(start, _, name, functions, end)| {
+            Definition::Trait(Arc::new(AstTrait {
+                name,
+                functions,
+                span: Span::new(start, end),
+            }))
         })
 }
 
@@ -2984,15 +2988,13 @@ fn main(): String {
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 1);
         match &module.definitions[0] {
-            Definition::Signature {
-                name, functions, ..
-            } => {
-                assert_eq!(name, "Greeter");
-                assert_eq!(functions.len(), 1);
-                assert_eq!(functions[0].name, "greet");
-                assert_eq!(functions[0].parameters.len(), 1);
-                assert_eq!(functions[0].parameters[0].name, "name");
-                assert!(matches!(functions[0].return_type, Type::String));
+            Definition::Signature(s) => {
+                assert_eq!(s.name, "Greeter");
+                assert_eq!(s.functions.len(), 1);
+                assert_eq!(s.functions[0].name, "greet");
+                assert_eq!(s.functions[0].parameters.len(), 1);
+                assert_eq!(s.functions[0].parameters[0].name, "name");
+                assert!(matches!(s.functions[0].return_type, Type::String));
             }
             other => panic!("Expected Signature, got {:?}", other),
         }
@@ -3007,14 +3009,12 @@ fn main(): String {
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 1);
         match &module.definitions[0] {
-            Definition::Signature {
-                name, functions, ..
-            } => {
-                assert_eq!(name, "Processor");
-                assert_eq!(functions.len(), 2);
-                assert_eq!(functions[0].name, "process");
-                assert_eq!(functions[1].name, "validate");
-                assert!(matches!(functions[1].return_type, Type::Boolean));
+            Definition::Signature(s) => {
+                assert_eq!(s.name, "Processor");
+                assert_eq!(s.functions.len(), 2);
+                assert_eq!(s.functions[0].name, "process");
+                assert_eq!(s.functions[1].name, "validate");
+                assert!(matches!(s.functions[1].return_type, Type::Boolean));
             }
             other => panic!("Expected Signature, got {:?}", other),
         }
@@ -3146,8 +3146,8 @@ fn main(): String {
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
-        if let Definition::Signature { functions, .. } = &module.definitions[0] {
-            assert_eq!(functions[0].type_params, vec!["T"]);
+        if let Definition::Signature(s) = &module.definitions[0] {
+            assert_eq!(s.functions[0].type_params, vec!["T"]);
         } else {
             panic!("Expected signature");
         }
@@ -3160,8 +3160,8 @@ fn main(): String {
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
-        if let Definition::Signature { functions, .. } = &module.definitions[0] {
-            assert_eq!(functions[0].type_params, vec!["A", "B"]);
+        if let Definition::Signature(s) = &module.definitions[0] {
+            assert_eq!(s.functions[0].type_params, vec!["A", "B"]);
         } else {
             panic!("Expected signature");
         }
@@ -3204,13 +3204,10 @@ fn main(): String {
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
-        if let Definition::Trait {
-            name, functions, ..
-        } = &module.definitions[0]
-        {
-            assert_eq!(name, "Add");
-            assert_eq!(functions.len(), 1);
-            assert_eq!(functions[0].name, "add");
+        if let Definition::Trait(s) = &module.definitions[0] {
+            assert_eq!(s.name, "Add");
+            assert_eq!(s.functions.len(), 1);
+            assert_eq!(s.functions[0].name, "add");
         } else {
             panic!("expected trait, got {:?}", module.definitions[0]);
         }

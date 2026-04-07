@@ -1,6 +1,6 @@
 use super::*;
 use crate::ast::{
-    Definition, Expression, Function, FunctionBody, Module, Parameter, SelectClause,
+    AstTrait, Definition, Expression, Function, FunctionBody, Module, Parameter, SelectClause,
     SelectExpression, Statement, Type as AstType,
 };
 use crate::compiler::parser::parse_program;
@@ -2352,5 +2352,199 @@ mod typed_ast_tests {
                 },
             }
         });
+    }
+}
+
+mod metadata_query_tests {
+    use super::*;
+    use crate::ast::{SigFunction, StructDefinition, StructField};
+    use crate::typecheck::checker::{CheckerAstRef, CheckerRefs};
+    use std::sync::Arc;
+    use structured_agent_runtime::symbols::{
+        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName, TypeName,
+    };
+
+    fn check_meta(module: crate::ast::Module) -> MetaData<CheckerRefs> {
+        let parsed = crate::ast::ParsedModule {
+            name: "main".to_string(),
+            module,
+            is_entry: true,
+            file_id: 0,
+        };
+        let (_, _, metadata) = TypeChecker::new()
+            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .unwrap();
+        metadata
+    }
+
+    #[test]
+    fn metadata_module_is_populated() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "main",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let metadata = check_meta(module);
+        assert!(metadata.module(&ModuleName::from_str("main")).is_some());
+    }
+
+    #[test]
+    fn metadata_function_is_queryable() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "greet",
+                vec![create_parameter("name", AstType::String)],
+                AstType::String,
+                vec![Statement::Return(Expression::Variable {
+                    name: "name".to_string(),
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .function(&FunctionName {
+                    name: "greet".to_string(),
+                    module: ModuleName::from_str("main"),
+                    kind: FunctionNameKind::Function,
+                })
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn metadata_struct_type_is_queryable() {
+        let module = create_test_module(vec![Definition::Struct(Arc::new(StructDefinition {
+            name: "Point".to_string(),
+            fields: vec![StructField {
+                name: "x".to_string(),
+                field_type: AstType::Int,
+                span: crate::types::Span::dummy(),
+            }],
+            span: crate::types::Span::dummy(),
+        }))]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .type_def(&TypeName {
+                    name: "Point".to_string(),
+                    module: ModuleName::from_str("main"),
+                })
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn metadata_trait_is_queryable() {
+        let module = create_test_module(vec![Definition::Trait(std::sync::Arc::new(AstTrait {
+            name: "Greetable".to_string(),
+            functions: vec![SigFunction {
+                name: "greet".to_string(),
+                type_params: vec![],
+                parameters: vec![],
+                return_type: AstType::String,
+                span: crate::types::Span::dummy(),
+            }],
+            span: crate::types::Span::dummy(),
+        }))]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .trait_def(&TraitName {
+                    name: "Greetable".to_string(),
+                    module: ModuleName::from_str("main"),
+                })
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn metadata_impl_is_queryable() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "trait Add {\n",
+            "    fn add(self: Foo, other: Foo): Foo\n",
+            "}\n",
+            "impl Foo: Add {\n",
+            "    fn add(self: Foo, other: Foo): Foo {\n",
+            "        return self\n",
+            "    }\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let parsed = crate::ast::ParsedModule {
+            name: "main".to_string(),
+            module,
+            is_entry: true,
+            file_id: 0,
+        };
+        let (_, _, metadata) = TypeChecker::new()
+            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .unwrap();
+        let type_name = TypeName {
+            name: "Foo".to_string(),
+            module: ModuleName::from_str("main"),
+        };
+        let trait_name = TraitName {
+            name: "Add".to_string(),
+            module: ModuleName::from_str("main"),
+        };
+        let impl_def = metadata.impl_for(&type_name, &trait_name);
+        assert!(impl_def.is_some());
+        assert!(matches!(impl_def.unwrap().ast_ref, CheckerAstRef::Impl(_)));
+    }
+
+    #[test]
+    fn builtin_int_is_in_symbol_table() {
+        let module = create_test_module(vec![]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .type_def(&TypeName {
+                    name: "()".to_string(),
+                    module: ModuleName::from_str("builtin"),
+                })
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn builtin_string_is_in_symbol_table() {
+        let module = create_test_module(vec![]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .type_def(&TypeName {
+                    name: "String".to_string(),
+                    module: ModuleName::from_str("builtin"),
+                })
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn builtin_list_is_in_symbol_table() {
+        let module = create_test_module(vec![]);
+        let metadata = check_meta(module);
+        assert!(
+            metadata
+                .type_def(&TypeName {
+                    name: "List".to_string(),
+                    module: ModuleName::from_str("builtin"),
+                })
+                .is_some()
+        );
     }
 }

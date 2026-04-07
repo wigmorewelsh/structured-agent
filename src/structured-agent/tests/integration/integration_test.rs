@@ -1,7 +1,7 @@
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::Runtime;
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
 #[tokio::test]
 async fn test_full_pipeline_parse_compile_execute() {
@@ -130,15 +130,19 @@ fn main(): String {
         "Expected 2 functions to be compiled"
     );
     assert!(
-        compiled_program
-            .functions()
-            .contains_key(&FunctionName::plain("main", "helper")),
+        compiled_program.functions().contains_key(&FunctionName {
+            name: "helper".to_string(),
+            module: ModuleName::from_str("main"),
+            kind: FunctionNameKind::Function
+        }),
         "Expected 'helper' function to be present"
     );
     assert!(
-        compiled_program
-            .functions()
-            .contains_key(&FunctionName::plain("main", "main")),
+        compiled_program.functions().contains_key(&FunctionName {
+            name: "main".to_string(),
+            module: ModuleName::from_str("main"),
+            kind: FunctionNameKind::Function
+        }),
         "Expected 'main' function to be present"
     );
 

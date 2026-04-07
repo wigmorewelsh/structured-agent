@@ -98,6 +98,20 @@ pub struct AstTraitImpl {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct AstSignature {
+    pub name: String,
+    pub functions: Vec<SigFunction>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstTrait {
+    pub name: String,
+    pub functions: Vec<SigFunction>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Function(Arc<Function>),
     ExternalFunction(Arc<ExternalFunction>),
@@ -124,16 +138,8 @@ pub enum Definition {
         args: Vec<String>,
         span: Span,
     },
-    Signature {
-        name: String,
-        functions: Vec<SigFunction>,
-        span: Span,
-    },
-    Trait {
-        name: String,
-        functions: Vec<SigFunction>,
-        span: Span,
-    },
+    Signature(Arc<AstSignature>),
+    Trait(Arc<AstTrait>),
     TraitImpl(Arc<AstTraitImpl>),
 }
 
@@ -147,8 +153,8 @@ impl Spanned for Definition {
             Definition::ModuleHeader { span, .. } => *span,
             Definition::ModuleBinding { span, .. } => *span,
             Definition::WiringSite { span, .. } => *span,
-            Definition::Signature { span, .. } => *span,
-            Definition::Trait { span, .. } => *span,
+            Definition::Signature(s) => s.span,
+            Definition::Trait(s) => s.span,
             Definition::TraitImpl(t) => t.span,
         }
     }
@@ -534,11 +540,9 @@ impl fmt::Display for Definition {
             Definition::WiringSite { name, args, .. } => {
                 write!(f, "mod {}({})", name, args.join(", "))
             }
-            Definition::Signature {
-                name, functions, ..
-            } => {
-                writeln!(f, "sig {} {{", name)?;
-                for sig_fn in functions {
+            Definition::Signature(s) => {
+                writeln!(f, "sig {} {{", s.name)?;
+                for sig_fn in &s.functions {
                     write!(f, "    fn {}(", sig_fn.name)?;
                     for (i, param) in sig_fn.parameters.iter().enumerate() {
                         if i > 0 {
@@ -550,12 +554,10 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "}}")
             }
-            Definition::Trait {
-                name, functions, ..
-            } => {
-                write!(f, "trait {}", name)?;
+            Definition::Trait(s) => {
+                write!(f, "trait {}", s.name)?;
                 write!(f, " {{")?;
-                for func in functions {
+                for func in &s.functions {
                     write!(f, "\n    fn {}(", func.name)?;
                     for (i, p) in func.parameters.iter().enumerate() {
                         if i > 0 {

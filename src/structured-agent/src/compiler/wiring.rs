@@ -267,6 +267,7 @@ fn lower_expression(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::AstSignature;
     use crate::ast::{
         Definition, Function, FunctionBody, ModuleParam, SigFunction, Type as AstType,
     };
@@ -356,7 +357,11 @@ mod tests {
                     .collect(),
             },
             source_ref: SourceLocation(0, Span::dummy()),
-            ast_ref: CheckerAstRef::Signature(Arc::new(fns.to_vec())),
+            ast_ref: CheckerAstRef::Signature(Arc::new(AstSignature {
+                name: sig_name.to_string(),
+                functions: fns.to_vec(),
+                span: Span::dummy(),
+            })),
         };
         metadata.types.insert(type_name, Arc::new(entry));
     }
