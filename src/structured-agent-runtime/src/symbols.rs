@@ -27,6 +27,11 @@ pub trait SymbolQuery {
         trait_name: &TraitName,
     ) -> Option<Arc<ImplDefinition<Self::Refs>>>;
     fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<Self::Refs>>>;
+    fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<Self::Refs>>>;
+    fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<Self::Refs>>>;
+    fn all_functions(&self) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
+    fn all_types(&self) -> Vec<Arc<TypeDefinition<Self::Refs>>>;
+    fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
 }
 
 pub struct MetaData<R: References> {
@@ -87,6 +92,43 @@ impl<R: References> SymbolQuery for MetaData<R> {
             .filter(|(k, _)| &k.type_name == type_name)
             .map(|(_, v)| v.clone())
             .collect()
+    }
+
+    fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<R>>> {
+        self.types.values().find(|td| td.name.name == name).cloned()
+    }
+
+    fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<R>>> {
+        self.traits
+            .values()
+            .find(|td| td.name.name == name)
+            .cloned()
+    }
+
+    fn all_functions(&self) -> Vec<Arc<FunctionDefinition<R>>> {
+        self.functions.values().cloned().collect()
+    }
+
+    fn all_types(&self) -> Vec<Arc<TypeDefinition<R>>> {
+        self.types.values().cloned().collect()
+    }
+
+    fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<R>>> {
+        self.functions
+            .values()
+            .filter(|f| &f.name.module == module)
+            .cloned()
+            .collect()
+    }
+}
+
+impl<R: References> MetaData<R> {
+    pub fn register_function(&mut self, name: FunctionName, def: Arc<FunctionDefinition<R>>) {
+        self.functions.insert(name, def);
+    }
+
+    pub fn register_type(&mut self, name: TypeName, def: Arc<TypeDefinition<R>>) {
+        self.types.insert(name, def);
     }
 }
 
