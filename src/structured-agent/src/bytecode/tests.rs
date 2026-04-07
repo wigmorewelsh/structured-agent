@@ -115,7 +115,7 @@ mod compilation_tests {
             is_entry: false,
             file_id,
         };
-        let typed_metadata = TypeChecker::new()
+        let (typed_metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata
@@ -867,7 +867,7 @@ mod vm_execution_tests {
             is_entry: false,
             file_id,
         };
-        let typed_metadata = TypeChecker::new()
+        let (typed_metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata
@@ -1458,7 +1458,7 @@ mod struct_bytecode_tests {
             is_entry: false,
             file_id,
         };
-        let typed_metadata = TypeChecker::new()
+        let (typed_metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata

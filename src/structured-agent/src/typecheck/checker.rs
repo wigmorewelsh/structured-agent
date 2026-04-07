@@ -1,6 +1,6 @@
 use crate::ast::{
-    Definition, Expression, Function, Module, Parameter, ParsedModule, SelectClause, SigFunction,
-    Statement, Type as AstType, TypeParam,
+    Definition, Expression, Function, Module, ModuleParam, Parameter, ParsedModule, SelectClause,
+    SigFunction, Statement, Type as AstType, TypeParam,
 };
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
@@ -125,6 +125,7 @@ struct CheckContext<'a> {
     alias_map: &'a HashMap<String, String>,
     alias_to_qualified: &'a AliasToQualified,
     module_name: Option<&'a str>,
+    module_params: &'a [ModuleParam],
 }
 
 impl Default for TypeChecker {
@@ -170,7 +171,7 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<MetaData<TypedRefs>, TypeError> {
+    ) -> Result<(MetaData<TypedRefs>, HashMap<String, typed_ast::Module>), TypeError> {
         for parsed in modules {
             let effective_name = if parsed.is_entry {
                 "main"
@@ -337,7 +338,7 @@ impl TypeChecker {
                 .modules
                 .insert(module_key.clone(), Arc::new(new_def));
         }
-        Ok(typed_metadata)
+        Ok((typed_metadata, typed_modules))
     }
 
     #[allow(deprecated)]
@@ -417,11 +418,23 @@ impl TypeChecker {
         let module = &parsed.module;
         let alias_map = Self::build_alias_map(module);
         let alias_to_qualified = self.build_alias_to_qualified(module);
+        let module_params = module
+            .definitions
+            .iter()
+            .find_map(|def| {
+                if let Definition::ModuleHeader { params, .. } = def {
+                    Some(params.as_slice())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(&[]);
         let ctx = CheckContext {
             file_id: parsed.file_id,
             alias_map: &alias_map,
             alias_to_qualified: &alias_to_qualified,
             module_name: Some(effective_name),
+            module_params,
         };
         let typed_definitions = module
             .definitions
@@ -1521,32 +1534,64 @@ impl TypeChecker {
 
         self.check_visibility(qualified_for_vis, resolved, span, ctx)?;
 
-        let (resolved_fn_name, kind, return_type, parameters, type_params) = if let Some(sig) =
-            self.lookup_sig(resolved, ctx)
+        let (mut resolved_fn_name, mut kind, return_type, parameters, type_params) =
+            if let Some(sig) = self.lookup_sig(resolved, ctx) {
+                let fn_name = Self::make_function_name(resolved, ctx, &sig.kind);
+                (
+                    fn_name,
+                    sig.kind,
+                    sig.return_type,
+                    sig.parameters,
+                    sig.type_params,
+                )
+            } else if let Some((fn_name, sig)) =
+                self.resolve_impl_call(function, arguments, env, ctx)
+            {
+                (
+                    fn_name,
+                    sig.kind,
+                    sig.return_type,
+                    sig.parameters,
+                    sig.type_params,
+                )
+            } else {
+                return Err(TypeError::UnknownFunction {
+                    name: function.to_string(),
+                    span,
+                    file_id: ctx.file_id,
+                });
+            };
+
+        let module_str = resolved_fn_name.module.to_string();
+        if let Some(param) = ctx.module_params.iter().find(|p| p.name == module_str)
+            && param.path.len() >= 2
         {
-            let fn_name = Self::make_function_name(resolved, ctx, &sig.kind);
-            (
-                fn_name,
-                sig.kind,
-                sig.return_type,
-                sig.parameters,
-                sig.type_params,
-            )
-        } else if let Some((fn_name, sig)) = self.resolve_impl_call(function, arguments, env, ctx) {
-            (
-                fn_name,
-                sig.kind,
-                sig.return_type,
-                sig.parameters,
-                sig.type_params,
-            )
-        } else {
-            return Err(TypeError::UnknownFunction {
-                name: function.to_string(),
-                span,
-                file_id: ctx.file_id,
-            });
-        };
+            let sig_module = param.path[0].clone();
+            let sig_name = param.path.last().unwrap().clone();
+            let type_name = TypeName {
+                name: param.name.clone(),
+                module: ModuleName::from_str("__param__"),
+            };
+            let trait_name = TraitName {
+                name: sig_name,
+                module: ModuleName::from_str(&sig_module),
+            };
+            if let Some(impl_def) = self.metadata.impl_for(&type_name, &trait_name) {
+                let lookup_key = FunctionName {
+                    name: resolved_fn_name.name.clone(),
+                    module: impl_def.module.clone(),
+                    kind: FunctionNameKind::Function,
+                };
+                resolved_fn_name.module = impl_def.module.clone();
+                if let Some(fn_def) = self.metadata.function(&lookup_key) {
+                    match &fn_def.ast_ref {
+                        CheckerAstRef::Function(_, k) => kind = k.clone(),
+                        CheckerAstRef::ExternalFn { kind: k, .. } => kind = k.clone(),
+                        _ => {}
+                    }
+                }
+            }
+        }
 
         if arguments.len() != parameters.len() {
             return Err(TypeError::ArgumentCountMismatch {

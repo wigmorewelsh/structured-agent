@@ -1,7 +1,5 @@
 pub(crate) mod discovery;
 pub mod parser;
-pub(crate) mod wiring;
-use wiring::{header_params, lower_typed_module};
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
@@ -10,14 +8,14 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{Definition, Module, SigFunction};
+use crate::ast::{Module, SigFunction};
 use crate::bytecode::{BytecodeRef, BytecodeRefs, compile_metadata};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::{CheckerAstRef, ModuleVisibility, TypedCheckerAstRef, TypedRefs};
+use crate::typecheck::checker::ModuleVisibility;
 use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use structured_agent_runtime::symbols::Visibility;
@@ -28,9 +26,7 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{
-    FunctionDefinition, FunctionName, FunctionNameKind, MetaData, ModuleName, TraitName, TypeName,
-};
+use structured_agent_runtime::symbols::{FunctionName, MetaData, ModuleName};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -258,7 +254,7 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let mut typed_metadata = checker
+        let (typed_metadata, typed_modules) = checker
             .check_modules(&modules, &self.modules)
             .map_err(|e| {
                 error!("Type checking failed: {}", e);
@@ -276,41 +272,12 @@ impl Compiler {
             })
             .collect();
 
-        let function_kinds: HashMap<String, crate::typecheck::checker::FunctionKind> =
-            typed_metadata
-                .functions
-                .iter()
-                .filter_map(|(name, fdef)| match &fdef.ast_ref {
-                    TypedCheckerAstRef::Function(_, kind) => {
-                        Some((name.name.clone(), kind.clone()))
-                    }
-                    TypedCheckerAstRef::ImplFunction(_, _, kind) => {
-                        Some((name.name.clone(), kind.clone()))
-                    }
-                    TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn { kind, .. }) => {
-                        Some((name.name.clone(), kind.clone()))
-                    }
-                    _ => None,
-                })
-                .collect();
-
-        let mut typed_modules = reconstruct_typed_modules(&modules, &typed_metadata);
-
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
             for warning in analyse_module(parsed) {
                 if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
                     eprintln!("Failed to emit warning: {}", io_err);
                 }
-            }
-        }
-
-        for parsed in &modules {
-            if let Some(typed_module) = typed_modules.get_mut(&parsed.name)
-                && let Some(params) = header_params(parsed)
-                && !params.is_empty()
-            {
-                lower_typed_module(typed_module, params, &typed_metadata, &function_kinds);
             }
         }
 
@@ -330,8 +297,6 @@ impl Compiler {
             let artifact = emit_module(typed_module, prefix, parsed.is_entry)?;
             compiled.merge(artifact);
         }
-
-        sync_lowered_to_metadata(&mut typed_metadata, &typed_modules, &modules);
 
         let bytecode_metadata = compile_metadata(typed_metadata)
             .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
@@ -355,227 +320,12 @@ impl Compiler {
     }
 }
 
-fn reconstruct_typed_modules(
-    modules: &[ParsedModule],
-    typed_metadata: &MetaData<TypedRefs>,
-) -> HashMap<String, typed_ast::Module> {
-    let mut result = HashMap::new();
-    for parsed in modules {
-        let effective_name = if parsed.is_entry {
-            "main"
-        } else {
-            parsed.name.as_str()
-        };
-        let definitions = parsed
-            .module
-            .definitions
-            .iter()
-            .map(|def| match def {
-                Definition::Function(f) => {
-                    let key = FunctionName {
-                        name: f.name.clone(),
-                        module: ModuleName::from_str(effective_name),
-                        kind: FunctionNameKind::Function,
-                    };
-                    let fn_def = typed_metadata.functions.get(&key).unwrap();
-                    if let TypedCheckerAstRef::Function(typed_fn, _) = &fn_def.ast_ref {
-                        typed_ast::Definition::Function((**typed_fn).clone())
-                    } else {
-                        panic!("expected TypedCheckerAstRef::Function");
-                    }
-                }
-                Definition::ExternalFunction(f) => {
-                    typed_ast::Definition::ExternalFunction((**f).clone())
-                }
-                Definition::Struct(s) => typed_ast::Definition::Struct((**s).clone()),
-                Definition::Use {
-                    path,
-                    alias,
-                    is_pub,
-                    span,
-                } => typed_ast::Definition::Use {
-                    path: path.clone(),
-                    alias: alias.clone(),
-                    is_pub: *is_pub,
-                    span: *span,
-                },
-                Definition::ModuleHeader { name, params, span } => {
-                    typed_ast::Definition::ModuleHeader {
-                        name: name.clone(),
-                        params: params.clone(),
-                        span: *span,
-                    }
-                }
-                Definition::ModuleBinding {
-                    name,
-                    sig_path,
-                    impl_path,
-                    span,
-                } => typed_ast::Definition::ModuleBinding {
-                    name: name.clone(),
-                    sig_path: sig_path.clone(),
-                    impl_path: impl_path.clone(),
-                    span: *span,
-                },
-                Definition::WiringSite { name, args, span } => typed_ast::Definition::WiringSite {
-                    name: name.clone(),
-                    args: args.clone(),
-                    span: *span,
-                },
-                Definition::Signature(s) => typed_ast::Definition::Signature {
-                    name: s.name.clone(),
-                    functions: s.functions.clone(),
-                    span: s.span,
-                },
-                Definition::Trait(s) => typed_ast::Definition::Trait {
-                    name: s.name.clone(),
-                    functions: s.functions.clone(),
-                    span: s.span,
-                },
-                Definition::TraitImpl(t) => {
-                    let functions = t
-                        .functions
-                        .iter()
-                        .map(|f| {
-                            let key = FunctionName {
-                                name: f.name.clone(),
-                                module: ModuleName::from_str(effective_name),
-                                kind: FunctionNameKind::Impl {
-                                    type_name: TypeName {
-                                        name: t.type_name.clone(),
-                                        module: ModuleName::from_str(effective_name),
-                                    },
-                                    trait_name: TraitName {
-                                        name: t.trait_name.clone(),
-                                        module: ModuleName::from_str(effective_name),
-                                    },
-                                },
-                            };
-                            let fn_def = typed_metadata.functions.get(&key).unwrap();
-                            if let TypedCheckerAstRef::ImplFunction(typed_fn, _, _) =
-                                &fn_def.ast_ref
-                            {
-                                (**typed_fn).clone()
-                            } else {
-                                panic!("expected TypedCheckerAstRef::ImplFunction");
-                            }
-                        })
-                        .collect();
-                    typed_ast::Definition::TraitImpl {
-                        type_name: t.type_name.clone(),
-                        trait_name: t.trait_name.clone(),
-                        functions,
-                        span: t.span,
-                    }
-                }
-            })
-            .collect();
-        result.insert(
-            parsed.name.clone(),
-            typed_ast::Module {
-                definitions,
-                span: parsed.module.span,
-                file_id: parsed.file_id,
-            },
-        );
-    }
-    result
-}
-
 fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
     let warnings = build_analysis_runner().run(&parsed.module, parsed.file_id);
     if !warnings.is_empty() {
         warn!("Analysis found {} warnings", warnings.len());
     }
     warnings
-}
-
-fn sync_lowered_to_metadata(
-    typed_metadata: &mut MetaData<TypedRefs>,
-    typed_modules: &HashMap<String, typed_ast::Module>,
-    modules: &[ParsedModule],
-) {
-    for parsed in modules {
-        let prefix = if parsed.is_entry {
-            "main"
-        } else {
-            parsed.name.as_str()
-        };
-        let Some(typed_module) = typed_modules.get(&parsed.name) else {
-            continue;
-        };
-        for def in &typed_module.definitions {
-            match def {
-                typed_ast::Definition::Function(f) => {
-                    let key = FunctionName {
-                        name: f.name.clone(),
-                        module: ModuleName::from_str(prefix),
-                        kind: FunctionNameKind::Function,
-                    };
-                    if let Some(func_arc) = typed_metadata.functions.get_mut(&key) {
-                        let kind = match &func_arc.ast_ref {
-                            TypedCheckerAstRef::Function(_, k) => k.clone(),
-                            _ => continue,
-                        };
-                        let new_def = FunctionDefinition {
-                            name: func_arc.name.clone(),
-                            visibility: func_arc.visibility.clone(),
-                            type_name: func_arc.type_name.clone(),
-                            source_ref: func_arc.source_ref.clone(),
-                            ast_ref: TypedCheckerAstRef::Function(Arc::new(f.clone()), kind),
-                            body_ref: None,
-                        };
-                        *func_arc = Arc::new(new_def);
-                    }
-                }
-                typed_ast::Definition::TraitImpl {
-                    type_name,
-                    trait_name,
-                    functions,
-                    ..
-                } => {
-                    for f in functions {
-                        let key = FunctionName {
-                            name: f.name.clone(),
-                            module: ModuleName::from_str(prefix),
-                            kind: FunctionNameKind::Impl {
-                                type_name: TypeName {
-                                    name: type_name.clone(),
-                                    module: ModuleName::from_str(prefix),
-                                },
-                                trait_name: TraitName {
-                                    name: trait_name.clone(),
-                                    module: ModuleName::from_str(prefix),
-                                },
-                            },
-                        };
-                        if let Some(func_arc) = typed_metadata.functions.get_mut(&key) {
-                            let (kind, tn) = match &func_arc.ast_ref {
-                                TypedCheckerAstRef::ImplFunction(_, tn, k) => {
-                                    (k.clone(), tn.clone())
-                                }
-                                _ => continue,
-                            };
-                            let new_def = FunctionDefinition {
-                                name: func_arc.name.clone(),
-                                visibility: func_arc.visibility.clone(),
-                                type_name: func_arc.type_name.clone(),
-                                source_ref: func_arc.source_ref.clone(),
-                                ast_ref: TypedCheckerAstRef::ImplFunction(
-                                    Arc::new(f.clone()),
-                                    tn,
-                                    kind,
-                                ),
-                                body_ref: None,
-                            };
-                            *func_arc = Arc::new(new_def);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
 }
 
 fn emit_module(

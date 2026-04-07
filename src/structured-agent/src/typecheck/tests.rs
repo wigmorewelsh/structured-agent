@@ -1645,7 +1645,7 @@ mod typed_ast_tests {
             is_entry: false,
             file_id: 0,
         };
-        let typed_metadata = TypeChecker::new()
+        let (typed_metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let definitions = typed_metadata
@@ -2437,7 +2437,7 @@ mod metadata_query_tests {
             is_entry: true,
             file_id: 0,
         };
-        let metadata = TypeChecker::new()
+        let (metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         metadata
@@ -2556,7 +2556,7 @@ mod metadata_query_tests {
             is_entry: true,
             file_id: 0,
         };
-        let metadata = TypeChecker::new()
+        let (metadata, _) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let type_name = TypeName {

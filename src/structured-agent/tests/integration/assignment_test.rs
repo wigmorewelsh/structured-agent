@@ -36,7 +36,7 @@ fn test_assignment(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let typed_metadata = TypeChecker::new()
+    let (typed_metadata, _) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
     let definitions = typed_metadata
@@ -122,7 +122,7 @@ fn test_var_assignment(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let typed_metadata = TypeChecker::new()
+    let (typed_metadata, _) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
     let definitions = typed_metadata
@@ -192,7 +192,7 @@ fn test_return(): () {
         is_entry: true,
         file_id: TEST_FILE_ID,
     };
-    let typed_metadata = TypeChecker::new()
+    let (typed_metadata, _) = TypeChecker::new()
         .check_modules(&[parsed], &HashMap::new())
         .unwrap();
     let definitions = typed_metadata
