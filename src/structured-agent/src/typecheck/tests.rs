@@ -1480,8 +1480,56 @@ mod tests {
         let module = create_test_module(vec![Definition::Function(Arc::new(bad))]);
         let result = check(module);
         assert!(
-            matches!(result, Err(TypeError::UnsupportedType { ref type_name, .. }) if type_name == "T"),
-            "expected UnsupportedType for unknown type variable, got {:?}",
+            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            "expected UnboundTypeParameter for unknown type variable, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_bound_generic_in_function_signature_is_valid() {
+        let func = create_generic_test_function(
+            "identity",
+            vec![crate::ast::TypeParam {
+                name: "T".to_string(),
+                bounds: vec![],
+            }],
+            vec![create_parameter("x", AstType::Generic("T".to_string()))],
+            AstType::Generic("T".to_string()),
+            vec![],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        assert!(check(module).is_ok());
+    }
+
+    #[test]
+    fn test_unbound_type_parameter_in_function_signature_is_error() {
+        let func = create_generic_test_function(
+            "bad",
+            vec![],
+            vec![create_parameter("x", AstType::Generic("T".to_string()))],
+            AstType::Unit,
+            vec![],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        let result = check(module);
+        assert!(
+            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            "expected UnboundTypeParameter, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generic_in_struct_field_is_error() {
+        let module = create_test_module(vec![create_struct_definition(
+            "Wrapper",
+            vec![("value", AstType::Generic("T".to_string()))],
+        )]);
+        let result = check(module);
+        assert!(
+            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            "expected UnboundTypeParameter for generic struct field, got {:?}",
             result
         );
     }

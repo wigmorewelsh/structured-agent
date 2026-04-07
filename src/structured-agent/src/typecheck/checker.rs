@@ -763,6 +763,10 @@ impl TypeChecker {
                     source_ref: SourceLocation(file_id, struct_def.span),
                     ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
                 };
+                for f in &struct_def.fields {
+                    let resolved = self.resolve_type(&f.field_type);
+                    self.validate_type_with_params(&resolved, f.span, file_id, &[])?;
+                }
                 self.metadata.register_type(type_name, Arc::new(entry));
             }
         }
@@ -1149,8 +1153,8 @@ impl TypeChecker {
                 if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
                     Ok(())
                 } else {
-                    Err(TypeError::UnsupportedType {
-                        type_name: name.clone(),
+                    Err(TypeError::UnboundTypeParameter {
+                        name: name.clone(),
                         span,
                         file_id,
                     })

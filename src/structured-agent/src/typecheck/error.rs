@@ -62,6 +62,11 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    UnboundTypeParameter {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
     UnknownField {
         struct_name: String,
         field_name: String,
@@ -126,6 +131,7 @@ impl TypeError {
             TypeError::ReturnTypeMismatch { span, .. } => *span,
             TypeError::SelectBranchTypeMismatch { span, .. } => *span,
             TypeError::UnsupportedType { span, .. } => *span,
+            TypeError::UnboundTypeParameter { span, .. } => *span,
             TypeError::UnknownField { span, .. } => *span,
             TypeError::MissingField { span, .. } => *span,
             TypeError::StructFieldTypeMismatch { span, .. } => *span,
@@ -148,6 +154,7 @@ impl TypeError {
             TypeError::ReturnTypeMismatch { file_id, .. } => *file_id,
             TypeError::SelectBranchTypeMismatch { file_id, .. } => *file_id,
             TypeError::UnsupportedType { file_id, .. } => *file_id,
+            TypeError::UnboundTypeParameter { file_id, .. } => *file_id,
             TypeError::UnknownField { file_id, .. } => *file_id,
             TypeError::MissingField { file_id, .. } => *file_id,
             TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
@@ -282,6 +289,16 @@ impl TypeError {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("type not supported"),
+                ]),
+            TypeError::UnboundTypeParameter {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!("unbound type parameter `{}`", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("not declared in this function's type parameters"),
                 ]),
             TypeError::UnknownField {
                 struct_name,
@@ -471,6 +488,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::UnsupportedType { type_name, .. } => {
                 write!(f, "Unsupported type: {}", type_name)
+            }
+            TypeError::UnboundTypeParameter { name, .. } => {
+                write!(f, "Unbound type parameter: {}", name)
             }
             TypeError::UnknownField {
                 struct_name,
