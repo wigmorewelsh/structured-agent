@@ -1,4 +1,4 @@
-use crate::bytecode::BytecodeFunctionExpr;
+use crate::bytecode::{BytecodeFunctionExpr, BytecodeRefs};
 use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
@@ -10,13 +10,21 @@ use crate::types::{
     NativeFunction,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
-use structured_agent_runtime::symbols::TypeDefinitionKind;
+use std::sync::{Arc, OnceLock};
+use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
 use tracing::{debug, error};
+
+struct CachedProgram {
+    metadata: Arc<MetaData<BytecodeRefs>>,
+    main_function: Option<FunctionName>,
+    struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
+    extern_registry: HashMap<String, ExternalFunctionDefinition>,
+    aliases: HashMap<String, FunctionName>,
+}
 
 pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
@@ -26,6 +34,7 @@ pub struct Runtime {
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
     program_source: ProgramSource,
+    compiled: Arc<OnceLock<Result<CachedProgram, String>>>,
 }
 
 pub struct RuntimeBuilder {
@@ -214,6 +223,7 @@ impl RuntimeBuilder {
             compiler: self.compiler.unwrap_or_else(|| Arc::new(default_compiler)),
             providers,
             program_source: self.program_source,
+            compiled: Arc::new(OnceLock::new()),
         }
     }
 }
@@ -232,8 +242,48 @@ impl Runtime {
         self.function_registry.insert(name, expression);
     }
 
-    pub fn get_function(&self, name: &str) -> Option<&dyn ExecutableFunction> {
-        self.function_registry.get(name).map(|arc| arc.as_ref())
+    pub fn get_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+        if let Some(func) = self.function_registry.get(name) {
+            return Some(func.clone());
+        }
+        let cached = self.compiled.get()?.as_ref().ok()?;
+        if let Some(canonical) = cached.aliases.get(name)
+            && let Some(func_def) = cached.metadata.functions.get(canonical)
+            && let Some(body) = &func_def.body_ref
+        {
+            return Some(Arc::new(BytecodeFunctionExpr::new(
+                canonical.clone(),
+                body.clone(),
+            )));
+        }
+        if let Some((module_str, func_name_str)) = name.rsplit_once("::") {
+            let func_name = FunctionName {
+                name: func_name_str.to_string(),
+                module: ModuleName::from_str(module_str),
+                kind: FunctionNameKind::Function,
+            };
+            if let Some(func_def) = cached.metadata.functions.get(&func_name)
+                && let Some(body) = &func_def.body_ref
+            {
+                return Some(Arc::new(BytecodeFunctionExpr::new(func_name, body.clone())));
+            }
+        }
+        if !name.contains("::") {
+            let main_func_name = FunctionName {
+                name: name.to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function,
+            };
+            if let Some(func_def) = cached.metadata.functions.get(&main_func_name)
+                && let Some(body) = &func_def.body_ref
+            {
+                return Some(Arc::new(BytecodeFunctionExpr::new(
+                    main_func_name,
+                    body.clone(),
+                )));
+            }
+        }
+        None
     }
 
     pub fn register_external_function(&mut self, function: ExternalFunctionDefinition) {
@@ -259,9 +309,7 @@ impl Runtime {
 
     pub fn check(&self) -> Result<(), RuntimeError> {
         debug!("Starting program check");
-        self.compile()
-            .map(|_| ())
-            .map_err(RuntimeError::ExecutionError)
+        self.ensure_compiled().map(|_| ())
     }
 
     pub async fn run(&self) -> Result<ExpressionValue, RuntimeError> {
@@ -275,80 +323,13 @@ impl Runtime {
     ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Starting program execution");
 
-        let compiled_program = self.compile().map_err(RuntimeError::ExecutionError)?;
-
+        let cached = self.ensure_compiled()?;
         let mut runtime = self.create_runtime_ref();
 
-        for type_def in compiled_program.metadata.all_types() {
-            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
-                let converted: Vec<(String, crate::types::Type)> = fields
-                    .iter()
-                    .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
-                    .collect();
-                runtime.register_struct(type_def.name.name.clone(), converted);
-            }
-        }
-
-        for (name, func_def) in &compiled_program.metadata.functions {
-            if let Some(body) = &func_def.body_ref {
-                let expr: Arc<dyn ExecutableFunction> =
-                    Arc::new(BytecodeFunctionExpr::new(name.clone(), body.clone()));
-                debug!("Registering function: {}", name);
-                runtime
-                    .function_registry
-                    .insert(name.to_string(), Arc::clone(&expr));
-                if name.module == ModuleName::from_str("main") {
-                    runtime
-                        .function_registry
-                        .insert(name.name.clone(), Arc::clone(&expr));
-                }
-            }
-        }
-        for (alias, qualified) in compiled_program.use_aliases() {
-            let canonical = match qualified.rsplit_once("::") {
-                Some((module, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::from_str(module),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: qualified.to_string(),
-                    module: ModuleName::unqualified(),
-                    kind: FunctionNameKind::Function,
-                },
-            };
-            if let Some(func_def) = compiled_program.metadata.function(&canonical)
-                && let Some(body) = &func_def.body_ref
-            {
-                debug!("Registering alias: {} -> {}", alias, qualified);
-                runtime.function_registry.insert(
-                    alias.clone(),
-                    Arc::new(BytecodeFunctionExpr::new(canonical.clone(), body.clone())),
-                );
-            }
-        }
-        for func_def in compiled_program.metadata.all_functions() {
-            if let TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn {
-                params,
-                return_type,
-                type_params,
-                ..
-            }) = &func_def.ast_ref
-                && func_def.source_ref.1 != crate::types::Span::dummy()
-            {
-                let ast_ext = crate::ast::ExternalFunction {
-                    name: func_def.name.to_string(),
-                    parameters: params.clone(),
-                    return_type: return_type.clone(),
-                    type_params: type_params.clone(),
-                    is_pub: true,
-                    span: crate::types::Span::dummy(),
-                };
-                if let Ok(ext_def) = crate::compiler::compile_external_function(&ast_ext) {
-                    debug!("Registering external function: {}", ext_def.name);
-                    runtime.register_external_function(ext_def);
-                }
-            }
+        for (name, def) in &cached.extern_registry {
+            runtime
+                .external_function_registry
+                .insert(name.clone(), def.clone());
         }
 
         if let Err(e) = runtime.map_providers_to_functions().await {
@@ -356,24 +337,30 @@ impl Runtime {
             return Err(e);
         }
 
-        if let Some(main_name) = compiled_program.main_function_name() {
-            if let Some(main_body) = compiled_program.main_body() {
-                debug!("Executing main function");
-                let main_expr = BytecodeFunctionExpr::new(main_name.clone(), main_body.clone());
-                let initial_context = Context::with_runtime_and_handle(Arc::new(runtime), handle);
-                match main_expr.execute(initial_context, vec![]).await {
-                    Ok((_, result)) => {
-                        debug!("Program execution completed successfully");
-                        debug!("Result type: {}", result.value.type_name());
-                        Ok(result.value)
+        if let Some(main_name) = &cached.main_function {
+            if let Some(func_def) = cached.metadata.functions.get(main_name) {
+                if let Some(main_body) = &func_def.body_ref {
+                    debug!("Executing main function");
+                    let main_expr = BytecodeFunctionExpr::new(main_name.clone(), main_body.clone());
+                    let initial_context =
+                        Context::with_runtime_and_handle(Arc::new(runtime), handle);
+                    match main_expr.execute(initial_context, vec![]).await {
+                        Ok((_, result)) => {
+                            debug!("Program execution completed successfully");
+                            debug!("Result type: {}", result.value.type_name());
+                            Ok(result.value)
+                        }
+                        Err(e) => {
+                            error!("Runtime execution failed: {:?}", e);
+                            Err(RuntimeError::ExecutionError(e))
+                        }
                     }
-                    Err(e) => {
-                        error!("Runtime execution failed: {:?}", e);
-                        Err(RuntimeError::ExecutionError(e))
-                    }
+                } else {
+                    error!("No main function body found");
+                    Err(RuntimeError::FunctionNotFound("main".to_string()))
                 }
             } else {
-                error!("No main function body found");
+                error!("No main function found in program");
                 Err(RuntimeError::FunctionNotFound("main".to_string()))
             }
         } else {
@@ -401,7 +388,15 @@ impl Runtime {
     }
 
     pub fn get_struct(&self, name: &str) -> Option<&Vec<(String, crate::types::Type)>> {
-        self.struct_registry.get(name)
+        if let Some(fields) = self.struct_registry.get(name) {
+            return Some(fields);
+        }
+        self.compiled
+            .get()?
+            .as_ref()
+            .ok()?
+            .struct_registry
+            .get(name)
     }
 
     pub fn register_struct(&mut self, name: String, fields: Vec<(String, crate::types::Type)>) {
@@ -418,6 +413,13 @@ impl Runtime {
         }
     }
 
+    fn ensure_compiled(&self) -> Result<&CachedProgram, RuntimeError> {
+        self.compiled
+            .get_or_init(|| self.compile().and_then(build_cached_program))
+            .as_ref()
+            .map_err(|e| RuntimeError::ExecutionError(e.clone()))
+    }
+
     fn create_runtime_ref(&self) -> Runtime {
         Runtime {
             function_registry: self.function_registry.clone(),
@@ -427,6 +429,7 @@ impl Runtime {
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
             program_source: self.program_source.clone(),
+            compiled: Arc::clone(&self.compiled),
         }
     }
 
@@ -560,6 +563,74 @@ fn field_type_name_to_type(
         "Unit" => crate::types::Type::unit(),
         _ => crate::types::Type::Struct(type_name.name.clone()),
     }
+}
+
+fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, String> {
+    let main_function = compiled.main_function_name().cloned();
+
+    let mut struct_registry = HashMap::new();
+    for type_def in compiled.metadata.all_types() {
+        if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
+            let converted: Vec<(String, crate::types::Type)> = fields
+                .iter()
+                .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                .collect();
+            struct_registry.insert(type_def.name.name.clone(), converted);
+        }
+    }
+
+    let mut extern_registry = HashMap::new();
+    for func_def in compiled.metadata.all_functions() {
+        if let TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn {
+            params,
+            return_type,
+            type_params,
+            ..
+        }) = &func_def.ast_ref
+            && func_def.source_ref.1 != crate::types::Span::dummy()
+        {
+            let ast_ext = crate::ast::ExternalFunction {
+                name: func_def.name.to_string(),
+                parameters: params.clone(),
+                return_type: return_type.clone(),
+                type_params: type_params.clone(),
+                is_pub: true,
+                span: crate::types::Span::dummy(),
+            };
+            if let Ok(ext_def) = crate::compiler::compile_external_function(&ast_ext) {
+                extern_registry.insert(ext_def.name.clone(), ext_def);
+            }
+        }
+    }
+
+    let mut aliases = HashMap::new();
+    for module in compiled.metadata.modules.values() {
+        for (alias, qualified) in &module.use_aliases {
+            let canonical = match qualified.rsplit_once("::") {
+                Some((module_str, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module_str),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: qualified.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
+            aliases.insert(alias.clone(), canonical);
+        }
+    }
+
+    let metadata = Arc::new(compiled.metadata);
+
+    Ok(CachedProgram {
+        metadata,
+        main_function,
+        struct_registry,
+        extern_registry,
+        aliases,
+    })
 }
 
 #[cfg(test)]

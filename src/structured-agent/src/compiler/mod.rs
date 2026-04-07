@@ -70,7 +70,6 @@ impl CompilationUnit {
 pub struct CompiledProgram {
     pub metadata: MetaData<BytecodeRefs>,
     module_visibility: ModuleVisibility,
-    use_aliases: Vec<(String, String)>,
     main_function: Option<FunctionName>,
     source_path: Option<String>,
 }
@@ -95,7 +94,6 @@ impl CompiledProgram {
         Self {
             metadata: MetaData::default(),
             module_visibility: HashMap::new(),
-            use_aliases: Vec::new(),
             main_function: None,
             source_path: None,
         }
@@ -128,10 +126,6 @@ impl CompiledProgram {
 
     pub fn module_visibility(&self) -> &ModuleVisibility {
         &self.module_visibility
-    }
-
-    pub fn use_aliases(&self) -> &[(String, String)] {
-        &self.use_aliases
     }
 }
 
@@ -247,12 +241,6 @@ impl Compiler {
         let bytecode_metadata = compile_metadata(typed_metadata)
             .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
         compiled.metadata = bytecode_metadata;
-
-        for module in compiled.metadata.modules.values() {
-            compiled
-                .use_aliases
-                .extend(module.use_aliases.iter().cloned());
-        }
 
         for name in compiled.metadata.functions.keys() {
             if name.module == ModuleName::from_str("main") && name.name == "main" {
