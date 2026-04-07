@@ -10,9 +10,9 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     AstRef, BodyRef, ExportedName, FieldDefinition, FunctionDefinition, FunctionName,
     FunctionNameKind, GenericParameterDefinition, ImplDefinition, ImplKey, MetaData,
-    ModuleDefinition, ModuleName, ParameterDefinition, References, SignatureEntry, SourceRef,
-    SymbolQuery, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
-    Visibility, WitnessRef,
+    ModuleDefinition, ModuleName, NoAst, ParameterDefinition, References, SignatureEntry,
+    SourceRef, SymbolQuery, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind,
+    TypeName, Visibility, WitnessRef,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -46,8 +46,6 @@ pub enum CheckerAstRef {
     Impl(Arc<crate::ast::AstTraitImpl>),
     Module(Arc<crate::ast::Module>),
     Signature(Arc<crate::ast::AstSignature>),
-    Builtin,
-    ModuleParamBinding,
 }
 
 impl SourceRef for SourceLocation {}
@@ -64,11 +62,21 @@ impl References for CheckerRefs {
     type Witness = NoWitness;
 }
 
+pub struct PrimitiveRefs;
+
+impl References for PrimitiveRefs {
+    type Source = SourceLocation;
+    type Ast = NoAst;
+    type Body = NoBody;
+    type Witness = NoWitness;
+}
+
 #[derive(Clone)]
 pub enum TypedCheckerAstRef {
     Function(Arc<typed_ast::Function>, FunctionKind),
     ImplFunction(Arc<typed_ast::Function>, String, FunctionKind),
     Other(CheckerAstRef),
+    NoAst,
 }
 
 impl AstRef for TypedCheckerAstRef {}
@@ -105,6 +113,8 @@ fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName {
 
 pub struct TypeChecker {
     metadata: MetaData<CheckerRefs>,
+    param_bindings: HashMap<ImplKey, Arc<ImplDefinition<PrimitiveRefs>>>,
+    primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +149,8 @@ impl TypeChecker {
     pub fn new() -> Self {
         let mut checker = Self {
             metadata: MetaData::default(),
+            param_bindings: HashMap::new(),
+            primitive_types: HashMap::new(),
         };
         checker.seed_builtin_types();
         checker
@@ -162,9 +174,9 @@ impl TypeChecker {
                 name: type_name.clone(),
                 kind: TypeDefinitionKind::Primitive,
                 source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Builtin,
+                ast_ref: NoAst,
             };
-            self.metadata.register_type(type_name, Arc::new(entry));
+            self.primitive_types.insert(type_name, Arc::new(entry));
         }
     }
 
@@ -323,6 +335,17 @@ impl TypeChecker {
                 .types
                 .insert(type_def.name.clone(), Arc::new(new_def));
         }
+        for (type_key, type_def) in &self.primitive_types {
+            let new_def = TypeDefinition {
+                name: type_def.name.clone(),
+                kind: type_def.kind.clone(),
+                source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::NoAst,
+            };
+            typed_metadata
+                .types
+                .insert(type_key.clone(), Arc::new(new_def));
+        }
         for (trait_key, trait_def) in &self.metadata.traits {
             let new_def = TraitDefinition {
                 name: trait_def.name.clone(),
@@ -341,6 +364,17 @@ impl TypeChecker {
                 module: impl_def.module.clone(),
                 source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
+            };
+            typed_metadata
+                .impls
+                .insert(impl_key.clone(), Arc::new(new_def));
+        }
+        for (impl_key, impl_def) in &self.param_bindings {
+            let new_def = ImplDefinition {
+                key: impl_def.key.clone(),
+                module: impl_def.module.clone(),
+                source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
+                ast_ref: TypedCheckerAstRef::NoAst,
             };
             typed_metadata
                 .impls
@@ -706,6 +740,10 @@ impl TypeChecker {
             .impls
             .keys()
             .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
+            || self
+                .param_bindings
+                .keys()
+                .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
     }
 
     fn register_param_sigs(&mut self, module: &Module, file_id: FileId) {
@@ -788,12 +826,12 @@ impl TypeChecker {
                     module: ModuleName::from_str(&sig_module),
                 },
             };
-            self.metadata.impls.entry(key.clone()).or_insert_with(|| {
+            self.param_bindings.entry(key.clone()).or_insert_with(|| {
                 Arc::new(ImplDefinition {
                     key,
                     module: ModuleName::from_str(&sig_module),
                     source_ref: SourceLocation(file_id, Span::dummy()),
-                    ast_ref: CheckerAstRef::ModuleParamBinding,
+                    ast_ref: NoAst,
                 })
             });
         }
@@ -1025,9 +1063,9 @@ impl TypeChecker {
                             key: key.clone(),
                             module: ModuleName::from_str(&concrete),
                             source_ref: SourceLocation(file_id, *span),
-                            ast_ref: CheckerAstRef::ModuleParamBinding,
+                            ast_ref: NoAst,
                         };
-                        self.metadata.impls.insert(key, Arc::new(entry));
+                        self.param_bindings.insert(key, Arc::new(entry));
                     }
                 }
                 Definition::Struct(_)
@@ -1682,13 +1720,25 @@ impl TypeChecker {
                 name: sig_name,
                 module: ModuleName::from_str(&sig_module),
             };
-            if let Some(impl_def) = self.metadata.impl_for(&type_name, &trait_name) {
+            let impl_module = self
+                .metadata
+                .impl_for(&type_name, &trait_name)
+                .map(|d| d.module.clone())
+                .or_else(|| {
+                    self.param_bindings
+                        .get(&ImplKey {
+                            type_name: type_name.clone(),
+                            trait_name: trait_name.clone(),
+                        })
+                        .map(|d| d.module.clone())
+                });
+            if let Some(impl_module) = impl_module {
                 let lookup_key = FunctionName {
                     name: resolved_fn_name.name.clone(),
-                    module: impl_def.module.clone(),
+                    module: impl_module.clone(),
                     kind: FunctionNameKind::Function,
                 };
-                resolved_fn_name.module = impl_def.module.clone();
+                resolved_fn_name.module = impl_module;
                 if let Some(fn_def) = self.metadata.function(&lookup_key) {
                     match &fn_def.ast_ref {
                         CheckerAstRef::Function(_, k) => kind = k.clone(),

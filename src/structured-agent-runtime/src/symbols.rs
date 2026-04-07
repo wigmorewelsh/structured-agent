@@ -7,6 +7,10 @@ pub trait AstRef {}
 pub trait BodyRef {}
 pub trait WitnessRef {}
 
+#[derive(Clone)]
+pub struct NoAst;
+impl AstRef for NoAst {}
+
 pub trait References {
     type Source: SourceRef;
     type Ast: AstRef;
