@@ -10,7 +10,7 @@ use arrow::datatypes::{DataType, Field, FieldRef, Fields, UnionFields};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::names::FunctionName;
+use crate::symbols::FunctionName;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionResult {
