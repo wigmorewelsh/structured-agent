@@ -37,6 +37,18 @@ pub struct MetaData<R: References> {
     pub impls: HashMap<ImplKey, Arc<ImplDefinition<R>>>,
 }
 
+impl<R: References> Default for MetaData<R> {
+    fn default() -> Self {
+        MetaData {
+            modules: HashMap::new(),
+            functions: HashMap::new(),
+            types: HashMap::new(),
+            traits: HashMap::new(),
+            impls: HashMap::new(),
+        }
+    }
+}
+
 impl<R: References> SymbolQuery for MetaData<R> {
     type Refs = R;
 
@@ -94,6 +106,15 @@ impl fmt::Display for ModuleName {
     }
 }
 
+impl ModuleName {
+    pub fn from_str(s: &str) -> Self {
+        let v: Vec<String> = s.split("::").map(|p| p.to_string()).collect();
+        ModuleName {
+            segments: NonEmpty::from_vec(v).expect("split always yields at least one element"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Visibility {
     Public,
@@ -126,17 +147,81 @@ pub struct FunctionName {
 
 impl fmt::Display for FunctionName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let module_str = self.module.to_string();
         match &self.kind {
-            FunctionNameKind::Function => write!(f, "{}::{}", self.module, self.name),
+            FunctionNameKind::Function => {
+                if module_str.is_empty() {
+                    write!(f, "{}", self.name)
+                } else {
+                    write!(f, "{}::{}", self.module, self.name)
+                }
+            }
             FunctionNameKind::Impl {
                 type_name,
                 trait_name,
-            } => write!(
-                f,
-                "{}::{}::{}::{}",
-                self.module, type_name.name, trait_name.name, self.name
-            ),
+            } => {
+                if module_str.is_empty() {
+                    write!(f, "{}::{}::{}", type_name.name, trait_name.name, self.name)
+                } else {
+                    write!(
+                        f,
+                        "{}::{}::{}::{}",
+                        self.module, type_name.name, trait_name.name, self.name
+                    )
+                }
+            }
         }
+    }
+}
+
+impl FunctionName {
+    #[deprecated(note = "use structured constructors")]
+    pub fn plain(module: &str, name: &str) -> Self {
+        FunctionName {
+            name: name.to_string(),
+            module: ModuleName::from_str(module),
+            kind: FunctionNameKind::Function,
+        }
+    }
+
+    #[deprecated(note = "use structured constructors")]
+    pub fn impl_fn(module: &str, type_name: &str, trait_name: &str, fn_name: &str) -> Self {
+        let module_name = ModuleName::from_str(module);
+        FunctionName {
+            name: fn_name.to_string(),
+            module: module_name.clone(),
+            kind: FunctionNameKind::Impl {
+                type_name: TypeName {
+                    name: type_name.to_string(),
+                    module: module_name.clone(),
+                },
+                trait_name: TraitName {
+                    name: trait_name.to_string(),
+                    module: module_name,
+                },
+            },
+        }
+    }
+
+    #[deprecated(note = "use structured constructors")]
+    pub fn from_qualified_str(s: &str) -> Self {
+        match s.rsplit_once("::") {
+            Some((module, name)) => FunctionName {
+                name: name.to_string(),
+                module: ModuleName::from_str(module),
+                kind: FunctionNameKind::Function,
+            },
+            None => FunctionName {
+                name: s.to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
+        }
+    }
+
+    #[deprecated(note = "use .name directly")]
+    pub fn fn_name(&self) -> &str {
+        &self.name
     }
 }
 

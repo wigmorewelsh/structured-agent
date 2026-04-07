@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod instruction_display_tests {
     use crate::bytecode::Instruction;
-    use structured_agent_runtime::FunctionName;
+    use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     #[test]
     fn test_ldc_str_display() {
@@ -15,7 +15,11 @@ mod instruction_display_tests {
     #[test]
     fn test_call_bytecode_display() {
         let instr = Instruction::CallBytecode {
-            function_name: FunctionName::plain("", "foo"),
+            function_name: FunctionName {
+                name: "foo".to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
@@ -25,7 +29,11 @@ mod instruction_display_tests {
     #[test]
     fn test_call_external_display() {
         let instr = Instruction::CallExternal {
-            function_name: FunctionName::plain("", "foo"),
+            function_name: FunctionName {
+                name: "foo".to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
@@ -94,17 +102,16 @@ mod compilation_tests {
         let module = parse_code(code);
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
-        TypeChecker::new()
-            .check_module_with_external_sigs(
-                &module,
-                file_id,
-                &HashMap::new(),
-                &HashMap::new(),
-                &HashMap::new(),
-                "",
-            )
-            .unwrap()
-            .0
+        let parsed = crate::ast::ParsedModule {
+            name: "".to_string(),
+            module,
+            is_entry: false,
+            file_id,
+        };
+        let (mut typed_modules, _, _) = TypeChecker::new()
+            .check_modules(&[parsed], &HashMap::new())
+            .unwrap();
+        typed_modules.remove("").unwrap()
     }
 
     #[test]
@@ -814,7 +821,7 @@ mod vm_execution_tests {
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use structured_agent_runtime::FunctionName;
+    use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -828,17 +835,16 @@ mod vm_execution_tests {
         let module = parse_code(code);
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
-        TypeChecker::new()
-            .check_module_with_external_sigs(
-                &module,
-                file_id,
-                &HashMap::new(),
-                &HashMap::new(),
-                &HashMap::new(),
-                "",
-            )
-            .unwrap()
-            .0
+        let parsed = crate::ast::ParsedModule {
+            name: "".to_string(),
+            module,
+            is_entry: false,
+            file_id,
+        };
+        let (mut typed_modules, _, _) = TypeChecker::new()
+            .check_modules(&[parsed], &HashMap::new())
+            .unwrap();
+        typed_modules.remove("").unwrap()
     }
 
     fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {
@@ -905,7 +911,11 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Expression::Call {
                 function: function.clone(),
-                resolved: FunctionName::plain("", function),
+                resolved: FunctionName {
+                    name: function.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 kind: crate::typecheck::checker::FunctionKind::External,
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
                 ty: Type::Unit,
@@ -1338,9 +1348,11 @@ mod vm_execution_tests {
         let compiled_program = compiler.compile_source(&program).unwrap();
 
         let test_compiled = compiled_program
-            .resolve(&structured_agent_runtime::FunctionName::plain(
-                "main", "test",
-            ))
+            .resolve(&FunctionName {
+                name: "test".to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function,
+            })
             .unwrap()
             .clone();
 
@@ -1383,17 +1395,16 @@ mod struct_bytecode_tests {
         let module = parse_code(code);
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
-        TypeChecker::new()
-            .check_module_with_external_sigs(
-                &module,
-                file_id,
-                &HashMap::new(),
-                &HashMap::new(),
-                &HashMap::new(),
-                "",
-            )
-            .unwrap()
-            .0
+        let parsed = crate::ast::ParsedModule {
+            name: "".to_string(),
+            module,
+            is_entry: false,
+            file_id,
+        };
+        let (mut typed_modules, _, _) = TypeChecker::new()
+            .check_modules(&[parsed], &HashMap::new())
+            .unwrap();
+        typed_modules.remove("").unwrap()
     }
 
     fn get_function<'a>(module: &'a typed_ast::Module, name: &str) -> &'a typed_ast::Function {

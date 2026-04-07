@@ -1,6 +1,5 @@
 pub(crate) mod discovery;
 pub mod parser;
-pub(crate) mod sigs;
 pub(crate) mod wiring;
 use wiring::{lower_typed_module, resolve_vtables};
 
@@ -11,24 +10,26 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{Module, SigFunction};
+use crate::ast::{Definition, Module, SigFunction};
 use crate::bytecode::{BytecodeCompiler, CompiledFunction};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::{FunctionKind, ModuleVisibility};
+use crate::typecheck::checker::ModuleVisibility;
 use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 
+use crate::ast::ParsedModule;
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
-use sigs::{SigTable, collect_sigs, sigs_visible_to_module};
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::symbols::{
+    FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName,
+};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -163,7 +164,13 @@ impl CompiledProgram {
     fn merge(&mut self, artifact: ModuleArtifact) {
         for f in artifact.functions {
             let name = f.name.clone();
-            if name == FunctionName::plain("main", "main") {
+            if name
+                == (FunctionName {
+                    name: "main".to_string(),
+                    module: ModuleName::from_str("main"),
+                    kind: FunctionNameKind::Function,
+                })
+            {
                 self.main_function = Some(name.clone());
             }
             self.functions.insert(name, f);
@@ -178,8 +185,30 @@ impl CompiledProgram {
             self.sig_definitions.insert(name, functions);
         }
         for (alias, qualified) in artifact.use_aliases {
-            let alias_name = FunctionName::from_qualified_str(&alias);
-            let canonical_name = FunctionName::from_qualified_str(&qualified);
+            let alias_name = match alias.rsplit_once("::") {
+                Some((module, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: alias.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
+            let canonical_name = match qualified.rsplit_once("::") {
+                Some((module, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: qualified.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
             self.aliases.insert(alias_name, canonical_name);
             self.use_aliases.push((alias, qualified));
         }
@@ -189,11 +218,15 @@ impl CompiledProgram {
         let entry_fns: Vec<FunctionName> = self
             .functions
             .keys()
-            .filter(|n| n.module == "main")
+            .filter(|n| n.module == ModuleName::from_str("main"))
             .cloned()
             .collect();
         for canonical in entry_fns {
-            let bare = FunctionName::plain("", canonical.fn_name());
+            let bare = FunctionName {
+                name: canonical.name.clone(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            };
             self.aliases
                 .entry(bare)
                 .or_insert_with(|| canonical.clone());
@@ -281,28 +314,20 @@ impl Compiler {
             },
         )?;
 
-        let sig_table: SigTable = collect_sigs(&modules, &self.modules);
-
-        let mut typed_modules: HashMap<String, typed_ast::Module> = HashMap::new();
-
-        let mut function_kinds_map: HashMap<String, HashMap<String, FunctionKind>> = HashMap::new();
+        let tc_reporter = diagnostics.reporter().clone();
+        let mut checker = TypeChecker::new();
+        let (mut typed_modules, function_kinds, metadata) = checker
+            .check_modules(&modules, &self.modules)
+            .map_err(|e| {
+                error!("Type checking failed: {}", e);
+                if let Err(io_err) = tc_reporter.emit_type_error(&e) {
+                    eprintln!("Failed to emit type error: {}", io_err);
+                }
+                format!("Type error: {}", e)
+            })?;
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
-            match type_check_module(parsed, &sig_table) {
-                Ok((typed_module, function_kinds)) => {
-                    function_kinds_map.insert(parsed.name.clone(), function_kinds);
-                    typed_modules.insert(parsed.name.clone(), typed_module);
-                }
-                Err(e) => {
-                    error!("Type checking failed: {}", e);
-                    if let Err(io_err) = reporter.emit_type_error(&e) {
-                        eprintln!("Failed to emit type error: {}", io_err);
-                    }
-                    return Err(format!("In {}: Type error: {}", parsed.name, e));
-                }
-            }
-
             for warning in analyse_module(parsed) {
                 if let Err(io_err) = reporter.emit_diagnostic(&warning.to_diagnostic()) {
                     eprintln!("Failed to emit warning: {}", io_err);
@@ -310,20 +335,19 @@ impl Compiler {
             }
         }
 
-        let vtables = resolve_vtables(&modules, &sig_table);
+        let vtables = resolve_vtables(&modules, &metadata);
         for parsed in &modules {
             if let Some(vtable) = vtables.get(&parsed.name)
                 && let Some(typed_module) = typed_modules.get_mut(&parsed.name)
             {
-                let empty_kinds = HashMap::new();
-                let kinds = function_kinds_map.get(&parsed.name).unwrap_or(&empty_kinds);
-                lower_typed_module(typed_module, vtable, kinds);
+                lower_typed_module(typed_module, vtable, &function_kinds);
             }
         }
 
+        let module_visibility = build_module_visibility(&modules);
         let mut compiled = CompiledProgram::new()
             .with_source_path(source_path)
-            .with_module_visibility(sig_table.visibility.clone());
+            .with_module_visibility(module_visibility);
 
         for parsed in &modules {
             let prefix = if parsed.is_entry {
@@ -351,33 +375,27 @@ impl Compiler {
     }
 }
 
-fn type_check_module(
-    parsed: &discovery::ParsedModule,
-    sig_table: &SigTable,
-) -> Result<(crate::typed_ast::Module, HashMap<String, FunctionKind>), crate::typecheck::TypeError>
-{
-    let external_sigs = if parsed.is_entry {
-        sigs_visible_to_module(&parsed.module, sig_table)
-    } else {
-        sig_table.external_sigs.clone()
-    };
-    let module_name = if parsed.is_entry {
-        "main"
-    } else {
-        parsed.name.as_str()
-    };
-    let mut checker = TypeChecker::new();
-    checker.check_module_with_external_sigs(
-        &parsed.module,
-        parsed.file_id,
-        &external_sigs,
-        &sig_table.visibility,
-        &sig_table.sig_definitions,
-        module_name,
-    )
+fn build_module_visibility(modules: &[ParsedModule]) -> HashMap<String, bool> {
+    let mut vis = HashMap::new();
+    for parsed in modules {
+        for def in &parsed.module.definitions {
+            let (name, is_pub) = match def {
+                Definition::Function(f) => (&f.name, f.is_pub),
+                Definition::ExternalFunction(f) => (&f.name, f.is_pub),
+                _ => continue,
+            };
+            let qname = if parsed.is_entry {
+                name.clone()
+            } else {
+                format!("{}::{}", parsed.name, name)
+            };
+            vis.insert(qname, is_pub);
+        }
+    }
+    vis
 }
 
-fn analyse_module(parsed: &discovery::ParsedModule) -> Vec<crate::analysis::Warning> {
+fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
     let warnings = build_analysis_runner().run(&parsed.module, parsed.file_id);
     if !warnings.is_empty() {
         warn!("Analysis found {} warnings", warnings.len());
@@ -404,7 +422,11 @@ fn emit_module(
         match definition {
             typed_ast::Definition::Function(f) => {
                 let mut compiled = compiler.compile_to_bytecode(f)?;
-                compiled.name = FunctionName::plain(prefix, compiled.name.fn_name());
+                compiled.name = FunctionName {
+                    name: compiled.name.name.clone(),
+                    module: ModuleName::from_str(prefix),
+                    kind: FunctionNameKind::Function,
+                };
                 compiled.module_name = Some(prefix.to_string());
                 debug!("Emitting function: {}", compiled.name);
                 artifact.functions.push(compiled);
@@ -451,8 +473,23 @@ fn emit_module(
             } => {
                 for f in functions {
                     let mut compiled = compiler.compile_to_bytecode(f)?;
-                    compiled.name =
-                        FunctionName::impl_fn(prefix, type_name, trait_name, f.name.as_str());
+                    compiled.name = {
+                        let module_name = ModuleName::from_str(prefix);
+                        FunctionName {
+                            name: f.name.to_string(),
+                            module: module_name.clone(),
+                            kind: FunctionNameKind::Impl {
+                                type_name: TypeName {
+                                    name: type_name.to_string(),
+                                    module: module_name.clone(),
+                                },
+                                trait_name: TraitName {
+                                    name: trait_name.to_string(),
+                                    module: module_name,
+                                },
+                            },
+                        }
+                    };
                     compiled.module_name = Some(prefix.to_string());
                     debug!("Emitting impl function: {}", compiled.name);
                     artifact.functions.push(compiled);
@@ -467,20 +504,6 @@ fn emit_module(
     }
 
     Ok(artifact)
-}
-
-pub(crate) fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> crate::ast::Type {
-    use structured_agent_runtime::types::Type as RT;
-    match ty {
-        RT::String => crate::ast::Type::String,
-        RT::Boolean => crate::ast::Type::Boolean,
-        RT::Int => crate::ast::Type::Int,
-        RT::Unit => crate::ast::Type::Unit,
-        RT::List(inner) => crate::ast::Type::List(Box::new(runtime_type_to_ast(inner))),
-        RT::Option(inner) => crate::ast::Type::Option(Box::new(runtime_type_to_ast(inner))),
-        RT::Struct(name) => crate::ast::Type::Struct(name.clone()),
-        RT::Generic(name) => crate::ast::Type::Generic(name.clone()),
-    }
 }
 
 pub fn compile_external_function(
@@ -578,7 +601,7 @@ mod tests {
     use super::{CompilationUnit, Compiler};
     use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
-    use structured_agent_runtime::FunctionName;
+    use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
 
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
@@ -666,21 +689,21 @@ fn main(): String {
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(
-            compiled
-                .functions()
-                .contains_key(&FunctionName::plain("main", "main"))
-        );
-        assert!(
-            compiled
-                .functions()
-                .contains_key(&FunctionName::plain("greetlib", "greet"))
-        );
-        assert!(
-            compiled
-                .functions()
-                .contains_key(&FunctionName::plain("greetlib", "internal"))
-        );
+        assert!(compiled.functions().contains_key(&FunctionName {
+            name: "main".to_string(),
+            module: ModuleName::from_str("main"),
+            kind: FunctionNameKind::Function
+        }));
+        assert!(compiled.functions().contains_key(&FunctionName {
+            name: "greet".to_string(),
+            module: ModuleName::from_str("greetlib"),
+            kind: FunctionNameKind::Function
+        }));
+        assert!(compiled.functions().contains_key(&FunctionName {
+            name: "internal".to_string(),
+            module: ModuleName::from_str("greetlib"),
+            kind: FunctionNameKind::Function
+        }));
         assert_eq!(
             compiled.module_visibility().get("greetlib::greet"),
             Some(&true)

@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 
 use crate::ast::Definition;
-use crate::typecheck::checker::FunctionKind;
-use structured_agent_runtime::FunctionName;
+use crate::typecheck::checker::{CheckerRefs, FunctionKind};
+use structured_agent_runtime::symbols::{
+    FunctionName, FunctionNameKind, MetaData, ModuleName, TypeDefinitionKind,
+};
 
-use super::discovery::ParsedModule;
-use super::sigs::SigTable;
+use crate::ast::ParsedModule;
 
 pub(crate) type Vtables = HashMap<String, HashMap<String, String>>;
 
-pub(crate) fn resolve_vtables(modules: &[ParsedModule], sig_table: &SigTable) -> Vtables {
+pub(crate) fn resolve_vtables(
+    modules: &[ParsedModule],
+    metadata: &MetaData<CheckerRefs>,
+) -> Vtables {
     let bindings = collect_bindings(modules);
     let wiring_sites = collect_wiring_sites(modules);
 
@@ -18,7 +22,7 @@ pub(crate) fn resolve_vtables(modules: &[ParsedModule], sig_table: &SigTable) ->
         .filter_map(|parsed| {
             let params = header_params(parsed)?;
             let site_args = wiring_sites.get(&parsed.name).map(Vec::as_slice);
-            let vtable = build_vtable(params, site_args, &bindings, sig_table);
+            let vtable = build_vtable(params, site_args, &bindings, metadata);
             (!vtable.is_empty()).then(|| (parsed.name.clone(), vtable))
         })
         .collect()
@@ -28,7 +32,7 @@ fn build_vtable(
     params: &[crate::ast::ModuleParam],
     site_args: Option<&[String]>,
     bindings: &HashMap<String, String>,
-    sig_table: &SigTable,
+    metadata: &MetaData<CheckerRefs>,
 ) -> HashMap<String, String> {
     params
         .iter()
@@ -36,7 +40,7 @@ fn build_vtable(
         .filter(|(_, p)| p.path.len() >= 2)
         .flat_map(|(i, param)| {
             let concrete = concrete_module_for_param(i, param, site_args, bindings);
-            let fn_names = fn_names_for_param(param, concrete, sig_table);
+            let fn_names = fn_names_for_param(param, concrete, metadata);
             fn_names.into_iter().map(move |fn_name| {
                 let param_key = format!("{}::{}", param.name, fn_name);
                 let concrete_val = format!("{}::{}", concrete, fn_name);
@@ -62,19 +66,27 @@ fn concrete_module_for_param<'a>(
 fn fn_names_for_param(
     param: &crate::ast::ModuleParam,
     concrete_module: &str,
-    sig_table: &SigTable,
+    metadata: &MetaData<CheckerRefs>,
 ) -> Vec<String> {
     let sig_name = param.path.last().unwrap();
-    if let Some(fns) = sig_table.sig_definitions.get(sig_name) {
-        fns.iter().map(|f| f.name.clone()).collect()
-    } else {
-        let prefix = format!("{}::", concrete_module);
-        sig_table
-            .external_sigs
-            .keys()
-            .filter_map(|k| k.strip_prefix(&prefix).map(str::to_string))
-            .collect()
+    if let Some(type_def) = metadata.types.values().find(|td| {
+        td.name.name == *sig_name && matches!(td.kind, TypeDefinitionKind::Signature { .. })
+    }) {
+        if let TypeDefinitionKind::Signature { entries } = &type_def.kind {
+            return entries.iter().map(|e| e.name.clone()).collect();
+        }
     }
+    metadata
+        .functions
+        .keys()
+        .filter_map(|fname| {
+            if fname.module.to_string() == concrete_module {
+                Some(fname.name.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn collect_bindings(modules: &[ParsedModule]) -> HashMap<String, String> {
@@ -194,7 +206,18 @@ fn lower_expression(
         } => {
             let key = resolved.to_string();
             if let Some(concrete) = vtable.get(&key) {
-                *resolved = FunctionName::from_qualified_str(concrete);
+                *resolved = match concrete.rsplit_once("::") {
+                    Some((module, name)) => FunctionName {
+                        name: name.to_string(),
+                        module: ModuleName::from_str(module),
+                        kind: FunctionNameKind::Function,
+                    },
+                    None => FunctionName {
+                        name: concrete.to_string(),
+                        module: ModuleName::from_str(""),
+                        kind: FunctionNameKind::Function,
+                    },
+                };
                 if let Some(new_kind) = function_kinds.get(concrete) {
                     *kind = new_kind.clone();
                 }
@@ -247,10 +270,13 @@ mod tests {
     use crate::ast::{
         Definition, Function, FunctionBody, ModuleParam, SigFunction, Type as AstType,
     };
-    use crate::compiler::sigs::SigTable;
-    use crate::typecheck::checker::{ExternalSig, FunctionKind};
+    use crate::typecheck::checker::{CheckerAstRef, CheckerRefs, FunctionKind, SourceLocation};
     use crate::types::{FileId, Span};
-    use structured_agent_runtime::FunctionName;
+    use std::sync::Arc;
+    use structured_agent_runtime::symbols::{
+        FunctionDefinition, FunctionName, FunctionNameKind, MetaData, ModuleName, SignatureEntry,
+        TypeDefinition, TypeDefinitionKind, TypeName,
+    };
 
     fn dummy_span() -> Span {
         Span::dummy()
@@ -270,7 +296,7 @@ mod tests {
                         params,
                         span: dummy_span(),
                     },
-                    Definition::Function(Function {
+                    Definition::Function(Arc::new(Function {
                         name: "run".to_string(),
                         type_params: vec![],
                         parameters: vec![],
@@ -282,7 +308,7 @@ mod tests {
                         documentation: None,
                         is_pub: true,
                         span: dummy_span(),
-                    }),
+                    })),
                 ],
                 span: dummy_span(),
                 file_id: file_id(),
@@ -310,18 +336,59 @@ mod tests {
         }
     }
 
-    fn empty_sig_table() -> SigTable {
-        SigTable {
-            visibility: HashMap::new(),
-            external_sigs: HashMap::new(),
-            sig_definitions: HashMap::new(),
-        }
+    fn add_sig(metadata: &mut MetaData<CheckerRefs>, sig_name: &str, fns: &[SigFunction]) {
+        let type_name = TypeName {
+            name: sig_name.to_string(),
+            module: ModuleName::from_str("test"),
+        };
+        let entry = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Signature {
+                entries: fns
+                    .iter()
+                    .map(|f| SignatureEntry {
+                        name: f.name.clone(),
+                        type_name: TypeName {
+                            name: "unit".to_string(),
+                            module: ModuleName::from_str(""),
+                        },
+                    })
+                    .collect(),
+            },
+            source_ref: SourceLocation(0, Span::dummy()),
+            ast_ref: CheckerAstRef::Signature(Arc::new(fns.to_vec())),
+        };
+        metadata.types.insert(type_name, Arc::new(entry));
+    }
+
+    fn add_fn(metadata: &mut MetaData<CheckerRefs>, module: &str, fn_name: &str) {
+        let name = FunctionName {
+            name: fn_name.to_string(),
+            module: ModuleName::from_str(module),
+            kind: FunctionNameKind::Function,
+        };
+        let fdef = FunctionDefinition {
+            name: name.clone(),
+            type_name: TypeName {
+                name: "unit".to_string(),
+                module: ModuleName::from_str(module),
+            },
+            source_ref: SourceLocation(0, Span::dummy()),
+            ast_ref: CheckerAstRef::ExternalFn {
+                params: vec![],
+                return_type: AstType::Unit,
+                type_params: vec![],
+                kind: FunctionKind::External,
+            },
+            body_ref: None,
+        };
+        metadata.functions.insert(name, Arc::new(fdef));
     }
 
     #[test]
     fn test_no_params_produces_empty_vtables() {
         let parsed = make_module("tasks", vec![]);
-        let vtables = resolve_vtables(&[parsed], &empty_sig_table());
+        let vtables = resolve_vtables(&[parsed], &MetaData::default());
         assert!(vtables.is_empty());
     }
 
@@ -329,12 +396,10 @@ mod tests {
     fn test_named_sig_builds_vtable_entries() {
         let p = param("io", &["storage", "Storage"]);
         let parsed = make_module("tasks", vec![p]);
-        let mut table = empty_sig_table();
-        table
-            .sig_definitions
-            .insert("Storage".to_string(), vec![sig_fn("read"), sig_fn("write")]);
+        let mut metadata = MetaData::default();
+        add_sig(&mut metadata, "Storage", &[sig_fn("read"), sig_fn("write")]);
 
-        let vtables = resolve_vtables(&[parsed], &table);
+        let vtables = resolve_vtables(&[parsed], &metadata);
         let vtable = vtables.get("tasks").expect("expected vtable for tasks");
         assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
         assert_eq!(vtable.get("io::write").unwrap(), "storage::write");
@@ -344,17 +409,11 @@ mod tests {
     fn test_implicit_sig_from_module_exports() {
         let p = param("io", &["storage", "disk"]);
         let parsed = make_module("tasks", vec![p]);
-        let mut table = empty_sig_table();
-        table.external_sigs.insert(
-            "storage::read".to_string(),
-            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
-        );
-        table.external_sigs.insert(
-            "storage::write".to_string(),
-            ExternalSig::new(vec![], AstType::Unit, true, FunctionKind::External),
-        );
+        let mut metadata = MetaData::default();
+        add_fn(&mut metadata, "storage", "read");
+        add_fn(&mut metadata, "storage", "write");
 
-        let vtables = resolve_vtables(&[parsed], &table);
+        let vtables = resolve_vtables(&[parsed], &metadata);
         let vtable = vtables.get("tasks").expect("expected vtable for tasks");
         assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
         assert_eq!(vtable.get("io::write").unwrap(), "storage::write");
@@ -365,15 +424,11 @@ mod tests {
         let p1 = param("io", &["storage", "Storage"]);
         let p2 = param("log", &["logger", "Logger"]);
         let parsed = make_module("tasks", vec![p1, p2]);
-        let mut table = empty_sig_table();
-        table
-            .sig_definitions
-            .insert("Storage".to_string(), vec![sig_fn("read")]);
-        table
-            .sig_definitions
-            .insert("Logger".to_string(), vec![sig_fn("write")]);
+        let mut metadata = MetaData::default();
+        add_sig(&mut metadata, "Storage", &[sig_fn("read")]);
+        add_sig(&mut metadata, "Logger", &[sig_fn("write")]);
 
-        let vtables = resolve_vtables(&[parsed], &table);
+        let vtables = resolve_vtables(&[parsed], &metadata);
         let vtable = vtables.get("tasks").unwrap();
         assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
         assert_eq!(vtable.get("log::write").unwrap(), "logger::write");
@@ -418,12 +473,10 @@ mod tests {
             wiring_site("tasks", &["io"]),
         ]);
 
-        let mut table = empty_sig_table();
-        table
-            .sig_definitions
-            .insert("Store".to_string(), vec![sig_fn("read")]);
+        let mut metadata = MetaData::default();
+        add_sig(&mut metadata, "Store", &[sig_fn("read")]);
 
-        let vtables = resolve_vtables(&[tasks, entry], &table);
+        let vtables = resolve_vtables(&[tasks, entry], &metadata);
         let vtable = vtables.get("tasks").expect("expected vtable for tasks");
         assert_eq!(
             vtable.get("io::read").unwrap(),
@@ -438,12 +491,10 @@ mod tests {
         let tasks = make_module("tasks", vec![p]);
         let entry = make_entry_module(vec![wiring_site("tasks", &["io"])]);
 
-        let mut table = empty_sig_table();
-        table
-            .sig_definitions
-            .insert("Store".to_string(), vec![sig_fn("read")]);
+        let mut metadata = MetaData::default();
+        add_sig(&mut metadata, "Store", &[sig_fn("read")]);
 
-        let vtables = resolve_vtables(&[tasks, entry], &table);
+        let vtables = resolve_vtables(&[tasks, entry], &metadata);
         let vtable = vtables.get("tasks").expect("expected vtable for tasks");
         assert_eq!(vtable.get("io::read").unwrap(), "storage::read");
     }
@@ -478,7 +529,7 @@ mod tests {
             binding("io", &["storage", "Store"], &["mock_store"]),
             wiring_site("tasks", &["io"]),
         ]);
-        let vtables = resolve_vtables(&[entry], &empty_sig_table());
+        let vtables = resolve_vtables(&[entry], &MetaData::default());
         assert!(vtables.is_empty());
     }
 
@@ -486,7 +537,7 @@ mod tests {
     fn test_param_with_single_segment_path_skipped() {
         let p = param("io", &["storage"]);
         let parsed = make_module("tasks", vec![p]);
-        let vtables = resolve_vtables(&[parsed], &empty_sig_table());
+        let vtables = resolve_vtables(&[parsed], &MetaData::default());
         assert!(vtables.is_empty());
     }
 
@@ -495,7 +546,11 @@ mod tests {
         let span = Span::dummy();
         let call = crate::typed_ast::Expression::Call {
             function: "io::read".to_string(),
-            resolved: FunctionName::plain("io", "read"),
+            resolved: FunctionName {
+                name: "read".to_string(),
+                module: ModuleName::from_str("io"),
+                kind: FunctionNameKind::Function,
+            },
             kind: FunctionKind::External,
             arguments: vec![],
             ty: AstType::String,

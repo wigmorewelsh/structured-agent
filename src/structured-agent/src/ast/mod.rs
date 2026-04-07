@@ -1,4 +1,14 @@
+use std::sync::Arc;
+
 use crate::types::{FileId, Span, Spanned};
+
+#[derive(Debug)]
+pub struct ParsedModule {
+    pub name: String,
+    pub module: Module,
+    pub is_entry: bool,
+    pub file_id: FileId,
+}
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,10 +90,18 @@ pub struct SigFunction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct AstTraitImpl {
+    pub type_name: String,
+    pub trait_name: String,
+    pub functions: Vec<Arc<Function>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
-    Function(Function),
-    ExternalFunction(ExternalFunction),
-    Struct(StructDefinition),
+    Function(Arc<Function>),
+    ExternalFunction(Arc<ExternalFunction>),
+    Struct(Arc<StructDefinition>),
     Use {
         path: Vec<String>,
         alias: Option<String>,
@@ -116,12 +134,7 @@ pub enum Definition {
         functions: Vec<SigFunction>,
         span: Span,
     },
-    TraitImpl {
-        type_name: String,
-        trait_name: String,
-        functions: Vec<Function>,
-        span: Span,
-    },
+    TraitImpl(Arc<AstTraitImpl>),
 }
 
 impl Spanned for Definition {
@@ -136,7 +149,7 @@ impl Spanned for Definition {
             Definition::WiringSite { span, .. } => *span,
             Definition::Signature { span, .. } => *span,
             Definition::Trait { span, .. } => *span,
-            Definition::TraitImpl { span, .. } => *span,
+            Definition::TraitImpl(t) => t.span,
         }
     }
 }
@@ -554,15 +567,10 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "\n}}")
             }
-            Definition::TraitImpl {
-                type_name,
-                trait_name,
-                functions,
-                ..
-            } => {
-                write!(f, "impl {}: {}", type_name, trait_name)?;
+            Definition::TraitImpl(t) => {
+                write!(f, "impl {}: {}", t.type_name, t.trait_name)?;
                 write!(f, " {{")?;
-                for func in functions {
+                for func in &t.functions {
                     write!(f, "\n    {}", func)?;
                 }
                 write!(f, "\n}}")

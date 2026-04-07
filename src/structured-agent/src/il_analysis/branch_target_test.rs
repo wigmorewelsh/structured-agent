@@ -5,11 +5,15 @@ mod tests {
     use crate::bytecode::{CompiledFunction, Instruction};
     use crate::il_analysis::{BranchTargetAnalyzer, IlAnalyzer, IlWarning};
     use crate::types::Type;
-    use structured_agent_runtime::FunctionName;
+    use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     fn make_function(instructions: Vec<Instruction>) -> CompiledFunction {
         CompiledFunction {
-            name: FunctionName::plain("", "test"),
+            name: FunctionName {
+                name: "test".to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
             module_name: None,
             parameters: vec![],
             return_type: Type::Unit,

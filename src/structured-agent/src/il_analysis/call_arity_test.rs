@@ -5,11 +5,15 @@ mod tests {
     use crate::bytecode::{CompiledFunction, Instruction};
     use crate::il_analysis::{CallArityAnalyzer, IlAnalyzer, IlWarning};
     use crate::types::Type;
-    use structured_agent_runtime::FunctionName;
+    use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     fn make_function(instructions: Vec<Instruction>) -> CompiledFunction {
         CompiledFunction {
-            name: FunctionName::plain("", "test"),
+            name: FunctionName {
+                name: "test".to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
             module_name: None,
             parameters: vec![],
             return_type: Type::Unit,
@@ -40,7 +44,11 @@ mod tests {
                 value: "hello".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "greet"),
+                function_name: FunctionName {
+                    name: "greet".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec!["$arg0".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -61,7 +69,11 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "get_value"),
+                function_name: FunctionName {
+                    name: "get_value".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec![],
                 dest: "$tmp0".to_string(),
             },
@@ -82,7 +94,11 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "add"),
+                function_name: FunctionName {
+                    name: "add".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec!["$a".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -112,7 +128,11 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "negate"),
+                function_name: FunctionName {
+                    name: "negate".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -142,7 +162,11 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallExternal {
-                function_name: FunctionName::plain("", "external_tool"),
+                function_name: FunctionName {
+                    name: "external_tool".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
                 dest: "$tmp0".to_string(),
             },
@@ -166,12 +190,20 @@ mod tests {
                 name: "$b".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "foo"),
+                function_name: FunctionName {
+                    name: "foo".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec![],
                 dest: "$a".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::plain("", "bar"),
+                function_name: FunctionName {
+                    name: "bar".to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
                 params: vec!["$a".to_string(), "$b".to_string()],
                 dest: "$b".to_string(),
             },

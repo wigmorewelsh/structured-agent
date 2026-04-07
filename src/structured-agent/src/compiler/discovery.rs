@@ -1,16 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use crate::ast::{Definition, Module};
+use crate::ast::{Definition, Module, ParsedModule};
 use crate::types::FileId;
-
-#[derive(Debug)]
-pub(crate) struct ParsedModule {
-    pub(crate) name: String,
-    pub(crate) module: Module,
-    pub(crate) is_entry: bool,
-    pub(crate) file_id: FileId,
-}
 
 pub(crate) trait Discoverer {
     fn resolve(&self, path: &str) -> Result<String, String>;

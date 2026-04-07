@@ -10,7 +10,7 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::Module;
+use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -289,7 +289,18 @@ impl Runtime {
                 .insert(key, Arc::new(BytecodeFunctionExpr::new(function.clone())));
         }
         for (alias, qualified) in compiled_program.use_aliases() {
-            let canonical = structured_agent_runtime::FunctionName::from_qualified_str(qualified);
+            let canonical = match qualified.rsplit_once("::") {
+                Some((module, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: qualified.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
             if let Some(function) = compiled_program.resolve(&canonical) {
                 debug!("Registering alias: {} -> {}", alias, qualified);
                 runtime.function_registry.insert(

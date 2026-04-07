@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use crate::ast::{
-    Definition, Expression, ExternalFunction, Function, FunctionBody, Module, ModuleParam,
-    Parameter, SelectClause, SelectExpression, SigFunction, Statement, StructDefinition,
-    StructField, Type, TypeParam,
+    AstTraitImpl, Definition, Expression, ExternalFunction, Function, FunctionBody, Module,
+    ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction, Statement,
+    StructDefinition, StructField, Type, TypeParam,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -155,9 +157,12 @@ where
                     attempt(parse_sig_definition()),
                     attempt(parse_trait_impl()),
                     attempt(parse_trait()),
-                    attempt(parse_function_with_docs().map(Definition::Function)),
-                    attempt(parse_external_function().map(Definition::ExternalFunction)),
-                    parse_struct_definition().map(Definition::Struct),
+                    attempt(parse_function_with_docs().map(|f| Definition::Function(Arc::new(f)))),
+                    attempt(
+                        parse_external_function()
+                            .map(|f| Definition::ExternalFunction(Arc::new(f))),
+                    ),
+                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
                 ))
                 .skip(skip_spaces_and_comments()),
             ),
@@ -499,14 +504,15 @@ where
         ),
         position(),
     )
-        .map(
-            |(start, _, type_name, _, trait_name, functions, end)| Definition::TraitImpl {
+        .map(|(start, _, type_name, _, trait_name, functions, end)| {
+            let functions: Vec<Function> = functions;
+            Definition::TraitImpl(Arc::new(AstTraitImpl {
                 type_name,
                 trait_name,
-                functions,
+                functions: functions.into_iter().map(Arc::new).collect(),
                 span: Span::new(start, end),
-            },
-        )
+            }))
+        })
 }
 
 fn parse_use<Input>() -> impl Parser<Input, Output = Definition>
@@ -2906,9 +2912,15 @@ fn main(): String {
         assert!(result.is_ok());
         let (module, _) = result.unwrap();
         use crate::typecheck::TypeChecker;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, TEST_FILE_ID);
-        assert!(result.is_ok(), "use alias should resolve: {:?}", result);
+        use std::collections::HashMap;
+        let parsed = crate::ast::ParsedModule {
+            name: "test".to_string(),
+            module,
+            is_entry: true,
+            file_id: TEST_FILE_ID,
+        };
+        let result = TypeChecker::new().check_modules(&[parsed], &HashMap::new());
+        assert!(result.is_ok(), "use alias should resolve");
     }
 
     #[test]
@@ -3212,13 +3224,10 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 2);
-        if let Definition::TraitImpl {
-            type_name,
-            trait_name,
-            functions,
-            ..
-        } = &module.definitions[1]
-        {
+        if let Definition::TraitImpl(t) = &module.definitions[1] {
+            let type_name = &t.type_name;
+            let trait_name = &t.trait_name;
+            let functions = &t.functions;
             assert_eq!(type_name, "Foo");
             assert_eq!(trait_name, "Add");
             assert_eq!(functions.len(), 1);

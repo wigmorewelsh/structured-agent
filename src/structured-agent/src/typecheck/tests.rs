@@ -68,6 +68,19 @@ fn create_generic_test_function(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    fn check(module: crate::ast::Module) -> Result<(), crate::typecheck::TypeError> {
+        let parsed = crate::ast::ParsedModule {
+            name: "test".to_string(),
+            module,
+            is_entry: true,
+            file_id: 0,
+        };
+        TypeChecker::new()
+            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .map(|_| ())
+    }
 
     #[test]
     fn test_valid_function_with_string_parameter() {
@@ -81,10 +94,9 @@ mod tests {
             })],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -99,10 +111,9 @@ mod tests {
             })],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -137,12 +148,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(greet_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(greet_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -172,12 +182,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(greet_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(greet_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -209,12 +218,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(greet_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(greet_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -245,12 +253,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(test_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(test_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }
@@ -291,12 +298,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(get_name_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(get_name_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }
@@ -329,10 +335,9 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -357,10 +362,9 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -384,10 +388,9 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -407,10 +410,9 @@ mod tests {
             })],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -498,13 +500,12 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(add_func),
-            Definition::Function(concat_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(add_func)),
+            Definition::Function(Arc::new(concat_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -567,13 +568,12 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::Function(get_string_func),
-            Definition::Function(get_bool_func),
-            Definition::Function(main_func),
+            Definition::Function(Arc::new(get_string_func)),
+            Definition::Function(Arc::new(get_bool_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -618,12 +618,11 @@ mod tests {
         );
 
         let module = create_test_module(vec![
-            Definition::ExternalFunction(ext_func),
-            Definition::Function(main_func),
+            Definition::ExternalFunction(Arc::new(ext_func)),
+            Definition::Function(Arc::new(main_func)),
         ]);
-        let mut checker = TypeChecker::new();
 
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -656,10 +655,9 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -706,10 +704,9 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         // This should pass - the Boolean assignment in the if block should not affect outer scope
         if let Err(ref e) = result {
             println!("Error: {}", e);
@@ -793,11 +790,9 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
-        let mut checker = TypeChecker::new();
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
 
-        // This should pass with proper scope chaining
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         if let Err(ref e) = result {
             println!("Error: {}", e);
         }
@@ -806,7 +801,7 @@ mod tests {
 
     fn create_struct_definition(name: &str, fields: Vec<(&str, AstType)>) -> Definition {
         use crate::ast::{StructDefinition, StructField};
-        Definition::Struct(StructDefinition {
+        Definition::Struct(Arc::new(StructDefinition {
             name: name.to_string(),
             fields: fields
                 .into_iter()
@@ -817,33 +812,30 @@ mod tests {
                 })
                 .collect(),
             span: crate::types::Span::dummy(),
-        })
+        }))
     }
 
     #[test]
     fn test_struct_definition_registers_type() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
                 AstType::Unit,
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_struct_type_in_function_parameter_is_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Task", vec![("title", AstType::String)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "get_title",
                 vec![create_parameter("t", AstType::Struct("Task".to_string()))],
                 AstType::String,
@@ -855,27 +847,26 @@ mod tests {
                     field: "title".to_string(),
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_unknown_struct_type_in_parameter_is_error() {
-        let mut checker = TypeChecker::new();
-        let module = create_test_module(vec![Definition::Function(create_test_function(
-            "foo",
-            vec![create_parameter(
-                "x",
-                AstType::Struct("Unknown".to_string()),
-            )],
-            AstType::Unit,
-            vec![Statement::Return(Expression::UnitLiteral {
-                span: crate::types::Span::dummy(),
-            })],
-        ))]);
-        let result = checker.check_module(&module, 0);
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "foo",
+                vec![create_parameter(
+                    "x",
+                    AstType::Struct("Unknown".to_string()),
+                )],
+                AstType::Unit,
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -885,10 +876,9 @@ mod tests {
 
     #[test]
     fn test_struct_literal_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Struct("Point".to_string()),
@@ -912,26 +902,25 @@ mod tests {
                     ],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_struct_literal_unknown_struct_is_error() {
-        let mut checker = TypeChecker::new();
-        let module = create_test_module(vec![Definition::Function(create_test_function(
-            "make",
-            vec![],
-            AstType::Unit,
-            vec![Statement::Return(Expression::StructLiteral {
-                struct_name: "Ghost".to_string(),
-                fields: vec![],
-                span: crate::types::Span::dummy(),
-            })],
-        ))]);
-        let result = checker.check_module(&module, 0);
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "make",
+                vec![],
+                AstType::Unit,
+                vec![Statement::Return(Expression::StructLiteral {
+                    struct_name: "Ghost".to_string(),
+                    fields: vec![],
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -941,10 +930,9 @@ mod tests {
 
     #[test]
     fn test_struct_literal_unknown_field_is_error() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Unit,
@@ -959,9 +947,9 @@ mod tests {
                     )],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -971,10 +959,9 @@ mod tests {
 
     #[test]
     fn test_struct_literal_field_type_mismatch_is_error() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Unit,
@@ -989,9 +976,9 @@ mod tests {
                     )],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1005,8 +992,7 @@ mod tests {
         let stream =
             combine::stream::position::Stream::with_positioner(source, IndexPositioner::default());
         let (module, _) = parse_program(0).parse(stream).unwrap();
-        let mut checker = TypeChecker::new();
-        let err = checker.check_module(&module, 0).unwrap_err();
+        let err = check(module).unwrap_err();
         let TypeError::MissingField { span, .. } = err else {
             panic!("Expected MissingField, got {:?}", err);
         };
@@ -1027,10 +1013,9 @@ mod tests {
 
     #[test]
     fn test_struct_literal_missing_field_is_error() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Struct("Point".to_string()),
@@ -1045,9 +1030,9 @@ mod tests {
                     )],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1057,10 +1042,9 @@ mod tests {
 
     #[test]
     fn test_field_access_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "get_x",
                 vec![create_parameter("p", AstType::Struct("Point".to_string()))],
                 AstType::Int,
@@ -1072,18 +1056,16 @@ mod tests {
                     field: "x".to_string(),
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_field_access_unknown_field_is_error() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "get_z",
                 vec![create_parameter("p", AstType::Struct("Point".to_string()))],
                 AstType::Int,
@@ -1095,9 +1077,9 @@ mod tests {
                     field: "z".to_string(),
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1107,21 +1089,21 @@ mod tests {
 
     #[test]
     fn test_field_access_on_non_struct_is_error() {
-        let mut checker = TypeChecker::new();
-        let module = create_test_module(vec![Definition::Function(create_test_function(
-            "bad",
-            vec![create_parameter("s", AstType::String)],
-            AstType::Int,
-            vec![Statement::Return(Expression::FieldAccess {
-                base: Box::new(Expression::Variable {
-                    name: "s".to_string(),
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "bad",
+                vec![create_parameter("s", AstType::String)],
+                AstType::Int,
+                vec![Statement::Return(Expression::FieldAccess {
+                    base: Box::new(Expression::Variable {
+                        name: "s".to_string(),
+                        span: crate::types::Span::dummy(),
+                    }),
+                    field: "x".to_string(),
                     span: crate::types::Span::dummy(),
-                }),
-                field: "x".to_string(),
-                span: crate::types::Span::dummy(),
-            })],
-        ))]);
-        let result = checker.check_module(&module, 0);
+                })],
+            )))]);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1131,9 +1113,8 @@ mod tests {
 
     #[test]
     fn test_struct_defined_after_function_that_uses_it_is_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Struct("Point".to_string()),
@@ -1148,27 +1129,25 @@ mod tests {
                     )],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
             create_struct_definition("Point", vec![("x", AstType::Int)]),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_struct_literal_as_call_argument_is_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "consume",
                 vec![create_parameter("p", AstType::Struct("Point".to_string()))],
                 AstType::Unit,
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
-            )),
-            Definition::Function(create_test_function(
+            ))),
+            Definition::Function(Arc::new(create_test_function(
                 "make_and_pass",
                 vec![],
                 AstType::Unit,
@@ -1187,44 +1166,40 @@ mod tests {
                     }],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_extern_fn_with_struct_return_type_is_valid() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int)]),
-            Definition::ExternalFunction(crate::ast::ExternalFunction {
+            Definition::ExternalFunction(Arc::new(crate::ast::ExternalFunction {
                 name: "get_point".to_string(),
                 type_params: vec![],
                 parameters: vec![],
                 return_type: AstType::Struct("Point".to_string()),
                 is_pub: false,
                 span: crate::types::Span::dummy(),
-            }),
-            Definition::Function(create_test_function(
+            })),
+            Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
                 AstType::Unit,
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
-        assert!(result.is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
     fn test_struct_literal_duplicate_field_is_error() {
-        let mut checker = TypeChecker::new();
         let module = create_test_module(vec![
             create_struct_definition("Point", vec![("x", AstType::Int), ("y", AstType::Int)]),
-            Definition::Function(create_test_function(
+            Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
                 AstType::Struct("Point".to_string()),
@@ -1255,9 +1230,9 @@ mod tests {
                     ],
                     span: crate::types::Span::dummy(),
                 })],
-            )),
+            ))),
         ]);
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1267,8 +1242,7 @@ mod tests {
 
     #[test]
     fn test_extern_fn_with_unknown_struct_return_type_is_error() {
-        let mut checker = TypeChecker::new();
-        let module = create_test_module(vec![Definition::ExternalFunction(
+        let module = create_test_module(vec![Definition::ExternalFunction(Arc::new(
             crate::ast::ExternalFunction {
                 name: "get_ghost".to_string(),
                 type_params: vec![],
@@ -1277,8 +1251,8 @@ mod tests {
                 is_pub: false,
                 span: crate::types::Span::dummy(),
             },
-        )]);
-        let result = checker.check_module(&module, 0);
+        ))]);
+        let result = check(module);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1296,8 +1270,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             result.is_ok(),
             "struct-typed function should type-check: {:?}",
@@ -1365,11 +1338,10 @@ mod tests {
             })],
         );
         let module = create_test_module(vec![
-            Definition::Function(head),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(caller)),
         ]);
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             matches!(result, Err(TypeError::ArgumentTypeMismatch { ref expected, ref found, .. })
                 if expected == "List<T>" && found == "String"),
@@ -1402,11 +1374,10 @@ mod tests {
             })],
         );
         let module = create_test_module(vec![
-            Definition::ExternalFunction(ext_func),
-            Definition::Function(caller),
+            Definition::ExternalFunction(Arc::new(ext_func)),
+            Definition::Function(Arc::new(caller)),
         ]);
-        let mut checker = TypeChecker::new();
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -1429,12 +1400,11 @@ mod tests {
             })],
         );
         let module = create_test_module(vec![
-            Definition::Function(make_none),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(make_none)),
+            Definition::Function(Arc::new(caller)),
         ]);
-        let mut checker = TypeChecker::new();
         assert!(
-            checker.check_module(&module, 0).is_ok(),
+            check(module).is_ok(),
             "call to fn with T only in return type succeeds; T stays unresolved as Generic(\"T\")"
         );
     }
@@ -1491,12 +1461,11 @@ mod tests {
             ],
         );
         let module = create_test_module(vec![
-            Definition::Function(head),
-            Definition::Function(consume),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(consume)),
+            Definition::Function(Arc::new(caller)),
         ]);
-        let mut checker = TypeChecker::new();
-        assert!(checker.check_module(&module, 0).is_ok());
+        assert!(check(module).is_ok());
     }
 
     #[test]
@@ -1508,9 +1477,8 @@ mod tests {
             AstType::Generic("T".to_string()),
             vec![],
         );
-        let module = create_test_module(vec![Definition::Function(bad)]);
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let module = create_test_module(vec![Definition::Function(Arc::new(bad))]);
+        let result = check(module);
         assert!(
             matches!(result, Err(TypeError::UnsupportedType { ref type_name, .. }) if type_name == "T"),
             "expected UnsupportedType for unknown type variable, got {:?}",
@@ -1520,7 +1488,7 @@ mod tests {
 
     #[test]
     fn test_trait_bound_satisfied_for_int() {
-        let input = "fn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): Int {\n    return double(42)\n}\n";
+        let input = "trait Add {\n    fn add(self: Self, other: Self): Self\n}\nimpl Int: Add {\n    fn add(self: Int, other: Int): Int {\n        return self\n    }\n}\nfn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): Int {\n    return double(42)\n}\n";
         let module = parse_program(0)
             .parse(combine::stream::position::Stream::with_positioner(
                 input,
@@ -1528,8 +1496,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             result.is_ok(),
             "Int satisfies Add, should type check: {:?}",
@@ -1539,7 +1506,7 @@ mod tests {
 
     #[test]
     fn test_trait_bound_not_satisfied_for_string() {
-        let input = "fn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): String {\n    return double(\"hello\")\n}\n";
+        let input = "trait Add {\n    fn add(self: Self, other: Self): Self\n}\nfn double<T: Add>(x: T): T {\n    return x\n}\nfn main(): String {\n    return double(\"hello\")\n}\n";
         let module = parse_program(0)
             .parse(combine::stream::position::Stream::with_positioner(
                 input,
@@ -1547,8 +1514,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             matches!(result, Err(TypeError::TraitBoundNotSatisfied { ref type_name, ref trait_name, .. })
                 if type_name == "String" && trait_name == "Add"),
@@ -1567,8 +1533,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             result.is_ok(),
             "Vec2 implements Add, should type check: {:?}",
@@ -1586,8 +1551,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             matches!(result, Err(TypeError::TraitImplMissingFunction { ref function_name, .. })
                 if function_name == "add"),
@@ -1606,8 +1570,7 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let mut checker = TypeChecker::new();
-        let result = checker.check_module(&module, 0);
+        let result = check(module);
         assert!(
             matches!(result, Err(TypeError::UnknownTrait { ref name, .. }) if name == "NonExistent"),
             "impl for unknown trait should error, got {:?}",
@@ -1622,21 +1585,22 @@ mod typed_ast_tests {
     use crate::typecheck::checker::FunctionKind;
     use crate::typed_ast;
     use std::collections::HashMap;
-    use structured_agent_runtime::FunctionName;
+    use std::sync::Arc;
+    use structured_agent_runtime::symbols::{
+        FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName,
+    };
 
     fn check_typed(module: &Module) -> typed_ast::Module {
-        let mut checker = TypeChecker::new();
-        checker
-            .check_module_with_external_sigs(
-                module,
-                0,
-                &HashMap::new(),
-                &HashMap::new(),
-                &HashMap::new(),
-                "",
-            )
-            .unwrap()
-            .0
+        let parsed = crate::ast::ParsedModule {
+            name: "".to_string(),
+            module: module.clone(),
+            is_entry: false,
+            file_id: 0,
+        };
+        let (mut typed_modules, _, _) = TypeChecker::new()
+            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .unwrap();
+        typed_modules.remove("").unwrap()
     }
 
     fn first_function(module: &typed_ast::Module) -> &typed_ast::Function {
@@ -1677,7 +1641,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::String);
     }
@@ -1693,7 +1659,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Boolean);
     }
@@ -1709,7 +1677,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Int);
     }
@@ -1724,7 +1694,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Unit);
     }
@@ -1740,7 +1712,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Int);
         assert!(matches!(expr, typed_ast::Expression::Variable { name, .. } if name == "x"));
@@ -1768,8 +1742,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(callee),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(callee)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -1787,7 +1761,7 @@ mod typed_ast_tests {
         assert!(matches!(
             expr,
             typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
-            if resolved == &FunctionName::plain("", "get_value")
+            if resolved == &FunctionName { name: "get_value".to_string(), module: ModuleName::from_str(""), kind: FunctionNameKind::Function }
         ));
     }
 
@@ -1814,8 +1788,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(callee),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(callee)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -1860,7 +1834,9 @@ mod typed_ast_tests {
                 }),
             ],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let stmt = first_function(&module).body.statements.first().unwrap();
         if let typed_ast::Statement::Assignment { expression, .. } = stmt {
             assert_eq!(expression.ty(), &AstType::Int);
@@ -1889,7 +1865,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::List(Box::new(AstType::Int)));
     }
@@ -1916,7 +1894,9 @@ mod typed_ast_tests {
                 span: crate::types::Span::dummy(),
             })],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Int);
         assert!(matches!(expr, typed_ast::Expression::IfElse { .. }));
@@ -1945,7 +1925,9 @@ mod typed_ast_tests {
                 }),
             ],
         );
-        let module = check_typed(&create_test_module(vec![Definition::Function(func)]));
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
         let stmt = first_function(&module).body.statements.first().unwrap();
         if let typed_ast::Statement::If {
             condition, body, ..
@@ -2002,8 +1984,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Struct(struct_def),
-            Definition::Function(func),
+            Definition::Struct(Arc::new(struct_def)),
+            Definition::Function(Arc::new(func)),
         ]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Struct("Point".to_string()));
@@ -2041,8 +2023,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Struct(struct_def),
-            Definition::Function(func),
+            Definition::Struct(Arc::new(struct_def)),
+            Definition::Function(Arc::new(func)),
         ]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &AstType::Int);
@@ -2081,8 +2063,8 @@ mod typed_ast_tests {
             }))],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(callee),
-            Definition::Function(func),
+            Definition::Function(Arc::new(callee)),
+            Definition::Function(Arc::new(func)),
         ]));
         let f = module
             .definitions
@@ -2129,8 +2111,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(head),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -2176,8 +2158,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(head),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -2235,8 +2217,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::Function(zip),
-            Definition::Function(caller),
+            Definition::Function(Arc::new(zip)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -2274,8 +2256,8 @@ mod typed_ast_tests {
             })],
         );
         let module = check_typed(&create_test_module(vec![
-            Definition::ExternalFunction(ext),
-            Definition::Function(caller),
+            Definition::ExternalFunction(Arc::new(ext)),
+            Definition::Function(Arc::new(caller)),
         ]));
         let f = module
             .definitions
@@ -2296,5 +2278,79 @@ mod typed_ast_tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_impl_function_call_resolves_to_qualified_name() {
+        let input = concat!(
+            "struct Vec2 {\n",
+            "    x: Int,\n",
+            "    y: Int,\n",
+            "}\n",
+            "trait Add {\n",
+            "    fn add(self: Self, other: Self): Self\n",
+            "}\n",
+            "impl Vec2: Add {\n",
+            "    fn add(self: Vec2, other: Vec2): Vec2 {\n",
+            "        return self\n",
+            "    }\n",
+            "}\n",
+            "fn main(): Vec2 {\n",
+            "    let v1 = Vec2 { x: 1, y: 2 }\n",
+            "    let v2 = Vec2 { x: 3, y: 4 }\n",
+            "    return add(v1, v2)\n",
+            "}\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let main_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "main" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let resolved = main_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(typed_ast::Expression::Call {
+                    resolved, ..
+                }) = s
+                {
+                    Some(resolved.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(resolved, {
+            let mn = ModuleName::from_str("");
+            FunctionName {
+                name: "add".to_string(),
+                module: mn.clone(),
+                kind: FunctionNameKind::Impl {
+                    type_name: TypeName {
+                        name: "Vec2".to_string(),
+                        module: mn.clone(),
+                    },
+                    trait_name: TraitName {
+                        name: "Add".to_string(),
+                        module: mn,
+                    },
+                },
+            }
+        });
     }
 }

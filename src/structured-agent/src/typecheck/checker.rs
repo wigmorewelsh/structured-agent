@@ -1,12 +1,19 @@
 use crate::ast::{
-    Definition, Expression, Function, Module, Parameter, SelectClause, Statement, Type as AstType,
-    TypeParam,
+    Definition, Expression, Function, Module, Parameter, ParsedModule, SelectClause, SigFunction,
+    Statement, Type as AstType, TypeParam,
 };
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{FileId, Span, Spanned};
-use std::collections::{HashMap, HashSet};
-use structured_agent_runtime::FunctionName;
+use std::collections::HashMap;
+use std::sync::Arc;
+use structured_agent_runtime::symbols::{
+    AstRef, BodyRef, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
+    ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, References, SignatureEntry,
+    SourceRef, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
+    Visibility, WitnessRef,
+};
+use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub type ModuleVisibility = HashMap<String, bool>;
 pub type AliasToQualified = HashMap<String, String>;
@@ -17,12 +24,54 @@ pub enum FunctionKind {
     External,
 }
 
-#[derive(Debug)]
+pub struct SourceLocation(pub FileId, pub Span);
+pub struct NoBody;
+pub struct NoWitness;
+
+pub enum CheckerAstRef {
+    Function(Arc<crate::ast::Function>, FunctionKind),
+    ExternalFn {
+        params: Vec<crate::ast::Parameter>,
+        return_type: AstType,
+        type_params: Vec<TypeParam>,
+        kind: FunctionKind,
+    },
+    Struct(Arc<crate::ast::StructDefinition>),
+    Trait(Arc<Vec<crate::ast::SigFunction>>),
+    Impl(Arc<crate::ast::AstTraitImpl>),
+    Module(Arc<crate::ast::Module>),
+    Signature(Arc<Vec<SigFunction>>),
+}
+
+impl SourceRef for SourceLocation {}
+impl AstRef for CheckerAstRef {}
+impl BodyRef for NoBody {}
+impl WitnessRef for NoWitness {}
+
+pub struct CheckerRefs;
+
+impl References for CheckerRefs {
+    type Source = SourceLocation;
+    type Ast = CheckerAstRef;
+    type Body = NoBody;
+    type Witness = NoWitness;
+}
+
+fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName {
+    match ty {
+        AstType::Struct(name) => TypeName {
+            name: name.clone(),
+            module: ModuleName::from_str(module_name),
+        },
+        other => TypeName {
+            name: other.to_string(),
+            module: ModuleName::from_str("builtin"),
+        },
+    }
+}
+
 pub struct TypeChecker {
-    function_signatures: HashMap<String, FunctionSignature>,
-    struct_definitions: HashMap<String, Vec<(String, AstType)>>,
-    trait_definitions: HashMap<String, Vec<crate::ast::SigFunction>>,
-    trait_impls: HashMap<String, HashSet<String>>,
+    metadata: MetaData<CheckerRefs>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,272 +104,489 @@ impl Default for TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        let mut trait_definitions: HashMap<String, Vec<crate::ast::SigFunction>> = HashMap::new();
-        let mut trait_impls: HashMap<String, HashSet<String>> = HashMap::new();
-
-        for trait_name in &["Add", "Sub", "Mul", "Div"] {
-            let self_type = AstType::Generic("Self".to_string());
-            let fn_name = match *trait_name {
-                "Add" => "add",
-                "Sub" => "sub",
-                "Mul" => "mul",
-                "Div" => "div",
-                _ => unreachable!(),
-            };
-            trait_definitions.insert(
-                trait_name.to_string(),
-                vec![crate::ast::SigFunction {
-                    name: fn_name.to_string(),
-                    type_params: vec![],
-                    parameters: vec![
-                        crate::ast::Parameter {
-                            name: "self".to_string(),
-                            param_type: self_type.clone(),
-                            span: Span::dummy(),
-                        },
-                        crate::ast::Parameter {
-                            name: "other".to_string(),
-                            param_type: self_type.clone(),
-                            span: Span::dummy(),
-                        },
-                    ],
-                    return_type: self_type,
-                    span: Span::dummy(),
-                }],
-            );
-            trait_impls
-                .entry("Int".to_string())
-                .or_default()
-                .insert(trait_name.to_string());
-        }
-
         Self {
-            function_signatures: HashMap::new(),
-            struct_definitions: HashMap::new(),
-            trait_definitions,
-            trait_impls,
+            metadata: MetaData::default(),
         }
     }
 
-    pub fn check_module(&mut self, module: &Module, file_id: FileId) -> Result<(), TypeError> {
-        self.check_module_with_external_sigs(
-            module,
-            file_id,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            "",
-        )
-        .map(|_| ())
-    }
-
-    pub fn check_module_with_external_sigs(
+    pub fn check_modules(
         &mut self,
-        module: &Module,
-        file_id: FileId,
-        external_sigs: &HashMap<String, ExternalSig>,
-        module_visibility: &ModuleVisibility,
-        sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
-        module_name: &str,
-    ) -> Result<(typed_ast::Module, HashMap<String, FunctionKind>), TypeError> {
-        for (name, sig) in external_sigs {
-            self.function_signatures.insert(
-                name.clone(),
-                FunctionSignature {
-                    parameters: sig.parameters.clone(),
-                    return_type: sig.return_type.clone(),
-                    kind: sig.kind.clone(),
-                    type_params: sig.type_params.clone(),
-                },
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> Result<
+        (
+            HashMap<String, typed_ast::Module>,
+            HashMap<String, FunctionKind>,
+            MetaData<CheckerRefs>,
+        ),
+        TypeError,
+    > {
+        let mut module_visibility: ModuleVisibility = HashMap::new();
+        for parsed in modules {
+            let effective_name = if parsed.is_entry {
+                "main"
+            } else {
+                parsed.name.as_str()
+            };
+            self.collect_native_sigs(parsed, native_modules, &mut module_visibility);
+            Self::build_visibility_for_module(parsed, &mut module_visibility);
+            self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name)?;
+            let module_def = ModuleDefinition {
+                name: ModuleName::from_str(effective_name),
+                visibility: Visibility::Public,
+                exports: vec![],
+                source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
+                ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
+            };
+            self.metadata
+                .modules
+                .insert(ModuleName::from_str(effective_name), Arc::new(module_def));
+        }
+        for parsed in modules {
+            self.register_param_sigs(&parsed.module, parsed.file_id);
+        }
+        let mut typed_modules = HashMap::new();
+        for parsed in modules {
+            typed_modules.insert(
+                parsed.name.clone(),
+                self.check_single_module_expressions(parsed, &module_visibility)?,
             );
         }
+        let metadata = std::mem::take(&mut self.metadata);
+        let function_kinds = Self::function_kinds_from_metadata(&metadata);
+        Ok((typed_modules, function_kinds, metadata))
+    }
 
-        self.register_param_sigs(module, sig_definitions, external_sigs);
+    fn collect_native_sigs(
+        &mut self,
+        parsed: &ParsedModule,
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+        visibility: &mut ModuleVisibility,
+    ) {
+        for def in &parsed.module.definitions {
+            let Definition::Use { path, .. } = def else {
+                continue;
+            };
+            if path.len() < 2 {
+                continue;
+            }
+            let native_mod_name = &path[0];
+            let fn_name = path.last().unwrap();
+            let Some(native_mod) = native_modules.get(native_mod_name) else {
+                continue;
+            };
+            let Some(func) = native_mod
+                .functions()
+                .into_iter()
+                .find(|f| f.name() == fn_name)
+            else {
+                continue;
+            };
+            let qname = format!("{}::{}", native_mod_name, fn_name);
+            let parameters = func
+                .parameters()
+                .iter()
+                .map(|p| Parameter {
+                    name: p.name.clone(),
+                    param_type: Self::runtime_type_to_ast(&p.param_type),
+                    span: Span::dummy(),
+                })
+                .collect();
+            let return_type = Self::runtime_type_to_ast(func.return_type());
+            let type_params = func
+                .type_params()
+                .iter()
+                .map(|s| TypeParam::from(s.as_str()))
+                .collect();
+            visibility.insert(qname.clone(), true);
+            let fn_key = match qname.rsplit_once("::") {
+                Some((module, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: qname.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
+            self.insert_fn(
+                fn_key,
+                parameters,
+                return_type,
+                type_params,
+                FunctionKind::External,
+                SourceLocation(parsed.file_id, Span::dummy()),
+            );
+        }
+    }
 
-        self.collect_function_signatures(module, file_id)?;
+    fn build_visibility_for_module(parsed: &ParsedModule, visibility: &mut ModuleVisibility) {
+        for def in &parsed.module.definitions {
+            let (name, is_pub) = match def {
+                Definition::Function(f) => (&f.name, f.is_pub),
+                Definition::ExternalFunction(f) => (&f.name, f.is_pub),
+                _ => continue,
+            };
+            let qname = if parsed.is_entry {
+                name.clone()
+            } else {
+                format!("{}::{}", parsed.name, name)
+            };
+            visibility.insert(qname, is_pub);
+        }
+    }
 
+    fn check_single_module_expressions(
+        &mut self,
+        parsed: &ParsedModule,
+        module_visibility: &ModuleVisibility,
+    ) -> Result<typed_ast::Module, TypeError> {
+        let effective_name = if parsed.is_entry {
+            "main"
+        } else {
+            parsed.name.as_str()
+        };
+        let module = &parsed.module;
         let alias_map = Self::build_alias_map(module);
         let alias_to_qualified = Self::build_alias_to_qualified(module, module_visibility);
-
         let ctx = CheckContext {
-            file_id,
+            file_id: parsed.file_id,
             alias_map: &alias_map,
             module_visibility,
             alias_to_qualified: &alias_to_qualified,
-            module_name: Some(module_name),
+            module_name: Some(effective_name),
         };
-
-        let mut typed_definitions = Vec::new();
-        for definition in &module.definitions {
-            let typed_def = match definition {
-                Definition::Function(func) => {
-                    typed_ast::Definition::Function(self.check_function(func, &ctx)?)
-                }
-                Definition::ExternalFunction(f) => {
-                    typed_ast::Definition::ExternalFunction(f.clone())
-                }
-                Definition::Struct(s) => typed_ast::Definition::Struct(s.clone()),
-                Definition::Use {
-                    path,
-                    alias,
-                    is_pub,
-                    span,
-                } => typed_ast::Definition::Use {
-                    path: path.clone(),
-                    alias: alias.clone(),
-                    is_pub: *is_pub,
-                    span: *span,
-                },
-                Definition::ModuleHeader { name, params, span } => {
-                    typed_ast::Definition::ModuleHeader {
-                        name: name.clone(),
-                        params: params.clone(),
-                        span: *span,
-                    }
-                }
-                Definition::ModuleBinding {
-                    name,
-                    sig_path,
-                    impl_path,
-                    span,
-                } => typed_ast::Definition::ModuleBinding {
-                    name: name.clone(),
-                    sig_path: sig_path.clone(),
-                    impl_path: impl_path.clone(),
-                    span: *span,
-                },
-                Definition::WiringSite { name, args, span } => typed_ast::Definition::WiringSite {
-                    name: name.clone(),
-                    args: args.clone(),
-                    span: *span,
-                },
-                Definition::Signature {
-                    name,
-                    functions,
-                    span,
-                } => typed_ast::Definition::Signature {
-                    name: name.clone(),
-                    functions: functions.clone(),
-                    span: *span,
-                },
-                Definition::Trait {
-                    name,
-                    functions,
-                    span,
-                } => typed_ast::Definition::Trait {
-                    name: name.clone(),
-                    functions: functions.clone(),
-                    span: *span,
-                },
-                Definition::TraitImpl {
-                    type_name,
-                    trait_name,
-                    span,
-                    functions,
-                } => {
-                    let typed_functions: Result<Vec<typed_ast::Function>, TypeError> = functions
-                        .iter()
-                        .map(|f| {
-                            let concrete = Self::substitute_self_in_fn(f, type_name);
-                            self.check_function(&concrete, &ctx)
-                        })
-                        .collect();
-                    typed_ast::Definition::TraitImpl {
-                        type_name: type_name.clone(),
-                        trait_name: trait_name.clone(),
-                        functions: typed_functions?,
-                        span: *span,
-                    }
-                }
-            };
-            typed_definitions.push(typed_def);
-        }
-
-        let typed_module = typed_ast::Module {
+        let typed_definitions = module
+            .definitions
+            .iter()
+            .map(|def| self.check_definition(def, &ctx))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(typed_ast::Module {
             definitions: typed_definitions,
             span: module.span,
-            file_id,
-        };
-
-        Ok((typed_module, self.function_kinds()))
+            file_id: parsed.file_id,
+        })
     }
 
-    fn register_param_sigs(
+    fn check_definition(
         &mut self,
-        module: &Module,
-        sig_definitions: &HashMap<String, Vec<crate::ast::SigFunction>>,
-        external_sigs: &HashMap<String, ExternalSig>,
+        definition: &Definition,
+        ctx: &CheckContext,
+    ) -> Result<typed_ast::Definition, TypeError> {
+        match definition {
+            Definition::Function(func) => Ok(typed_ast::Definition::Function(
+                self.check_function(func, ctx)?,
+            )),
+            Definition::ExternalFunction(f) => {
+                Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
+            }
+            Definition::Struct(s) => Ok(typed_ast::Definition::Struct((**s).clone())),
+            Definition::Use {
+                path,
+                alias,
+                is_pub,
+                span,
+            } => Ok(typed_ast::Definition::Use {
+                path: path.clone(),
+                alias: alias.clone(),
+                is_pub: *is_pub,
+                span: *span,
+            }),
+            Definition::ModuleHeader { name, params, span } => {
+                Ok(typed_ast::Definition::ModuleHeader {
+                    name: name.clone(),
+                    params: params.clone(),
+                    span: *span,
+                })
+            }
+            Definition::ModuleBinding {
+                name,
+                sig_path,
+                impl_path,
+                span,
+            } => Ok(typed_ast::Definition::ModuleBinding {
+                name: name.clone(),
+                sig_path: sig_path.clone(),
+                impl_path: impl_path.clone(),
+                span: *span,
+            }),
+            Definition::WiringSite { name, args, span } => Ok(typed_ast::Definition::WiringSite {
+                name: name.clone(),
+                args: args.clone(),
+                span: *span,
+            }),
+            Definition::Signature {
+                name,
+                functions,
+                span,
+            } => Ok(typed_ast::Definition::Signature {
+                name: name.clone(),
+                functions: functions.clone(),
+                span: *span,
+            }),
+            Definition::Trait {
+                name,
+                functions,
+                span,
+            } => Ok(typed_ast::Definition::Trait {
+                name: name.clone(),
+                functions: functions.clone(),
+                span: *span,
+            }),
+            Definition::TraitImpl(t) => {
+                let (type_name, trait_name, functions, span) =
+                    (&t.type_name, &t.trait_name, &t.functions, &t.span);
+                let typed_functions: Result<Vec<typed_ast::Function>, TypeError> = functions
+                    .iter()
+                    .map(|func| {
+                        let concrete = Self::substitute_self_in_fn(func, type_name);
+                        self.check_function(&concrete, ctx)
+                    })
+                    .collect();
+                Ok(typed_ast::Definition::TraitImpl {
+                    type_name: type_name.clone(),
+                    trait_name: trait_name.clone(),
+                    functions: typed_functions?,
+                    span: *span,
+                })
+            }
+        }
+    }
+
+    fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
+        use structured_agent_runtime::types::Type as RT;
+        match ty {
+            RT::String => AstType::String,
+            RT::Boolean => AstType::Boolean,
+            RT::Int => AstType::Int,
+            RT::Unit => AstType::Unit,
+            RT::List(inner) => AstType::List(Box::new(Self::runtime_type_to_ast(inner))),
+            RT::Option(inner) => AstType::Option(Box::new(Self::runtime_type_to_ast(inner))),
+            RT::Struct(name) => AstType::Struct(name.clone()),
+            RT::Generic(name) => AstType::Generic(name.clone()),
+        }
+    }
+
+    fn insert_fn(
+        &mut self,
+        name: FunctionName,
+        params: Vec<crate::ast::Parameter>,
+        return_type: AstType,
+        type_params: Vec<TypeParam>,
+        kind: FunctionKind,
+        source_ref: SourceLocation,
     ) {
-        let params = module.definitions.iter().find_map(|def| {
+        let entry = FunctionDefinition {
+            name: name.clone(),
+            type_name: ast_type_to_type_name(&return_type, &name.module.to_string()),
+            source_ref,
+            ast_ref: CheckerAstRef::ExternalFn {
+                params,
+                return_type,
+                type_params,
+                kind,
+            },
+            body_ref: None,
+        };
+        self.metadata.functions.insert(name, Arc::new(entry));
+    }
+
+    fn get_function_sig(&self, name: &FunctionName) -> Option<FunctionSignature> {
+        self.metadata
+            .functions
+            .get(name)
+            .and_then(|f| match &f.ast_ref {
+                CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
+                    parameters: func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self.resolve_type(&p.param_type),
+                            span: p.span,
+                        })
+                        .collect(),
+                    return_type: self.resolve_type(&func.return_type),
+                    type_params: func.type_params.clone(),
+                    kind: kind.clone(),
+                }),
+                CheckerAstRef::ExternalFn {
+                    params,
+                    return_type,
+                    type_params,
+                    kind,
+                } => Some(FunctionSignature {
+                    parameters: params.clone(),
+                    return_type: return_type.clone(),
+                    type_params: type_params.clone(),
+                    kind: kind.clone(),
+                }),
+                _ => None,
+            })
+    }
+
+    fn get_struct_fields(&self, name: &str) -> Option<Vec<(String, AstType)>> {
+        self.metadata
+            .types
+            .iter()
+            .find(|(k, _)| k.name == name)
+            .and_then(|(_, td)| {
+                if let CheckerAstRef::Struct(s) = &td.ast_ref {
+                    Some(
+                        s.fields
+                            .iter()
+                            .map(|f| (f.name.clone(), f.field_type.clone()))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn get_trait_functions(&self, name: &str) -> Option<Vec<crate::ast::SigFunction>> {
+        self.metadata
+            .traits
+            .iter()
+            .find(|(k, _)| k.name == name)
+            .and_then(|(_, td)| {
+                if let CheckerAstRef::Trait(functions) = &td.ast_ref {
+                    Some((**functions).clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn type_implements_trait(&self, type_name: &str, trait_name: &str) -> bool {
+        self.metadata
+            .impls
+            .keys()
+            .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
+    }
+
+    fn register_param_sigs(&mut self, module: &Module, file_id: FileId) {
+        let Some(params) = module.definitions.iter().find_map(|def| {
             if let Definition::ModuleHeader { params, .. } = def {
                 Some(params)
             } else {
                 None
             }
-        });
-
-        let params = match params {
-            Some(p) => p,
-            None => return,
+        }) else {
+            return;
         };
 
         for param in params {
             if param.path.len() < 2 {
                 continue;
             }
-            let concrete_module = &param.path[0];
+            let concrete_module = param.path[0].clone();
             let sig_name = param.path.last().unwrap();
 
-            let fn_names: Vec<(String, Vec<crate::ast::Parameter>, crate::ast::Type)> =
-                if let Some(fns) = sig_definitions.get(sig_name) {
-                    fns.iter()
-                        .map(|f| (f.name.clone(), f.parameters.clone(), f.return_type.clone()))
-                        .collect()
-                } else {
-                    external_sigs
-                        .iter()
-                        .filter_map(|(k, sig)| {
-                            k.strip_prefix(&format!("{}::", concrete_module))
-                                .map(|fn_name| {
-                                    (
-                                        fn_name.to_string(),
-                                        sig.parameters.clone(),
-                                        sig.return_type.clone(),
-                                    )
-                                })
-                        })
-                        .collect()
-                };
+            let fn_data: Vec<(String, Vec<Parameter>, AstType)> = if let Some(sig_fns) =
+                self.get_sig_functions(sig_name)
+            {
+                sig_fns
+                    .into_iter()
+                    .map(|f| (f.name, f.parameters, f.return_type))
+                    .collect()
+            } else {
+                self.metadata
+                    .functions
+                    .iter()
+                    .filter_map(|(fname, fdef)| {
+                        if fname.module.to_string() == concrete_module {
+                            match &fdef.ast_ref {
+                                CheckerAstRef::Function(func, _) => Some((
+                                    fname.name.clone(),
+                                    func.parameters
+                                        .iter()
+                                        .map(|p| crate::ast::Parameter {
+                                            name: p.name.clone(),
+                                            param_type: self.resolve_type(&p.param_type),
+                                            span: p.span,
+                                        })
+                                        .collect(),
+                                    self.resolve_type(&func.return_type),
+                                )),
+                                CheckerAstRef::ExternalFn {
+                                    params,
+                                    return_type,
+                                    ..
+                                } => {
+                                    Some((fname.name.clone(), params.clone(), return_type.clone()))
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            };
 
-            for (fn_name, fn_params, ret_type) in fn_names {
-                let key = format!("{}::{}", param.name, fn_name);
-                self.function_signatures.insert(
-                    key,
-                    FunctionSignature {
-                        parameters: fn_params,
-                        return_type: ret_type,
-                        kind: FunctionKind::External,
-                        type_params: vec![],
-                    },
+            for (fn_name, fn_params, ret_type) in fn_data {
+                let fn_name_key = FunctionName {
+                    name: fn_name.to_string(),
+                    module: ModuleName::from_str(&param.name),
+                    kind: FunctionNameKind::Function,
+                };
+                self.insert_fn(
+                    fn_name_key,
+                    fn_params,
+                    ret_type,
+                    vec![],
+                    FunctionKind::External,
+                    SourceLocation(file_id, Span::dummy()),
                 );
             }
         }
+    }
+
+    fn get_sig_functions(&self, name: &str) -> Option<Vec<SigFunction>> {
+        self.metadata
+            .types
+            .iter()
+            .find(|(k, v)| k.name == name && matches!(v.kind, TypeDefinitionKind::Signature { .. }))
+            .and_then(|(_, td)| {
+                if let CheckerAstRef::Signature(functions) = &td.ast_ref {
+                    Some((**functions).clone())
+                } else {
+                    None
+                }
+            })
     }
 
     fn collect_function_signatures(
         &mut self,
         module: &Module,
         file_id: FileId,
+        module_name: &str,
     ) -> Result<(), TypeError> {
         for definition in &module.definitions {
             if let Definition::Struct(struct_def) = definition {
-                let fields = struct_def
-                    .fields
-                    .iter()
-                    .map(|f| (f.name.clone(), f.field_type.clone()))
-                    .collect();
-                self.struct_definitions
-                    .insert(struct_def.name.clone(), fields);
+                let type_name = TypeName {
+                    name: struct_def.name.clone(),
+                    module: ModuleName::from_str(module_name),
+                };
+                let entry = TypeDefinition {
+                    name: type_name.clone(),
+                    kind: TypeDefinitionKind::Struct {
+                        fields: struct_def
+                            .fields
+                            .iter()
+                            .map(|f| FieldDefinition {
+                                name: f.name.clone(),
+                                type_name: ast_type_to_type_name(&f.field_type, module_name),
+                            })
+                            .collect(),
+                    },
+                    source_ref: SourceLocation(file_id, struct_def.span),
+                    ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
+                };
+                self.metadata.types.insert(type_name, Arc::new(entry));
             }
         }
 
@@ -334,33 +600,28 @@ impl TypeChecker {
                         file_id,
                         &func.type_params,
                     )?;
-                    let resolved_params: Vec<_> = func
-                        .parameters
-                        .iter()
-                        .map(|p| crate::ast::Parameter {
-                            name: p.name.clone(),
-                            param_type: self.resolve_type(&p.param_type),
-                            span: p.span,
-                        })
-                        .collect();
-                    for (resolved_param, orig_param) in resolved_params.iter().zip(&func.parameters)
-                    {
+                    for param in &func.parameters {
+                        let resolved_param_type = self.resolve_type(&param.param_type);
                         self.validate_type_with_params(
-                            &resolved_param.param_type,
-                            orig_param.span,
+                            &resolved_param_type,
+                            param.span,
                             file_id,
                             &func.type_params,
                         )?;
                     }
-                    self.function_signatures.insert(
-                        func.name.clone(),
-                        FunctionSignature {
-                            parameters: resolved_params,
-                            return_type: resolved_return,
-                            kind: FunctionKind::Bytecode,
-                            type_params: func.type_params.clone(),
-                        },
-                    );
+                    let fn_key = FunctionName {
+                        name: func.name.to_string(),
+                        module: ModuleName::from_str(module_name),
+                        kind: FunctionNameKind::Function,
+                    };
+                    let entry = FunctionDefinition {
+                        name: fn_key.clone(),
+                        type_name: ast_type_to_type_name(&resolved_return, module_name),
+                        source_ref: SourceLocation(file_id, func.span),
+                        ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
+                        body_ref: None,
+                    };
+                    self.metadata.functions.insert(fn_key, Arc::new(entry));
                 }
                 Definition::ExternalFunction(ext_func) => {
                     self.validate_type_with_params(
@@ -386,35 +647,88 @@ impl TypeChecker {
                             span: p.span,
                         })
                         .collect();
-                    self.function_signatures.insert(
-                        ext_func.name.clone(),
-                        FunctionSignature {
-                            parameters: resolved_params,
-                            return_type: self.resolve_type(&ext_func.return_type),
-                            kind: FunctionKind::External,
-                            type_params: ext_func.type_params.clone(),
+                    let fn_key = match ext_func.name.rsplit_once("::") {
+                        Some((module, name)) => FunctionName {
+                            name: name.to_string(),
+                            module: ModuleName::from_str(module),
+                            kind: FunctionNameKind::Function,
                         },
+                        None => FunctionName {
+                            name: ext_func.name.to_string(),
+                            module: ModuleName::from_str(""),
+                            kind: FunctionNameKind::Function,
+                        },
+                    };
+                    let resolved_return = self.resolve_type(&ext_func.return_type);
+                    self.insert_fn(
+                        fn_key,
+                        resolved_params,
+                        resolved_return,
+                        ext_func.type_params.clone(),
+                        FunctionKind::External,
+                        SourceLocation(file_id, ext_func.span),
                     );
+                }
+                Definition::Signature {
+                    name,
+                    functions,
+                    span,
+                } => {
+                    let type_name = TypeName {
+                        name: name.clone(),
+                        module: ModuleName::from_str(module_name),
+                    };
+                    let entry = TypeDefinition {
+                        name: type_name.clone(),
+                        kind: TypeDefinitionKind::Signature {
+                            entries: functions
+                                .iter()
+                                .map(|f| SignatureEntry {
+                                    name: f.name.clone(),
+                                    type_name: ast_type_to_type_name(&f.return_type, module_name),
+                                })
+                                .collect(),
+                        },
+                        source_ref: SourceLocation(file_id, *span),
+                        ast_ref: CheckerAstRef::Signature(Arc::new(functions.clone())),
+                    };
+                    self.metadata.types.insert(type_name, Arc::new(entry));
                 }
                 Definition::Struct(_)
                 | Definition::Use { .. }
                 | Definition::ModuleHeader { .. }
                 | Definition::ModuleBinding { .. }
-                | Definition::WiringSite { .. }
-                | Definition::Signature { .. } => {}
+                | Definition::WiringSite { .. } => {}
                 Definition::Trait {
-                    name, functions, ..
-                } => {
-                    self.trait_definitions
-                        .insert(name.clone(), functions.clone());
-                }
-                Definition::TraitImpl {
-                    type_name,
-                    trait_name,
+                    name,
                     functions,
                     span,
                 } => {
-                    let trait_fns = self.trait_definitions.get(trait_name).cloned();
+                    let trait_name = TraitName {
+                        name: name.clone(),
+                        module: ModuleName::from_str(module_name),
+                    };
+                    let entry = TraitDefinition {
+                        name: trait_name.clone(),
+                        functions: functions
+                            .iter()
+                            .map(|f| SignatureEntry {
+                                name: f.name.clone(),
+                                type_name: ast_type_to_type_name(&f.return_type, module_name),
+                            })
+                            .collect(),
+                        witness_ref: NoWitness,
+                        source_ref: SourceLocation(file_id, *span),
+                        ast_ref: CheckerAstRef::Trait(Arc::new(functions.clone())),
+                    };
+                    self.metadata.traits.insert(trait_name, Arc::new(entry));
+                }
+                Definition::TraitImpl(impl_arc) => {
+                    let type_name = &impl_arc.type_name;
+                    let trait_name = &impl_arc.trait_name;
+                    let functions = &impl_arc.functions;
+                    let span = &impl_arc.span;
+                    let trait_fns = self.get_trait_functions(trait_name);
                     if let Some(trait_fns) = trait_fns {
                         for trait_fn in &trait_fns {
                             let expected_name = &trait_fn.name;
@@ -436,40 +750,110 @@ impl TypeChecker {
                             file_id,
                         });
                     }
-                    self.trait_impls
-                        .entry(type_name.clone())
-                        .or_default()
-                        .insert(trait_name.clone());
+                    let sym_type_name = TypeName {
+                        name: type_name.clone(),
+                        module: ModuleName::from_str(module_name),
+                    };
+                    let sym_trait_name = TraitName {
+                        name: trait_name.clone(),
+                        module: ModuleName::from_str(module_name),
+                    };
+                    let key = ImplKey {
+                        type_name: sym_type_name.clone(),
+                        trait_name: sym_trait_name.clone(),
+                    };
+                    let impl_entry = ImplDefinition {
+                        key: key.clone(),
+                        module: ModuleName::from_str(module_name),
+                        source_ref: SourceLocation(file_id, *span),
+                        ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
+                    };
+                    self.metadata.impls.insert(key, Arc::new(impl_entry));
                     for func in functions {
-                        let resolved_params: Vec<_> = func
-                            .parameters
-                            .iter()
-                            .map(|p| crate::ast::Parameter {
-                                name: p.name.clone(),
-                                param_type: Self::substitute_self(
-                                    &self.resolve_type(&p.param_type),
-                                    type_name,
-                                ),
-                                span: p.span,
-                            })
-                            .collect();
-                        self.function_signatures.insert(
-                            func.name.clone(),
-                            FunctionSignature {
-                                parameters: resolved_params,
-                                return_type: Self::substitute_self(
-                                    &self.resolve_type(&func.return_type),
-                                    type_name,
-                                ),
-                                kind: FunctionKind::Bytecode,
-                                type_params: func.type_params.clone(),
-                            },
-                        );
+                        let resolved_return =
+                            Self::substitute_self(&self.resolve_type(&func.return_type), type_name);
+                        let concrete_func = Arc::new(Self::substitute_self_in_fn(func, type_name));
+                        let impl_fn_key = {
+                            let mn = ModuleName::from_str(module_name);
+                            FunctionName {
+                                name: func.name.to_string(),
+                                module: mn.clone(),
+                                kind: FunctionNameKind::Impl {
+                                    type_name: TypeName {
+                                        name: type_name.to_string(),
+                                        module: mn.clone(),
+                                    },
+                                    trait_name: TraitName {
+                                        name: trait_name.to_string(),
+                                        module: mn,
+                                    },
+                                },
+                            }
+                        };
+                        let entry = FunctionDefinition {
+                            name: impl_fn_key.clone(),
+                            type_name: ast_type_to_type_name(&resolved_return, module_name),
+                            source_ref: SourceLocation(file_id, func.span),
+                            ast_ref: CheckerAstRef::Function(concrete_func, FunctionKind::Bytecode),
+                            body_ref: None,
+                        };
+                        self.metadata.functions.insert(impl_fn_key, Arc::new(entry));
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    fn resolve_impl_call(
+        &self,
+        fn_name: &str,
+        arguments: &[Expression],
+        env: &TypeEnvironment,
+        ctx: &CheckContext,
+    ) -> Option<(FunctionName, FunctionSignature)> {
+        if arguments.is_empty() {
+            return None;
+        }
+        let first_arg = self.check_expression(&arguments[0], env, ctx).ok()?;
+        let type_name = match first_arg.ty() {
+            AstType::Int => "Int".to_string(),
+            AstType::String => "String".to_string(),
+            AstType::Boolean => "Boolean".to_string(),
+            AstType::Struct(n) => n.clone(),
+            _ => return None,
+        };
+        for (trait_key, trait_def) in &self.metadata.traits {
+            let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
+                continue;
+            };
+            if trait_fns.iter().any(|f| f.name == fn_name) {
+                if self.type_implements_trait(&type_name, &trait_key.name) {
+                    let module = ctx.module_name.unwrap_or("");
+                    let impl_fn_name = {
+                        let mn = ModuleName::from_str(module);
+                        FunctionName {
+                            name: fn_name.to_string(),
+                            module: mn.clone(),
+                            kind: FunctionNameKind::Impl {
+                                type_name: TypeName {
+                                    name: type_name.to_string(),
+                                    module: mn.clone(),
+                                },
+                                trait_name: TraitName {
+                                    name: trait_key.name.to_string(),
+                                    module: mn,
+                                },
+                            },
+                        }
+                    };
+                    if let Some(sig) = self.get_function_sig(&impl_fn_name) {
+                        return Some((impl_fn_name, sig));
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn build_alias_map(module: &Module) -> HashMap<String, String> {
@@ -520,7 +904,7 @@ impl TypeChecker {
 
     fn resolve_type(&self, t: &AstType) -> AstType {
         match t {
-            AstType::Generic(name) if self.struct_definitions.contains_key(name) => {
+            AstType::Generic(name) if self.get_struct_fields(name).is_some() => {
                 AstType::Struct(name.clone())
             }
             AstType::List(inner) => AstType::List(Box::new(self.resolve_type(inner))),
@@ -553,7 +937,7 @@ impl TypeChecker {
                 self.validate_type_with_params(inner, span, file_id, type_params)
             }
             AstType::Struct(name) => {
-                if self.struct_definitions.contains_key(name) {
+                if self.get_struct_fields(name).is_some() {
                     Ok(())
                 } else {
                     Err(TypeError::UnsupportedType {
@@ -620,9 +1004,11 @@ impl TypeChecker {
                 param.span,
             );
         }
+        let resolved_return_type = self.resolve_type(&func.return_type);
         let mut typed_stmts = Vec::new();
         for statement in &func.body.statements {
-            let (typed_stmt, new_env) = self.check_statement(statement, env, &func.name, ctx)?;
+            let (typed_stmt, new_env) =
+                self.check_statement(statement, env, &func.name, &resolved_return_type, ctx)?;
             typed_stmts.push(typed_stmt);
             env = new_env;
         }
@@ -645,6 +1031,7 @@ impl TypeChecker {
         statement: &Statement,
         mut env: TypeEnvironment,
         function_name: &str,
+        return_type: &AstType,
         ctx: &CheckContext,
     ) -> Result<(typed_ast::Statement, TypeEnvironment), TypeError> {
         match statement {
@@ -714,9 +1101,16 @@ impl TypeChecker {
                 span,
             } => {
                 let typed_condition = self.check_boolean_condition(condition, &env, ctx)?;
-                let typed_body = self.check_block(body, env.create_child(), function_name, ctx)?;
+                let typed_body =
+                    self.check_block(body, env.create_child(), function_name, return_type, ctx)?;
                 let typed_else = if let Some(else_stmts) = else_body {
-                    Some(self.check_block(else_stmts, env.create_child(), function_name, ctx)?)
+                    Some(self.check_block(
+                        else_stmts,
+                        env.create_child(),
+                        function_name,
+                        return_type,
+                        ctx,
+                    )?)
                 } else {
                     None
                 };
@@ -736,7 +1130,8 @@ impl TypeChecker {
                 span,
             } => {
                 let typed_condition = self.check_boolean_condition(condition, &env, ctx)?;
-                let typed_body = self.check_block(body, env.create_child(), function_name, ctx)?;
+                let typed_body =
+                    self.check_block(body, env.create_child(), function_name, return_type, ctx)?;
                 Ok((
                     typed_ast::Statement::While {
                         condition: typed_condition,
@@ -748,17 +1143,11 @@ impl TypeChecker {
             }
             Statement::Return(expr) => {
                 let typed_expr = self.check_expression(expr, &env, ctx)?;
-                let expected_type = self
-                    .function_signatures
-                    .get(function_name)
-                    .expect("function signature not found")
-                    .return_type
-                    .clone();
 
-                if *typed_expr.ty() != expected_type {
+                if *typed_expr.ty() != *return_type {
                     return Err(TypeError::ReturnTypeMismatch {
                         function: function_name.to_string(),
-                        expected: format!("{}", expected_type),
+                        expected: format!("{}", return_type),
                         found: format!("{}", typed_expr.ty()),
                         span: expr.span(),
                         file_id: ctx.file_id,
@@ -793,11 +1182,13 @@ impl TypeChecker {
         stmts: &[Statement],
         mut env: TypeEnvironment,
         function_name: &str,
+        return_type: &AstType,
         ctx: &CheckContext,
     ) -> Result<Vec<typed_ast::Statement>, TypeError> {
         let mut typed_stmts = Vec::new();
         for stmt in stmts {
-            let (typed_stmt, new_env) = self.check_statement(stmt, env, function_name, ctx)?;
+            let (typed_stmt, new_env) =
+                self.check_statement(stmt, env, function_name, return_type, ctx)?;
             typed_stmts.push(typed_stmt);
             env = new_env;
         }
@@ -903,20 +1294,31 @@ impl TypeChecker {
 
         self.check_visibility(qualified_for_vis, resolved, span, ctx)?;
 
-        let (kind, return_type, parameters, type_params) = {
-            let func_sig = self.function_signatures.get(resolved).ok_or_else(|| {
-                TypeError::UnknownFunction {
-                    name: function.to_string(),
-                    span,
-                    file_id: ctx.file_id,
-                }
-            })?;
+        let (resolved_fn_name, kind, return_type, parameters, type_params) = if let Some(sig) =
+            self.lookup_sig(resolved, ctx)
+        {
+            let fn_name = Self::make_function_name(resolved, ctx, &sig.kind);
             (
-                func_sig.kind.clone(),
-                func_sig.return_type.clone(),
-                func_sig.parameters.clone(),
-                func_sig.type_params.clone(),
+                fn_name,
+                sig.kind,
+                sig.return_type,
+                sig.parameters,
+                sig.type_params,
             )
+        } else if let Some((fn_name, sig)) = self.resolve_impl_call(function, arguments, env, ctx) {
+            (
+                fn_name,
+                sig.kind,
+                sig.return_type,
+                sig.parameters,
+                sig.type_params,
+            )
+        } else {
+            return Err(TypeError::UnknownFunction {
+                name: function.to_string(),
+                span,
+                file_id: ctx.file_id,
+            });
         };
 
         if arguments.len() != parameters.len() {
@@ -956,7 +1358,7 @@ impl TypeChecker {
 
             Ok(typed_ast::Expression::Call {
                 function: function.to_string(),
-                resolved: Self::make_function_name(resolved, ctx, &kind),
+                resolved: resolved_fn_name,
                 kind,
                 arguments: typed_args,
                 ty: return_type,
@@ -1000,11 +1402,7 @@ impl TypeChecker {
                         _ => continue,
                     };
                     for bound in &tp.bounds {
-                        let satisfied = self
-                            .trait_impls
-                            .get(type_name)
-                            .map(|impls| impls.contains(bound))
-                            .unwrap_or(false);
+                        let satisfied = self.type_implements_trait(type_name, bound);
                         if !satisfied {
                             return Err(TypeError::TraitBoundNotSatisfied {
                                 type_name: type_name.to_string(),
@@ -1021,7 +1419,7 @@ impl TypeChecker {
             let resolved_return = Self::apply_subst(&return_type, &subst);
             Ok(typed_ast::Expression::Call {
                 function: function.to_string(),
-                resolved: Self::make_function_name(resolved, ctx, &kind),
+                resolved: resolved_fn_name,
                 kind,
                 arguments: typed_args,
                 ty: resolved_return,
@@ -1217,15 +1615,13 @@ impl TypeChecker {
         env: &TypeEnvironment,
         ctx: &CheckContext,
     ) -> Result<typed_ast::Expression, TypeError> {
-        let definition = self
-            .struct_definitions
-            .get(struct_name)
-            .ok_or_else(|| TypeError::UnsupportedType {
-                type_name: struct_name.to_string(),
-                span,
-                file_id: ctx.file_id,
-            })?
-            .clone();
+        let definition =
+            self.get_struct_fields(struct_name)
+                .ok_or_else(|| TypeError::UnsupportedType {
+                    type_name: struct_name.to_string(),
+                    span,
+                    file_id: ctx.file_id,
+                })?;
 
         let mut seen = std::collections::HashSet::new();
         let mut typed_fields = Vec::new();
@@ -1296,13 +1692,13 @@ impl TypeChecker {
         let base_type = typed_base.ty().clone();
         match base_type {
             AstType::Struct(name) | AstType::Generic(name) => {
-                let definition = self.struct_definitions.get(&name).ok_or_else(|| {
-                    TypeError::UnsupportedType {
-                        type_name: name.clone(),
-                        span,
-                        file_id: ctx.file_id,
-                    }
-                })?;
+                let definition =
+                    self.get_struct_fields(&name)
+                        .ok_or_else(|| TypeError::UnsupportedType {
+                            type_name: name.clone(),
+                            span,
+                            file_id: ctx.file_id,
+                        })?;
                 let field_type = definition
                     .iter()
                     .find(|(n, _)| n == field)
@@ -1329,22 +1725,89 @@ impl TypeChecker {
         }
     }
 
+    fn lookup_sig(&self, resolved: &str, ctx: &CheckContext) -> Option<FunctionSignature> {
+        if resolved.contains("::") {
+            let name = match resolved.rsplit_once("::") {
+                Some((module, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: resolved.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                },
+            };
+            self.get_function_sig(&name)
+        } else {
+            if let Some(qualified) = ctx.alias_to_qualified.get(resolved) {
+                let name = match qualified.rsplit_once("::") {
+                    Some((module, name)) => FunctionName {
+                        name: name.to_string(),
+                        module: ModuleName::from_str(module),
+                        kind: FunctionNameKind::Function,
+                    },
+                    None => FunctionName {
+                        name: qualified.to_string(),
+                        module: ModuleName::from_str(""),
+                        kind: FunctionNameKind::Function,
+                    },
+                };
+                if let Some(sig) = self.get_function_sig(&name) {
+                    return Some(sig);
+                }
+            }
+            let module = ctx.module_name.unwrap_or("");
+            let name = FunctionName {
+                name: resolved.to_string(),
+                module: ModuleName::from_str(module),
+                kind: FunctionNameKind::Function,
+            };
+            self.get_function_sig(&name).or_else(|| {
+                let fallback = FunctionName {
+                    name: resolved.to_string(),
+                    module: ModuleName::from_str(""),
+                    kind: FunctionNameKind::Function,
+                };
+                self.get_function_sig(&fallback)
+            })
+        }
+    }
+
     fn make_function_name(resolved: &str, ctx: &CheckContext, kind: &FunctionKind) -> FunctionName {
+        let from_str = |s: &str| match s.rsplit_once("::") {
+            Some((module, name)) => FunctionName {
+                name: name.to_string(),
+                module: ModuleName::from_str(module),
+                kind: FunctionNameKind::Function,
+            },
+            None => FunctionName {
+                name: s.to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
+        };
+        let plain = |module: &str, name: &str| FunctionName {
+            name: name.to_string(),
+            module: ModuleName::from_str(module),
+            kind: FunctionNameKind::Function,
+        };
         if *kind == FunctionKind::External {
-            return FunctionName::from_qualified_str(resolved);
+            return from_str(resolved);
         }
         if let Some(qualified) = ctx.alias_to_qualified.get(resolved) {
-            FunctionName::from_qualified_str(qualified)
+            from_str(qualified)
         } else if resolved.contains("::") {
-            FunctionName::from_qualified_str(resolved)
+            from_str(resolved)
         } else if let Some(module) = ctx.module_name {
             if module.is_empty() {
-                FunctionName::plain("", resolved)
+                plain("", resolved)
             } else {
-                FunctionName::plain(module, resolved)
+                plain(module, resolved)
             }
         } else {
-            FunctionName::plain("", resolved)
+            plain("", resolved)
         }
     }
 
@@ -1381,42 +1844,23 @@ impl TypeChecker {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ExternalSig {
-    pub parameters: Vec<Parameter>,
-    pub return_type: AstType,
-    pub is_pub: bool,
-    pub kind: FunctionKind,
-    pub type_params: Vec<TypeParam>,
-}
-
-impl ExternalSig {
-    pub fn new(
-        parameters: Vec<crate::ast::Parameter>,
-        return_type: crate::ast::Type,
-        is_pub: bool,
-        kind: FunctionKind,
-    ) -> Self {
-        Self {
-            parameters,
-            return_type,
-            is_pub,
-            kind,
-            type_params: vec![],
-        }
-    }
-
-    pub fn with_type_params(mut self, type_params: Vec<TypeParam>) -> Self {
-        self.type_params = type_params;
-        self
-    }
-}
-
 impl TypeChecker {
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
-        self.function_signatures
+        Self::function_kinds_from_metadata(&self.metadata)
+    }
+
+    fn function_kinds_from_metadata(
+        metadata: &MetaData<CheckerRefs>,
+    ) -> HashMap<String, FunctionKind> {
+        metadata
+            .functions
             .iter()
-            .map(|(name, sig)| (name.clone(), sig.kind.clone()))
+            .filter_map(|(name, f)| match &f.ast_ref {
+                CheckerAstRef::Function(_, kind) | CheckerAstRef::ExternalFn { kind, .. } => {
+                    Some((name.to_string(), kind.clone()))
+                }
+                _ => None,
+            })
             .collect()
     }
 }

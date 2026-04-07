@@ -38,7 +38,7 @@ impl UnusedReturnValueAnalyzer {
                 | Definition::WiringSite { .. }
                 | Definition::Signature { .. }
                 | Definition::Trait { .. }
-                | Definition::TraitImpl { .. } => {}
+                | Definition::TraitImpl(_) => {}
             }
         }
     }

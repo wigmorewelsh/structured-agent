@@ -1,6 +1,8 @@
 use combine::Parser;
 use combine::stream::position;
+use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent::ast::ParsedModule;
 use structured_agent::bytecode::BytecodeCompiler;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::parser;
@@ -26,16 +28,16 @@ fn test_assignment(): () {
 
     let (module, _) = parse_result.unwrap();
 
-    let (typed_module, _) = TypeChecker::new()
-        .check_module_with_external_sigs(
-            &module,
-            TEST_FILE_ID,
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            "",
-        )
+    let parsed = ParsedModule {
+        name: "test".to_string(),
+        module,
+        is_entry: true,
+        file_id: TEST_FILE_ID,
+    };
+    let (mut typed_modules, _, _) = TypeChecker::new()
+        .check_modules(&[parsed], &HashMap::new())
         .unwrap();
+    let typed_module = typed_modules.remove("test").unwrap();
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -94,16 +96,16 @@ fn test_var_assignment(): () {
     let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
 
-    let (typed_module, _) = TypeChecker::new()
-        .check_module_with_external_sigs(
-            &module,
-            TEST_FILE_ID,
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            "",
-        )
+    let parsed = ParsedModule {
+        name: "test".to_string(),
+        module,
+        is_entry: true,
+        file_id: TEST_FILE_ID,
+    };
+    let (mut typed_modules, _, _) = TypeChecker::new()
+        .check_modules(&[parsed], &HashMap::new())
         .unwrap();
+    let typed_module = typed_modules.remove("test").unwrap();
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -146,16 +148,16 @@ fn test_return(): () {
     let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
 
-    let (typed_module, _) = TypeChecker::new()
-        .check_module_with_external_sigs(
-            &module,
-            TEST_FILE_ID,
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            "",
-        )
+    let parsed = ParsedModule {
+        name: "test".to_string(),
+        module,
+        is_entry: true,
+        file_id: TEST_FILE_ID,
+    };
+    let (mut typed_modules, _, _) = TypeChecker::new()
+        .check_modules(&[parsed], &HashMap::new())
         .unwrap();
+    let typed_module = typed_modules.remove("test").unwrap();
 
     let functions: Vec<_> = typed_module
         .definitions

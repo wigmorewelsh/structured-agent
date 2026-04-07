@@ -4,7 +4,7 @@ use crate::typecheck::checker::FunctionKind;
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
 use std::fmt;
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
 #[derive(Clone, Debug)]
 pub struct CompiledFunction {
@@ -60,7 +60,11 @@ impl BytecodeCompiler {
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
-            name: FunctionName::plain("", &typed_func.name),
+            name: FunctionName {
+                name: typed_func.name.clone(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            },
             module_name: None,
             parameters: typed_func
                 .parameters

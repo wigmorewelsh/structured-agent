@@ -7,6 +7,7 @@ mod tests {
         Definition, Expression, Function, FunctionBody, Module, Parameter, Statement, Type,
     };
     use crate::types::Span;
+    use std::sync::Arc;
 
     fn create_test_function(
         name: &str,
@@ -53,7 +54,7 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = UnusedVariableAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -88,7 +89,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = UnusedVariableAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -111,7 +112,7 @@ mod tests {
             })],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = UnusedVariableAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -140,7 +141,7 @@ mod tests {
             })],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = UnusedVariableAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -177,7 +178,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = UnusedVariableAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -219,7 +220,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut runner = AnalysisRunner::new()
             .with_analyzer(Box::new(UnusedVariableAnalyzer::new()))
             .with_analyzer(Box::new(ReachabilityAnalyzer::new()))
@@ -262,7 +263,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = ReachabilityAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -294,7 +295,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = ReachabilityAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -326,7 +327,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = ReachabilityAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -359,7 +360,7 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -392,7 +393,7 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -418,7 +419,7 @@ mod tests {
             }],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -454,7 +455,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
@@ -501,7 +502,7 @@ mod tests {
             ],
         );
 
-        let module = create_test_module(vec![Definition::Function(func)]);
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
