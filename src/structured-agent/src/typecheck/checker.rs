@@ -9,9 +9,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     AstRef, BodyRef, ExportedName, FieldDefinition, FunctionDefinition, FunctionName,
-    FunctionNameKind, ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, References,
-    SignatureEntry, SourceRef, SymbolQuery, TraitDefinition, TraitName, TypeDefinition,
-    TypeDefinitionKind, TypeName, Visibility, WitnessRef,
+    FunctionNameKind, GenericParameterDefinition, ImplDefinition, ImplKey, MetaData,
+    ModuleDefinition, ModuleName, ParameterDefinition, References, SignatureEntry, SourceRef,
+    SymbolQuery, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
+    Visibility, WitnessRef,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -569,20 +570,63 @@ impl TypeChecker {
         visibility: Visibility,
         source_ref: SourceLocation,
     ) {
+        let fn_type_name = TypeName {
+            name: name.name.clone(),
+            module: name.module.clone(),
+        };
+        let return_type_name = ast_type_to_type_name(&return_type, &name.module.to_string());
+        let parameters: Vec<ParameterDefinition> = params
+            .iter()
+            .map(|p| ParameterDefinition {
+                name: p.name.clone(),
+                type_name: ast_type_to_type_name(&p.param_type, &name.module.to_string()),
+            })
+            .collect();
+        let generic_parameters: Vec<GenericParameterDefinition> = type_params
+            .iter()
+            .map(|tp| GenericParameterDefinition {
+                name: tp.name.clone(),
+                constraints: tp
+                    .bounds
+                    .iter()
+                    .map(|b| TraitName {
+                        name: b.clone(),
+                        module: name.module.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
         let entry = FunctionDefinition {
             name: name.clone(),
             visibility,
-            type_name: ast_type_to_type_name(&return_type, &name.module.to_string()),
-            source_ref,
+            type_name: fn_type_name.clone(),
+            source_ref: SourceLocation(source_ref.0, source_ref.1),
+            ast_ref: CheckerAstRef::ExternalFn {
+                params: params.clone(),
+                return_type: return_type.clone(),
+                type_params: type_params.clone(),
+                kind: kind.clone(),
+            },
+            body_ref: None,
+        };
+        self.metadata.register_function(name, Arc::new(entry));
+        let type_def = TypeDefinition {
+            name: fn_type_name.clone(),
+            kind: TypeDefinitionKind::Function {
+                parameters,
+                generic_parameters,
+                return_type: return_type_name,
+            },
+            source_ref: SourceLocation(source_ref.0, source_ref.1),
             ast_ref: CheckerAstRef::ExternalFn {
                 params,
                 return_type,
                 type_params,
                 kind,
             },
-            body_ref: None,
         };
-        self.metadata.register_function(name, Arc::new(entry));
+        self.metadata
+            .register_type(fn_type_name, Arc::new(type_def));
     }
 
     fn get_function_sig(&self, name: &FunctionName) -> Option<FunctionSignature> {
@@ -828,6 +872,10 @@ impl TypeChecker {
                         module: ModuleName::from_str(module_name),
                         kind: FunctionNameKind::Function,
                     };
+                    let fn_type_name = TypeName {
+                        name: fn_key.name.clone(),
+                        module: fn_key.module.clone(),
+                    };
                     let entry = FunctionDefinition {
                         name: fn_key.clone(),
                         visibility: if func.is_pub {
@@ -835,12 +883,50 @@ impl TypeChecker {
                         } else {
                             Visibility::Private
                         },
-                        type_name: ast_type_to_type_name(&resolved_return, module_name),
+                        type_name: fn_type_name.clone(),
                         source_ref: SourceLocation(file_id, func.span),
                         ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
                         body_ref: None,
                     };
                     self.metadata.register_function(fn_key, Arc::new(entry));
+                    let fn_parameters: Vec<ParameterDefinition> = func
+                        .parameters
+                        .iter()
+                        .map(|p| ParameterDefinition {
+                            name: p.name.clone(),
+                            type_name: ast_type_to_type_name(
+                                &self.resolve_type(&p.param_type),
+                                module_name,
+                            ),
+                        })
+                        .collect();
+                    let fn_generic_parameters: Vec<GenericParameterDefinition> = func
+                        .type_params
+                        .iter()
+                        .map(|tp| GenericParameterDefinition {
+                            name: tp.name.clone(),
+                            constraints: tp
+                                .bounds
+                                .iter()
+                                .map(|b| TraitName {
+                                    name: b.clone(),
+                                    module: fn_type_name.module.clone(),
+                                })
+                                .collect(),
+                        })
+                        .collect();
+                    let fn_type_def = TypeDefinition {
+                        name: fn_type_name.clone(),
+                        kind: TypeDefinitionKind::Function {
+                            parameters: fn_parameters,
+                            generic_parameters: fn_generic_parameters,
+                            return_type: ast_type_to_type_name(&resolved_return, module_name),
+                        },
+                        source_ref: SourceLocation(file_id, func.span),
+                        ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
+                    };
+                    self.metadata
+                        .register_type(fn_type_name, Arc::new(fn_type_def));
                 }
                 Definition::ExternalFunction(ext_func) => {
                     self.validate_type_with_params(

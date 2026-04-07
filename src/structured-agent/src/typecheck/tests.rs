@@ -2427,7 +2427,8 @@ mod metadata_query_tests {
     use crate::typecheck::checker::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
-        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName, TypeName,
+        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName,
+        TypeDefinitionKind, TypeName,
     };
 
     fn check_meta(module: crate::ast::Module) -> MetaData<TypedRefs> {
@@ -2643,7 +2644,110 @@ mod metadata_query_tests {
         assert_eq!(
             fn_def.type_name,
             TypeName {
-                name: "List".to_string(),
+                name: "get_items".to_string(),
+                module: ModuleName::from_str("main"),
+            }
+        );
+        let type_def = metadata.type_def(&fn_def.type_name).unwrap();
+        if let TypeDefinitionKind::Function { return_type, .. } = &type_def.kind {
+            assert_eq!(
+                return_type,
+                &TypeName {
+                    name: "List".to_string(),
+                    module: ModuleName::from_str("prelude"),
+                }
+            );
+        } else {
+            panic!("expected TypeDefinitionKind::Function");
+        }
+    }
+
+    #[test]
+    fn bytecode_function_type_def_is_queryable() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "greet",
+                vec![create_parameter("name", AstType::String)],
+                AstType::String,
+                vec![Statement::Return(Expression::Variable {
+                    name: "name".to_string(),
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let metadata = check_meta(module);
+        let fn_def = metadata
+            .function(&FunctionName {
+                name: "greet".to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function,
+            })
+            .unwrap();
+        let type_def = metadata.type_def(&fn_def.type_name).unwrap();
+        let TypeDefinitionKind::Function {
+            parameters,
+            return_type,
+            ..
+        } = &type_def.kind
+        else {
+            panic!("expected TypeDefinitionKind::Function");
+        };
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "name");
+        assert_eq!(
+            parameters[0].type_name,
+            TypeName {
+                name: "String".to_string(),
+                module: ModuleName::from_str("prelude"),
+            }
+        );
+        assert_eq!(
+            return_type,
+            &TypeName {
+                name: "String".to_string(),
+                module: ModuleName::from_str("prelude"),
+            }
+        );
+    }
+
+    #[test]
+    fn external_function_type_def_is_queryable() {
+        use crate::ast::ExternalFunction;
+        let ext_func = ExternalFunction {
+            name: "math::add".to_string(),
+            type_params: vec![],
+            parameters: vec![
+                create_parameter("a", AstType::Int),
+                create_parameter("b", AstType::Int),
+            ],
+            return_type: AstType::Int,
+            is_pub: true,
+            span: crate::types::Span::dummy(),
+        };
+        let module = create_test_module(vec![Definition::ExternalFunction(Arc::new(ext_func))]);
+        let metadata = check_meta(module);
+        let fn_def = metadata
+            .function(&FunctionName {
+                name: "add".to_string(),
+                module: ModuleName::from_str("math"),
+                kind: FunctionNameKind::Function,
+            })
+            .unwrap();
+        let type_def = metadata.type_def(&fn_def.type_name).unwrap();
+        let TypeDefinitionKind::Function {
+            parameters,
+            return_type,
+            ..
+        } = &type_def.kind
+        else {
+            panic!("expected TypeDefinitionKind::Function");
+        };
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert_eq!(parameters[1].name, "b");
+        assert_eq!(
+            return_type,
+            &TypeName {
+                name: "Int".to_string(),
                 module: ModuleName::from_str("prelude"),
             }
         );
