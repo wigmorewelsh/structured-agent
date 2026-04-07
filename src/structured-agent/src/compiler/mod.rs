@@ -161,6 +161,7 @@ impl CompiledProgram {
         &self.module_visibility
     }
 
+    #[allow(deprecated)]
     fn merge(&mut self, artifact: ModuleArtifact) {
         for f in artifact.functions {
             let name = f.name.clone();
@@ -193,7 +194,7 @@ impl CompiledProgram {
                 },
                 None => FunctionName {
                     name: alias.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 },
             };
@@ -205,7 +206,7 @@ impl CompiledProgram {
                 },
                 None => FunctionName {
                     name: qualified.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 },
             };
@@ -214,6 +215,7 @@ impl CompiledProgram {
         }
     }
 
+    #[allow(deprecated)]
     fn register_entry_aliases(&mut self) {
         let entry_fns: Vec<FunctionName> = self
             .functions
@@ -224,7 +226,7 @@ impl CompiledProgram {
         for canonical in entry_fns {
             let bare = FunctionName {
                 name: canonical.name.clone(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::unqualified(),
                 kind: FunctionNameKind::Function,
             };
             self.aliases

@@ -65,9 +65,17 @@ fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName {
             name: name.clone(),
             module: ModuleName::from_str(module_name),
         },
+        AstType::List(_) => TypeName {
+            name: "List".to_string(),
+            module: ModuleName::from_str("prelude"),
+        },
+        AstType::Option(_) => TypeName {
+            name: "Option".to_string(),
+            module: ModuleName::from_str("prelude"),
+        },
         other => TypeName {
             name: other.to_string(),
-            module: ModuleName::from_str("builtin"),
+            module: ModuleName::from_str("prelude"),
         },
     }
 }
@@ -115,12 +123,12 @@ impl TypeChecker {
 
     fn seed_builtin_types(&mut self) {
         let builtins = [
-            ("()", "builtin"),
-            ("Boolean", "builtin"),
-            ("String", "builtin"),
-            ("Int", "builtin"),
-            ("List", "builtin"),
-            ("Option", "builtin"),
+            ("()", "prelude"),
+            ("Boolean", "prelude"),
+            ("String", "prelude"),
+            ("Int", "prelude"),
+            ("List", "prelude"),
+            ("Option", "prelude"),
         ];
         for (name, module) in builtins {
             let type_name = TypeName {
@@ -185,6 +193,7 @@ impl TypeChecker {
         Ok((typed_modules, function_kinds, metadata))
     }
 
+    #[allow(deprecated)]
     fn collect_native_sigs(
         &mut self,
         parsed: &ParsedModule,
@@ -235,7 +244,7 @@ impl TypeChecker {
                 },
                 None => FunctionName {
                     name: qname.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 },
             };
@@ -595,6 +604,7 @@ impl TypeChecker {
             })
     }
 
+    #[allow(deprecated)]
     fn collect_function_signatures(
         &mut self,
         module: &Module,
@@ -691,7 +701,7 @@ impl TypeChecker {
                         },
                         None => FunctionName {
                             name: ext_func.name.to_string(),
-                            module: ModuleName::from_str(""),
+                            module: ModuleName::unqualified(),
                             kind: FunctionNameKind::Function,
                         },
                     };
@@ -1758,6 +1768,7 @@ impl TypeChecker {
         }
     }
 
+    #[allow(deprecated)]
     fn lookup_sig(&self, resolved: &str, ctx: &CheckContext) -> Option<FunctionSignature> {
         if resolved.contains("::") {
             let name = match resolved.rsplit_once("::") {
@@ -1768,7 +1779,7 @@ impl TypeChecker {
                 },
                 None => FunctionName {
                     name: resolved.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 },
             };
@@ -1783,7 +1794,7 @@ impl TypeChecker {
                     },
                     None => FunctionName {
                         name: qualified.to_string(),
-                        module: ModuleName::from_str(""),
+                        module: ModuleName::unqualified(),
                         kind: FunctionNameKind::Function,
                     },
                 };
@@ -1800,7 +1811,7 @@ impl TypeChecker {
             self.get_function_sig(&name).or_else(|| {
                 let fallback = FunctionName {
                     name: resolved.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 };
                 self.get_function_sig(&fallback)
@@ -1808,6 +1819,7 @@ impl TypeChecker {
         }
     }
 
+    #[allow(deprecated)]
     fn make_function_name(resolved: &str, ctx: &CheckContext, kind: &FunctionKind) -> FunctionName {
         let from_str = |s: &str| match s.rsplit_once("::") {
             Some((module, name)) => FunctionName {
@@ -1817,7 +1829,7 @@ impl TypeChecker {
             },
             None => FunctionName {
                 name: s.to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::unqualified(),
                 kind: FunctionNameKind::Function,
             },
         };

@@ -24,6 +24,7 @@ impl BytecodeCompiler {
         Self
     }
 
+    #[allow(deprecated)]
     pub fn compile_to_bytecode(
         &self,
         typed_func: &typed_ast::Function,
@@ -62,7 +63,7 @@ impl BytecodeCompiler {
         Ok(CompiledFunction {
             name: FunctionName {
                 name: typed_func.name.clone(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::unqualified(),
                 kind: FunctionNameKind::Function,
             },
             module_name: None,

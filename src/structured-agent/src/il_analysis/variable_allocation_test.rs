@@ -14,7 +14,7 @@ mod tests {
         CompiledFunction {
             name: FunctionName {
                 name: "test".to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::from_str("test"),
                 kind: FunctionNameKind::Function,
             },
             module_name: None,

@@ -192,6 +192,7 @@ fn lower_statements(
     }
 }
 
+#[allow(deprecated)]
 fn lower_expression(
     expr: &mut crate::typed_ast::Expression,
     vtable: &std::collections::HashMap<String, String>,
@@ -214,7 +215,7 @@ fn lower_expression(
                     },
                     None => FunctionName {
                         name: concrete.to_string(),
-                        module: ModuleName::from_str(""),
+                        module: ModuleName::unqualified(),
                         kind: FunctionNameKind::Function,
                     },
                 };
@@ -351,7 +352,7 @@ mod tests {
                         name: f.name.clone(),
                         type_name: TypeName {
                             name: "unit".to_string(),
-                            module: ModuleName::from_str(""),
+                            module: ModuleName::from_str("prelude"),
                         },
                     })
                     .collect(),

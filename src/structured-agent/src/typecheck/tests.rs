@@ -1592,7 +1592,7 @@ mod typed_ast_tests {
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let parsed = crate::ast::ParsedModule {
-            name: "".to_string(),
+            name: "main".to_string(),
             module: module.clone(),
             is_entry: false,
             file_id: 0,
@@ -1600,7 +1600,7 @@ mod typed_ast_tests {
         let (mut typed_modules, _, _) = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
-        typed_modules.remove("").unwrap()
+        typed_modules.remove("main").unwrap()
     }
 
     fn first_function(module: &typed_ast::Module) -> &typed_ast::Function {
@@ -1761,7 +1761,7 @@ mod typed_ast_tests {
         assert!(matches!(
             expr,
             typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
-            if resolved == &FunctionName { name: "get_value".to_string(), module: ModuleName::from_str(""), kind: FunctionNameKind::Function }
+            if resolved == &FunctionName { name: "get_value".to_string(), module: ModuleName::from_str("main"), kind: FunctionNameKind::Function }
         ));
     }
 
@@ -2336,7 +2336,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         assert_eq!(resolved, {
-            let mn = ModuleName::from_str("");
+            let mn = ModuleName::from_str("main");
             FunctionName {
                 name: "add".to_string(),
                 module: mn.clone(),
@@ -2507,44 +2507,76 @@ mod metadata_query_tests {
     }
 
     #[test]
-    fn builtin_int_is_in_symbol_table() {
+    fn prelude_unit_is_in_symbol_table() {
         let module = create_test_module(vec![]);
         let metadata = check_meta(module);
         assert!(
             metadata
                 .type_def(&TypeName {
                     name: "()".to_string(),
-                    module: ModuleName::from_str("builtin"),
+                    module: ModuleName::from_str("prelude"),
                 })
                 .is_some()
         );
     }
 
     #[test]
-    fn builtin_string_is_in_symbol_table() {
+    fn prelude_string_is_in_symbol_table() {
         let module = create_test_module(vec![]);
         let metadata = check_meta(module);
         assert!(
             metadata
                 .type_def(&TypeName {
                     name: "String".to_string(),
-                    module: ModuleName::from_str("builtin"),
+                    module: ModuleName::from_str("prelude"),
                 })
                 .is_some()
         );
     }
 
     #[test]
-    fn builtin_list_is_in_symbol_table() {
+    fn prelude_list_is_in_symbol_table() {
         let module = create_test_module(vec![]);
         let metadata = check_meta(module);
         assert!(
             metadata
                 .type_def(&TypeName {
                     name: "List".to_string(),
-                    module: ModuleName::from_str("builtin"),
+                    module: ModuleName::from_str("prelude"),
                 })
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn list_return_type_resolves_to_prelude_list() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "get_items",
+                vec![],
+                AstType::List(Box::new(AstType::Int)),
+                vec![Statement::Return(Expression::ListLiteral {
+                    elements: vec![Expression::IntLiteral {
+                        value: 1,
+                        span: crate::types::Span::dummy(),
+                    }],
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let metadata = check_meta(module);
+        let fn_def = metadata
+            .function(&FunctionName {
+                name: "get_items".to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function,
+            })
+            .unwrap();
+        assert_eq!(
+            fn_def.type_name,
+            TypeName {
+                name: "List".to_string(),
+                module: ModuleName::from_str("prelude"),
+            }
         );
     }
 }

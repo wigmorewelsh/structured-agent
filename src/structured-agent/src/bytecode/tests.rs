@@ -17,13 +17,16 @@ mod instruction_display_tests {
         let instr = Instruction::CallBytecode {
             function_name: FunctionName {
                 name: "foo".to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::from_str("mymod"),
                 kind: FunctionNameKind::Function,
             },
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
-        assert_eq!(format!("{}", instr), "call.bytecode foo, [x, y], result");
+        assert_eq!(
+            format!("{}", instr),
+            "call.bytecode mymod::foo, [x, y], result"
+        );
     }
 
     #[test]
@@ -31,13 +34,16 @@ mod instruction_display_tests {
         let instr = Instruction::CallExternal {
             function_name: FunctionName {
                 name: "foo".to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::from_str("mymod"),
                 kind: FunctionNameKind::Function,
             },
             params: vec!["x".to_string(), "y".to_string()],
             dest: "result".to_string(),
         };
-        assert_eq!(format!("{}", instr), "call.external foo, [x, y], result");
+        assert_eq!(
+            format!("{}", instr),
+            "call.external mymod::foo, [x, y], result"
+        );
     }
 
     #[test]
@@ -913,7 +919,7 @@ mod vm_execution_tests {
                 function: function.clone(),
                 resolved: FunctionName {
                     name: function.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 kind: crate::typecheck::checker::FunctionKind::External,

@@ -267,6 +267,7 @@ impl Runtime {
             .await
     }
 
+    #[allow(deprecated)]
     pub async fn run_with_handle(
         &self,
         handle: crate::runtime::AgentHandle,
@@ -297,7 +298,7 @@ impl Runtime {
                 },
                 None => FunctionName {
                     name: qualified.to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 },
             };

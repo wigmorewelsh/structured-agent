@@ -11,7 +11,7 @@ mod tests {
         CompiledFunction {
             name: FunctionName {
                 name: "test".to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::from_str("test"),
                 kind: FunctionNameKind::Function,
             },
             module_name: None,
@@ -46,7 +46,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "greet".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$arg0".to_string()],
@@ -57,7 +57,7 @@ mod tests {
             },
         ];
         let function = make_function(instructions);
-        let mut analyzer = CallArityAnalyzer::new(arities(&[("greet", 1)]));
+        let mut analyzer = CallArityAnalyzer::new(arities(&[("test::greet", 1)]));
         let warnings = analyzer.analyze_function(&function);
         assert!(warnings.is_empty());
     }
@@ -71,7 +71,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "get_value".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec![],
@@ -82,7 +82,7 @@ mod tests {
             },
         ];
         let function = make_function(instructions);
-        let mut analyzer = CallArityAnalyzer::new(arities(&[("get_value", 0)]));
+        let mut analyzer = CallArityAnalyzer::new(arities(&[("test::get_value", 0)]));
         let warnings = analyzer.analyze_function(&function);
         assert!(warnings.is_empty());
     }
@@ -96,7 +96,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "add".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string()],
@@ -107,13 +107,13 @@ mod tests {
             },
         ];
         let function = make_function(instructions);
-        let mut analyzer = CallArityAnalyzer::new(arities(&[("add", 2)]));
+        let mut analyzer = CallArityAnalyzer::new(arities(&[("test::add", 2)]));
         let warnings = analyzer.analyze_function(&function);
         assert_eq!(warnings.len(), 1);
         assert_eq!(
             warnings[0],
             IlWarning::CallArityMismatch {
-                function_name: "add".to_string(),
+                function_name: "test::add".to_string(),
                 expected: 2,
                 got: 1,
                 instruction_index: 1,
@@ -130,7 +130,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "negate".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string()],
@@ -141,13 +141,13 @@ mod tests {
             },
         ];
         let function = make_function(instructions);
-        let mut analyzer = CallArityAnalyzer::new(arities(&[("negate", 1)]));
+        let mut analyzer = CallArityAnalyzer::new(arities(&[("test::negate", 1)]));
         let warnings = analyzer.analyze_function(&function);
         assert_eq!(warnings.len(), 1);
         assert_eq!(
             warnings[0],
             IlWarning::CallArityMismatch {
-                function_name: "negate".to_string(),
+                function_name: "test::negate".to_string(),
                 expected: 1,
                 got: 2,
                 instruction_index: 1,
@@ -164,7 +164,7 @@ mod tests {
             Instruction::CallExternal {
                 function_name: FunctionName {
                     name: "external_tool".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
@@ -192,7 +192,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "foo".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec![],
@@ -201,7 +201,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "bar".to_string(),
-                    module: ModuleName::from_str(""),
+                    module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string()],
@@ -212,7 +212,7 @@ mod tests {
             },
         ];
         let function = make_function(instructions);
-        let mut analyzer = CallArityAnalyzer::new(arities(&[("foo", 2), ("bar", 0)]));
+        let mut analyzer = CallArityAnalyzer::new(arities(&[("test::foo", 2), ("test::bar", 0)]));
         let warnings = analyzer.analyze_function(&function);
         assert_eq!(warnings.len(), 2);
     }

@@ -113,6 +113,11 @@ impl ModuleName {
             segments: NonEmpty::from_vec(v).expect("split always yields at least one element"),
         }
     }
+
+    #[deprecated(note = "transition marker: replace with the real module name")]
+    pub fn unqualified() -> Self {
+        Self::from_str("")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -213,7 +218,7 @@ impl FunctionName {
             },
             None => FunctionName {
                 name: s.to_string(),
-                module: ModuleName::from_str(""),
+                module: ModuleName::unqualified(),
                 kind: FunctionNameKind::Function,
             },
         }
