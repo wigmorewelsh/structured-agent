@@ -4,12 +4,14 @@ use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
+use crate::typecheck::checker::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
     NativeFunction,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_runtime::symbols::TypeDefinitionKind;
 use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
@@ -277,8 +279,14 @@ impl Runtime {
 
         let mut runtime = self.create_runtime_ref();
 
-        for (name, fields) in compiled_program.struct_definitions() {
-            runtime.register_struct(name.clone(), fields.clone());
+        for type_def in compiled_program.metadata.all_types() {
+            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
+                let converted: Vec<(String, crate::types::Type)> = fields
+                    .iter()
+                    .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                    .collect();
+                runtime.register_struct(type_def.name.name.clone(), converted);
+            }
         }
 
         for (name, func_def) in &compiled_program.metadata.functions {
@@ -319,9 +327,28 @@ impl Runtime {
                 );
             }
         }
-        for external_function in compiled_program.external_functions().values() {
-            debug!("Registering external function: {}", external_function.name);
-            runtime.register_external_function(external_function.clone());
+        for func_def in compiled_program.metadata.all_functions() {
+            if let TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn {
+                params,
+                return_type,
+                type_params,
+                ..
+            }) = &func_def.ast_ref
+                && func_def.source_ref.1 != crate::types::Span::dummy()
+            {
+                let ast_ext = crate::ast::ExternalFunction {
+                    name: func_def.name.to_string(),
+                    parameters: params.clone(),
+                    return_type: return_type.clone(),
+                    type_params: type_params.clone(),
+                    is_pub: true,
+                    span: crate::types::Span::dummy(),
+                };
+                if let Ok(ext_def) = crate::compiler::compile_external_function(&ast_ext) {
+                    debug!("Registering external function: {}", ext_def.name);
+                    runtime.register_external_function(ext_def);
+                }
+            }
         }
 
         if let Err(e) = runtime.map_providers_to_functions().await {
@@ -523,6 +550,18 @@ impl Clone for Runtime {
     }
 }
 
+fn field_type_name_to_type(
+    type_name: &structured_agent_runtime::symbols::TypeName,
+) -> crate::types::Type {
+    match type_name.name.as_str() {
+        "Int" => crate::types::Type::int(),
+        "String" => crate::types::Type::string(),
+        "Boolean" => crate::types::Type::boolean(),
+        "Unit" => crate::types::Type::unit(),
+        _ => crate::types::Type::Struct(type_name.name.clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -699,8 +738,15 @@ fn main(): () {
         let compiler = Compiler::new();
         let compiled = compiler.compile_source(&unit).unwrap();
         let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        for (name, fields) in compiled.struct_definitions() {
-            runtime.register_struct(name.clone(), fields.clone());
+        use structured_agent_runtime::symbols::TypeDefinitionKind;
+        for type_def in compiled.metadata.all_types() {
+            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
+                let converted: Vec<(String, crate::types::Type)> = fields
+                    .iter()
+                    .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                    .collect();
+                runtime.register_struct(type_def.name.name.clone(), converted);
+            }
         }
         let fields = runtime.get_struct("Task").unwrap();
         assert_eq!(fields.len(), 2);

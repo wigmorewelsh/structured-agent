@@ -8,7 +8,7 @@ use crate::analysis::{
     UnusedExpressionAnalyzer, UnusedReturnValueAnalyzer, UnusedVariableAnalyzer,
     VariableShadowingAnalyzer,
 };
-use crate::ast::{Module, SigFunction};
+use crate::ast::Module;
 use crate::bytecode::{BytecodeRef, BytecodeRefs, compile_metadata};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
@@ -16,7 +16,6 @@ use crate::il_analysis::{
 };
 use crate::typecheck::TypeChecker;
 use crate::typecheck::checker::ModuleVisibility;
-use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use structured_agent_runtime::symbols::Visibility;
 
@@ -68,18 +67,8 @@ impl CompilationUnit {
     }
 }
 
-struct ModuleArtifact {
-    external_functions: Vec<ExternalFunctionDefinition>,
-    struct_definitions: Vec<(String, Vec<(String, Type)>)>,
-    sig_definitions: Vec<(String, Vec<SigFunction>)>,
-    use_aliases: Vec<(String, String)>,
-}
-
 pub struct CompiledProgram {
     pub metadata: MetaData<BytecodeRefs>,
-    external_functions: HashMap<String, ExternalFunctionDefinition>,
-    struct_definitions: HashMap<String, Vec<(String, Type)>>,
-    sig_definitions: HashMap<String, Vec<SigFunction>>,
     module_visibility: ModuleVisibility,
     use_aliases: Vec<(String, String)>,
     main_function: Option<FunctionName>,
@@ -105,9 +94,6 @@ impl CompiledProgram {
     pub fn new() -> Self {
         Self {
             metadata: MetaData::default(),
-            external_functions: HashMap::new(),
-            struct_definitions: HashMap::new(),
-            sig_definitions: HashMap::new(),
             module_visibility: HashMap::new(),
             use_aliases: Vec::new(),
             main_function: None,
@@ -140,35 +126,8 @@ impl CompiledProgram {
             .and_then(|d| d.body_ref.as_ref())
     }
 
-    pub fn external_functions(&self) -> &HashMap<String, ExternalFunctionDefinition> {
-        &self.external_functions
-    }
-
-    pub fn struct_definitions(&self) -> &HashMap<String, Vec<(String, Type)>> {
-        &self.struct_definitions
-    }
-
-    pub fn sig_definitions(&self) -> &HashMap<String, Vec<SigFunction>> {
-        &self.sig_definitions
-    }
-
     pub fn module_visibility(&self) -> &ModuleVisibility {
         &self.module_visibility
-    }
-
-    fn merge(&mut self, artifact: ModuleArtifact) {
-        for f in artifact.external_functions {
-            self.external_functions.insert(f.name.clone(), f);
-        }
-        for (name, fields) in artifact.struct_definitions {
-            self.struct_definitions.insert(name, fields);
-        }
-        for (name, functions) in artifact.sig_definitions {
-            self.sig_definitions.insert(name, functions);
-        }
-        for (alias, qualified) in artifact.use_aliases {
-            self.use_aliases.push((alias, qualified));
-        }
     }
 
     pub fn use_aliases(&self) -> &[(String, String)] {
@@ -254,7 +213,7 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let (typed_metadata, typed_modules) = checker
+        let (typed_metadata, _) = checker
             .check_modules(&modules, &self.modules)
             .map_err(|e| {
                 error!("Type checking failed: {}", e);
@@ -285,22 +244,15 @@ impl Compiler {
             .with_source_path(source_path)
             .with_module_visibility(module_visibility);
 
-        for parsed in &modules {
-            let prefix = if parsed.is_entry {
-                "main"
-            } else {
-                parsed.name.as_str()
-            };
-            let typed_module = typed_modules
-                .get(&parsed.name)
-                .expect("typed module missing");
-            let artifact = emit_module(typed_module, prefix, parsed.is_entry)?;
-            compiled.merge(artifact);
-        }
-
         let bytecode_metadata = compile_metadata(typed_metadata)
             .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
         compiled.metadata = bytecode_metadata;
+
+        for module in compiled.metadata.modules.values() {
+            compiled
+                .use_aliases
+                .extend(module.use_aliases.iter().cloned());
+        }
 
         for name in compiled.metadata.functions.keys() {
             if name.module == ModuleName::from_str("main") && name.name == "main" {
@@ -326,67 +278,6 @@ fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
         warn!("Analysis found {} warnings", warnings.len());
     }
     warnings
-}
-
-fn emit_module(
-    module: &typed_ast::Module,
-    prefix: &str,
-    is_entry: bool,
-) -> Result<ModuleArtifact, String> {
-    let mut artifact = ModuleArtifact {
-        external_functions: Vec::new(),
-        struct_definitions: Vec::new(),
-        sig_definitions: Vec::new(),
-        use_aliases: Vec::new(),
-    };
-
-    for definition in &module.definitions {
-        match definition {
-            typed_ast::Definition::Function(_) => {}
-            typed_ast::Definition::ExternalFunction(f) => {
-                let mut f = f.clone();
-                if !is_entry {
-                    f.name = format!("{}::{}", prefix, f.name);
-                }
-                debug!("Emitting external function: {}", f.name);
-                artifact
-                    .external_functions
-                    .push(compile_external_function(&f)?);
-            }
-            typed_ast::Definition::TraitImpl { .. } => {}
-            typed_ast::Definition::Struct(s) => {
-                let fields = s
-                    .fields
-                    .iter()
-                    .map(|f| (f.name.clone(), ast_type_to_type(&f.field_type)))
-                    .collect();
-                artifact.struct_definitions.push((s.name.clone(), fields));
-            }
-            typed_ast::Definition::Signature {
-                name, functions, ..
-            } => {
-                artifact
-                    .sig_definitions
-                    .push((name.clone(), functions.clone()));
-            }
-            typed_ast::Definition::Use { path, alias, .. } if is_entry => {
-                if path.len() >= 2 {
-                    let qualified = format!("{}::{}", path[0], path.last().unwrap());
-                    let local = alias
-                        .clone()
-                        .unwrap_or_else(|| path.last().unwrap().clone());
-                    artifact.use_aliases.push((local, qualified));
-                }
-            }
-            typed_ast::Definition::Use { .. }
-            | typed_ast::Definition::ModuleHeader { .. }
-            | typed_ast::Definition::ModuleBinding { .. }
-            | typed_ast::Definition::WiringSite { .. }
-            | typed_ast::Definition::Trait { .. } => {}
-        }
-    }
-
-    Ok(artifact)
 }
 
 pub fn compile_external_function(
@@ -621,9 +512,20 @@ fn main(): String {
             .compile_file(path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(compiled.sig_definitions().contains_key("Greeter"));
-        assert_eq!(compiled.sig_definitions()["Greeter"].len(), 1);
-        assert_eq!(compiled.sig_definitions()["Greeter"][0].name, "greet");
+        use structured_agent_runtime::SymbolQuery;
+        use structured_agent_runtime::symbols::TypeDefinitionKind;
+        let sig = compiled
+            .metadata
+            .all_types()
+            .into_iter()
+            .find(|t| t.name.name == "Greeter")
+            .expect("Greeter sig not found");
+        let entries = match &sig.kind {
+            TypeDefinitionKind::Signature { entries } => entries,
+            _ => panic!("Expected Signature kind"),
+        };
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "greet");
     }
 
     #[test]

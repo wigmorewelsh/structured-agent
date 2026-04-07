@@ -187,6 +187,24 @@ impl TypeChecker {
                 .filter(|f| matches!(f.visibility, Visibility::Public))
                 .map(|f| ExportedName::Function(f.name.clone()))
                 .collect();
+            let use_aliases: Vec<(String, String)> = parsed
+                .module
+                .definitions
+                .iter()
+                .filter_map(|def| {
+                    if let Definition::Use { path, alias, .. } = def
+                        && path.len() >= 2
+                    {
+                        let qualified = format!("{}::{}", path[0], path.last().unwrap());
+                        let local = alias
+                            .clone()
+                            .unwrap_or_else(|| path.last().unwrap().clone());
+                        Some((local, qualified))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             let module_def = ModuleDefinition {
                 name: ModuleName::from_str(effective_name),
                 visibility: if parsed.is_entry {
@@ -197,6 +215,7 @@ impl TypeChecker {
                 exports,
                 source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
                 ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
+                use_aliases,
             };
             self.metadata
                 .modules
@@ -333,6 +352,7 @@ impl TypeChecker {
                 exports: module_def.exports.clone(),
                 source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
+                use_aliases: module_def.use_aliases.clone(),
             };
             typed_metadata
                 .modules

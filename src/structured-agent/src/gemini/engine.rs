@@ -438,8 +438,25 @@ mod tests {
         let compiler = Compiler::new();
         let compiled = compiler.compile_source(&unit).unwrap();
         let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        for (name, fields) in compiled.struct_definitions() {
-            runtime.register_struct(name.clone(), fields.clone());
+        use structured_agent_runtime::SymbolQuery;
+        use structured_agent_runtime::symbols::TypeDefinitionKind;
+        for type_def in compiled.metadata.all_types() {
+            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
+                let converted: Vec<(String, crate::types::Type)> = fields
+                    .iter()
+                    .map(|f| {
+                        let t = match f.type_name.name.as_str() {
+                            "Int" => crate::types::Type::int(),
+                            "String" => crate::types::Type::string(),
+                            "Boolean" => crate::types::Type::boolean(),
+                            "Unit" => crate::types::Type::unit(),
+                            other => crate::types::Type::Struct(other.to_string()),
+                        };
+                        (f.name.clone(), t)
+                    })
+                    .collect();
+                runtime.register_struct(type_def.name.name.clone(), converted);
+            }
         }
         crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
     }

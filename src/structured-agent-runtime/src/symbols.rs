@@ -183,6 +183,7 @@ pub struct ModuleDefinition<R: References> {
     pub exports: Vec<ExportedName>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
+    pub use_aliases: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
