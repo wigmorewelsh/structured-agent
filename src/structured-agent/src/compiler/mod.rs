@@ -1,7 +1,7 @@
 pub(crate) mod discovery;
 pub mod parser;
 pub(crate) mod wiring;
-use wiring::{lower_typed_module, resolve_vtables};
+use wiring::{header_params, lower_typed_module};
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,
@@ -305,12 +305,12 @@ impl Compiler {
             }
         }
 
-        let vtables = resolve_vtables(&modules, &typed_metadata);
         for parsed in &modules {
-            if let Some(vtable) = vtables.get(&parsed.name)
-                && let Some(typed_module) = typed_modules.get_mut(&parsed.name)
+            if let Some(typed_module) = typed_modules.get_mut(&parsed.name)
+                && let Some(params) = header_params(parsed)
+                && !params.is_empty()
             {
-                lower_typed_module(typed_module, vtable, &function_kinds);
+                lower_typed_module(typed_module, params, &typed_metadata, &function_kinds);
             }
         }
 

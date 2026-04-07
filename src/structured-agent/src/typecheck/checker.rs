@@ -46,6 +46,7 @@ pub enum CheckerAstRef {
     Module(Arc<crate::ast::Module>),
     Signature(Arc<crate::ast::AstSignature>),
     Builtin,
+    ModuleParamBinding,
 }
 
 impl SourceRef for SourceLocation {}
@@ -717,6 +718,26 @@ impl TypeChecker {
                     SourceLocation(file_id, Span::dummy()),
                 );
             }
+            let sig_module = param.path[0].clone();
+            let sig_name = param.path.last().unwrap().clone();
+            let key = ImplKey {
+                type_name: TypeName {
+                    name: param.name.clone(),
+                    module: ModuleName::from_str("__param__"),
+                },
+                trait_name: TraitName {
+                    name: sig_name,
+                    module: ModuleName::from_str(&sig_module),
+                },
+            };
+            self.metadata.impls.entry(key.clone()).or_insert_with(|| {
+                Arc::new(ImplDefinition {
+                    key,
+                    module: ModuleName::from_str(&sig_module),
+                    source_ref: SourceLocation(file_id, Span::dummy()),
+                    ast_ref: CheckerAstRef::ModuleParamBinding,
+                })
+            });
         }
     }
 
@@ -877,10 +898,38 @@ impl TypeChecker {
                     };
                     self.metadata.types.insert(type_name, Arc::new(entry));
                 }
+                Definition::ModuleBinding {
+                    name,
+                    sig_path,
+                    impl_path,
+                    span,
+                } => {
+                    if sig_path.len() >= 2 && !impl_path.is_empty() {
+                        let sig_module = sig_path[0].clone();
+                        let sig_name = sig_path.last().unwrap().clone();
+                        let concrete = impl_path[0].clone();
+                        let key = ImplKey {
+                            type_name: TypeName {
+                                name: name.clone(),
+                                module: ModuleName::from_str("__param__"),
+                            },
+                            trait_name: TraitName {
+                                name: sig_name,
+                                module: ModuleName::from_str(&sig_module),
+                            },
+                        };
+                        let entry = ImplDefinition {
+                            key: key.clone(),
+                            module: ModuleName::from_str(&concrete),
+                            source_ref: SourceLocation(file_id, *span),
+                            ast_ref: CheckerAstRef::ModuleParamBinding,
+                        };
+                        self.metadata.impls.insert(key, Arc::new(entry));
+                    }
+                }
                 Definition::Struct(_)
                 | Definition::Use { .. }
                 | Definition::ModuleHeader { .. }
-                | Definition::ModuleBinding { .. }
                 | Definition::WiringSite { .. } => {}
                 Definition::Trait(s) => {
                     let trait_name = TraitName {
@@ -1011,29 +1060,29 @@ impl TypeChecker {
             let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
                 continue;
             };
-            if trait_fns.functions.iter().any(|f| f.name == fn_name) {
-                if self.type_implements_trait(&type_name, &trait_key.name) {
-                    let module = ctx.module_name.unwrap_or("");
-                    let impl_fn_name = {
-                        let mn = ModuleName::from_str(module);
-                        FunctionName {
-                            name: fn_name.to_string(),
-                            module: mn.clone(),
-                            kind: FunctionNameKind::Impl {
-                                type_name: TypeName {
-                                    name: type_name.to_string(),
-                                    module: mn.clone(),
-                                },
-                                trait_name: TraitName {
-                                    name: trait_key.name.to_string(),
-                                    module: mn,
-                                },
+            if trait_fns.functions.iter().any(|f| f.name == fn_name)
+                && self.type_implements_trait(&type_name, &trait_key.name)
+            {
+                let module = ctx.module_name.unwrap_or("");
+                let impl_fn_name = {
+                    let mn = ModuleName::from_str(module);
+                    FunctionName {
+                        name: fn_name.to_string(),
+                        module: mn.clone(),
+                        kind: FunctionNameKind::Impl {
+                            type_name: TypeName {
+                                name: type_name.to_string(),
+                                module: mn.clone(),
                             },
-                        }
-                    };
-                    if let Some(sig) = self.get_function_sig(&impl_fn_name) {
-                        return Some((impl_fn_name, sig));
+                            trait_name: TraitName {
+                                name: trait_key.name.to_string(),
+                                module: mn,
+                            },
+                        },
                     }
+                };
+                if let Some(sig) = self.get_function_sig(&impl_fn_name) {
+                    return Some((impl_fn_name, sig));
                 }
             }
         }
