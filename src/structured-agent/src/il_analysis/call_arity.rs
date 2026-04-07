@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct CallArityAnalyzer {
@@ -18,7 +18,7 @@ impl IlAnalyzer for CallArityAnalyzer {
         "call-arity"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut warnings = Vec::new();
 
         for (index, instruction) in function.instructions.iter().enumerate() {

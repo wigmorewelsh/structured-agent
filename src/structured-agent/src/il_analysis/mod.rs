@@ -8,7 +8,7 @@ mod unreachable_instructions;
 mod variable_allocation;
 mod variable_drop;
 
-use crate::bytecode::Instruction;
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::types::FileId;
 use codespan_reporting::diagnostic::Diagnostic;
 
@@ -48,8 +48,6 @@ pub use return_coverage::ReturnCoverageAnalyzer;
 pub use unreachable_instructions::UnreachableInstructionAnalyzer;
 pub use variable_allocation::VariableAllocationAnalyzer;
 pub use variable_drop::VariableDropAnalyzer;
-
-use crate::bytecode::CompiledFunction;
 
 pub(crate) fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
     match instruction {
@@ -99,7 +97,7 @@ pub(crate) fn instruction_writes(instruction: &Instruction) -> Option<&str> {
 
 pub trait IlAnalyzer {
     fn name(&self) -> &str;
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning>;
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -219,7 +217,7 @@ impl IlAnalysisRunner {
         self
     }
 
-    pub fn run(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    pub fn run(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut all_warnings = Vec::new();
         for analyzer in &mut self.analyzers {
             all_warnings.extend(analyzer.analyze_function(function));

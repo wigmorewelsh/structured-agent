@@ -10,7 +10,7 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName};
+use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -267,7 +267,6 @@ impl Runtime {
             .await
     }
 
-    #[allow(deprecated)]
     pub async fn run_with_handle(
         &self,
         handle: crate::runtime::AgentHandle,
@@ -282,12 +281,20 @@ impl Runtime {
             runtime.register_struct(name.clone(), fields.clone());
         }
 
-        for (name, function) in compiled_program.functions() {
-            let key = name.to_string();
-            debug!("Registering function: {}", key);
-            runtime
-                .function_registry
-                .insert(key, Arc::new(BytecodeFunctionExpr::new(function.clone())));
+        for (name, func_def) in &compiled_program.metadata.functions {
+            if let Some(body) = &func_def.body_ref {
+                let expr: Arc<dyn ExecutableFunction> =
+                    Arc::new(BytecodeFunctionExpr::new(name.clone(), body.clone()));
+                debug!("Registering function: {}", name);
+                runtime
+                    .function_registry
+                    .insert(name.to_string(), Arc::clone(&expr));
+                if name.module == ModuleName::from_str("main") {
+                    runtime
+                        .function_registry
+                        .insert(name.name.clone(), Arc::clone(&expr));
+                }
+            }
         }
         for (alias, qualified) in compiled_program.use_aliases() {
             let canonical = match qualified.rsplit_once("::") {
@@ -302,11 +309,13 @@ impl Runtime {
                     kind: FunctionNameKind::Function,
                 },
             };
-            if let Some(function) = compiled_program.resolve(&canonical) {
+            if let Some(func_def) = compiled_program.metadata.function(&canonical)
+                && let Some(body) = &func_def.body_ref
+            {
                 debug!("Registering alias: {} -> {}", alias, qualified);
                 runtime.function_registry.insert(
                     alias.clone(),
-                    Arc::new(BytecodeFunctionExpr::new(function.clone())),
+                    Arc::new(BytecodeFunctionExpr::new(canonical.clone(), body.clone())),
                 );
             }
         }
@@ -320,20 +329,25 @@ impl Runtime {
             return Err(e);
         }
 
-        if let Some(main_function) = compiled_program.main_function() {
-            debug!("Executing main function");
-            let main_expr = BytecodeFunctionExpr::new(main_function.clone());
-            let initial_context = Context::with_runtime_and_handle(Arc::new(runtime), handle);
-            match main_expr.execute(initial_context, vec![]).await {
-                Ok((_, result)) => {
-                    debug!("Program execution completed successfully");
-                    debug!("Result type: {}", result.value.type_name());
-                    Ok(result.value)
+        if let Some(main_name) = compiled_program.main_function_name() {
+            if let Some(main_body) = compiled_program.main_body() {
+                debug!("Executing main function");
+                let main_expr = BytecodeFunctionExpr::new(main_name.clone(), main_body.clone());
+                let initial_context = Context::with_runtime_and_handle(Arc::new(runtime), handle);
+                match main_expr.execute(initial_context, vec![]).await {
+                    Ok((_, result)) => {
+                        debug!("Program execution completed successfully");
+                        debug!("Result type: {}", result.value.type_name());
+                        Ok(result.value)
+                    }
+                    Err(e) => {
+                        error!("Runtime execution failed: {:?}", e);
+                        Err(RuntimeError::ExecutionError(e))
+                    }
                 }
-                Err(e) => {
-                    error!("Runtime execution failed: {:?}", e);
-                    Err(RuntimeError::ExecutionError(e))
-                }
+            } else {
+                error!("No main function body found");
+                Err(RuntimeError::FunctionNotFound("main".to_string()))
             }
         } else {
             error!("No main function found in program");

@@ -10,7 +10,9 @@ mod tests;
 #[cfg(test)]
 mod vm_test;
 
-pub use compiler::{BytecodeCompiler, CompiledFunction};
+pub use compiler::{
+    BytecodeCompiler, BytecodeRef, BytecodeRefs, CompiledFunction, compile_metadata,
+};
 pub use function_expr::BytecodeFunctionExpr;
 pub use instruction::Instruction;
 pub use vm::VM;

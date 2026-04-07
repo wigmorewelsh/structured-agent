@@ -1,4 +1,4 @@
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct ReturnCoverageAnalyzer;
@@ -20,7 +20,7 @@ impl IlAnalyzer for ReturnCoverageAnalyzer {
         "return-coverage"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         if function.instructions.is_empty() {
             return vec![];
         }

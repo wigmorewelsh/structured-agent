@@ -24,8 +24,10 @@ pub enum FunctionKind {
     External,
 }
 
+#[derive(Clone)]
 pub struct SourceLocation(pub FileId, pub Span);
 pub struct NoBody;
+#[derive(Clone)]
 pub struct NoWitness;
 
 #[derive(Clone)]
@@ -60,6 +62,7 @@ impl References for CheckerRefs {
     type Witness = NoWitness;
 }
 
+#[derive(Clone)]
 pub enum TypedCheckerAstRef {
     Function(Arc<typed_ast::Function>, FunctionKind),
     ImplFunction(Arc<typed_ast::Function>, String, FunctionKind),

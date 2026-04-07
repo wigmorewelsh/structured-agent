@@ -125,24 +125,35 @@ fn main(): String {
 
     // Verify both functions were compiled
     assert_eq!(
-        compiled_program.functions().len(),
+        compiled_program
+            .metadata
+            .functions
+            .values()
+            .filter(|d| d.body_ref.is_some())
+            .count(),
         2,
         "Expected 2 functions to be compiled"
     );
     assert!(
-        compiled_program.functions().contains_key(&FunctionName {
-            name: "helper".to_string(),
-            module: ModuleName::from_str("main"),
-            kind: FunctionNameKind::Function
-        }),
+        compiled_program
+            .metadata
+            .functions
+            .contains_key(&FunctionName {
+                name: "helper".to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function
+            }),
         "Expected 'helper' function to be present"
     );
     assert!(
-        compiled_program.functions().contains_key(&FunctionName {
-            name: "main".to_string(),
-            module: ModuleName::from_str("main"),
-            kind: FunctionNameKind::Function
-        }),
+        compiled_program
+            .metadata
+            .functions
+            .contains_key(&FunctionName {
+                name: "main".to_string(),
+                module: ModuleName::from_str("main"),
+                kind: FunctionNameKind::Function
+            }),
         "Expected 'main' function to be present"
     );
 

@@ -11,7 +11,7 @@ use crate::analysis::{
     VariableShadowingAnalyzer,
 };
 use crate::ast::{Definition, Module, SigFunction};
-use crate::bytecode::{BytecodeCompiler, CompiledFunction};
+use crate::bytecode::{BytecodeRef, BytecodeRefs, compile_metadata};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
@@ -29,7 +29,7 @@ use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, MetaData, ModuleName, TraitName, TypeName,
+    FunctionDefinition, FunctionName, FunctionNameKind, MetaData, ModuleName, TraitName, TypeName,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -73,24 +73,30 @@ impl CompilationUnit {
 }
 
 struct ModuleArtifact {
-    functions: Vec<CompiledFunction>,
     external_functions: Vec<ExternalFunctionDefinition>,
     struct_definitions: Vec<(String, Vec<(String, Type)>)>,
     sig_definitions: Vec<(String, Vec<SigFunction>)>,
     use_aliases: Vec<(String, String)>,
 }
 
-#[derive(Debug)]
 pub struct CompiledProgram {
-    functions: HashMap<FunctionName, CompiledFunction>,
+    pub metadata: MetaData<BytecodeRefs>,
     external_functions: HashMap<String, ExternalFunctionDefinition>,
     struct_definitions: HashMap<String, Vec<(String, Type)>>,
     sig_definitions: HashMap<String, Vec<SigFunction>>,
     module_visibility: ModuleVisibility,
-    aliases: HashMap<FunctionName, FunctionName>,
     use_aliases: Vec<(String, String)>,
     main_function: Option<FunctionName>,
     source_path: Option<String>,
+}
+
+impl std::fmt::Debug for CompiledProgram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompiledProgram")
+            .field("main_function", &self.main_function)
+            .field("source_path", &self.source_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for CompiledProgram {
@@ -102,12 +108,11 @@ impl Default for CompiledProgram {
 impl CompiledProgram {
     pub fn new() -> Self {
         Self {
-            functions: HashMap::new(),
+            metadata: MetaData::default(),
             external_functions: HashMap::new(),
             struct_definitions: HashMap::new(),
             sig_definitions: HashMap::new(),
             module_visibility: HashMap::new(),
-            aliases: HashMap::new(),
             use_aliases: Vec::new(),
             main_function: None,
             source_path: None,
@@ -128,22 +133,15 @@ impl CompiledProgram {
         self.source_path.as_deref()
     }
 
-    pub fn main_function(&self) -> Option<&CompiledFunction> {
+    pub fn main_function_name(&self) -> Option<&FunctionName> {
+        self.main_function.as_ref()
+    }
+
+    pub fn main_body(&self) -> Option<&BytecodeRef> {
         self.main_function
             .as_ref()
-            .and_then(|name| self.resolve(name))
-    }
-
-    pub fn resolve(&self, name: &FunctionName) -> Option<&CompiledFunction> {
-        self.functions.get(name).or_else(|| {
-            self.aliases
-                .get(name)
-                .and_then(|canonical| self.functions.get(canonical))
-        })
-    }
-
-    pub fn functions(&self) -> &HashMap<FunctionName, CompiledFunction> {
-        &self.functions
+            .and_then(|n| self.metadata.functions.get(n))
+            .and_then(|d| d.body_ref.as_ref())
     }
 
     pub fn external_functions(&self) -> &HashMap<String, ExternalFunctionDefinition> {
@@ -162,21 +160,7 @@ impl CompiledProgram {
         &self.module_visibility
     }
 
-    #[allow(deprecated)]
     fn merge(&mut self, artifact: ModuleArtifact) {
-        for f in artifact.functions {
-            let name = f.name.clone();
-            if name
-                == (FunctionName {
-                    name: "main".to_string(),
-                    module: ModuleName::from_str("main"),
-                    kind: FunctionNameKind::Function,
-                })
-            {
-                self.main_function = Some(name.clone());
-            }
-            self.functions.insert(name, f);
-        }
         for f in artifact.external_functions {
             self.external_functions.insert(f.name.clone(), f);
         }
@@ -187,52 +171,7 @@ impl CompiledProgram {
             self.sig_definitions.insert(name, functions);
         }
         for (alias, qualified) in artifact.use_aliases {
-            let alias_name = match alias.rsplit_once("::") {
-                Some((module, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::from_str(module),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: alias.to_string(),
-                    module: ModuleName::unqualified(),
-                    kind: FunctionNameKind::Function,
-                },
-            };
-            let canonical_name = match qualified.rsplit_once("::") {
-                Some((module, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::from_str(module),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: qualified.to_string(),
-                    module: ModuleName::unqualified(),
-                    kind: FunctionNameKind::Function,
-                },
-            };
-            self.aliases.insert(alias_name, canonical_name);
             self.use_aliases.push((alias, qualified));
-        }
-    }
-
-    #[allow(deprecated)]
-    fn register_entry_aliases(&mut self) {
-        let entry_fns: Vec<FunctionName> = self
-            .functions
-            .keys()
-            .filter(|n| n.module == ModuleName::from_str("main"))
-            .cloned()
-            .collect();
-        for canonical in entry_fns {
-            let bare = FunctionName {
-                name: canonical.name.clone(),
-                module: ModuleName::unqualified(),
-                kind: FunctionNameKind::Function,
-            };
-            self.aliases
-                .entry(bare)
-                .or_insert_with(|| canonical.clone());
         }
     }
 
@@ -319,7 +258,7 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let typed_metadata = checker
+        let mut typed_metadata = checker
             .check_modules(&modules, &self.modules)
             .map_err(|e| {
                 error!("Type checking failed: {}", e);
@@ -392,10 +331,21 @@ impl Compiler {
             compiled.merge(artifact);
         }
 
-        compiled.register_entry_aliases();
+        sync_lowered_to_metadata(&mut typed_metadata, &typed_modules, &modules);
+
+        let bytecode_metadata = compile_metadata(typed_metadata)
+            .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
+        compiled.metadata = bytecode_metadata;
+
+        for name in compiled.metadata.functions.keys() {
+            if name.module == ModuleName::from_str("main") && name.name == "main" {
+                compiled.main_function = Some(name.clone());
+                break;
+            }
+        }
 
         let il_reporter = diagnostics.reporter().clone();
-        for warning in analyse_il(compiled.functions()) {
+        for warning in analyse_il(&compiled.metadata) {
             if let Err(io_err) = il_reporter.emit_diagnostic(&warning.to_diagnostic()) {
                 eprintln!("Failed to emit IL warning: {}", io_err);
             }
@@ -540,34 +490,109 @@ fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
     warnings
 }
 
+fn sync_lowered_to_metadata(
+    typed_metadata: &mut MetaData<TypedRefs>,
+    typed_modules: &HashMap<String, typed_ast::Module>,
+    modules: &[ParsedModule],
+) {
+    for parsed in modules {
+        let prefix = if parsed.is_entry {
+            "main"
+        } else {
+            parsed.name.as_str()
+        };
+        let Some(typed_module) = typed_modules.get(&parsed.name) else {
+            continue;
+        };
+        for def in &typed_module.definitions {
+            match def {
+                typed_ast::Definition::Function(f) => {
+                    let key = FunctionName {
+                        name: f.name.clone(),
+                        module: ModuleName::from_str(prefix),
+                        kind: FunctionNameKind::Function,
+                    };
+                    if let Some(func_arc) = typed_metadata.functions.get_mut(&key) {
+                        let kind = match &func_arc.ast_ref {
+                            TypedCheckerAstRef::Function(_, k) => k.clone(),
+                            _ => continue,
+                        };
+                        let new_def = FunctionDefinition {
+                            name: func_arc.name.clone(),
+                            visibility: func_arc.visibility.clone(),
+                            type_name: func_arc.type_name.clone(),
+                            source_ref: func_arc.source_ref.clone(),
+                            ast_ref: TypedCheckerAstRef::Function(Arc::new(f.clone()), kind),
+                            body_ref: None,
+                        };
+                        *func_arc = Arc::new(new_def);
+                    }
+                }
+                typed_ast::Definition::TraitImpl {
+                    type_name,
+                    trait_name,
+                    functions,
+                    ..
+                } => {
+                    for f in functions {
+                        let key = FunctionName {
+                            name: f.name.clone(),
+                            module: ModuleName::from_str(prefix),
+                            kind: FunctionNameKind::Impl {
+                                type_name: TypeName {
+                                    name: type_name.clone(),
+                                    module: ModuleName::from_str(prefix),
+                                },
+                                trait_name: TraitName {
+                                    name: trait_name.clone(),
+                                    module: ModuleName::from_str(prefix),
+                                },
+                            },
+                        };
+                        if let Some(func_arc) = typed_metadata.functions.get_mut(&key) {
+                            let (kind, tn) = match &func_arc.ast_ref {
+                                TypedCheckerAstRef::ImplFunction(_, tn, k) => {
+                                    (k.clone(), tn.clone())
+                                }
+                                _ => continue,
+                            };
+                            let new_def = FunctionDefinition {
+                                name: func_arc.name.clone(),
+                                visibility: func_arc.visibility.clone(),
+                                type_name: func_arc.type_name.clone(),
+                                source_ref: func_arc.source_ref.clone(),
+                                ast_ref: TypedCheckerAstRef::ImplFunction(
+                                    Arc::new(f.clone()),
+                                    tn,
+                                    kind,
+                                ),
+                                body_ref: None,
+                            };
+                            *func_arc = Arc::new(new_def);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 fn emit_module(
     module: &typed_ast::Module,
     prefix: &str,
     is_entry: bool,
 ) -> Result<ModuleArtifact, String> {
     let mut artifact = ModuleArtifact {
-        functions: Vec::new(),
         external_functions: Vec::new(),
         struct_definitions: Vec::new(),
         sig_definitions: Vec::new(),
         use_aliases: Vec::new(),
     };
 
-    let compiler = BytecodeCompiler::new();
-
     for definition in &module.definitions {
         match definition {
-            typed_ast::Definition::Function(f) => {
-                let mut compiled = compiler.compile_to_bytecode(f)?;
-                compiled.name = FunctionName {
-                    name: compiled.name.name.clone(),
-                    module: ModuleName::from_str(prefix),
-                    kind: FunctionNameKind::Function,
-                };
-                compiled.module_name = Some(prefix.to_string());
-                debug!("Emitting function: {}", compiled.name);
-                artifact.functions.push(compiled);
-            }
+            typed_ast::Definition::Function(_) => {}
             typed_ast::Definition::ExternalFunction(f) => {
                 let mut f = f.clone();
                 if !is_entry {
@@ -578,6 +603,7 @@ fn emit_module(
                     .external_functions
                     .push(compile_external_function(&f)?);
             }
+            typed_ast::Definition::TraitImpl { .. } => {}
             typed_ast::Definition::Struct(s) => {
                 let fields = s
                     .fields
@@ -600,36 +626,6 @@ fn emit_module(
                         .clone()
                         .unwrap_or_else(|| path.last().unwrap().clone());
                     artifact.use_aliases.push((local, qualified));
-                }
-            }
-            typed_ast::Definition::TraitImpl {
-                type_name,
-                trait_name,
-                functions,
-                ..
-            } => {
-                for f in functions {
-                    let mut compiled = compiler.compile_to_bytecode(f)?;
-                    compiled.name = {
-                        let module_name = ModuleName::from_str(prefix);
-                        FunctionName {
-                            name: f.name.to_string(),
-                            module: module_name.clone(),
-                            kind: FunctionNameKind::Impl {
-                                type_name: TypeName {
-                                    name: type_name.to_string(),
-                                    module: module_name.clone(),
-                                },
-                                trait_name: TraitName {
-                                    name: trait_name.to_string(),
-                                    module: module_name,
-                                },
-                            },
-                        }
-                    };
-                    compiled.module_name = Some(prefix.to_string());
-                    debug!("Emitting impl function: {}", compiled.name);
-                    artifact.functions.push(compiled);
                 }
             }
             typed_ast::Definition::Use { .. }
@@ -671,11 +667,16 @@ fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
     }
 }
 
-fn analyse_il(functions: &HashMap<FunctionName, CompiledFunction>) -> Vec<IlWarning> {
+fn analyse_il(metadata: &MetaData<BytecodeRefs>) -> Vec<IlWarning> {
     let mut runner = IlAnalysisRunner::new()
         .with_analyzer(Box::new(VariableAllocationAnalyzer::new()))
         .with_analyzer(Box::new(VariableDropAnalyzer::new()));
-    functions.values().flat_map(|f| runner.run(f)).collect()
+    metadata
+        .functions
+        .values()
+        .filter_map(|d| d.body_ref.as_ref())
+        .flat_map(|b| runner.run(b))
+        .collect()
 }
 
 fn build_analysis_runner() -> AnalysisRunner {
@@ -740,6 +741,7 @@ mod tests {
     use crate::runtime::{ExpressionValue, Runtime};
     use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
 
+    #[allow(deprecated)]
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
             .build()
@@ -826,17 +828,17 @@ fn main(): String {
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(compiled.functions().contains_key(&FunctionName {
+        assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "main".to_string(),
             module: ModuleName::from_str("main"),
             kind: FunctionNameKind::Function
         }));
-        assert!(compiled.functions().contains_key(&FunctionName {
+        assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "greet".to_string(),
             module: ModuleName::from_str("greetlib"),
             kind: FunctionNameKind::Function
         }));
-        assert!(compiled.functions().contains_key(&FunctionName {
+        assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "internal".to_string(),
             module: ModuleName::from_str("greetlib"),
             kind: FunctionNameKind::Function
@@ -901,7 +903,15 @@ fn main(): () {
         let compiled = Compiler::new()
             .compile_source(&CompilationUnit::from_string(source.to_string()))
             .unwrap();
-        assert_eq!(compiled.functions().len(), 4);
+        assert_eq!(
+            compiled
+                .metadata
+                .functions
+                .values()
+                .filter(|d| d.body_ref.is_some())
+                .count(),
+            4
+        );
     }
 
     #[tokio::test]

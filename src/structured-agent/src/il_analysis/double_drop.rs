@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct DoubleDropAnalyzer;
@@ -22,7 +22,7 @@ impl IlAnalyzer for DoubleDropAnalyzer {
         "double-drop"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut dropped: HashSet<String> = HashSet::new();
         let mut warnings = Vec::new();
 

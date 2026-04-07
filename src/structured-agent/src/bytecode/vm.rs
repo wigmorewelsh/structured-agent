@@ -1,4 +1,4 @@
-use super::{CompiledFunction, Instruction};
+use super::Instruction;
 use crate::runtime::{
     AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
 };
@@ -22,17 +22,17 @@ impl VM {
 
     pub async fn execute(
         &self,
-        function: &CompiledFunction,
+        instructions: &[Instruction],
         context: Context,
     ) -> Result<(Context, ExpressionResult), String> {
         let mut state = VMState { pc: 0, context };
 
         loop {
-            if state.pc >= function.instructions.len() {
+            if state.pc >= instructions.len() {
                 return Err("PC out of bounds".to_string());
             }
 
-            let instruction = &function.instructions[state.pc];
+            let instruction = &instructions[state.pc];
 
             state = match instruction {
                 Instruction::Nop => Self::advance_pc(state),

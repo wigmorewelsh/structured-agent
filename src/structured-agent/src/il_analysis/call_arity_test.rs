@@ -2,23 +2,17 @@
 mod tests {
     use std::collections::HashMap;
 
-    use crate::bytecode::{CompiledFunction, Instruction};
+    use crate::bytecode::{BytecodeRef, Instruction};
     use crate::il_analysis::{CallArityAnalyzer, IlAnalyzer, IlWarning};
     use crate::types::Type;
     use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
-    fn make_function(instructions: Vec<Instruction>) -> CompiledFunction {
-        CompiledFunction {
-            name: FunctionName {
-                name: "test".to_string(),
-                module: ModuleName::from_str("test"),
-                kind: FunctionNameKind::Function,
-            },
-            module_name: None,
-            parameters: vec![],
-            return_type: Type::Unit,
+    fn make_function(instructions: Vec<Instruction>) -> BytecodeRef {
+        BytecodeRef {
             instructions,
             labels: HashMap::new(),
+            parameters: vec![],
+            return_type: Type::Unit,
             documentation: None,
         }
     }

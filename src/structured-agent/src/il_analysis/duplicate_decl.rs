@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct DuplicateDeclAnalyzer;
@@ -22,7 +22,7 @@ impl IlAnalyzer for DuplicateDeclAnalyzer {
         "duplicate-decl"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut scope_stack: Vec<HashSet<String>> = vec![HashSet::new()];
         let mut warnings = Vec::new();
 

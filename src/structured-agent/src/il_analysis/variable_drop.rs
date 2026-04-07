@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct VariableDropAnalyzer;
@@ -22,7 +22,7 @@ impl IlAnalyzer for VariableDropAnalyzer {
         "variable-drop"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut declared: HashSet<String> = HashSet::new();
         let mut dropped: HashSet<String> = HashSet::new();
         let mut returned: HashSet<String> = HashSet::new();

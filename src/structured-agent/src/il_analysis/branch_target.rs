@@ -1,4 +1,4 @@
-use crate::bytecode::{CompiledFunction, Instruction};
+use crate::bytecode::{BytecodeRef, Instruction};
 use crate::il_analysis::{IlAnalyzer, IlWarning};
 
 pub struct BranchTargetAnalyzer;
@@ -20,7 +20,7 @@ impl IlAnalyzer for BranchTargetAnalyzer {
         "branch-target"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let len = function.instructions.len();
         let mut warnings = Vec::new();
 

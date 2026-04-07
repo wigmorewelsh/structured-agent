@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::bytecode::CompiledFunction;
+use crate::bytecode::BytecodeRef;
 use crate::il_analysis::{IlAnalyzer, IlWarning, instruction_reads, instruction_writes};
 
 pub struct VariableAllocationAnalyzer;
@@ -22,7 +22,7 @@ impl IlAnalyzer for VariableAllocationAnalyzer {
         "variable-allocation"
     }
 
-    fn analyze_function(&mut self, function: &CompiledFunction) -> Vec<IlWarning> {
+    fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
         let mut allocated: HashSet<String> =
             function.parameters.iter().map(|p| p.name.clone()).collect();
 

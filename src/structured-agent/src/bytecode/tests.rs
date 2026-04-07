@@ -1102,7 +1102,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_string().unwrap(), "hello");
     }
 
@@ -1122,7 +1122,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_boolean().unwrap(), true);
     }
 
@@ -1142,7 +1142,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.type_name(), "Unit");
     }
 
@@ -1163,7 +1163,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_string().unwrap(), "test");
     }
 
@@ -1185,7 +1185,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_string().unwrap(), "updated");
     }
 
@@ -1210,7 +1210,7 @@ mod vm_execution_tests {
         );
 
         let vm = VM::new(runtime);
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_string().unwrap(), "yes");
     }
 
@@ -1231,7 +1231,8 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        let (returned_context, _result) =
+            vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(returned_context.events_count(), 2);
     }
 
@@ -1255,7 +1256,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled, context).await.unwrap();
+        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
         assert_eq!(result.value.as_boolean().unwrap(), false);
     }
 
@@ -1278,7 +1279,8 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        let (returned_context, _result) =
+            vm.execute(&compiled.instructions, context).await.unwrap();
         assert!(returned_context.get_variable("x").is_some());
         assert!(returned_context.get_variable("y").is_none());
     }
@@ -1302,7 +1304,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await;
+        let result = vm.execute(&compiled.instructions, context).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Variable not found"));
     }
@@ -1329,7 +1331,7 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled, context).await;
+        let result = vm.execute(&compiled.instructions, context).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Expected boolean"));
     }
@@ -1350,7 +1352,8 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        let (returned_context, _result) =
+            vm.execute(&compiled.instructions, context).await.unwrap();
         assert!(returned_context.get_variable("$tmp0").is_none());
     }
 
@@ -1370,7 +1373,8 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) = vm.execute(&compiled, context).await.unwrap();
+        let (returned_context, _result) =
+            vm.execute(&compiled.instructions, context).await.unwrap();
         let x_value = returned_context.get_variable("x").unwrap();
         assert_eq!(x_value.value.as_string().unwrap(), "value");
     }
@@ -1391,26 +1395,34 @@ mod vm_execution_tests {
         let compiler = crate::compiler::Compiler::new();
         let compiled_program = compiler.compile_source(&program).unwrap();
 
-        let test_compiled = compiled_program
-            .resolve(&FunctionName {
+        let test_body = compiled_program
+            .metadata
+            .functions
+            .get(&FunctionName {
                 name: "test".to_string(),
                 module: ModuleName::from_str("main"),
                 kind: FunctionNameKind::Function,
             })
+            .and_then(|d| d.body_ref.as_ref())
             .unwrap()
             .clone();
 
         let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
 
-        for function in compiled_program.functions().values() {
-            runtime.register_function(Box::new(BytecodeFunctionExpr::new(function.clone())));
+        for (name, def) in &compiled_program.metadata.functions {
+            if let Some(body) = &def.body_ref {
+                runtime.register_function(Box::new(BytecodeFunctionExpr::new(
+                    name.clone(),
+                    body.clone(),
+                )));
+            }
         }
 
         let runtime = Arc::new(runtime);
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&test_compiled, context).await.unwrap();
+        let result = vm.execute(&test_body.instructions, context).await.unwrap();
         assert_eq!(result.1.value.as_string().unwrap(), "test_value");
     }
 }

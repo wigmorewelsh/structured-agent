@@ -1,10 +1,38 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast;
-use crate::typecheck::checker::FunctionKind;
+use crate::typecheck::checker::{
+    FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs,
+};
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
+use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
+use structured_agent_runtime::symbols::{
+    BodyRef, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
+    TraitDefinition, TypeDefinition,
+};
 use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
+
+#[derive(Clone, Debug)]
+pub struct BytecodeRef {
+    pub instructions: Vec<Instruction>,
+    pub labels: HashMap<String, usize>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: crate::types::Type,
+    pub documentation: Option<String>,
+}
+
+pub struct BytecodeRefs;
+
+impl BodyRef for BytecodeRef {}
+
+impl References for BytecodeRefs {
+    type Source = SourceLocation;
+    type Ast = TypedCheckerAstRef;
+    type Body = BytecodeRef;
+    type Witness = NoWitness;
+}
 
 #[derive(Clone, Debug)]
 pub struct CompiledFunction {
@@ -653,9 +681,112 @@ impl BytecodeCompiler {
         typed_func: &typed_ast::Function,
     ) -> Result<Box<dyn ExecutableFunction>, String> {
         let compiled = self.compile_to_bytecode(typed_func)?;
-        let bytecode_expr = BytecodeFunctionExpr::new(compiled);
+        let body = BytecodeRef {
+            instructions: compiled.instructions,
+            labels: compiled.labels,
+            parameters: compiled.parameters,
+            return_type: compiled.return_type,
+            documentation: compiled.documentation,
+        };
+        let bytecode_expr = BytecodeFunctionExpr::new(compiled.name, body);
         Ok(Box::new(bytecode_expr))
     }
+}
+
+pub fn compile_metadata(
+    typed_metadata: MetaData<TypedRefs>,
+) -> Result<MetaData<BytecodeRefs>, String> {
+    let compiler = BytecodeCompiler::new();
+    let mut new_metadata: MetaData<BytecodeRefs> = MetaData::default();
+
+    for (name, arc_def) in &typed_metadata.functions {
+        let body_ref = match &arc_def.ast_ref {
+            TypedCheckerAstRef::Function(f, FunctionKind::Bytecode) => {
+                let compiled = compiler.compile_to_bytecode(f)?;
+                Some(BytecodeRef {
+                    instructions: compiled.instructions,
+                    labels: compiled.labels,
+                    parameters: compiled.parameters,
+                    return_type: compiled.return_type,
+                    documentation: compiled.documentation,
+                })
+            }
+            TypedCheckerAstRef::ImplFunction(f, _, FunctionKind::Bytecode) => {
+                let compiled = compiler.compile_to_bytecode(f)?;
+                Some(BytecodeRef {
+                    instructions: compiled.instructions,
+                    labels: compiled.labels,
+                    parameters: compiled.parameters,
+                    return_type: compiled.return_type,
+                    documentation: compiled.documentation,
+                })
+            }
+            _ => None,
+        };
+        new_metadata.functions.insert(
+            name.clone(),
+            Arc::new(FunctionDefinition {
+                name: name.clone(),
+                visibility: arc_def.visibility.clone(),
+                type_name: arc_def.type_name.clone(),
+                source_ref: arc_def.source_ref.clone(),
+                ast_ref: arc_def.ast_ref.clone(),
+                body_ref,
+            }),
+        );
+    }
+
+    for (name, arc_def) in &typed_metadata.modules {
+        new_metadata.modules.insert(
+            name.clone(),
+            Arc::new(ModuleDefinition {
+                name: arc_def.name.clone(),
+                visibility: arc_def.visibility.clone(),
+                exports: arc_def.exports.clone(),
+                source_ref: arc_def.source_ref.clone(),
+                ast_ref: arc_def.ast_ref.clone(),
+            }),
+        );
+    }
+
+    for (name, arc_def) in &typed_metadata.types {
+        new_metadata.types.insert(
+            name.clone(),
+            Arc::new(TypeDefinition {
+                name: arc_def.name.clone(),
+                kind: arc_def.kind.clone(),
+                source_ref: arc_def.source_ref.clone(),
+                ast_ref: arc_def.ast_ref.clone(),
+            }),
+        );
+    }
+
+    for (name, arc_def) in &typed_metadata.traits {
+        new_metadata.traits.insert(
+            name.clone(),
+            Arc::new(TraitDefinition {
+                name: arc_def.name.clone(),
+                functions: arc_def.functions.clone(),
+                witness_ref: arc_def.witness_ref.clone(),
+                source_ref: arc_def.source_ref.clone(),
+                ast_ref: arc_def.ast_ref.clone(),
+            }),
+        );
+    }
+
+    for (key, arc_def) in &typed_metadata.impls {
+        new_metadata.impls.insert(
+            key.clone(),
+            Arc::new(ImplDefinition {
+                key: arc_def.key.clone(),
+                module: arc_def.module.clone(),
+                source_ref: arc_def.source_ref.clone(),
+                ast_ref: arc_def.ast_ref.clone(),
+            }),
+        );
+    }
+
+    Ok(new_metadata)
 }
 
 impl fmt::Display for CompiledFunction {

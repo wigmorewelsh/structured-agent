@@ -1,18 +1,29 @@
-use crate::bytecode::{CompiledFunction, VM};
+use crate::bytecode::{BytecodeRef, VM};
 use crate::runtime::{Context, ExpressionResult};
 use crate::types::{ExecutableFunction, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
+use structured_agent_runtime::FunctionName;
 
 pub struct BytecodeFunctionExpr {
-    compiled: CompiledFunction,
     name: String,
+    parameters: Vec<Parameter>,
+    return_type: Type,
+    instructions: Vec<crate::bytecode::Instruction>,
+    labels: std::collections::HashMap<String, usize>,
+    documentation: Option<String>,
 }
 
 impl BytecodeFunctionExpr {
-    pub fn new(compiled: CompiledFunction) -> Self {
-        let name = compiled.name.to_string();
-        Self { compiled, name }
+    pub fn new(name: FunctionName, body: BytecodeRef) -> Self {
+        Self {
+            name: name.to_string(),
+            parameters: body.parameters,
+            return_type: body.return_type,
+            instructions: body.instructions,
+            labels: body.labels,
+            documentation: body.documentation,
+        }
     }
 }
 
@@ -20,11 +31,11 @@ impl std::fmt::Debug for BytecodeFunctionExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BytecodeFunctionExpr")
             .field("name", &self.name)
-            .field("parameters", &self.compiled.parameters)
-            .field("return_type", &self.compiled.return_type)
+            .field("parameters", &self.parameters)
+            .field("return_type", &self.return_type)
             .field(
                 "instructions",
-                &format!("[{} instructions]", self.compiled.instructions.len()),
+                &format!("[{} instructions]", self.instructions.len()),
             )
             .finish()
     }
@@ -33,8 +44,12 @@ impl std::fmt::Debug for BytecodeFunctionExpr {
 impl Clone for BytecodeFunctionExpr {
     fn clone(&self) -> Self {
         BytecodeFunctionExpr {
-            compiled: self.compiled.clone(),
             name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_type: self.return_type.clone(),
+            instructions: self.instructions.clone(),
+            labels: self.labels.clone(),
+            documentation: self.documentation.clone(),
         }
     }
 }
@@ -46,11 +61,11 @@ impl Function for BytecodeFunctionExpr {
     }
 
     fn parameters(&self) -> &[Parameter] {
-        &self.compiled.parameters
+        &self.parameters
     }
 
     fn function_return_type(&self) -> &Type {
-        &self.compiled.return_type
+        &self.return_type
     }
 
     async fn execute(
@@ -58,12 +73,12 @@ impl Function for BytecodeFunctionExpr {
         mut context: Context,
         args: Vec<ExpressionResult>,
     ) -> Result<(Context, ExpressionResult), String> {
-        for (i, param) in self.compiled.parameters.iter().enumerate() {
+        for (i, param) in self.parameters.iter().enumerate() {
             context.declare_variable(param.name.clone(), args[i].clone());
         }
 
         let vm = VM::new(context.runtime_arc());
-        let result = vm.execute(&self.compiled, context).await?;
+        let result = vm.execute(&self.instructions, context).await?;
         let returned_context = result.0;
         let returned_result = result.1;
         Ok((returned_context, returned_result))
@@ -78,7 +93,7 @@ impl Function for BytecodeFunctionExpr {
     }
 
     fn documentation(&self) -> Option<&str> {
-        self.compiled.documentation.as_deref()
+        self.documentation.as_deref()
     }
 }
 
