@@ -20,6 +20,7 @@ use crate::typecheck::TypeChecker;
 use crate::typecheck::checker::{CheckerAstRef, ModuleVisibility, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
+use structured_agent_runtime::symbols::Visibility;
 
 use crate::ast::ParsedModule;
 use combine::Parser as CombineParser;
@@ -318,7 +319,7 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let (module_visibility, typed_metadata) = checker
+        let typed_metadata = checker
             .check_modules(&modules, &self.modules)
             .map_err(|e| {
                 error!("Type checking failed: {}", e);
@@ -327,6 +328,14 @@ impl Compiler {
                 }
                 format!("Type error: {}", e)
             })?;
+        let module_visibility: ModuleVisibility = typed_metadata
+            .functions
+            .iter()
+            .map(|(name, fdef)| {
+                let qname = format!("{}::{}", name.module, name.name);
+                (qname, matches!(fdef.visibility, Visibility::Public))
+            })
+            .collect();
 
         let function_kinds: HashMap<String, crate::typecheck::checker::FunctionKind> =
             typed_metadata

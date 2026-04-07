@@ -233,6 +233,7 @@ impl FunctionName {
 #[derive(Debug, Clone)]
 pub struct FunctionDefinition<R: References> {
     pub name: FunctionName,
+    pub visibility: Visibility,
     pub type_name: TypeName,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,

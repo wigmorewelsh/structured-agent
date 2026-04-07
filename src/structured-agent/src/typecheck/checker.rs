@@ -8,10 +8,10 @@ use crate::types::{FileId, Span, Spanned};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    AstRef, BodyRef, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
-    ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, References, SignatureEntry,
-    SourceRef, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
-    Visibility, WitnessRef,
+    AstRef, BodyRef, ExportedName, FieldDefinition, FunctionDefinition, FunctionName,
+    FunctionNameKind, ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, References,
+    SignatureEntry, SourceRef, SymbolQuery, TraitDefinition, TraitName, TypeDefinition,
+    TypeDefinitionKind, TypeName, Visibility, WitnessRef,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -119,7 +119,6 @@ struct TypeEnvironment {
 struct CheckContext<'a> {
     file_id: FileId,
     alias_map: &'a HashMap<String, String>,
-    module_visibility: &'a ModuleVisibility,
     alias_to_qualified: &'a AliasToQualified,
     module_name: Option<&'a str>,
 }
@@ -167,21 +166,33 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<(ModuleVisibility, MetaData<TypedRefs>), TypeError> {
-        let mut module_visibility: ModuleVisibility = HashMap::new();
+    ) -> Result<MetaData<TypedRefs>, TypeError> {
         for parsed in modules {
             let effective_name = if parsed.is_entry {
                 "main"
             } else {
                 parsed.name.as_str()
             };
-            self.collect_native_sigs(parsed, native_modules, &mut module_visibility);
-            Self::build_visibility_for_module(parsed, &mut module_visibility);
+            self.collect_native_sigs(parsed, native_modules);
             self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name)?;
+            let exports: Vec<ExportedName> = self
+                .metadata
+                .functions
+                .values()
+                .filter(|f| {
+                    f.name.module == ModuleName::from_str(effective_name)
+                        && matches!(f.visibility, Visibility::Public)
+                })
+                .map(|f| ExportedName::Function(f.name.clone()))
+                .collect();
             let module_def = ModuleDefinition {
                 name: ModuleName::from_str(effective_name),
-                visibility: Visibility::Public,
-                exports: vec![],
+                visibility: if parsed.is_entry {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                },
+                exports,
                 source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
                 ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
             };
@@ -196,7 +207,7 @@ impl TypeChecker {
         for parsed in modules {
             typed_modules.insert(
                 parsed.name.clone(),
-                self.check_single_module_expressions(parsed, &module_visibility)?,
+                self.check_single_module_expressions(parsed)?,
             );
         }
         let effective_name_to_typed: HashMap<String, &typed_ast::Module> = modules
@@ -266,6 +277,7 @@ impl TypeChecker {
             };
             let typed_fn_def = FunctionDefinition {
                 name: fn_def.name.clone(),
+                visibility: fn_def.visibility.clone(),
                 type_name: fn_def.type_name.clone(),
                 source_ref: SourceLocation(fn_def.source_ref.0, fn_def.source_ref.1),
                 ast_ref: typed_ast_ref,
@@ -321,7 +333,7 @@ impl TypeChecker {
                 .modules
                 .insert(module_key.clone(), Arc::new(new_def));
         }
-        Ok((module_visibility, typed_metadata))
+        Ok(typed_metadata)
     }
 
     #[allow(deprecated)]
@@ -329,7 +341,6 @@ impl TypeChecker {
         &mut self,
         parsed: &ParsedModule,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-        visibility: &mut ModuleVisibility,
     ) {
         for def in &parsed.module.definitions {
             let Definition::Use { path, .. } = def else {
@@ -366,7 +377,6 @@ impl TypeChecker {
                 .iter()
                 .map(|s| TypeParam::from(s.as_str()))
                 .collect();
-            visibility.insert(qname.clone(), true);
             let fn_key = match qname.rsplit_once("::") {
                 Some((module, name)) => FunctionName {
                     name: name.to_string(),
@@ -385,31 +395,15 @@ impl TypeChecker {
                 return_type,
                 type_params,
                 FunctionKind::External,
+                Visibility::Public,
                 SourceLocation(parsed.file_id, Span::dummy()),
             );
-        }
-    }
-
-    fn build_visibility_for_module(parsed: &ParsedModule, visibility: &mut ModuleVisibility) {
-        for def in &parsed.module.definitions {
-            let (name, is_pub) = match def {
-                Definition::Function(f) => (&f.name, f.is_pub),
-                Definition::ExternalFunction(f) => (&f.name, f.is_pub),
-                _ => continue,
-            };
-            let qname = if parsed.is_entry {
-                name.clone()
-            } else {
-                format!("{}::{}", parsed.name, name)
-            };
-            visibility.insert(qname, is_pub);
         }
     }
 
     fn check_single_module_expressions(
         &mut self,
         parsed: &ParsedModule,
-        module_visibility: &ModuleVisibility,
     ) -> Result<typed_ast::Module, TypeError> {
         let effective_name = if parsed.is_entry {
             "main"
@@ -418,11 +412,10 @@ impl TypeChecker {
         };
         let module = &parsed.module;
         let alias_map = Self::build_alias_map(module);
-        let alias_to_qualified = Self::build_alias_to_qualified(module, module_visibility);
+        let alias_to_qualified = self.build_alias_to_qualified(module);
         let ctx = CheckContext {
             file_id: parsed.file_id,
             alias_map: &alias_map,
-            module_visibility,
             alias_to_qualified: &alias_to_qualified,
             module_name: Some(effective_name),
         };
@@ -536,10 +529,12 @@ impl TypeChecker {
         return_type: AstType,
         type_params: Vec<TypeParam>,
         kind: FunctionKind,
+        visibility: Visibility,
         source_ref: SourceLocation,
     ) {
         let entry = FunctionDefinition {
             name: name.clone(),
+            visibility,
             type_name: ast_type_to_type_name(&return_type, &name.module.to_string()),
             source_ref,
             ast_ref: CheckerAstRef::ExternalFn {
@@ -715,6 +710,7 @@ impl TypeChecker {
                     ret_type,
                     vec![],
                     FunctionKind::External,
+                    Visibility::Public,
                     SourceLocation(file_id, Span::dummy()),
                 );
             }
@@ -793,6 +789,11 @@ impl TypeChecker {
                     };
                     let entry = FunctionDefinition {
                         name: fn_key.clone(),
+                        visibility: if func.is_pub {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        },
                         type_name: ast_type_to_type_name(&resolved_return, module_name),
                         source_ref: SourceLocation(file_id, func.span),
                         ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
@@ -843,6 +844,11 @@ impl TypeChecker {
                         resolved_return,
                         ext_func.type_params.clone(),
                         FunctionKind::External,
+                        if ext_func.is_pub {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        },
                         SourceLocation(file_id, ext_func.span),
                     );
                 }
@@ -962,6 +968,7 @@ impl TypeChecker {
                         };
                         let entry = FunctionDefinition {
                             name: impl_fn_key.clone(),
+                            visibility: Visibility::Private,
                             type_name: ast_type_to_type_name(&resolved_return, module_name),
                             source_ref: SourceLocation(file_id, func.span),
                             ast_ref: CheckerAstRef::ImplFunction(
@@ -1049,10 +1056,7 @@ impl TypeChecker {
             .collect()
     }
 
-    fn build_alias_to_qualified(
-        module: &Module,
-        module_visibility: &ModuleVisibility,
-    ) -> AliasToQualified {
+    fn build_alias_to_qualified(&self, module: &Module) -> AliasToQualified {
         let mut map = AliasToQualified::new();
 
         for def in &module.definitions {
@@ -1067,7 +1071,19 @@ impl TypeChecker {
             let fn_name = path.last().unwrap();
             let qualified = format!("{}::{}", dep_module, fn_name);
 
-            if module_visibility.contains_key(&qualified) {
+            let fn_key = match qualified.rsplit_once("::") {
+                Some((module_part, name)) => FunctionName {
+                    name: name.to_string(),
+                    module: ModuleName::from_str(module_part),
+                    kind: FunctionNameKind::Function,
+                },
+                None => FunctionName {
+                    name: qualified.clone(),
+                    module: ModuleName::unqualified(),
+                    kind: FunctionNameKind::Function,
+                },
+            };
+            if self.metadata.function(&fn_key).is_some() {
                 let key = alias.clone().unwrap_or_else(|| fn_name.clone());
                 map.insert(key, qualified);
             }
@@ -1609,10 +1625,6 @@ impl TypeChecker {
         span: Span,
         ctx: &CheckContext,
     ) -> Result<(), TypeError> {
-        if ctx.module_visibility.is_empty() {
-            return Ok(());
-        }
-
         let name_to_check = if qualified_for_vis.contains("::") {
             qualified_for_vis
         } else if resolved.contains("::") {
@@ -1621,11 +1633,21 @@ impl TypeChecker {
             return Ok(());
         };
 
-        let is_visible = ctx
-            .module_visibility
-            .get(name_to_check)
-            .copied()
+        let fn_key = match name_to_check.rsplit_once("::") {
+            Some((module_part, name)) => FunctionName {
+                name: name.to_string(),
+                module: ModuleName::from_str(module_part),
+                kind: FunctionNameKind::Function,
+            },
+            None => return Ok(()),
+        };
+
+        let is_visible = self
+            .metadata
+            .function(&fn_key)
+            .map(|f| matches!(f.visibility, Visibility::Public))
             .unwrap_or(true);
+
         if is_visible {
             Ok(())
         } else {

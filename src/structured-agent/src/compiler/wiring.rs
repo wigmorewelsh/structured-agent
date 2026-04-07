@@ -277,7 +277,7 @@ mod tests {
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
         FunctionDefinition, FunctionName, FunctionNameKind, MetaData, ModuleName, SignatureEntry,
-        TypeDefinition, TypeDefinitionKind, TypeName,
+        TypeDefinition, TypeDefinitionKind, TypeName, Visibility,
     };
 
     fn dummy_span() -> Span {
@@ -375,6 +375,7 @@ mod tests {
         };
         let fdef = FunctionDefinition {
             name: name.clone(),
+            visibility: Visibility::Public,
             type_name: TypeName {
                 name: "unit".to_string(),
                 module: ModuleName::from_str(module),
