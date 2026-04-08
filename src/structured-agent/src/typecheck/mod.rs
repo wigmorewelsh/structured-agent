@@ -1,5 +1,6 @@
 mod collection;
 mod constraints;
+mod db;
 mod elaboration;
 mod error;
 mod query;
@@ -125,6 +126,17 @@ impl TypeChecker {
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<(MetaData<TypedRefs>, HashMap<String, typed_ast::Module>), TypeError> {
+        self.populate_symbol_tables(modules, native_modules)?;
+        let typed_modules = self.elaborate_modules(modules)?;
+        let typed_metadata = self.materialize_metadata(modules, &typed_modules);
+        Ok((typed_metadata, typed_modules))
+    }
+
+    fn populate_symbol_tables(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> Result<(), TypeError> {
         for parsed in modules {
             let effective_name = if parsed.is_entry {
                 "main"
@@ -154,6 +166,13 @@ impl TypeChecker {
         for parsed in modules {
             self.register_param_sigs(&parsed.module, parsed.file_id);
         }
+        Ok(())
+    }
+
+    fn elaborate_modules(
+        &mut self,
+        modules: &[ParsedModule],
+    ) -> Result<HashMap<String, typed_ast::Module>, TypeError> {
         let mut typed_modules = HashMap::new();
         for parsed in modules {
             typed_modules.insert(
@@ -161,6 +180,14 @@ impl TypeChecker {
                 self.check_single_module_expressions(parsed)?,
             );
         }
+        Ok(typed_modules)
+    }
+
+    fn materialize_metadata(
+        &self,
+        modules: &[ParsedModule],
+        typed_modules: &HashMap<String, typed_ast::Module>,
+    ) -> MetaData<TypedRefs> {
         let effective_name_to_typed: HashMap<String, &typed_ast::Module> = modules
             .iter()
             .map(|p| {
@@ -310,7 +337,7 @@ impl TypeChecker {
                 .modules
                 .insert(module_key.clone(), Arc::new(new_def));
         }
-        Ok((typed_metadata, typed_modules))
+        typed_metadata
     }
 
     fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {

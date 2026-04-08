@@ -29,6 +29,7 @@ toml = "0.8"
 url = { version = "2.4", features = ["serde"] }
 rmcp = { version = "0.15", features = ["client", "transport-child-process", "macros"] }
 dashmap = "6.1.0"
+salsa = "0.26.0"
 arrow = { version = "57.2.0", default-features = false }
 schemars = "0.8"
 tracing = "0.1"
