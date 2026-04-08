@@ -341,7 +341,13 @@ impl TypeChecker {
                 module: import.module.clone(),
                 kind: FunctionNameKind::Function,
             };
-            if self.metadata.function(&fn_key).is_some() {
+            let fn_exists = if let Some(tables) = self.symbol_tables {
+                let interned = InternedFunctionName::new(&self.db, fn_key.clone());
+                lookup_function_def(&self.db, tables, interned).is_some()
+            } else {
+                self.metadata.function(&fn_key).is_some()
+            };
+            if fn_exists {
                 map.insert(import.local.clone(), import);
             }
         }
@@ -373,11 +379,17 @@ impl TypeChecker {
             None => return Ok(()),
         };
 
-        let is_visible = self
-            .metadata
-            .function(&fn_key)
-            .map(|f| matches!(f.visibility, Visibility::Public))
-            .unwrap_or(true);
+        let is_visible = if let Some(tables) = self.symbol_tables {
+            let interned = InternedFunctionName::new(&self.db, fn_key.clone());
+            lookup_function_def(&self.db, tables, interned)
+                .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
+                .unwrap_or(true)
+        } else {
+            self.metadata
+                .function(&fn_key)
+                .map(|f| matches!(f.visibility, Visibility::Public))
+                .unwrap_or(true)
+        };
 
         if is_visible {
             Ok(())
