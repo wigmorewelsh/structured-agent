@@ -24,6 +24,7 @@ use crate::ast::{
 };
 use crate::typed_ast;
 use crate::types::{FileId, Span};
+use db::{ArcPtr, SymbolTablesInput, TypeCheckDb};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
@@ -36,6 +37,8 @@ pub struct TypeChecker {
     pub(super) metadata: MetaData<CheckerRefs>,
     pub(super) param_bindings: HashMap<ImplKey, Arc<ImplDefinition<PrimitiveRefs>>>,
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
+    pub(super) db: TypeCheckDb,
+    pub(super) symbol_tables: Option<SymbolTablesInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +119,8 @@ impl TypeChecker {
             metadata: MetaData::default(),
             param_bindings: HashMap::new(),
             primitive_types: HashMap::new(),
+            db: TypeCheckDb::default(),
+            symbol_tables: None,
         };
         checker.seed_builtin_types();
         checker
@@ -166,6 +171,16 @@ impl TypeChecker {
         for parsed in modules {
             self.register_param_sigs(&parsed.module, parsed.file_id);
         }
+        let tables = SymbolTablesInput::new(
+            &self.db,
+            ArcPtr::new(self.metadata.functions.clone()),
+            ArcPtr::new(self.metadata.types.clone()),
+            ArcPtr::new(self.metadata.traits.clone()),
+            ArcPtr::new(self.metadata.impls.clone()),
+            ArcPtr::new(self.metadata.modules.clone()),
+            ArcPtr::new(self.param_bindings.clone()),
+        );
+        self.symbol_tables = Some(tables);
         Ok(())
     }
 

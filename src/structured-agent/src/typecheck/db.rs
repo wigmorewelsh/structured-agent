@@ -39,6 +39,10 @@ impl<T> ArcPtr<T> {
         ArcPtr(Arc::new(val))
     }
 
+    pub(super) fn from_arc(arc: Arc<T>) -> Self {
+        ArcPtr(arc)
+    }
+
     pub(super) fn get(&self) -> &T {
         &self.0
     }
@@ -61,6 +65,19 @@ impl<T> Eq for ArcPtr<T> {}
 impl<T> Hash for ArcPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);
+    }
+}
+
+unsafe impl<T> salsa::Update for ArcPtr<T> {
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        #[allow(unsafe_op_in_unsafe_fn)]
+        let old = &mut *old_pointer;
+        if *old != new_value {
+            *old = new_value;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -97,4 +114,67 @@ pub(super) struct InternedImplKey {
 #[salsa::interned]
 pub(super) struct InternedModuleName {
     pub(super) name: ModuleName,
+}
+
+#[salsa::tracked]
+pub(super) fn lookup_function_def<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    key: InternedFunctionName<'db>,
+) -> Option<ArcPtr<FunctionDefinition<CheckerRefs>>> {
+    let name = key.name(db);
+    tables
+        .functions(db)
+        .get()
+        .get(&name)
+        .map(|arc| ArcPtr::from_arc(arc.clone()))
+}
+
+#[salsa::tracked]
+pub(super) fn lookup_type_def<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    key: InternedTypeName<'db>,
+) -> Option<ArcPtr<TypeDefinition<CheckerRefs>>> {
+    let name = key.name(db);
+    tables
+        .types(db)
+        .get()
+        .get(&name)
+        .map(|arc| ArcPtr::from_arc(arc.clone()))
+}
+
+#[salsa::tracked]
+pub(super) fn lookup_trait_def<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    key: InternedTraitName<'db>,
+) -> Option<ArcPtr<TraitDefinition<CheckerRefs>>> {
+    let name = key.name(db);
+    tables
+        .traits(db)
+        .get()
+        .get(&name)
+        .map(|arc| ArcPtr::from_arc(arc.clone()))
+}
+
+#[salsa::tracked]
+pub(super) fn lookup_impl_exists<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    type_name: InternedTypeName<'db>,
+    trait_name: InternedTraitName<'db>,
+) -> bool {
+    let tn = type_name.name(db);
+    let trn = trait_name.name(db);
+    tables
+        .impls(db)
+        .get()
+        .keys()
+        .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
+        || tables
+            .param_bindings(db)
+            .get()
+            .keys()
+            .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
 }

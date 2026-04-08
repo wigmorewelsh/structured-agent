@@ -1,3 +1,7 @@
+use super::db::{
+    InternedFunctionName, InternedTraitName, InternedTypeName, lookup_function_def,
+    lookup_impl_exists, lookup_trait_def, lookup_type_def,
+};
 use super::refs::{AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker};
 use crate::ast::{Definition, Expression, Module, SigFunction, Type as AstType};
@@ -15,56 +19,69 @@ impl TypeChecker {
         name: &FunctionName,
         type_imports: &HashMap<String, UseImport>,
     ) -> Option<FunctionSignature> {
-        self.metadata.function(name).and_then(|f| match &f.ast_ref {
-            CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
-                parameters: func
-                    .parameters
-                    .iter()
-                    .map(|p| crate::ast::Parameter {
-                        name: p.name.clone(),
-                        param_type: self.resolve_type(&p.param_type, &name.module, type_imports),
-                        span: p.span,
-                    })
-                    .collect(),
-                return_type: self.resolve_type(&func.return_type, &name.module, type_imports),
-                type_params: func.type_params.clone(),
-                kind: kind.clone(),
-            }),
-            CheckerAstRef::ImplFunction(func, concrete_type, kind) => Some(FunctionSignature {
-                parameters: func
-                    .parameters
-                    .iter()
-                    .map(|p| crate::ast::Parameter {
-                        name: p.name.clone(),
-                        param_type: self.resolve_type(
-                            &Self::substitute_self(&p.param_type, concrete_type),
-                            &name.module,
-                            type_imports,
-                        ),
-                        span: p.span,
-                    })
-                    .collect(),
-                return_type: self.resolve_type(
-                    &Self::substitute_self(&func.return_type, concrete_type),
-                    &name.module,
-                    type_imports,
-                ),
-                type_params: func.type_params.clone(),
-                kind: kind.clone(),
-            }),
-            CheckerAstRef::ExternalFn {
-                params,
-                return_type,
-                type_params,
-                kind,
-            } => Some(FunctionSignature {
-                parameters: params.clone(),
-                return_type: return_type.clone(),
-                type_params: type_params.clone(),
-                kind: kind.clone(),
-            }),
-            _ => None,
-        })
+        let make_sig =
+            |f: &structured_agent_runtime::symbols::FunctionDefinition<CheckerRefs>| match &f
+                .ast_ref
+            {
+                CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
+                    parameters: func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self.resolve_type(
+                                &p.param_type,
+                                &name.module,
+                                type_imports,
+                            ),
+                            span: p.span,
+                        })
+                        .collect(),
+                    return_type: self.resolve_type(&func.return_type, &name.module, type_imports),
+                    type_params: func.type_params.clone(),
+                    kind: kind.clone(),
+                }),
+                CheckerAstRef::ImplFunction(func, concrete_type, kind) => Some(FunctionSignature {
+                    parameters: func
+                        .parameters
+                        .iter()
+                        .map(|p| crate::ast::Parameter {
+                            name: p.name.clone(),
+                            param_type: self.resolve_type(
+                                &Self::substitute_self(&p.param_type, concrete_type),
+                                &name.module,
+                                type_imports,
+                            ),
+                            span: p.span,
+                        })
+                        .collect(),
+                    return_type: self.resolve_type(
+                        &Self::substitute_self(&func.return_type, concrete_type),
+                        &name.module,
+                        type_imports,
+                    ),
+                    type_params: func.type_params.clone(),
+                    kind: kind.clone(),
+                }),
+                CheckerAstRef::ExternalFn {
+                    params,
+                    return_type,
+                    type_params,
+                    kind,
+                } => Some(FunctionSignature {
+                    parameters: params.clone(),
+                    return_type: return_type.clone(),
+                    type_params: type_params.clone(),
+                    kind: kind.clone(),
+                }),
+                _ => None,
+            };
+        if let Some(tables) = self.symbol_tables {
+            let key = InternedFunctionName::new(&self.db, name.clone());
+            lookup_function_def(&self.db, tables, key).and_then(|arc_ptr| make_sig(arc_ptr.get()))
+        } else {
+            self.metadata.function(name).and_then(|f| make_sig(&*f))
+        }
     }
 
     pub(super) fn get_struct_fields(
@@ -74,8 +91,8 @@ impl TypeChecker {
         type_imports: &HashMap<String, UseImport>,
     ) -> Option<Vec<(String, AstType)>> {
         let resolved = Self::resolve_named_type(name, current_module, type_imports);
-        self.metadata.type_def(&resolved).and_then(|td| {
-            if let CheckerAstRef::Struct(s) = &td.ast_ref {
+        let extract = |ast_ref: &CheckerAstRef| {
+            if let CheckerAstRef::Struct(s) = ast_ref {
                 Some(
                     s.fields
                         .iter()
@@ -85,7 +102,16 @@ impl TypeChecker {
             } else {
                 None
             }
-        })
+        };
+        if let Some(tables) = self.symbol_tables {
+            let key = InternedTypeName::new(&self.db, resolved);
+            lookup_type_def(&self.db, tables, key)
+                .and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
+        } else {
+            self.metadata
+                .type_def(&resolved)
+                .and_then(|td| extract(&td.ast_ref))
+        }
     }
 
     pub(super) fn get_trait_functions(
@@ -99,24 +125,47 @@ impl TypeChecker {
             name: resolved.name,
             module: resolved.module,
         };
-        self.metadata.trait_def(&trait_name).and_then(|td| {
-            if let CheckerAstRef::Trait(t) = &td.ast_ref {
+        let extract = |ast_ref: &CheckerAstRef| {
+            if let CheckerAstRef::Trait(t) = ast_ref {
                 Some(t.functions.clone())
             } else {
                 None
             }
-        })
+        };
+        if let Some(tables) = self.symbol_tables {
+            let key = InternedTraitName::new(&self.db, trait_name);
+            lookup_trait_def(&self.db, tables, key)
+                .and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
+        } else {
+            self.metadata
+                .trait_def(&trait_name)
+                .and_then(|td| extract(&td.ast_ref))
+        }
     }
 
     pub(super) fn type_implements_trait(&self, type_name: &str, trait_name: &str) -> bool {
-        self.metadata
-            .impls
-            .keys()
-            .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
-            || self
-                .param_bindings
+        if let Some(tables) = self.symbol_tables {
+            let tn = TypeName {
+                name: type_name.to_string(),
+                module: ModuleName::unqualified(),
+            };
+            let trn = TraitName {
+                name: trait_name.to_string(),
+                module: ModuleName::unqualified(),
+            };
+            let type_key = InternedTypeName::new(&self.db, tn);
+            let trait_key = InternedTraitName::new(&self.db, trn);
+            lookup_impl_exists(&self.db, tables, type_key, trait_key)
+        } else {
+            self.metadata
+                .impls
                 .keys()
                 .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
+                || self
+                    .param_bindings
+                    .keys()
+                    .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
+        }
     }
 
     pub(super) fn get_sig_functions(
@@ -126,16 +175,25 @@ impl TypeChecker {
         type_imports: &HashMap<String, UseImport>,
     ) -> Option<Vec<SigFunction>> {
         let resolved = Self::resolve_named_type(name, current_module, type_imports);
-        self.metadata
-            .type_def(&resolved)
-            .filter(|td| matches!(td.kind, TypeDefinitionKind::Signature { .. }))
-            .and_then(|td| {
-                if let CheckerAstRef::Signature(s) = &td.ast_ref {
-                    Some(s.functions.clone())
-                } else {
-                    None
-                }
-            })
+        let extract = |td_kind: &TypeDefinitionKind, ast_ref: &CheckerAstRef| {
+            if !matches!(td_kind, TypeDefinitionKind::Signature { .. }) {
+                return None;
+            }
+            if let CheckerAstRef::Signature(s) = ast_ref {
+                Some(s.functions.clone())
+            } else {
+                None
+            }
+        };
+        if let Some(tables) = self.symbol_tables {
+            let key = InternedTypeName::new(&self.db, resolved);
+            lookup_type_def(&self.db, tables, key)
+                .and_then(|arc_ptr| extract(&arc_ptr.get().kind, &arc_ptr.get().ast_ref))
+        } else {
+            self.metadata
+                .type_def(&resolved)
+                .and_then(|td| extract(&td.kind, &td.ast_ref))
+        }
     }
 
     pub(super) fn resolve_impl_call(
