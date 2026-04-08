@@ -348,9 +348,9 @@ mod tests {
     use super::{CompilationUnit, Compiler};
     use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
+    use nonempty::NonEmpty;
     use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
 
-    #[allow(deprecated)]
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
             .build()
@@ -439,17 +439,17 @@ fn main(): String {
 
         assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "main".to_string(),
-            module: ModuleName::from_str("main"),
+            module: ModuleName::new(NonEmpty::new("main".to_string())),
             kind: FunctionNameKind::Function
         }));
         assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "greet".to_string(),
-            module: ModuleName::from_str("greetlib"),
+            module: ModuleName::new(NonEmpty::new("greetlib".to_string())),
             kind: FunctionNameKind::Function
         }));
         assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "internal".to_string(),
-            module: ModuleName::from_str("greetlib"),
+            module: ModuleName::new(NonEmpty::new("greetlib".to_string())),
             kind: FunctionNameKind::Function
         }));
     }

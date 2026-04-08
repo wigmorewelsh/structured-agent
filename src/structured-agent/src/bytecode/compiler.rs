@@ -3,6 +3,7 @@ use crate::ast;
 use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -50,7 +51,6 @@ impl BytecodeCompiler {
         Self
     }
 
-    #[allow(deprecated)]
     pub fn compile_to_bytecode(
         &self,
         typed_func: &typed_ast::Function,
@@ -89,7 +89,7 @@ impl BytecodeCompiler {
         Ok(CompiledFunction {
             name: FunctionName {
                 name: typed_func.name.clone(),
-                module: ModuleName::unqualified(),
+                module: ModuleName::new(NonEmpty::new(String::new())),
                 kind: FunctionNameKind::Function,
             },
             module_name: None,

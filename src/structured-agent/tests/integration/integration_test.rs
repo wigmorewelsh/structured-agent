@@ -1,3 +1,4 @@
+use nonempty::NonEmpty;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::Runtime;
@@ -140,7 +141,7 @@ fn main(): String {
             .functions
             .contains_key(&FunctionName {
                 name: "helper".to_string(),
-                module: ModuleName::from_str("main"),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
                 kind: FunctionNameKind::Function
             }),
         "Expected 'helper' function to be present"
@@ -151,7 +152,7 @@ fn main(): String {
             .functions
             .contains_key(&FunctionName {
                 name: "main".to_string(),
-                module: ModuleName::from_str("main"),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
                 kind: FunctionNameKind::Function
             }),
         "Expected 'main' function to be present"

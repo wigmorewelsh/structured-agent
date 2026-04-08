@@ -231,11 +231,11 @@ pub(super) fn type_implements_trait(
 ) -> bool {
     let tn = TypeName {
         name: type_name.to_string(),
-        module: ModuleName::unqualified(),
+        module: ModuleName::new(NonEmpty::new(String::new())),
     };
     let trn = TraitName {
         name: trait_name.to_string(),
-        module: ModuleName::unqualified(),
+        module: ModuleName::new(NonEmpty::new(String::new())),
     };
     let type_key = InternedTypeName::new(db, tn);
     let trait_key = InternedTraitName::new(db, trn);
@@ -267,7 +267,7 @@ pub(super) fn resolve_impl_call(
         db,
         TypeName {
             name: type_name.clone(),
-            module: ModuleName::unqualified(),
+            module: ModuleName::new(NonEmpty::new(String::new())),
         },
     );
     if let Some(interned_trait) = find_trait_for_impl_call(db, tables, interned_fn, interned_type) {
@@ -340,7 +340,6 @@ pub(super) fn check_visibility(
     }
 }
 
-#[allow(deprecated)]
 pub(super) fn lookup_sig(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -359,7 +358,7 @@ pub(super) fn lookup_sig(
             },
             None => FunctionName {
                 name: resolved.to_string(),
-                module: ModuleName::unqualified(),
+                module: ModuleName::new(NonEmpty::new(String::new())),
                 kind: FunctionNameKind::Function,
             },
         };
@@ -383,7 +382,7 @@ pub(super) fn lookup_sig(
         get_function_sig(db, tables, &name, ctx.type_imports).or_else(|| {
             let fallback = FunctionName {
                 name: resolved.to_string(),
-                module: ModuleName::unqualified(),
+                module: ModuleName::new(NonEmpty::new(String::new())),
                 kind: FunctionNameKind::Function,
             };
             get_function_sig(db, tables, &fallback, ctx.type_imports)
@@ -572,7 +571,7 @@ impl TypeChecker {
             },
             None => FunctionName {
                 name: s.to_string(),
-                module: ModuleName::unqualified(),
+                module: ModuleName::new(NonEmpty::new(String::new())),
                 kind: FunctionNameKind::Function,
             },
         };

@@ -155,7 +155,9 @@ impl ModuleName {
 
     #[deprecated(note = "transition marker: replace with the real module name")]
     pub fn unqualified() -> Self {
-        Self::from_str("")
+        ModuleName {
+            segments: NonEmpty::new(String::new()),
+        }
     }
 }
 
@@ -231,14 +233,14 @@ impl FunctionName {
     pub fn plain(module: &str, name: &str) -> Self {
         FunctionName {
             name: name.to_string(),
-            module: ModuleName::from_str(module),
+            module: ModuleName::new(NonEmpty::new(module.to_string())),
             kind: FunctionNameKind::Function,
         }
     }
 
     #[deprecated(note = "use structured constructors")]
     pub fn impl_fn(module: &str, type_name: &str, trait_name: &str, fn_name: &str) -> Self {
-        let module_name = ModuleName::from_str(module);
+        let module_name = ModuleName::new(NonEmpty::new(module.to_string()));
         FunctionName {
             name: fn_name.to_string(),
             module: module_name.clone(),
@@ -256,17 +258,19 @@ impl FunctionName {
     }
 
     #[deprecated(note = "use structured constructors")]
-    #[allow(deprecated)]
     pub fn from_qualified_str(s: &str) -> Self {
         match s.rsplit_once("::") {
             Some((module, name)) => FunctionName {
                 name: name.to_string(),
-                module: ModuleName::from_str(module),
+                module: ModuleName::new(
+                    NonEmpty::from_vec(module.split("::").map(|s| s.to_string()).collect())
+                        .unwrap(),
+                ),
                 kind: FunctionNameKind::Function,
             },
             None => FunctionName {
                 name: s.to_string(),
-                module: ModuleName::unqualified(),
+                module: ModuleName::new(NonEmpty::new(String::new())),
                 kind: FunctionNameKind::Function,
             },
         }

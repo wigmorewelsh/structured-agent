@@ -5,6 +5,7 @@ mod tests {
     use crate::bytecode::{BytecodeRef, Instruction};
     use crate::il_analysis::{CallArityAnalyzer, IlAnalyzer, IlWarning};
     use crate::types::Type;
+    use nonempty::NonEmpty;
     use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     fn make_function(instructions: Vec<Instruction>) -> BytecodeRef {
@@ -40,7 +41,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "greet".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$arg0".to_string()],
@@ -65,7 +66,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "get_value".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec![],
@@ -90,7 +91,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "add".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string()],
@@ -124,7 +125,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "negate".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string()],
@@ -158,7 +159,7 @@ mod tests {
             Instruction::CallExternal {
                 function_name: FunctionName {
                     name: "external_tool".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
@@ -186,7 +187,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "foo".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec![],
@@ -195,7 +196,7 @@ mod tests {
             Instruction::CallBytecode {
                 function_name: FunctionName {
                     name: "bar".to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 params: vec!["$a".to_string(), "$b".to_string()],

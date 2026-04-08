@@ -60,7 +60,6 @@ impl TypeChecker {
             else {
                 continue;
             };
-            let qname = format!("{}::{}", native_mod_name, fn_name);
             let parameters = func
                 .parameters()
                 .iter()
@@ -76,20 +75,10 @@ impl TypeChecker {
                 .iter()
                 .map(|s| TypeParam::from(s.as_str()))
                 .collect();
-            let fn_key = match qname.rsplit_once("::") {
-                Some((module, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::new(
-                        NonEmpty::from_vec(module.split("::").map(|s| s.to_string()).collect())
-                            .unwrap(),
-                    ),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: qname.to_string(),
-                    module: ModuleName::unqualified(),
-                    kind: FunctionNameKind::Function,
-                },
+            let fn_key = FunctionName {
+                name: fn_name.to_string(),
+                module: ModuleName::new(NonEmpty::new(native_mod_name.to_string())),
+                kind: FunctionNameKind::Function,
             };
             self.insert_fn(
                 fn_key,
@@ -293,7 +282,7 @@ impl TypeChecker {
                         },
                         None => FunctionName {
                             name: ext_func.name.to_string(),
-                            module: ModuleName::unqualified(),
+                            module: ModuleName::new(NonEmpty::new(String::new())),
                             kind: FunctionNameKind::Function,
                         },
                     };

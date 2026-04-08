@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod instruction_display_tests {
     use crate::bytecode::Instruction;
+    use nonempty::NonEmpty;
     use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
     #[test]
@@ -17,7 +18,7 @@ mod instruction_display_tests {
         let instr = Instruction::CallBytecode {
             function_name: FunctionName {
                 name: "foo".to_string(),
-                module: ModuleName::from_str("mymod"),
+                module: ModuleName::new(NonEmpty::new("mymod".to_string())),
                 kind: FunctionNameKind::Function,
             },
             params: vec!["x".to_string(), "y".to_string()],
@@ -34,7 +35,7 @@ mod instruction_display_tests {
         let instr = Instruction::CallExternal {
             function_name: FunctionName {
                 name: "foo".to_string(),
-                module: ModuleName::from_str("mymod"),
+                module: ModuleName::new(NonEmpty::new("mymod".to_string())),
                 kind: FunctionNameKind::Function,
             },
             params: vec!["x".to_string(), "y".to_string()],
@@ -845,6 +846,7 @@ mod vm_execution_tests {
     use crate::typecheck::TypeChecker;
     use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
+    use nonempty::NonEmpty;
     use std::collections::HashMap;
     use std::sync::Arc;
     use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
@@ -957,7 +959,7 @@ mod vm_execution_tests {
                 function: function.clone(),
                 resolved: FunctionName {
                     name: function.to_string(),
-                    module: ModuleName::from_str("test"),
+                    module: ModuleName::new(NonEmpty::new("test".to_string())),
                     kind: FunctionNameKind::Function,
                 },
                 kind: crate::typecheck::FunctionKind::External,
@@ -1400,7 +1402,7 @@ mod vm_execution_tests {
             .functions
             .get(&FunctionName {
                 name: "test".to_string(),
-                module: ModuleName::from_str("main"),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
                 kind: FunctionNameKind::Function,
             })
             .and_then(|d| d.body_ref.as_ref())
