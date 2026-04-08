@@ -173,7 +173,7 @@ pub enum ExportedName {
     Trait(TraitName),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UseImport {
     pub local: String,
     pub module: ModuleName,

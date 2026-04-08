@@ -26,7 +26,7 @@ pub struct ModuleParam {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeParam {
     pub name: String,
     pub bounds: Vec<String>,
@@ -81,7 +81,7 @@ impl fmt::Display for TypeParam {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SigFunction {
     pub name: String,
     pub type_params: Vec<TypeParam>,
@@ -189,7 +189,7 @@ pub struct Function {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub name: String,
     pub param_type: Type,
@@ -206,7 +206,7 @@ pub struct ExternalFunction {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Unit,
     Boolean,

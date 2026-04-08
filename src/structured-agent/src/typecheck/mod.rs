@@ -38,7 +38,7 @@ pub struct TypeChecker {
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FunctionSignature {
     pub(super) parameters: Vec<Parameter>,
     pub(super) return_type: AstType,

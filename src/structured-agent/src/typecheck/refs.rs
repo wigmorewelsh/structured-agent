@@ -13,7 +13,7 @@ use structured_agent_runtime::symbols::{
 pub type ModuleVisibility = HashMap<String, bool>;
 pub type AliasToQualified = HashMap<String, UseImport>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionKind {
     Bytecode,
     External,
