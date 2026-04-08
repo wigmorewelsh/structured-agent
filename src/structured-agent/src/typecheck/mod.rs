@@ -36,9 +36,9 @@ use structured_agent_runtime::types::Module as RuntimeModule;
 pub struct TypeChecker {
     pub(super) metadata: MetaData<CheckerRefs>,
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
-    pub(super) db: TypeCheckDb,
-    pub(super) symbol_tables: Option<SymbolTablesInput>,
-    pub(super) parsed_inputs: HashMap<String, ParsedModuleInput>,
+    db: TypeCheckDb,
+    symbol_tables: Option<SymbolTablesInput>,
+    parsed_inputs: HashMap<String, ParsedModuleInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

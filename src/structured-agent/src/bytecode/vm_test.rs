@@ -1,6 +1,6 @@
 use crate::cli::config::ProgramSource;
 use crate::runtime::Runtime;
-use arrow::array::{Array, BooleanArray, Int64Array, StringArray, StructArray, UnionArray};
+use arrow::array::{Array, BooleanArray, Int64Array, StringArray, StructArray};
 
 #[tokio::test]
 async fn test_vm_simple_string_return() {

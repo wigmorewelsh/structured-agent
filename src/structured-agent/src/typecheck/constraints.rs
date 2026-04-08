@@ -97,42 +97,6 @@ pub(super) fn validate_type_with_params(
 }
 
 impl TypeChecker {
-    pub(super) fn resolve_type(
-        &self,
-        t: &AstType,
-        module: &ModuleName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> AstType {
-        resolve_type(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            t,
-            module,
-            type_imports,
-        )
-    }
-
-    pub(super) fn validate_type_with_params(
-        &self,
-        ast_type: &AstType,
-        span: Span,
-        file_id: FileId,
-        type_params: &[TypeParam],
-        module: &ModuleName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> Result<(), TypeError> {
-        validate_type_with_params(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            ast_type,
-            span,
-            file_id,
-            type_params,
-            module,
-            type_imports,
-        )
-    }
-
     pub(super) fn unify_type(
         formal: &AstType,
         actual: &AstType,

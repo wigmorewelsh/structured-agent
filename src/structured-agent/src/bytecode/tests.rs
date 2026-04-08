@@ -838,7 +838,7 @@ fn test(): Int {
 
 #[cfg(test)]
 mod vm_execution_tests {
-    use crate::bytecode::{BytecodeCompiler, BytecodeFunctionExpr, VM};
+    use crate::bytecode::{BytecodeCompiler, VM};
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
@@ -921,7 +921,7 @@ mod vm_execution_tests {
     fn ast_expr_to_typed(expr: &crate::ast::Expression) -> typed_ast::Expression {
         use crate::ast::Expression as AE;
         use crate::ast::Type;
-        let dummy = crate::types::Span::dummy();
+        let _dummy = crate::types::Span::dummy();
         match expr {
             AE::StringLiteral { value, span } => typed_ast::Expression::StringLiteral {
                 value: value.clone(),

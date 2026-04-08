@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::ast::{ExternalFunction, Parameter, SigFunction, StructDefinition, Type};
+use crate::ast::{ExternalFunction, Parameter, StructDefinition, Type};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;

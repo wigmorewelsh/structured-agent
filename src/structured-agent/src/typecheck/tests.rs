@@ -4,7 +4,7 @@ use crate::ast::{
     SelectExpression, Statement, Type as AstType,
 };
 use crate::compiler::parser::parse_program;
-use combine::{Parser, Stream, stream::position::IndexPositioner};
+use combine::{Parser, stream::position::IndexPositioner};
 
 fn create_test_module(definitions: Vec<Definition>) -> Module {
     Module {
@@ -1633,7 +1633,7 @@ mod typed_ast_tests {
     use crate::typecheck::{FunctionKind, TypedCheckerAstRef};
     use crate::typed_ast;
     use nonempty::NonEmpty;
-    use std::collections::HashMap;
+
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
         FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName,
@@ -1682,10 +1682,6 @@ mod typed_ast_tests {
                 }
             })
             .unwrap()
-    }
-
-    fn first_stmt(module: &typed_ast::Module) -> &typed_ast::Statement {
-        first_function(module).body.statements.first().unwrap()
     }
 
     fn stmt_expr(stmt: &typed_ast::Statement) -> &typed_ast::Expression {

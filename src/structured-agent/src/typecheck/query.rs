@@ -11,8 +11,8 @@ use crate::types::Span;
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{
-    FunctionDefinition, FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery,
-    TraitName, TypeName, UseImport, Visibility,
+    FunctionDefinition, FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName, UseImport,
+    Visibility,
 };
 
 pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {
@@ -391,114 +391,6 @@ pub(super) fn lookup_sig(
 }
 
 impl TypeChecker {
-    fn get_function_sig(
-        &self,
-        name: &FunctionName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> Option<FunctionSignature> {
-        get_function_sig(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            name,
-            type_imports,
-        )
-    }
-
-    pub(super) fn get_struct_fields(
-        &self,
-        name: &str,
-        current_module: &ModuleName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> Option<Vec<(String, AstType)>> {
-        get_struct_fields(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            name,
-            current_module,
-            type_imports,
-        )
-    }
-
-    pub(super) fn get_trait_functions(
-        &self,
-        name: &str,
-        current_module: &ModuleName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> Option<Vec<SigFunction>> {
-        get_trait_functions(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            name,
-            current_module,
-            type_imports,
-        )
-    }
-
-    pub(super) fn type_implements_trait(&self, type_name: &str, trait_name: &str) -> bool {
-        type_implements_trait(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            type_name,
-            trait_name,
-        )
-    }
-
-    pub(super) fn resolve_impl_call(
-        &self,
-        fn_name: &str,
-        arguments: &[Expression],
-        env: &super::TypeEnvironment,
-        ctx: &CheckContext,
-    ) -> Option<(FunctionName, FunctionSignature)> {
-        resolve_impl_call(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            fn_name,
-            arguments,
-            env,
-            ctx,
-        )
-    }
-
-    pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {
-        build_alias_map(module)
-    }
-
-    pub(super) fn build_type_import_map(
-        module: &Module,
-        metadata: &MetaData<CheckerRefs>,
-    ) -> HashMap<String, UseImport> {
-        module
-            .definitions
-            .iter()
-            .filter_map(|def| {
-                if let Definition::Use {
-                    path, name, alias, ..
-                } = def
-                {
-                    let import = UseImport {
-                        local: alias.clone().unwrap_or_else(|| name.clone()),
-                        module: ModuleName::new(path.clone()),
-                        name: name.clone(),
-                    };
-                    if metadata
-                        .type_def(&TypeName {
-                            name: import.name.clone(),
-                            module: import.module.clone(),
-                        })
-                        .is_some()
-                    {
-                        Some((import.local.clone(), import))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     pub(super) fn resolve_named_type(
         name: &str,
         current_module: &ModuleName,
@@ -515,44 +407,6 @@ impl TypeChecker {
                 module: current_module.clone(),
             }
         }
-    }
-
-    pub(super) fn build_alias_to_qualified(&self, module: &Module) -> AliasToQualified {
-        build_alias_to_qualified(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            module,
-        )
-    }
-
-    pub(super) fn check_visibility(
-        &self,
-        qualified_for_vis: &str,
-        resolved: &str,
-        span: Span,
-        ctx: &CheckContext,
-    ) -> Result<(), TypeError> {
-        check_visibility(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            qualified_for_vis,
-            resolved,
-            span,
-            ctx,
-        )
-    }
-
-    pub(super) fn lookup_sig(
-        &self,
-        resolved: &str,
-        ctx: &CheckContext,
-    ) -> Option<FunctionSignature> {
-        lookup_sig(
-            &self.db,
-            self.symbol_tables.expect("symbol tables not populated"),
-            resolved,
-            ctx,
-        )
     }
 
     pub(super) fn make_function_name(
