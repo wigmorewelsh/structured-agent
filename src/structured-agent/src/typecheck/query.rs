@@ -222,6 +222,7 @@ impl TypeChecker {
                 {
                     let import = UseImport {
                         local: alias.clone().unwrap_or_else(|| name.clone()),
+                        // FIXME: this is wrong them module is the current.module + path, the current module is a arg
                         module: ModuleName::new(path.clone()),
                         name: name.clone(),
                     };
