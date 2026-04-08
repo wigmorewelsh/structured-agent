@@ -145,7 +145,7 @@ impl TypeChecker {
                 parsed.name.as_str()
             };
             self.collect_native_sigs(parsed, native_modules);
-            self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name)?;
+            self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name);
             let exports = self.collect_module_exports(&ModuleName::from_str(effective_name));
             let use_imports = extract_use_imports(&parsed.module);
             let module_def = ModuleDefinition {

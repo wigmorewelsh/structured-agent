@@ -1,4 +1,3 @@
-use super::refs::CheckerAstRef;
 use super::{CheckContext, TypeChecker, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, ParsedModule, SelectClause, Statement,
@@ -8,7 +7,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
-use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
+use structured_agent_runtime::symbols::ModuleName;
 
 impl TypeChecker {
     pub(super) fn check_single_module_expressions(
@@ -59,6 +58,25 @@ impl TypeChecker {
                 self.check_function(func, ctx)?,
             )),
             Definition::ExternalFunction(f) => {
+                let module = ModuleName::from_str(ctx.module_name.unwrap_or(""));
+                self.validate_type_with_params(
+                    &f.return_type,
+                    f.span,
+                    ctx.file_id,
+                    &f.type_params,
+                    &module,
+                    ctx.type_imports,
+                )?;
+                for param in &f.parameters {
+                    self.validate_type_with_params(
+                        &param.param_type,
+                        param.span,
+                        ctx.file_id,
+                        &f.type_params,
+                        &module,
+                        ctx.type_imports,
+                    )?;
+                }
                 Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
             }
             Definition::Struct(s) => {
@@ -168,13 +186,27 @@ impl TypeChecker {
         let mut env = TypeEnvironment::new();
         let module = ModuleName::from_str(ctx.module_name.unwrap_or("main"));
         for param in &func.parameters {
-            env.declare_variable(
-                param.name.clone(),
-                self.resolve_type(&param.param_type, &module, ctx.type_imports),
+            let resolved_param_type =
+                self.resolve_type(&param.param_type, &module, ctx.type_imports);
+            self.validate_type_with_params(
+                &resolved_param_type,
                 param.span,
-            );
+                ctx.file_id,
+                &func.type_params,
+                &module,
+                ctx.type_imports,
+            )?;
+            env.declare_variable(param.name.clone(), resolved_param_type, param.span);
         }
         let resolved_return_type = self.resolve_type(&func.return_type, &module, ctx.type_imports);
+        self.validate_type_with_params(
+            &resolved_return_type,
+            func.span,
+            ctx.file_id,
+            &func.type_params,
+            &module,
+            ctx.type_imports,
+        )?;
         let mut typed_stmts = Vec::new();
         for statement in &func.body.statements {
             let (typed_stmt, new_env) =
