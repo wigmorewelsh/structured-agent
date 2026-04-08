@@ -1,7 +1,7 @@
 use crate::types::{FileId, Span};
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
     UnknownVariable {
         name: String,

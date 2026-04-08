@@ -6,14 +6,14 @@ use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
 use structured_agent_runtime::FunctionName;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Module {
     pub definitions: Vec<Definition>,
     pub span: Span,
     pub file_id: FileId,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Definition {
     Function(Function),
     ExternalFunction(ExternalFunction),
@@ -52,7 +52,7 @@ pub enum Definition {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Function {
     pub name: String,
     pub parameters: Vec<Parameter>,
@@ -63,13 +63,13 @@ pub struct Function {
     pub span: Span,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FunctionBody {
     pub statements: Vec<Statement>,
     pub span: Span,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Statement {
     Injection(Expression),
     Assignment {
@@ -97,13 +97,13 @@ pub enum Statement {
     Return(Expression),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SelectExpression {
     pub clauses: Vec<SelectClause>,
     pub span: Span,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
     pub result_variable: String,
@@ -111,7 +111,7 @@ pub struct SelectClause {
     pub span: Span,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expression {
     Call {
         function: String,

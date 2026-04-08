@@ -2,6 +2,7 @@ use super::refs::{CheckerAstRef, CheckerRefs};
 use crate::ast::Module as AstModule;
 use crate::types::FileId;
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
@@ -61,6 +62,12 @@ impl<T> PartialEq for ArcPtr<T> {
 }
 
 impl<T> Eq for ArcPtr<T> {}
+
+impl<T: fmt::Debug> fmt::Debug for ArcPtr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
 
 impl<T> Hash for ArcPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
