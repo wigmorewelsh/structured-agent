@@ -1,3 +1,4 @@
+use super::db::{InternedFunctionName, InternedImplKey, lookup_function_def, lookup_impl_def};
 use super::refs::CheckerAstRef;
 use super::{CheckContext, TypeChecker, TypeEnvironment};
 use crate::ast::{
@@ -489,18 +490,26 @@ impl TypeChecker {
                 name: sig_name,
                 module: ModuleName::from_str(&sig_module),
             };
-            let impl_module = self
-                .metadata
-                .impl_for(&type_name, &trait_name)
-                .map(|d| d.module.clone())
-                .or_else(|| {
-                    self.param_bindings
-                        .get(&ImplKey {
-                            type_name: type_name.clone(),
-                            trait_name: trait_name.clone(),
-                        })
-                        .map(|d| d.module.clone())
-                });
+            let impl_module = if let Some(tables) = self.symbol_tables {
+                let key = ImplKey {
+                    type_name: type_name.clone(),
+                    trait_name: trait_name.clone(),
+                };
+                let interned_key = InternedImplKey::new(&self.db, key);
+                lookup_impl_def(&self.db, tables, interned_key)
+            } else {
+                self.metadata
+                    .impl_for(&type_name, &trait_name)
+                    .map(|d| d.module.clone())
+                    .or_else(|| {
+                        self.param_bindings
+                            .get(&ImplKey {
+                                type_name: type_name.clone(),
+                                trait_name: trait_name.clone(),
+                            })
+                            .map(|d| d.module.clone())
+                    })
+            };
             if let Some(impl_module) = impl_module {
                 let lookup_key = FunctionName {
                     name: resolved_fn_name.name.clone(),
@@ -508,8 +517,17 @@ impl TypeChecker {
                     kind: FunctionNameKind::Function,
                 };
                 resolved_fn_name.module = impl_module;
-                if let Some(fn_def) = self.metadata.function(&lookup_key) {
-                    match &fn_def.ast_ref {
+                let fn_def_ast_ref = if let Some(tables) = self.symbol_tables {
+                    let interned_fn = InternedFunctionName::new(&self.db, lookup_key.clone());
+                    lookup_function_def(&self.db, tables, interned_fn)
+                        .map(|arc_ptr| arc_ptr.get().ast_ref.clone())
+                } else {
+                    self.metadata
+                        .function(&lookup_key)
+                        .map(|d| d.ast_ref.clone())
+                };
+                if let Some(ast_ref) = fn_def_ast_ref {
+                    match &ast_ref {
                         CheckerAstRef::Function(_, k) => kind = k.clone(),
                         CheckerAstRef::ExternalFn { kind: k, .. } => kind = k.clone(),
                         _ => {}

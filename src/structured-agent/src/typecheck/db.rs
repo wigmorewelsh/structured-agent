@@ -185,6 +185,27 @@ pub(super) fn lookup_impl_exists<'db>(
 }
 
 #[salsa::tracked]
+pub(super) fn lookup_impl_def<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    key: InternedImplKey<'db>,
+) -> Option<ModuleName> {
+    let impl_key = key.key(db);
+    tables
+        .impls(db)
+        .get()
+        .get(&impl_key)
+        .map(|d| d.module.clone())
+        .or_else(|| {
+            tables
+                .param_bindings(db)
+                .get()
+                .get(&impl_key)
+                .map(|d| d.module.clone())
+        })
+}
+
+#[salsa::tracked]
 pub(super) fn find_trait_for_impl_call<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
