@@ -1,6 +1,7 @@
 use super::db::{
-    InternedFunctionName, InternedTraitName, InternedTypeName, lookup_function_def,
-    lookup_impl_exists, lookup_trait_def, lookup_type_def,
+    InternedFunctionName, InternedString, InternedTraitName, InternedTypeName,
+    find_trait_for_impl_call, lookup_function_def, lookup_impl_exists, lookup_trait_def,
+    lookup_type_def,
 };
 use super::refs::{AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker};
@@ -214,13 +215,19 @@ impl TypeChecker {
             AstType::Struct(n) => n.clone(),
             _ => return None,
         };
-        for (trait_key, trait_def) in &self.metadata.traits {
-            let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
-                continue;
-            };
-            if trait_fns.functions.iter().any(|f| f.name == fn_name)
-                && self.type_implements_trait(&type_name, &trait_key.name)
+        if let Some(tables) = self.symbol_tables {
+            let interned_fn = InternedString::new(&self.db, fn_name.to_string());
+            let interned_type = InternedTypeName::new(
+                &self.db,
+                TypeName {
+                    name: type_name.clone(),
+                    module: ModuleName::unqualified(),
+                },
+            );
+            if let Some(interned_trait) =
+                find_trait_for_impl_call(&self.db, tables, interned_fn, interned_type)
             {
+                let trait_key_name = interned_trait.name(&self.db);
                 let module = ctx.module_name.unwrap_or("");
                 let impl_fn_name = {
                     let mn = ModuleName::from_str(module);
@@ -233,7 +240,7 @@ impl TypeChecker {
                                 module: mn.clone(),
                             },
                             trait_name: structured_agent_runtime::symbols::TraitName {
-                                name: trait_key.name.to_string(),
+                                name: trait_key_name.name.to_string(),
                                 module: mn,
                             },
                         },
@@ -243,8 +250,40 @@ impl TypeChecker {
                     return Some((impl_fn_name, sig));
                 }
             }
+            None
+        } else {
+            for (trait_key, trait_def) in &self.metadata.traits {
+                let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
+                    continue;
+                };
+                if trait_fns.functions.iter().any(|f| f.name == fn_name)
+                    && self.type_implements_trait(&type_name, &trait_key.name)
+                {
+                    let module = ctx.module_name.unwrap_or("");
+                    let impl_fn_name = {
+                        let mn = ModuleName::from_str(module);
+                        FunctionName {
+                            name: fn_name.to_string(),
+                            module: mn.clone(),
+                            kind: FunctionNameKind::Impl {
+                                type_name: structured_agent_runtime::symbols::TypeName {
+                                    name: type_name.to_string(),
+                                    module: mn.clone(),
+                                },
+                                trait_name: structured_agent_runtime::symbols::TraitName {
+                                    name: trait_key.name.to_string(),
+                                    module: mn,
+                                },
+                            },
+                        }
+                    };
+                    if let Some(sig) = self.get_function_sig(&impl_fn_name, ctx.type_imports) {
+                        return Some((impl_fn_name, sig));
+                    }
+                }
+            }
+            None
         }
-        None
     }
 
     pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {

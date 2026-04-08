@@ -1,4 +1,4 @@
-use super::refs::{CheckerRefs, PrimitiveRefs};
+use super::refs::{CheckerAstRef, CheckerRefs, PrimitiveRefs};
 use crate::ast::Module as AstModule;
 use crate::types::FileId;
 use std::collections::HashMap;
@@ -92,6 +92,11 @@ pub(super) struct SymbolTablesInput {
 }
 
 #[salsa::interned]
+pub(super) struct InternedString<'db> {
+    pub(super) value: String,
+}
+
+#[salsa::interned]
 pub(super) struct InternedFunctionName {
     pub(super) name: FunctionName,
 }
@@ -177,4 +182,30 @@ pub(super) fn lookup_impl_exists<'db>(
             .get()
             .keys()
             .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
+}
+
+#[salsa::tracked]
+pub(super) fn find_trait_for_impl_call<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    fn_name: InternedString<'db>,
+    type_name: InternedTypeName<'db>,
+) -> Option<InternedTraitName<'db>> {
+    for (trait_key, trait_def) in tables.traits(db).get() {
+        let CheckerAstRef::Trait(ast_trait) = &trait_def.ast_ref else {
+            continue;
+        };
+        if ast_trait
+            .functions
+            .iter()
+            .any(|f| f.name == fn_name.value(db))
+        {
+            let interned_type = InternedTypeName::new(db, type_name.name(db).clone());
+            let interned_trait = InternedTraitName::new(db, trait_key.clone());
+            if lookup_impl_exists(db, tables, interned_type, interned_trait) {
+                return Some(InternedTraitName::new(db, trait_key.clone()));
+            }
+        }
+    }
+    None
 }
