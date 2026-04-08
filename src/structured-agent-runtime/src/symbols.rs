@@ -31,8 +31,7 @@ pub trait SymbolQuery {
         trait_name: &TraitName,
     ) -> Option<Arc<ImplDefinition<Self::Refs>>>;
     fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<Self::Refs>>>;
-    fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<Self::Refs>>>;
-    fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<Self::Refs>>>;
+
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
     fn all_types(&self) -> Vec<Arc<TypeDefinition<Self::Refs>>>;
     fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
@@ -98,17 +97,6 @@ impl<R: References> SymbolQuery for MetaData<R> {
             .collect()
     }
 
-    fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<R>>> {
-        self.types.values().find(|td| td.name.name == name).cloned()
-    }
-
-    fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<R>>> {
-        self.traits
-            .values()
-            .find(|td| td.name.name == name)
-            .cloned()
-    }
-
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<R>>> {
         self.functions.values().cloned().collect()
     }
@@ -133,6 +121,17 @@ impl<R: References> MetaData<R> {
 
     pub fn register_type(&mut self, name: TypeName, def: Arc<TypeDefinition<R>>) {
         self.types.insert(name, def);
+    }
+
+    pub fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<R>>> {
+        self.types.values().find(|td| td.name.name == name).cloned()
+    }
+
+    pub fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<R>>> {
+        self.traits
+            .values()
+            .find(|td| td.name.name == name)
+            .cloned()
     }
 }
 
@@ -274,6 +273,15 @@ impl FunctionName {
     #[deprecated(note = "use .name directly")]
     pub fn fn_name(&self) -> &str {
         &self.name
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let (module_str, name) = s.rsplit_once("::")?;
+        Some(FunctionName {
+            name: name.to_string(),
+            module: ModuleName::from_str(module_str),
+            kind: FunctionNameKind::Function,
+        })
     }
 }
 

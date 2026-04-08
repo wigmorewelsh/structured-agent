@@ -21,7 +21,6 @@ use tracing::{debug, error};
 struct CachedProgram {
     metadata: Arc<MetaData<BytecodeRefs>>,
     main_function: Option<FunctionName>,
-    struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
     extern_registry: HashMap<String, ExternalFunctionDefinition>,
     aliases: HashMap<String, FunctionName>,
 }
@@ -256,12 +255,7 @@ impl Runtime {
                 body.clone(),
             )));
         }
-        if let Some((module_str, func_name_str)) = name.rsplit_once("::") {
-            let func_name = FunctionName {
-                name: func_name_str.to_string(),
-                module: ModuleName::from_str(module_str),
-                kind: FunctionNameKind::Function,
-            };
+        if let Some(func_name) = FunctionName::parse(name) {
             if let Some(func_def) = cached.metadata.functions.get(&func_name)
                 && let Some(body) = &func_def.body_ref
             {
@@ -387,16 +381,23 @@ impl Runtime {
         }
     }
 
-    pub fn get_struct(&self, name: &str) -> Option<&Vec<(String, crate::types::Type)>> {
+    pub fn get_struct(&self, name: &str) -> Option<Vec<(String, crate::types::Type)>> {
         if let Some(fields) = self.struct_registry.get(name) {
-            return Some(fields);
+            return Some(fields.clone());
         }
-        self.compiled
-            .get()?
-            .as_ref()
-            .ok()?
-            .struct_registry
-            .get(name)
+        let cached = self.compiled.get()?.as_ref().ok()?;
+        cached.metadata.type_by_name(name).and_then(|td| {
+            if let TypeDefinitionKind::Struct { fields } = &td.kind {
+                Some(
+                    fields
+                        .iter()
+                        .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                        .collect(),
+                )
+            } else {
+                None
+            }
+        })
     }
 
     pub fn register_struct(&mut self, name: String, fields: Vec<(String, crate::types::Type)>) {
@@ -568,17 +569,6 @@ fn field_type_name_to_type(
 fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, String> {
     let main_function = compiled.main_function_name().cloned();
 
-    let mut struct_registry = HashMap::new();
-    for type_def in compiled.metadata.all_types() {
-        if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
-            let converted: Vec<(String, crate::types::Type)> = fields
-                .iter()
-                .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
-                .collect();
-            struct_registry.insert(type_def.name.name.clone(), converted);
-        }
-    }
-
     let mut extern_registry = HashMap::new();
     for func_def in compiled.metadata.all_functions() {
         if let TypedCheckerAstRef::Other(CheckerAstRef::ExternalFn {
@@ -606,18 +596,11 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
     let mut aliases = HashMap::new();
     for module in compiled.metadata.modules.values() {
         for (alias, qualified) in &module.use_aliases {
-            let canonical = match qualified.rsplit_once("::") {
-                Some((module_str, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::from_str(module_str),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: qualified.to_string(),
-                    module: ModuleName::from_str(""),
-                    kind: FunctionNameKind::Function,
-                },
-            };
+            let canonical = FunctionName::parse(qualified).unwrap_or_else(|| FunctionName {
+                name: qualified.to_string(),
+                module: ModuleName::from_str(""),
+                kind: FunctionNameKind::Function,
+            });
             aliases.insert(alias.clone(), canonical);
         }
     }
@@ -627,7 +610,6 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
     Ok(CachedProgram {
         metadata,
         main_function,
-        struct_registry,
         extern_registry,
         aliases,
     })

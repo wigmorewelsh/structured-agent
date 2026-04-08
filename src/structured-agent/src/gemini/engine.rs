@@ -63,7 +63,7 @@ impl GeminiEngine {
                     .get_struct(name)
                     .ok_or_else(|| format!("Unknown struct: {}", name))?;
                 let mut obj = JsonSchemaBuilder::object();
-                for (field_name, field_type) in fields {
+                for (field_name, field_type) in &fields {
                     let field_schema = Self::build_value_schema(field_type, context)?;
                     obj = JsonSchemaBuilder::with_property(obj, field_name, field_schema, true);
                 }

@@ -55,7 +55,7 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn check_definition(
+    fn check_definition(
         &mut self,
         definition: &Definition,
         ctx: &CheckContext,
@@ -132,7 +132,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_function(
+    fn check_function(
         &self,
         func: &Function,
         ctx: &CheckContext,
@@ -167,7 +167,7 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn check_statement(
+    fn check_statement(
         &self,
         statement: &Statement,
         mut env: TypeEnvironment,
@@ -299,7 +299,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_boolean_condition(
+    fn check_boolean_condition(
         &self,
         condition: &Expression,
         env: &TypeEnvironment,
@@ -318,7 +318,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_block(
+    fn check_block(
         &self,
         stmts: &[Statement],
         mut env: TypeEnvironment,
@@ -412,7 +412,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_call(
+    fn check_call(
         &self,
         function: &str,
         arguments: &[Expression],
@@ -613,7 +613,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_list_literal(
+    fn check_list_literal(
         &self,
         elements: &[Expression],
         span: Span,
@@ -653,7 +653,7 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn check_select(
+    fn check_select(
         &self,
         clauses: &[SelectClause],
         span: Span,
@@ -725,7 +725,7 @@ impl TypeChecker {
         ))
     }
 
-    pub(super) fn check_if_else_expression(
+    fn check_if_else_expression(
         &self,
         condition: &Expression,
         then_expr: &Expression,
@@ -757,7 +757,7 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn check_struct_literal(
+    fn check_struct_literal(
         &self,
         struct_name: &str,
         fields: &[(String, Expression)],
@@ -830,7 +830,7 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn check_field_access(
+    fn check_field_access(
         &self,
         base: &Expression,
         field: &str,
@@ -886,7 +886,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn substitute_self_in_fn(func: &Function, concrete: &str) -> Function {
+    fn substitute_self_in_fn(func: &Function, concrete: &str) -> Function {
         Function {
             name: func.name.clone(),
             parameters: func

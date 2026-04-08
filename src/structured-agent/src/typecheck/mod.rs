@@ -17,7 +17,10 @@ pub use refs::{
     NoWitness, PrimitiveRefs, SourceLocation, TypedCheckerAstRef, TypedRefs,
 };
 
-use crate::ast::{Definition, ModuleParam, Parameter, ParsedModule, Type as AstType, TypeParam};
+use crate::ast::{
+    Definition, Module as AstModule, ModuleParam, Parameter, ParsedModule, Type as AstType,
+    TypeParam,
+};
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
@@ -77,6 +80,26 @@ pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName
     }
 }
 
+fn extract_use_aliases(module: &AstModule) -> Vec<(String, String)> {
+    module
+        .definitions
+        .iter()
+        .filter_map(|def| {
+            if let Definition::Use { path, alias, .. } = def
+                && path.len() >= 2
+            {
+                let qualified = format!("{}::{}", path[0], path.last().unwrap());
+                let local = alias
+                    .clone()
+                    .unwrap_or_else(|| path.last().unwrap().clone());
+                Some((local, qualified))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 impl Default for TypeChecker {
     fn default() -> Self {
         Self::new()
@@ -107,31 +130,8 @@ impl TypeChecker {
             };
             self.collect_native_sigs(parsed, native_modules);
             self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name)?;
-            let exports: Vec<ExportedName> = self
-                .metadata
-                .functions_in_module(&ModuleName::from_str(effective_name))
-                .into_iter()
-                .filter(|f| matches!(f.visibility, Visibility::Public))
-                .map(|f| ExportedName::Function(f.name.clone()))
-                .collect();
-            let use_aliases: Vec<(String, String)> = parsed
-                .module
-                .definitions
-                .iter()
-                .filter_map(|def| {
-                    if let Definition::Use { path, alias, .. } = def
-                        && path.len() >= 2
-                    {
-                        let qualified = format!("{}::{}", path[0], path.last().unwrap());
-                        let local = alias
-                            .clone()
-                            .unwrap_or_else(|| path.last().unwrap().clone());
-                        Some((local, qualified))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let exports = self.collect_module_exports(&ModuleName::from_str(effective_name));
+            let use_aliases = extract_use_aliases(&parsed.module);
             let module_def = ModuleDefinition {
                 name: ModuleName::from_str(effective_name),
                 visibility: if parsed.is_entry {
@@ -308,6 +308,15 @@ impl TypeChecker {
                 .insert(module_key.clone(), Arc::new(new_def));
         }
         Ok((typed_metadata, typed_modules))
+    }
+
+    fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {
+        self.metadata
+            .functions_in_module(module_name)
+            .into_iter()
+            .filter(|f| matches!(f.visibility, Visibility::Public))
+            .map(|f| ExportedName::Function(f.name.clone()))
+            .collect()
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
