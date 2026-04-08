@@ -2,9 +2,11 @@ use super::Instruction;
 use crate::runtime::{
     AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
 };
+use crate::types::ExecutableFunction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use structured_agent_runtime::FunctionName;
 
 pub struct VMState {
     pc: usize,
@@ -61,7 +63,7 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_call(state, &function_name.to_string(), params, dest)
+                    self.execute_call(state, function_name, params, dest)
                         .await?
                 }
                 Instruction::CallExternal {
@@ -69,7 +71,7 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_external_call(state, &function_name.to_string(), params, dest)
+                    self.execute_external_call(state, function_name, params, dest)
                         .await?
                 }
                 Instruction::LoadModule { name, dest } => {
@@ -207,18 +209,27 @@ impl VM {
 
     async fn execute_call(
         &self,
-        mut state: VMState,
-        function_name: &str,
+        state: VMState,
+        function_name: &FunctionName,
         params: &[String],
         dest: &str,
     ) -> Result<VMState, String> {
-        let resolved_name = function_name;
-
         let func = self
             .runtime
-            .get_function(resolved_name)
+            .get_bytecode_function(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
+        self.invoke_function(state, func, &function_name.to_string(), params, dest)
+            .await
+    }
 
+    async fn invoke_function(
+        &self,
+        mut state: VMState,
+        func: Arc<dyn ExecutableFunction>,
+        display_name: &str,
+        params: &[String],
+        dest: &str,
+    ) -> Result<VMState, String> {
         let function_params = func.parameters();
 
         let mut args = Vec::new();
@@ -238,7 +249,7 @@ impl VM {
         let mut child_context = state.context.create_child(true);
 
         child_context.add_event(
-            ExpressionValue::string(format!("## {}", function_name)),
+            ExpressionValue::string(format!("## {}", display_name)),
             None,
             None,
         );
@@ -248,7 +259,7 @@ impl VM {
         state.context = returned_child_context.restore_parent()?;
 
         let result_with_metadata = ExpressionResult {
-            name: Some(function_name.to_string()),
+            name: Some(display_name.to_string()),
             params: Some(evaluated_parameters),
             value: result.value.clone(),
         };
@@ -260,12 +271,13 @@ impl VM {
     async fn execute_external_call(
         &self,
         state: VMState,
-        function_name: &str,
+        function_name: &FunctionName,
         params: &[String],
         dest: &str,
     ) -> Result<VMState, String> {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+        let name_str = function_name.to_string();
 
         let resolved_params: HashMap<String, ExpressionValue> = params
             .iter()
@@ -280,13 +292,18 @@ impl VM {
             .context
             .agent_handle()
             .publish(AgentMessageContent::ToolCallStarted {
-                tool_name: function_name.to_string(),
+                tool_name: name_str.clone(),
                 call_id: call_id.clone(),
                 params: resolved_params,
             });
 
+        let func = self
+            .runtime
+            .get_native_function(&name_str)
+            .ok_or_else(|| format!("Function not found: {}", function_name))?;
+
         let state = self
-            .execute_call(state, function_name, params, dest)
+            .invoke_function(state, func, &name_str, params, dest)
             .await?;
 
         let result = Self::read_variable(&state, dest)?;
@@ -295,7 +312,7 @@ impl VM {
             .context
             .agent_handle()
             .publish(AgentMessageContent::ToolCallFinished {
-                tool_name: function_name.to_string(),
+                tool_name: name_str,
                 call_id,
                 result: result.value.clone(),
             });
@@ -335,16 +352,17 @@ impl VM {
     fn execute_meta_function(
         &self,
         mut state: VMState,
-        function_name: &str,
+        function_name: &FunctionName,
         dest: &str,
     ) -> Result<VMState, String> {
         let func = self
             .runtime
-            .get_function(function_name)
+            .get_bytecode_function(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
+        let name_str = function_name.to_string();
         let metadata =
-            ExpressionValue::metadata(function_name, func.documentation().map(|s| s.to_string()));
+            ExpressionValue::metadata(&name_str, func.documentation().map(|s| s.to_string()));
 
         Self::write_variable(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))

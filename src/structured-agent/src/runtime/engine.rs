@@ -12,7 +12,7 @@ use crate::types::{
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
-use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, ModuleName, SymbolQuery};
+use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -241,44 +241,21 @@ impl Runtime {
         self.function_registry.insert(name, expression);
     }
 
-    // #[allow(deprecated)] NOPE THIS SHOULD NOT USE DEPRECATED FUNCTION NAME
-    pub fn get_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>> {
-        if let Some(func) = self.function_registry.get(name) {
-            return Some(func.clone());
-        }
+    pub fn get_native_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+        self.function_registry.get(name).cloned()
+    }
+
+    pub fn get_bytecode_function(
+        &self,
+        name: &FunctionName,
+    ) -> Option<Arc<dyn ExecutableFunction>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
-        if let Some(canonical) = cached.aliases.get(name)
-            && let Some(func_def) = cached.metadata.functions.get(canonical)
-            && let Some(body) = &func_def.body_ref
-        {
-            return Some(Arc::new(BytecodeFunctionExpr::new(
-                canonical.clone(),
-                body.clone(),
-            )));
-        }
-        if let Some(func_name) = FunctionName::parse(name) {
-            if let Some(func_def) = cached.metadata.functions.get(&func_name)
-                && let Some(body) = &func_def.body_ref
-            {
-                return Some(Arc::new(BytecodeFunctionExpr::new(func_name, body.clone())));
-            }
-        }
-        if !name.contains("::") {
-            let main_func_name = FunctionName {
-                name: name.to_string(),
-                module: ModuleName::new(nonempty::NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function,
-            };
-            if let Some(func_def) = cached.metadata.functions.get(&main_func_name)
-                && let Some(body) = &func_def.body_ref
-            {
-                return Some(Arc::new(BytecodeFunctionExpr::new(
-                    main_func_name,
-                    body.clone(),
-                )));
-            }
-        }
-        None
+        let func_def = cached.metadata.functions.get(name)?;
+        let body = func_def.body_ref.as_ref()?;
+        Some(Arc::new(BytecodeFunctionExpr::new(
+            name.clone(),
+            body.clone(),
+        )))
     }
 
     pub fn register_external_function(&mut self, function: ExternalFunctionDefinition) {

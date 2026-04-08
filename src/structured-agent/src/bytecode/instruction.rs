@@ -59,7 +59,10 @@ pub enum Instruction {
     CtxRestore,
 
     /// Get metadata for a function
-    MetaFunction { function_name: String, dest: String },
+    MetaFunction {
+        function_name: FunctionName,
+        dest: String,
+    },
 
     /// Create list from element variables
     ListCreate { dest: String, elements: Vec<String> },

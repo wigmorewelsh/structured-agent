@@ -505,9 +505,9 @@ impl BytecodeCompiler {
             let function_name = if let typed_ast::Expression::Call { resolved, .. } =
                 &select.clauses[i].expression_to_run
             {
-                resolved.to_string()
+                resolved.clone()
             } else {
-                "unknown".to_string()
+                return Err(format!("select clause {} expression is not a Call", i));
             };
 
             let meta_var = builder.next_temp();

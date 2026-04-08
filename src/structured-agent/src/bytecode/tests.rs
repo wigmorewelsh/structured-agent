@@ -1407,16 +1407,8 @@ mod vm_execution_tests {
             .unwrap()
             .clone();
 
-        let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-
-        for (name, def) in &compiled_program.metadata.functions {
-            if let Some(body) = &def.body_ref {
-                runtime.register_function(Box::new(BytecodeFunctionExpr::new(
-                    name.clone(),
-                    body.clone(),
-                )));
-            }
-        }
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        runtime.check().unwrap();
 
         let runtime = Arc::new(runtime);
         let context = Context::with_runtime(runtime.clone());
