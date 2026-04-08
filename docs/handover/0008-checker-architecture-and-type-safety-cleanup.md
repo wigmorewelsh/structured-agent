@@ -75,9 +75,13 @@ The deprecated constructors `ModuleName::from_str`, `FunctionName::plain`, `Func
 
 `type_implements_trait` in `query.rs` checks `k.type_name.name == type_name && k.trait_name.name == trait_name` across the impl and param-binding maps. This is the same category of bug as the former `type_by_name` scan: it will silently match the wrong impl if two modules define types or traits with the same name. The fix follows the same pattern as the struct-field resolution work: pass `TypeName` and `TraitName` structs rather than bare strings.
 
-### Import Path Relative-to-Module Semantics
+### Import Path Is Not a Module Name
 
-`UseImport.module` is constructed from the `NonEmpty<String>` path in the use statement with `ModuleName::new(path.clone())`. In the current implementation this treats the path as absolute (e.g. `use other::greet` produces `module: ModuleName { segments: ["other"] }`). The discovery system confirms this interpretation: `path.first()` is always the top-level module resolved against the entry directory. However, whether multi-segment paths such as `use a::b::greet` should be resolved relative to the current module's position (`current_module.segments + ["a", "b"]`) has not been settled. The current code treats them as absolute.
+`build_type_import_map` in `query.rs` constructs `UseImport.module` as `ModuleName::new(path.clone())`, treating the use-statement path directly as a module name. This is wrong. The path in a `use` statement is relative to the current module: `use other::greet` from inside module `main` names the module `main::other`, not `other`. The correct construction is `current_module.segments + path.segments`. The current module is available at every call site but is not being passed to `build_type_import_map`.
+
+The same error is present wherever a `UseImport` is constructed from a `Definition::Use` path without prepending the current module's segments. Until this is fixed, type and function import resolution will produce wrong `ModuleName` values for any project with more than one module level, and cross-module lookups will silently fail to find the correct symbol.
+
+The fix requires passing the current module's `ModuleName` into `build_type_import_map`, `build_alias_to_qualified`, and `extract_use_imports`, and computing the imported module as `ModuleName::new(current_module.segments.iter().chain(path.iter()).cloned().collect::<NonEmpty<_>>())`. The relevant code is in `src/structured-agent/src/typecheck/query.rs` at `build_type_import_map` and `build_alias_to_qualified`, and in `src/structured-agent/src/typecheck/mod.rs` at `extract_use_imports`.
 
 ### Cognitive Complexity
 
