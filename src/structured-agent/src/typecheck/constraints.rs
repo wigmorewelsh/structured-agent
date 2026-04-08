@@ -3,15 +3,27 @@ use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
+use structured_agent_runtime::symbols::{ModuleName, UseImport};
 
 impl TypeChecker {
-    pub(super) fn resolve_type(&self, t: &AstType) -> AstType {
+    pub(super) fn resolve_type(
+        &self,
+        t: &AstType,
+        module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> AstType {
         match t {
-            AstType::Generic(name) if self.get_struct_fields(name).is_some() => {
+            AstType::Generic(name)
+                if self.get_struct_fields(name, module, type_imports).is_some() =>
+            {
                 AstType::Struct(name.clone())
             }
-            AstType::List(inner) => AstType::List(Box::new(self.resolve_type(inner))),
-            AstType::Option(inner) => AstType::Option(Box::new(self.resolve_type(inner))),
+            AstType::List(inner) => {
+                AstType::List(Box::new(self.resolve_type(inner, module, type_imports)))
+            }
+            AstType::Option(inner) => {
+                AstType::Option(Box::new(self.resolve_type(inner, module, type_imports)))
+            }
             other => other.clone(),
         }
     }
@@ -22,6 +34,8 @@ impl TypeChecker {
         span: Span,
         file_id: FileId,
         type_params: &[TypeParam],
+        module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
     ) -> Result<(), TypeError> {
         match ast_type {
             AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
@@ -36,11 +50,16 @@ impl TypeChecker {
                     })
                 }
             }
-            AstType::List(inner) | AstType::Option(inner) => {
-                self.validate_type_with_params(inner, span, file_id, type_params)
-            }
+            AstType::List(inner) | AstType::Option(inner) => self.validate_type_with_params(
+                inner,
+                span,
+                file_id,
+                type_params,
+                module,
+                type_imports,
+            ),
             AstType::Struct(name) => {
-                if self.get_struct_fields(name).is_some() {
+                if self.get_struct_fields(name, module, type_imports).is_some() {
                     Ok(())
                 } else {
                     Err(TypeError::UnsupportedType {

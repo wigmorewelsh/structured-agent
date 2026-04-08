@@ -1,15 +1,20 @@
-use super::refs::{AliasToQualified, CheckerAstRef, FunctionKind};
+use super::refs::{AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker};
 use crate::ast::{Definition, Expression, Module, SigFunction, Type as AstType};
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, ModuleName, SymbolQuery, TypeDefinitionKind, Visibility,
+    FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName,
+    TypeDefinitionKind, TypeName, UseImport, Visibility,
 };
 
 impl TypeChecker {
-    fn get_function_sig(&self, name: &FunctionName) -> Option<FunctionSignature> {
+    fn get_function_sig(
+        &self,
+        name: &FunctionName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> Option<FunctionSignature> {
         self.metadata.function(name).and_then(|f| match &f.ast_ref {
             CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
                 parameters: func
@@ -17,11 +22,11 @@ impl TypeChecker {
                     .iter()
                     .map(|p| crate::ast::Parameter {
                         name: p.name.clone(),
-                        param_type: self.resolve_type(&p.param_type),
+                        param_type: self.resolve_type(&p.param_type, &name.module, type_imports),
                         span: p.span,
                     })
                     .collect(),
-                return_type: self.resolve_type(&func.return_type),
+                return_type: self.resolve_type(&func.return_type, &name.module, type_imports),
                 type_params: func.type_params.clone(),
                 kind: kind.clone(),
             }),
@@ -31,13 +36,19 @@ impl TypeChecker {
                     .iter()
                     .map(|p| crate::ast::Parameter {
                         name: p.name.clone(),
-                        param_type: self
-                            .resolve_type(&Self::substitute_self(&p.param_type, concrete_type)),
+                        param_type: self.resolve_type(
+                            &Self::substitute_self(&p.param_type, concrete_type),
+                            &name.module,
+                            type_imports,
+                        ),
                         span: p.span,
                     })
                     .collect(),
-                return_type: self
-                    .resolve_type(&Self::substitute_self(&func.return_type, concrete_type)),
+                return_type: self.resolve_type(
+                    &Self::substitute_self(&func.return_type, concrete_type),
+                    &name.module,
+                    type_imports,
+                ),
                 type_params: func.type_params.clone(),
                 kind: kind.clone(),
             }),
@@ -56,8 +67,14 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn get_struct_fields(&self, name: &str) -> Option<Vec<(String, AstType)>> {
-        self.metadata.type_by_name(name).and_then(|td| {
+    pub(super) fn get_struct_fields(
+        &self,
+        name: &str,
+        current_module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> Option<Vec<(String, AstType)>> {
+        let resolved = Self::resolve_named_type(name, current_module, type_imports);
+        self.metadata.type_def(&resolved).and_then(|td| {
             if let CheckerAstRef::Struct(s) = &td.ast_ref {
                 Some(
                     s.fields
@@ -71,8 +88,18 @@ impl TypeChecker {
         })
     }
 
-    pub(super) fn get_trait_functions(&self, name: &str) -> Option<Vec<crate::ast::SigFunction>> {
-        self.metadata.trait_by_name(name).and_then(|td| {
+    pub(super) fn get_trait_functions(
+        &self,
+        name: &str,
+        current_module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> Option<Vec<SigFunction>> {
+        let resolved = Self::resolve_named_type(name, current_module, type_imports);
+        let trait_name = TraitName {
+            name: resolved.name,
+            module: resolved.module,
+        };
+        self.metadata.trait_def(&trait_name).and_then(|td| {
             if let CheckerAstRef::Trait(t) = &td.ast_ref {
                 Some(t.functions.clone())
             } else {
@@ -92,9 +119,15 @@ impl TypeChecker {
                 .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
     }
 
-    pub(super) fn get_sig_functions(&self, name: &str) -> Option<Vec<SigFunction>> {
+    pub(super) fn get_sig_functions(
+        &self,
+        name: &str,
+        current_module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> Option<Vec<SigFunction>> {
+        let resolved = Self::resolve_named_type(name, current_module, type_imports);
         self.metadata
-            .type_by_name(name)
+            .type_def(&resolved)
             .filter(|td| matches!(td.kind, TypeDefinitionKind::Signature { .. }))
             .and_then(|td| {
                 if let CheckerAstRef::Signature(s) = &td.ast_ref {
@@ -148,7 +181,7 @@ impl TypeChecker {
                         },
                     }
                 };
-                if let Some(sig) = self.get_function_sig(&impl_fn_name) {
+                if let Some(sig) = self.get_function_sig(&impl_fn_name, ctx.type_imports) {
                     return Some((impl_fn_name, sig));
                 }
             }
@@ -175,7 +208,62 @@ impl TypeChecker {
             .collect()
     }
 
-    #[allow(deprecated)]
+    pub(super) fn build_type_import_map(
+        module: &Module,
+        metadata: &MetaData<CheckerRefs>,
+    ) -> HashMap<String, UseImport> {
+        module
+            .definitions
+            .iter()
+            .filter_map(|def| {
+                if let Definition::Use { path, alias, .. } = def {
+                    if path.len() >= 2 {
+                        let import = UseImport {
+                            local: alias
+                                .clone()
+                                .unwrap_or_else(|| path.last().unwrap().clone()),
+                            module: ModuleName::from_str(&path[0]),
+                            name: path.last().unwrap().clone(),
+                        };
+                        if metadata
+                            .type_def(&TypeName {
+                                name: import.name.clone(),
+                                module: import.module.clone(),
+                            })
+                            .is_some()
+                        {
+                            Some((import.local.clone(), import))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn resolve_named_type(
+        name: &str,
+        current_module: &ModuleName,
+        type_imports: &HashMap<String, UseImport>,
+    ) -> TypeName {
+        if let Some(import) = type_imports.get(name) {
+            TypeName {
+                name: import.name.clone(),
+                module: import.module.clone(),
+            }
+        } else {
+            TypeName {
+                name: name.to_string(),
+                module: current_module.clone(),
+            }
+        }
+    }
+
     pub(super) fn build_alias_to_qualified(&self, module: &Module) -> AliasToQualified {
         let mut map = AliasToQualified::new();
 
@@ -187,25 +275,20 @@ impl TypeChecker {
                 continue;
             }
 
-            let dep_module = &path[0];
-            let fn_name = path.last().unwrap();
-            let qualified = format!("{}::{}", dep_module, fn_name);
-
-            let fn_key = match qualified.rsplit_once("::") {
-                Some((module_part, name)) => FunctionName {
-                    name: name.to_string(),
-                    module: ModuleName::from_str(module_part),
-                    kind: FunctionNameKind::Function,
-                },
-                None => FunctionName {
-                    name: qualified.clone(),
-                    module: ModuleName::unqualified(),
-                    kind: FunctionNameKind::Function,
-                },
+            let import = UseImport {
+                local: alias
+                    .clone()
+                    .unwrap_or_else(|| path.last().unwrap().clone()),
+                module: ModuleName::from_str(&path[0]),
+                name: path.last().unwrap().clone(),
+            };
+            let fn_key = FunctionName {
+                name: import.name.clone(),
+                module: import.module.clone(),
+                kind: FunctionNameKind::Function,
             };
             if self.metadata.function(&fn_key).is_some() {
-                let key = alias.clone().unwrap_or_else(|| fn_name.clone());
-                map.insert(key, qualified);
+                map.insert(import.local.clone(), import);
             }
         }
 
@@ -272,22 +355,15 @@ impl TypeChecker {
                     kind: FunctionNameKind::Function,
                 },
             };
-            self.get_function_sig(&name)
+            self.get_function_sig(&name, ctx.type_imports)
         } else {
-            if let Some(qualified) = ctx.alias_to_qualified.get(resolved) {
-                let name = match qualified.rsplit_once("::") {
-                    Some((module, name)) => FunctionName {
-                        name: name.to_string(),
-                        module: ModuleName::from_str(module),
-                        kind: FunctionNameKind::Function,
-                    },
-                    None => FunctionName {
-                        name: qualified.to_string(),
-                        module: ModuleName::unqualified(),
-                        kind: FunctionNameKind::Function,
-                    },
+            if let Some(import) = ctx.alias_to_qualified.get(resolved) {
+                let name = FunctionName {
+                    name: import.name.clone(),
+                    module: import.module.clone(),
+                    kind: FunctionNameKind::Function,
                 };
-                if let Some(sig) = self.get_function_sig(&name) {
+                if let Some(sig) = self.get_function_sig(&name, ctx.type_imports) {
                     return Some(sig);
                 }
             }
@@ -297,13 +373,13 @@ impl TypeChecker {
                 module: ModuleName::from_str(module),
                 kind: FunctionNameKind::Function,
             };
-            self.get_function_sig(&name).or_else(|| {
+            self.get_function_sig(&name, ctx.type_imports).or_else(|| {
                 let fallback = FunctionName {
                     name: resolved.to_string(),
                     module: ModuleName::unqualified(),
                     kind: FunctionNameKind::Function,
                 };
-                self.get_function_sig(&fallback)
+                self.get_function_sig(&fallback, ctx.type_imports)
             })
         }
     }
@@ -334,8 +410,12 @@ impl TypeChecker {
         if *kind == FunctionKind::External {
             return from_str(resolved);
         }
-        if let Some(qualified) = ctx.alias_to_qualified.get(resolved) {
-            from_str(qualified)
+        if let Some(import) = ctx.alias_to_qualified.get(resolved) {
+            FunctionName {
+                name: import.name.clone(),
+                module: import.module.clone(),
+                kind: FunctionNameKind::Function,
+            }
         } else if resolved.contains("::") {
             from_str(resolved)
         } else if let Some(module) = ctx.module_name {

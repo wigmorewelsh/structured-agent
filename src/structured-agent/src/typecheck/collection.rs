@@ -197,6 +197,7 @@ impl TypeChecker {
             return;
         };
 
+        let type_imports = Self::build_type_import_map(module, &self.metadata);
         for param in params {
             if param.path.len() < 2 {
                 continue;
@@ -204,9 +205,12 @@ impl TypeChecker {
             let concrete_module = param.path[0].clone();
             let sig_name = param.path.last().unwrap();
 
-            let fn_data: Vec<(String, Vec<Parameter>, AstType)> = if let Some(sig_fns) =
-                self.get_sig_functions(sig_name)
-            {
+            let fn_data: Vec<(String, Vec<Parameter>, AstType)> = if let Some(sig_fns) = self
+                .get_sig_functions(
+                    sig_name,
+                    &ModuleName::from_str(&concrete_module),
+                    &type_imports,
+                ) {
                 sig_fns
                     .into_iter()
                     .map(|f| (f.name, f.parameters, f.return_type))
@@ -222,11 +226,19 @@ impl TypeChecker {
                                 .iter()
                                 .map(|p| crate::ast::Parameter {
                                     name: p.name.clone(),
-                                    param_type: self.resolve_type(&p.param_type),
+                                    param_type: self.resolve_type(
+                                        &p.param_type,
+                                        &ModuleName::from_str(&concrete_module),
+                                        &type_imports,
+                                    ),
                                     span: p.span,
                                 })
                                 .collect(),
-                            self.resolve_type(&func.return_type),
+                            self.resolve_type(
+                                &func.return_type,
+                                &ModuleName::from_str(&concrete_module),
+                                &type_imports,
+                            ),
                         )),
                         CheckerAstRef::ExternalFn {
                             params,
@@ -284,6 +296,7 @@ impl TypeChecker {
         file_id: FileId,
         module_name: &str,
     ) -> Result<(), TypeError> {
+        let type_imports = Self::build_type_import_map(module, &self.metadata);
         for definition in &module.definitions {
             if let Definition::Struct(struct_def) = definition {
                 let type_name = TypeName {
@@ -306,8 +319,19 @@ impl TypeChecker {
                     ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
                 };
                 for f in &struct_def.fields {
-                    let resolved = self.resolve_type(&f.field_type);
-                    self.validate_type_with_params(&resolved, f.span, file_id, &[])?;
+                    let resolved = self.resolve_type(
+                        &f.field_type,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
+                    );
+                    self.validate_type_with_params(
+                        &resolved,
+                        f.span,
+                        file_id,
+                        &[],
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
+                    )?;
                 }
                 self.metadata.register_type(type_name, Arc::new(entry));
             }
@@ -316,20 +340,32 @@ impl TypeChecker {
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
-                    let resolved_return = self.resolve_type(&func.return_type);
+                    let resolved_return = self.resolve_type(
+                        &func.return_type,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
+                    );
                     self.validate_type_with_params(
                         &resolved_return,
                         func.span,
                         file_id,
                         &func.type_params,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
                     )?;
                     for param in &func.parameters {
-                        let resolved_param_type = self.resolve_type(&param.param_type);
+                        let resolved_param_type = self.resolve_type(
+                            &param.param_type,
+                            &ModuleName::from_str(module_name),
+                            &type_imports,
+                        );
                         self.validate_type_with_params(
                             &resolved_param_type,
                             param.span,
                             file_id,
                             &func.type_params,
+                            &ModuleName::from_str(module_name),
+                            &type_imports,
                         )?;
                     }
                     let fn_key = FunctionName {
@@ -360,7 +396,11 @@ impl TypeChecker {
                         .map(|p| ParameterDefinition {
                             name: p.name.clone(),
                             type_name: ast_type_to_type_name(
-                                &self.resolve_type(&p.param_type),
+                                &self.resolve_type(
+                                    &p.param_type,
+                                    &ModuleName::from_str(module_name),
+                                    &type_imports,
+                                ),
                                 module_name,
                             ),
                         })
@@ -399,6 +439,8 @@ impl TypeChecker {
                         ext_func.span,
                         file_id,
                         &ext_func.type_params,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
                     )?;
                     for param in &ext_func.parameters {
                         self.validate_type_with_params(
@@ -406,6 +448,8 @@ impl TypeChecker {
                             param.span,
                             file_id,
                             &ext_func.type_params,
+                            &ModuleName::from_str(module_name),
+                            &type_imports,
                         )?;
                     }
                     let resolved_params: Vec<_> = ext_func
@@ -413,7 +457,11 @@ impl TypeChecker {
                         .iter()
                         .map(|p| crate::ast::Parameter {
                             name: p.name.clone(),
-                            param_type: self.resolve_type(&p.param_type),
+                            param_type: self.resolve_type(
+                                &p.param_type,
+                                &ModuleName::from_str(module_name),
+                                &type_imports,
+                            ),
                             span: p.span,
                         })
                         .collect();
@@ -429,7 +477,11 @@ impl TypeChecker {
                             kind: FunctionNameKind::Function,
                         },
                     };
-                    let resolved_return = self.resolve_type(&ext_func.return_type);
+                    let resolved_return = self.resolve_type(
+                        &ext_func.return_type,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
+                    );
                     self.insert_fn(
                         fn_key,
                         resolved_params,
@@ -525,7 +577,11 @@ impl TypeChecker {
                     let trait_name = &impl_arc.trait_name;
                     let functions = &impl_arc.functions;
                     let span = &impl_arc.span;
-                    let trait_fns = self.get_trait_functions(trait_name);
+                    let trait_fns = self.get_trait_functions(
+                        trait_name,
+                        &ModuleName::from_str(module_name),
+                        &type_imports,
+                    );
                     if let Some(trait_fns) = trait_fns {
                         for trait_fn in &trait_fns {
                             let expected_name = &trait_fn.name;
@@ -567,8 +623,14 @@ impl TypeChecker {
                     };
                     self.metadata.impls.insert(key, Arc::new(impl_entry));
                     for func in functions {
-                        let resolved_return =
-                            Self::substitute_self(&self.resolve_type(&func.return_type), type_name);
+                        let resolved_return = Self::substitute_self(
+                            &self.resolve_type(
+                                &func.return_type,
+                                &ModuleName::from_str(module_name),
+                                &type_imports,
+                            ),
+                            type_name,
+                        );
                         let impl_fn_key = {
                             let mn = ModuleName::from_str(module_name);
                             FunctionName {

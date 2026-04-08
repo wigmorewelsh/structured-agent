@@ -25,6 +25,7 @@ impl TypeChecker {
         let module = &parsed.module;
         let alias_map = Self::build_alias_map(module);
         let alias_to_qualified = self.build_alias_to_qualified(module);
+        let type_imports = Self::build_type_import_map(module, &self.metadata);
         let module_params = module
             .definitions
             .iter()
@@ -42,6 +43,7 @@ impl TypeChecker {
             alias_to_qualified: &alias_to_qualified,
             module_name: Some(effective_name),
             module_params,
+            type_imports: &type_imports,
         };
         let typed_definitions = module
             .definitions
@@ -138,14 +140,15 @@ impl TypeChecker {
         ctx: &CheckContext,
     ) -> Result<typed_ast::Function, TypeError> {
         let mut env = TypeEnvironment::new();
+        let module = ModuleName::from_str(ctx.module_name.unwrap_or("main"));
         for param in &func.parameters {
             env.declare_variable(
                 param.name.clone(),
-                self.resolve_type(&param.param_type),
+                self.resolve_type(&param.param_type, &module, ctx.type_imports),
                 param.span,
             );
         }
-        let resolved_return_type = self.resolve_type(&func.return_type);
+        let resolved_return_type = self.resolve_type(&func.return_type, &module, ctx.type_imports);
         let mut typed_stmts = Vec::new();
         for statement in &func.body.statements {
             let (typed_stmt, new_env) =
@@ -426,12 +429,17 @@ impl TypeChecker {
             .map(String::as_str)
             .unwrap_or(function);
 
-        let qualified_for_vis = ctx
+        let qual_import = ctx
             .alias_to_qualified
             .get(function)
-            .or_else(|| ctx.alias_to_qualified.get(resolved))
-            .map(String::as_str)
-            .unwrap_or(resolved);
+            .or_else(|| ctx.alias_to_qualified.get(resolved));
+        let qual_str;
+        let qualified_for_vis = if let Some(import) = qual_import {
+            qual_str = format!("{}::{}", import.module, import.name);
+            qual_str.as_str()
+        } else {
+            resolved
+        };
 
         self.check_visibility(qualified_for_vis, resolved, span, ctx)?;
 
@@ -765,13 +773,17 @@ impl TypeChecker {
         env: &TypeEnvironment,
         ctx: &CheckContext,
     ) -> Result<typed_ast::Expression, TypeError> {
-        let definition =
-            self.get_struct_fields(struct_name)
-                .ok_or_else(|| TypeError::UnsupportedType {
-                    type_name: struct_name.to_string(),
-                    span,
-                    file_id: ctx.file_id,
-                })?;
+        let definition = self
+            .get_struct_fields(
+                struct_name,
+                &ModuleName::from_str(ctx.module_name.unwrap_or("main")),
+                ctx.type_imports,
+            )
+            .ok_or_else(|| TypeError::UnsupportedType {
+                type_name: struct_name.to_string(),
+                span,
+                file_id: ctx.file_id,
+            })?;
 
         let mut seen = std::collections::HashSet::new();
         let mut typed_fields = Vec::new();
@@ -842,13 +854,17 @@ impl TypeChecker {
         let base_type = typed_base.ty().clone();
         match base_type {
             AstType::Struct(name) | AstType::Generic(name) => {
-                let definition =
-                    self.get_struct_fields(&name)
-                        .ok_or_else(|| TypeError::UnsupportedType {
-                            type_name: name.clone(),
-                            span,
-                            file_id: ctx.file_id,
-                        })?;
+                let definition = self
+                    .get_struct_fields(
+                        &name,
+                        &ModuleName::from_str(ctx.module_name.unwrap_or("main")),
+                        ctx.type_imports,
+                    )
+                    .ok_or_else(|| TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    })?;
                 let field_type = definition
                     .iter()
                     .find(|(n, _)| n == field)

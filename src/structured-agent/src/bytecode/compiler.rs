@@ -743,7 +743,7 @@ pub fn compile_metadata(
                 exports: arc_def.exports.clone(),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
-                use_aliases: arc_def.use_aliases.clone(),
+                use_imports: arc_def.use_imports.clone(),
             }),
         );
     }

@@ -386,18 +386,23 @@ impl Runtime {
             return Some(fields.clone());
         }
         let cached = self.compiled.get()?.as_ref().ok()?;
-        cached.metadata.type_by_name(name).and_then(|td| {
-            if let TypeDefinitionKind::Struct { fields } = &td.kind {
-                Some(
-                    fields
-                        .iter()
-                        .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
-                        .collect(),
-                )
-            } else {
-                None
-            }
-        })
+        cached
+            .metadata
+            .types
+            .values()
+            .find(|td| td.name.name == name && matches!(td.kind, TypeDefinitionKind::Struct { .. }))
+            .and_then(|td| {
+                if let TypeDefinitionKind::Struct { fields } = &td.kind {
+                    Some(
+                        fields
+                            .iter()
+                            .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn register_struct(&mut self, name: String, fields: Vec<(String, crate::types::Type)>) {
@@ -595,13 +600,13 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
 
     let mut aliases = HashMap::new();
     for module in compiled.metadata.modules.values() {
-        for (alias, qualified) in &module.use_aliases {
-            let canonical = FunctionName::parse(qualified).unwrap_or_else(|| FunctionName {
-                name: qualified.to_string(),
-                module: ModuleName::from_str(""),
+        for import in &module.use_imports {
+            let canonical = FunctionName {
+                name: import.name.clone(),
+                module: import.module.clone(),
                 kind: FunctionNameKind::Function,
-            });
-            aliases.insert(alias.clone(), canonical);
+            };
+            aliases.insert(import.local.clone(), canonical);
         }
     }
 

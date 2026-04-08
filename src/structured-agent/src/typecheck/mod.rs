@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FunctionDefinition, ImplDefinition, ImplKey, MetaData, ModuleDefinition,
-    ModuleName, SymbolQuery, TraitDefinition, TypeDefinition, TypeName, Visibility,
+    ModuleName, SymbolQuery, TraitDefinition, TypeDefinition, TypeName, UseImport, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -57,6 +57,7 @@ pub(super) struct CheckContext<'a> {
     pub(super) alias_to_qualified: &'a AliasToQualified,
     pub(super) module_name: Option<&'a str>,
     pub(super) module_params: &'a [ModuleParam],
+    pub(super) type_imports: &'a HashMap<String, UseImport>,
 }
 
 pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName {
@@ -80,7 +81,7 @@ pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName
     }
 }
 
-fn extract_use_aliases(module: &AstModule) -> Vec<(String, String)> {
+fn extract_use_imports(module: &AstModule) -> Vec<UseImport> {
     module
         .definitions
         .iter()
@@ -88,11 +89,14 @@ fn extract_use_aliases(module: &AstModule) -> Vec<(String, String)> {
             if let Definition::Use { path, alias, .. } = def
                 && path.len() >= 2
             {
-                let qualified = format!("{}::{}", path[0], path.last().unwrap());
                 let local = alias
                     .clone()
                     .unwrap_or_else(|| path.last().unwrap().clone());
-                Some((local, qualified))
+                Some(UseImport {
+                    local,
+                    module: ModuleName::from_str(&path[0]),
+                    name: path.last().unwrap().clone(),
+                })
             } else {
                 None
             }
@@ -131,7 +135,7 @@ impl TypeChecker {
             self.collect_native_sigs(parsed, native_modules);
             self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name)?;
             let exports = self.collect_module_exports(&ModuleName::from_str(effective_name));
-            let use_aliases = extract_use_aliases(&parsed.module);
+            let use_imports = extract_use_imports(&parsed.module);
             let module_def = ModuleDefinition {
                 name: ModuleName::from_str(effective_name),
                 visibility: if parsed.is_entry {
@@ -142,7 +146,7 @@ impl TypeChecker {
                 exports,
                 source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
                 ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
-                use_aliases,
+                use_imports,
             };
             self.metadata
                 .modules
@@ -301,7 +305,7 @@ impl TypeChecker {
                 exports: module_def.exports.clone(),
                 source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
-                use_aliases: module_def.use_aliases.clone(),
+                use_imports: module_def.use_imports.clone(),
             };
             typed_metadata
                 .modules

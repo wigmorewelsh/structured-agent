@@ -122,17 +122,6 @@ impl<R: References> MetaData<R> {
     pub fn register_type(&mut self, name: TypeName, def: Arc<TypeDefinition<R>>) {
         self.types.insert(name, def);
     }
-
-    pub fn type_by_name(&self, name: &str) -> Option<Arc<TypeDefinition<R>>> {
-        self.types.values().find(|td| td.name.name == name).cloned()
-    }
-
-    pub fn trait_by_name(&self, name: &str) -> Option<Arc<TraitDefinition<R>>> {
-        self.traits
-            .values()
-            .find(|td| td.name.name == name)
-            .cloned()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -180,13 +169,20 @@ pub enum ExportedName {
 }
 
 #[derive(Debug, Clone)]
+pub struct UseImport {
+    pub local: String,
+    pub module: ModuleName,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ModuleDefinition<R: References> {
     pub name: ModuleName,
     pub visibility: Visibility,
     pub exports: Vec<ExportedName>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
-    pub use_aliases: Vec<(String, String)>,
+    pub use_imports: Vec<UseImport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -255,6 +251,7 @@ impl FunctionName {
     }
 
     #[deprecated(note = "use structured constructors")]
+    #[allow(deprecated)]
     pub fn from_qualified_str(s: &str) -> Self {
         match s.rsplit_once("::") {
             Some((module, name)) => FunctionName {
