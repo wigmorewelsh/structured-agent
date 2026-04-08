@@ -1,4 +1,3 @@
-use super::db::{InternedFunctionName, InternedImplKey, lookup_function_def, lookup_impl_def};
 use super::refs::CheckerAstRef;
 use super::{CheckContext, TypeChecker, TypeEnvironment};
 use crate::ast::{
@@ -9,9 +8,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
-use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, ImplKey, ModuleName, SymbolQuery, TraitName, TypeName,
-};
+use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
 
 impl TypeChecker {
     pub(super) fn check_single_module_expressions(
@@ -27,28 +24,22 @@ impl TypeChecker {
         let alias_map = Self::build_alias_map(module);
         let alias_to_qualified = self.build_alias_to_qualified(module);
         let type_imports = Self::build_type_import_map(module, &self.metadata);
-        let module_params = module
-            .definitions
-            .iter()
-            .find_map(|def| {
-                if let Definition::ModuleHeader { params, .. } = def {
-                    Some(params.as_slice())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(&[]);
         let ctx = CheckContext {
             file_id: parsed.file_id,
             alias_map: &alias_map,
             alias_to_qualified: &alias_to_qualified,
             module_name: Some(effective_name),
-            module_params,
             type_imports: &type_imports,
         };
         let typed_definitions = module
             .definitions
             .iter()
+            .filter(|def| {
+                !matches!(
+                    def,
+                    Definition::ModuleHeader { .. } | Definition::Signature(_)
+                )
+            })
             .map(|def| self.check_definition(def, &ctx))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(typed_ast::Module {
@@ -70,7 +61,24 @@ impl TypeChecker {
             Definition::ExternalFunction(f) => {
                 Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
             }
-            Definition::Struct(s) => Ok(typed_ast::Definition::Struct((**s).clone())),
+            Definition::Struct(s) => {
+                for f in &s.fields {
+                    let resolved = self.resolve_type(
+                        &f.field_type,
+                        &ModuleName::from_str(ctx.module_name.unwrap_or("")),
+                        ctx.type_imports,
+                    );
+                    self.validate_type_with_params(
+                        &resolved,
+                        f.span,
+                        ctx.file_id,
+                        &[],
+                        &ModuleName::from_str(ctx.module_name.unwrap_or("")),
+                        ctx.type_imports,
+                    )?;
+                }
+                Ok(typed_ast::Definition::Struct((**s).clone()))
+            }
             Definition::Use {
                 path,
                 name,
@@ -84,13 +92,6 @@ impl TypeChecker {
                 is_pub: *is_pub,
                 span: *span,
             }),
-            Definition::ModuleHeader { name, params, span } => {
-                Ok(typed_ast::Definition::ModuleHeader {
-                    name: name.clone(),
-                    params: params.clone(),
-                    span: *span,
-                })
-            }
             Definition::ModuleBinding {
                 name,
                 sig_path,
@@ -109,11 +110,6 @@ impl TypeChecker {
                 args: args.clone(),
                 span: *span,
             }),
-            Definition::Signature(s) => Ok(typed_ast::Definition::Signature {
-                name: s.name.clone(),
-                functions: s.functions.clone(),
-                span: s.span,
-            }),
             Definition::Trait(s) => Ok(typed_ast::Definition::Trait {
                 name: s.name.clone(),
                 functions: s.functions.clone(),
@@ -122,6 +118,30 @@ impl TypeChecker {
             Definition::TraitImpl(t) => {
                 let (type_name, trait_name, functions, span) =
                     (&t.type_name, &t.trait_name, &t.functions, &t.span);
+                let trait_fns = self.get_trait_functions(
+                    trait_name,
+                    &ModuleName::from_str(ctx.module_name.unwrap_or("")),
+                    ctx.type_imports,
+                );
+                if let Some(trait_fns) = trait_fns {
+                    for trait_fn in &trait_fns {
+                        if !functions.iter().any(|f| f.name == trait_fn.name) {
+                            return Err(TypeError::TraitImplMissingFunction {
+                                type_name: type_name.clone(),
+                                trait_name: trait_name.clone(),
+                                function_name: trait_fn.name.clone(),
+                                span: *span,
+                                file_id: ctx.file_id,
+                            });
+                        }
+                    }
+                } else {
+                    return Err(TypeError::UnknownTrait {
+                        name: trait_name.clone(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    });
+                }
                 let typed_functions: Result<Vec<typed_ast::Function>, TypeError> = functions
                     .iter()
                     .map(|func| {
@@ -136,6 +156,7 @@ impl TypeChecker {
                     span: *span,
                 })
             }
+            Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
         }
     }
 
@@ -475,66 +496,6 @@ impl TypeChecker {
                     file_id: ctx.file_id,
                 });
             };
-
-        let module_str = resolved_fn_name.module.to_string();
-        if let Some(param) = ctx.module_params.iter().find(|p| p.name == module_str)
-            && param.path.len() >= 2
-        {
-            let sig_module = param.path[0].clone();
-            let sig_name = param.path.last().unwrap().clone();
-            let type_name = TypeName {
-                name: param.name.clone(),
-                module: ModuleName::from_str("__param__"),
-            };
-            let trait_name = TraitName {
-                name: sig_name,
-                module: ModuleName::from_str(&sig_module),
-            };
-            let impl_module = if let Some(tables) = self.symbol_tables {
-                let key = ImplKey {
-                    type_name: type_name.clone(),
-                    trait_name: trait_name.clone(),
-                };
-                let interned_key = InternedImplKey::new(&self.db, key);
-                lookup_impl_def(&self.db, tables, interned_key)
-            } else {
-                self.metadata
-                    .impl_for(&type_name, &trait_name)
-                    .map(|d| d.module.clone())
-                    .or_else(|| {
-                        self.param_bindings
-                            .get(&ImplKey {
-                                type_name: type_name.clone(),
-                                trait_name: trait_name.clone(),
-                            })
-                            .map(|d| d.module.clone())
-                    })
-            };
-            if let Some(impl_module) = impl_module {
-                let lookup_key = FunctionName {
-                    name: resolved_fn_name.name.clone(),
-                    module: impl_module.clone(),
-                    kind: FunctionNameKind::Function,
-                };
-                resolved_fn_name.module = impl_module;
-                let fn_def_ast_ref = if let Some(tables) = self.symbol_tables {
-                    let interned_fn = InternedFunctionName::new(&self.db, lookup_key.clone());
-                    lookup_function_def(&self.db, tables, interned_fn)
-                        .map(|arc_ptr| arc_ptr.get().ast_ref.clone())
-                } else {
-                    self.metadata
-                        .function(&lookup_key)
-                        .map(|d| d.ast_ref.clone())
-                };
-                if let Some(ast_ref) = fn_def_ast_ref {
-                    match &ast_ref {
-                        CheckerAstRef::Function(_, k) => kind = k.clone(),
-                        CheckerAstRef::ExternalFn { kind: k, .. } => kind = k.clone(),
-                        _ => {}
-                    }
-                }
-            }
-        }
 
         if arguments.len() != parameters.len() {
             return Err(TypeError::ArgumentCountMismatch {

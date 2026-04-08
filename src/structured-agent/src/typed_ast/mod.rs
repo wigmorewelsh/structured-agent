@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::ast::{ExternalFunction, ModuleParam, Parameter, SigFunction, StructDefinition, Type};
+use crate::ast::{ExternalFunction, Parameter, SigFunction, StructDefinition, Type};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -25,11 +25,7 @@ pub enum Definition {
         is_pub: bool,
         span: Span,
     },
-    ModuleHeader {
-        name: String,
-        params: Vec<ModuleParam>,
-        span: Span,
-    },
+
     ModuleBinding {
         name: String,
         sig_path: NonEmpty<String>,
@@ -42,11 +38,7 @@ pub enum Definition {
         args: Vec<String>,
         span: Span,
     },
-    Signature {
-        name: String,
-        functions: Vec<SigFunction>,
-        span: Span,
-    },
+
     Trait {
         name: String,
         functions: Vec<crate::ast::SigFunction>,

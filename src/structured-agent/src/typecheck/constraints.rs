@@ -1,4 +1,4 @@
-use super::TypeChecker;
+use super::{CheckerAstRef, TypeChecker};
 use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
@@ -14,7 +14,12 @@ impl TypeChecker {
     ) -> AstType {
         match t {
             AstType::Generic(name)
-                if self.get_struct_fields(name, module, type_imports).is_some() =>
+                if self
+                    .metadata
+                    .types
+                    .get(&Self::resolve_named_type(name, module, type_imports))
+                    .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
+                    .unwrap_or(false) =>
             {
                 AstType::Struct(name.clone())
             }
@@ -59,7 +64,13 @@ impl TypeChecker {
                 type_imports,
             ),
             AstType::Struct(name) => {
-                if self.get_struct_fields(name, module, type_imports).is_some() {
+                if self
+                    .metadata
+                    .types
+                    .get(&Self::resolve_named_type(name, module, type_imports))
+                    .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
+                    .unwrap_or(false)
+                {
                     Ok(())
                 } else {
                     Err(TypeError::UnsupportedType {

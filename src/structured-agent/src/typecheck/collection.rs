@@ -183,109 +183,6 @@ impl TypeChecker {
             .register_type(fn_type_name, Arc::new(type_def));
     }
 
-    pub(super) fn register_param_sigs(&mut self, module: &Module, file_id: FileId) {
-        let Some(params) = module.definitions.iter().find_map(|def| {
-            if let Definition::ModuleHeader { params, .. } = def {
-                Some(params)
-            } else {
-                None
-            }
-        }) else {
-            return;
-        };
-
-        let type_imports = Self::build_type_import_map(module, &self.metadata);
-        for param in params {
-            if param.path.len() < 2 {
-                continue;
-            }
-            let concrete_module = param.path[0].clone();
-            let sig_name = param.path.last().unwrap();
-
-            let fn_data: Vec<(String, Vec<Parameter>, AstType)> = if let Some(sig_fns) = self
-                .get_sig_functions(
-                    sig_name,
-                    &ModuleName::from_str(&concrete_module),
-                    &type_imports,
-                ) {
-                sig_fns
-                    .into_iter()
-                    .map(|f| (f.name, f.parameters, f.return_type))
-                    .collect()
-            } else {
-                self.metadata
-                    .functions_in_module(&ModuleName::from_str(&concrete_module))
-                    .into_iter()
-                    .filter_map(|fdef| match &fdef.ast_ref {
-                        CheckerAstRef::Function(func, _) => Some((
-                            fdef.name.name.clone(),
-                            func.parameters
-                                .iter()
-                                .map(|p| crate::ast::Parameter {
-                                    name: p.name.clone(),
-                                    param_type: self.resolve_type(
-                                        &p.param_type,
-                                        &ModuleName::from_str(&concrete_module),
-                                        &type_imports,
-                                    ),
-                                    span: p.span,
-                                })
-                                .collect(),
-                            self.resolve_type(
-                                &func.return_type,
-                                &ModuleName::from_str(&concrete_module),
-                                &type_imports,
-                            ),
-                        )),
-                        CheckerAstRef::ExternalFn {
-                            params,
-                            return_type,
-                            ..
-                        } => Some((fdef.name.name.clone(), params.clone(), return_type.clone())),
-                        _ => None,
-                    })
-                    .collect()
-            };
-
-            for (fn_name, fn_params, ret_type) in fn_data {
-                let fn_name_key = FunctionName {
-                    name: fn_name.to_string(),
-                    module: ModuleName::from_str(&param.name),
-                    kind: FunctionNameKind::Function,
-                };
-                self.insert_fn(
-                    fn_name_key,
-                    fn_params,
-                    ret_type,
-                    vec![],
-                    FunctionKind::External,
-                    Visibility::Public,
-                    SourceLocation(file_id, Span::dummy()),
-                );
-            }
-            let sig_module = param.path[0].clone();
-            let sig_name = param.path.last().unwrap().clone();
-            let key = ImplKey {
-                type_name: TypeName {
-                    name: param.name.clone(),
-                    module: ModuleName::from_str("__param__"),
-                },
-                trait_name: TraitName {
-                    name: sig_name,
-                    module: ModuleName::from_str(&sig_module),
-                },
-            };
-            self.param_bindings.entry(key.clone()).or_insert_with(|| {
-                Arc::new(ImplDefinition {
-                    key,
-                    module: ModuleName::from_str(&sig_module),
-                    source_ref: SourceLocation(file_id, Span::dummy()),
-                    ast_ref: NoAst,
-                })
-            });
-        }
-    }
-
     #[allow(deprecated)]
     pub(super) fn collect_function_signatures(
         &mut self,
@@ -315,21 +212,7 @@ impl TypeChecker {
                     source_ref: SourceLocation(file_id, struct_def.span),
                     ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
                 };
-                for f in &struct_def.fields {
-                    let resolved = self.resolve_type(
-                        &f.field_type,
-                        &ModuleName::from_str(module_name),
-                        &type_imports,
-                    );
-                    self.validate_type_with_params(
-                        &resolved,
-                        f.span,
-                        file_id,
-                        &[],
-                        &ModuleName::from_str(module_name),
-                        &type_imports,
-                    )?;
-                }
+
                 self.metadata.register_type(type_name, Arc::new(entry));
             }
         }
@@ -493,59 +376,12 @@ impl TypeChecker {
                         SourceLocation(file_id, ext_func.span),
                     );
                 }
-                Definition::Signature(s) => {
-                    let type_name = TypeName {
-                        name: s.name.clone(),
-                        module: ModuleName::from_str(module_name),
-                    };
-                    let entry = TypeDefinition {
-                        name: type_name.clone(),
-                        kind: TypeDefinitionKind::Signature {
-                            entries: s
-                                .functions
-                                .iter()
-                                .map(|f| SignatureEntry {
-                                    name: f.name.clone(),
-                                    type_name: ast_type_to_type_name(&f.return_type, module_name),
-                                })
-                                .collect(),
-                        },
-                        source_ref: SourceLocation(file_id, s.span),
-                        ast_ref: CheckerAstRef::Signature(Arc::clone(s)),
-                    };
-                    self.metadata.register_type(type_name, Arc::new(entry));
-                }
-                Definition::ModuleBinding {
-                    name,
-                    sig_path,
-                    sig_name,
-                    impl_path,
-                    span,
-                } => {
-                    let sig_module = sig_path.head.clone();
-                    let concrete = impl_path.head.clone();
-                    let key = ImplKey {
-                        type_name: TypeName {
-                            name: name.clone(),
-                            module: ModuleName::from_str("__param__"),
-                        },
-                        trait_name: TraitName {
-                            name: sig_name.clone(),
-                            module: ModuleName::from_str(&sig_module),
-                        },
-                    };
-                    let entry = ImplDefinition {
-                        key: key.clone(),
-                        module: ModuleName::from_str(&concrete),
-                        source_ref: SourceLocation(file_id, *span),
-                        ast_ref: NoAst,
-                    };
-                    self.param_bindings.insert(key, Arc::new(entry));
-                }
                 Definition::Struct(_)
                 | Definition::Use { .. }
+                | Definition::ModuleBinding { .. }
+                | Definition::WiringSite { .. }
                 | Definition::ModuleHeader { .. }
-                | Definition::WiringSite { .. } => {}
+                | Definition::Signature(_) => {}
                 Definition::Trait(s) => {
                     let trait_name = TraitName {
                         name: s.name.clone(),
@@ -572,32 +408,7 @@ impl TypeChecker {
                     let trait_name = &impl_arc.trait_name;
                     let functions = &impl_arc.functions;
                     let span = &impl_arc.span;
-                    let trait_fns = self.get_trait_functions(
-                        trait_name,
-                        &ModuleName::from_str(module_name),
-                        &type_imports,
-                    );
-                    if let Some(trait_fns) = trait_fns {
-                        for trait_fn in &trait_fns {
-                            let expected_name = &trait_fn.name;
-                            let has_fn = functions.iter().any(|f| &f.name == expected_name);
-                            if !has_fn {
-                                return Err(TypeError::TraitImplMissingFunction {
-                                    type_name: type_name.clone(),
-                                    trait_name: trait_name.clone(),
-                                    function_name: expected_name.clone(),
-                                    span: *span,
-                                    file_id,
-                                });
-                            }
-                        }
-                    } else {
-                        return Err(TypeError::UnknownTrait {
-                            name: trait_name.clone(),
-                            span: *span,
-                            file_id,
-                        });
-                    }
+
                     let sym_type_name = TypeName {
                         name: type_name.clone(),
                         module: ModuleName::from_str(module_name),

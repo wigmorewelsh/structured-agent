@@ -19,8 +19,7 @@ pub use refs::{
 };
 
 use crate::ast::{
-    Definition, Module as AstModule, ModuleParam, Parameter, ParsedModule, Type as AstType,
-    TypeParam,
+    Definition, Module as AstModule, Parameter, ParsedModule, Type as AstType, TypeParam,
 };
 use crate::typed_ast;
 use crate::types::{FileId, Span};
@@ -28,14 +27,13 @@ use db::{ArcPtr, SymbolTablesInput, TypeCheckDb};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    ExportedName, FunctionDefinition, ImplDefinition, ImplKey, MetaData, ModuleDefinition,
-    ModuleName, SymbolQuery, TraitDefinition, TypeDefinition, TypeName, UseImport, Visibility,
+    ExportedName, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, ModuleName,
+    SymbolQuery, TraitDefinition, TypeDefinition, TypeName, UseImport, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
     pub(super) metadata: MetaData<CheckerRefs>,
-    pub(super) param_bindings: HashMap<ImplKey, Arc<ImplDefinition<PrimitiveRefs>>>,
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
     pub(super) db: TypeCheckDb,
     pub(super) symbol_tables: Option<SymbolTablesInput>,
@@ -60,7 +58,6 @@ pub(super) struct CheckContext<'a> {
     pub(super) alias_map: &'a HashMap<String, String>,
     pub(super) alias_to_qualified: &'a AliasToQualified,
     pub(super) module_name: Option<&'a str>,
-    pub(super) module_params: &'a [ModuleParam],
     pub(super) type_imports: &'a HashMap<String, UseImport>,
 }
 
@@ -117,7 +114,6 @@ impl TypeChecker {
     pub fn new() -> Self {
         let mut checker = Self {
             metadata: MetaData::default(),
-            param_bindings: HashMap::new(),
             primitive_types: HashMap::new(),
             db: TypeCheckDb::default(),
             symbol_tables: None,
@@ -168,9 +164,6 @@ impl TypeChecker {
                 .modules
                 .insert(ModuleName::from_str(effective_name), Arc::new(module_def));
         }
-        for parsed in modules {
-            self.register_param_sigs(&parsed.module, parsed.file_id);
-        }
         let tables = SymbolTablesInput::new(
             &self.db,
             ArcPtr::new(self.metadata.functions.clone()),
@@ -178,7 +171,6 @@ impl TypeChecker {
             ArcPtr::new(self.metadata.traits.clone()),
             ArcPtr::new(self.metadata.impls.clone()),
             ArcPtr::new(self.metadata.modules.clone()),
-            ArcPtr::new(self.param_bindings.clone()),
         );
         self.symbol_tables = Some(tables);
         Ok(())
@@ -328,17 +320,7 @@ impl TypeChecker {
                 .impls
                 .insert(impl_key.clone(), Arc::new(new_def));
         }
-        for (impl_key, impl_def) in &self.param_bindings {
-            let new_def = ImplDefinition {
-                key: impl_def.key.clone(),
-                module: impl_def.module.clone(),
-                source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
-                ast_ref: TypedCheckerAstRef::NoAst,
-            };
-            typed_metadata
-                .impls
-                .insert(impl_key.clone(), Arc::new(new_def));
-        }
+
         for (module_key, module_def) in &self.metadata.modules {
             let new_def = ModuleDefinition {
                 name: module_def.name.clone(),

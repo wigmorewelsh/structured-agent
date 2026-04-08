@@ -10,8 +10,8 @@ use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName,
-    TypeDefinitionKind, TypeName, UseImport, Visibility,
+    FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName, TypeName,
+    UseImport, Visibility,
 };
 
 impl TypeChecker {
@@ -77,12 +77,9 @@ impl TypeChecker {
                 }),
                 _ => None,
             };
-        if let Some(tables) = self.symbol_tables {
-            let key = InternedFunctionName::new(&self.db, name.clone());
-            lookup_function_def(&self.db, tables, key).and_then(|arc_ptr| make_sig(arc_ptr.get()))
-        } else {
-            self.metadata.function(name).and_then(|f| make_sig(&*f))
-        }
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let key = InternedFunctionName::new(&self.db, name.clone());
+        lookup_function_def(&self.db, tables, key).and_then(|arc_ptr| make_sig(arc_ptr.get()))
     }
 
     pub(super) fn get_struct_fields(
@@ -104,15 +101,9 @@ impl TypeChecker {
                 None
             }
         };
-        if let Some(tables) = self.symbol_tables {
-            let key = InternedTypeName::new(&self.db, resolved);
-            lookup_type_def(&self.db, tables, key)
-                .and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
-        } else {
-            self.metadata
-                .type_def(&resolved)
-                .and_then(|td| extract(&td.ast_ref))
-        }
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let key = InternedTypeName::new(&self.db, resolved);
+        lookup_type_def(&self.db, tables, key).and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
     }
 
     pub(super) fn get_trait_functions(
@@ -133,68 +124,24 @@ impl TypeChecker {
                 None
             }
         };
-        if let Some(tables) = self.symbol_tables {
-            let key = InternedTraitName::new(&self.db, trait_name);
-            lookup_trait_def(&self.db, tables, key)
-                .and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
-        } else {
-            self.metadata
-                .trait_def(&trait_name)
-                .and_then(|td| extract(&td.ast_ref))
-        }
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let key = InternedTraitName::new(&self.db, trait_name);
+        lookup_trait_def(&self.db, tables, key).and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
     }
 
     pub(super) fn type_implements_trait(&self, type_name: &str, trait_name: &str) -> bool {
-        if let Some(tables) = self.symbol_tables {
-            let tn = TypeName {
-                name: type_name.to_string(),
-                module: ModuleName::unqualified(),
-            };
-            let trn = TraitName {
-                name: trait_name.to_string(),
-                module: ModuleName::unqualified(),
-            };
-            let type_key = InternedTypeName::new(&self.db, tn);
-            let trait_key = InternedTraitName::new(&self.db, trn);
-            lookup_impl_exists(&self.db, tables, type_key, trait_key)
-        } else {
-            self.metadata
-                .impls
-                .keys()
-                .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
-                || self
-                    .param_bindings
-                    .keys()
-                    .any(|k| k.type_name.name == type_name && k.trait_name.name == trait_name)
-        }
-    }
-
-    pub(super) fn get_sig_functions(
-        &self,
-        name: &str,
-        current_module: &ModuleName,
-        type_imports: &HashMap<String, UseImport>,
-    ) -> Option<Vec<SigFunction>> {
-        let resolved = Self::resolve_named_type(name, current_module, type_imports);
-        let extract = |td_kind: &TypeDefinitionKind, ast_ref: &CheckerAstRef| {
-            if !matches!(td_kind, TypeDefinitionKind::Signature { .. }) {
-                return None;
-            }
-            if let CheckerAstRef::Signature(s) = ast_ref {
-                Some(s.functions.clone())
-            } else {
-                None
-            }
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let tn = TypeName {
+            name: type_name.to_string(),
+            module: ModuleName::unqualified(),
         };
-        if let Some(tables) = self.symbol_tables {
-            let key = InternedTypeName::new(&self.db, resolved);
-            lookup_type_def(&self.db, tables, key)
-                .and_then(|arc_ptr| extract(&arc_ptr.get().kind, &arc_ptr.get().ast_ref))
-        } else {
-            self.metadata
-                .type_def(&resolved)
-                .and_then(|td| extract(&td.kind, &td.ast_ref))
-        }
+        let trn = TraitName {
+            name: trait_name.to_string(),
+            module: ModuleName::unqualified(),
+        };
+        let type_key = InternedTypeName::new(&self.db, tn);
+        let trait_key = InternedTraitName::new(&self.db, trn);
+        lookup_impl_exists(&self.db, tables, type_key, trait_key)
     }
 
     pub(super) fn resolve_impl_call(
@@ -215,75 +162,42 @@ impl TypeChecker {
             AstType::Struct(n) => n.clone(),
             _ => return None,
         };
-        if let Some(tables) = self.symbol_tables {
-            let interned_fn = InternedString::new(&self.db, fn_name.to_string());
-            let interned_type = InternedTypeName::new(
-                &self.db,
-                TypeName {
-                    name: type_name.clone(),
-                    module: ModuleName::unqualified(),
-                },
-            );
-            if let Some(interned_trait) =
-                find_trait_for_impl_call(&self.db, tables, interned_fn, interned_type)
-            {
-                let trait_key_name = interned_trait.name(&self.db);
-                let module = ctx.module_name.unwrap_or("");
-                let impl_fn_name = {
-                    let mn = ModuleName::from_str(module);
-                    FunctionName {
-                        name: fn_name.to_string(),
-                        module: mn.clone(),
-                        kind: FunctionNameKind::Impl {
-                            type_name: structured_agent_runtime::symbols::TypeName {
-                                name: type_name.to_string(),
-                                module: mn.clone(),
-                            },
-                            trait_name: structured_agent_runtime::symbols::TraitName {
-                                name: trait_key_name.name.to_string(),
-                                module: mn,
-                            },
-                        },
-                    }
-                };
-                if let Some(sig) = self.get_function_sig(&impl_fn_name, ctx.type_imports) {
-                    return Some((impl_fn_name, sig));
-                }
-            }
-            None
-        } else {
-            for (trait_key, trait_def) in &self.metadata.traits {
-                let CheckerAstRef::Trait(trait_fns) = &trait_def.ast_ref else {
-                    continue;
-                };
-                if trait_fns.functions.iter().any(|f| f.name == fn_name)
-                    && self.type_implements_trait(&type_name, &trait_key.name)
-                {
-                    let module = ctx.module_name.unwrap_or("");
-                    let impl_fn_name = {
-                        let mn = ModuleName::from_str(module);
-                        FunctionName {
-                            name: fn_name.to_string(),
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let interned_fn = InternedString::new(&self.db, fn_name.to_string());
+        let interned_type = InternedTypeName::new(
+            &self.db,
+            TypeName {
+                name: type_name.clone(),
+                module: ModuleName::unqualified(),
+            },
+        );
+        if let Some(interned_trait) =
+            find_trait_for_impl_call(&self.db, tables, interned_fn, interned_type)
+        {
+            let trait_key_name = interned_trait.name(&self.db);
+            let module = ctx.module_name.unwrap_or("");
+            let impl_fn_name = {
+                let mn = ModuleName::from_str(module);
+                FunctionName {
+                    name: fn_name.to_string(),
+                    module: mn.clone(),
+                    kind: FunctionNameKind::Impl {
+                        type_name: structured_agent_runtime::symbols::TypeName {
+                            name: type_name.to_string(),
                             module: mn.clone(),
-                            kind: FunctionNameKind::Impl {
-                                type_name: structured_agent_runtime::symbols::TypeName {
-                                    name: type_name.to_string(),
-                                    module: mn.clone(),
-                                },
-                                trait_name: structured_agent_runtime::symbols::TraitName {
-                                    name: trait_key.name.to_string(),
-                                    module: mn,
-                                },
-                            },
-                        }
-                    };
-                    if let Some(sig) = self.get_function_sig(&impl_fn_name, ctx.type_imports) {
-                        return Some((impl_fn_name, sig));
-                    }
+                        },
+                        trait_name: structured_agent_runtime::symbols::TraitName {
+                            name: trait_key_name.name.to_string(),
+                            module: mn,
+                        },
+                    },
                 }
+            };
+            if let Some(sig) = self.get_function_sig(&impl_fn_name, ctx.type_imports) {
+                return Some((impl_fn_name, sig));
             }
-            None
         }
+        None
     }
 
     pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {
@@ -341,7 +255,7 @@ impl TypeChecker {
             .collect()
     }
 
-    fn resolve_named_type(
+    pub(super) fn resolve_named_type(
         name: &str,
         current_module: &ModuleName,
         type_imports: &HashMap<String, UseImport>,
@@ -380,12 +294,9 @@ impl TypeChecker {
                 module: import.module.clone(),
                 kind: FunctionNameKind::Function,
             };
-            let fn_exists = if let Some(tables) = self.symbol_tables {
-                let interned = InternedFunctionName::new(&self.db, fn_key.clone());
-                lookup_function_def(&self.db, tables, interned).is_some()
-            } else {
-                self.metadata.function(&fn_key).is_some()
-            };
+            let tables = self.symbol_tables.expect("symbol tables not populated");
+            let interned = InternedFunctionName::new(&self.db, fn_key.clone());
+            let fn_exists = lookup_function_def(&self.db, tables, interned).is_some();
             if fn_exists {
                 map.insert(import.local.clone(), import);
             }
@@ -418,17 +329,11 @@ impl TypeChecker {
             None => return Ok(()),
         };
 
-        let is_visible = if let Some(tables) = self.symbol_tables {
-            let interned = InternedFunctionName::new(&self.db, fn_key.clone());
-            lookup_function_def(&self.db, tables, interned)
-                .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
-                .unwrap_or(true)
-        } else {
-            self.metadata
-                .function(&fn_key)
-                .map(|f| matches!(f.visibility, Visibility::Public))
-                .unwrap_or(true)
-        };
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let interned = InternedFunctionName::new(&self.db, fn_key.clone());
+        let is_visible = lookup_function_def(&self.db, tables, interned)
+            .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
+            .unwrap_or(true);
 
         if is_visible {
             Ok(())

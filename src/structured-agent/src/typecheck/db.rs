@@ -1,4 +1,4 @@
-use super::refs::{CheckerAstRef, CheckerRefs, PrimitiveRefs};
+use super::refs::{CheckerAstRef, CheckerRefs};
 use crate::ast::Module as AstModule;
 use crate::types::FileId;
 use std::collections::HashMap;
@@ -88,7 +88,6 @@ pub(super) struct SymbolTablesInput {
     pub(super) traits: ArcPtr<HashMap<TraitName, Arc<TraitDefinition<CheckerRefs>>>>,
     pub(super) impls: ArcPtr<HashMap<ImplKey, Arc<ImplDefinition<CheckerRefs>>>>,
     pub(super) modules: ArcPtr<HashMap<ModuleName, Arc<ModuleDefinition<CheckerRefs>>>>,
-    pub(super) param_bindings: ArcPtr<HashMap<ImplKey, Arc<ImplDefinition<PrimitiveRefs>>>>,
 }
 
 #[salsa::interned]
@@ -177,11 +176,6 @@ pub(super) fn lookup_impl_exists<'db>(
         .get()
         .keys()
         .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
-        || tables
-            .param_bindings(db)
-            .get()
-            .keys()
-            .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
 }
 
 #[salsa::tracked]
@@ -196,13 +190,6 @@ pub(super) fn lookup_impl_def<'db>(
         .get()
         .get(&impl_key)
         .map(|d| d.module.clone())
-        .or_else(|| {
-            tables
-                .param_bindings(db)
-                .get()
-                .get(&impl_key)
-                .map(|d| d.module.clone())
-        })
 }
 
 #[salsa::tracked]
