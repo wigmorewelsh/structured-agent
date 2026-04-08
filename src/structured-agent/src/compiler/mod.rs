@@ -14,10 +14,8 @@ use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
-use crate::typecheck::ModuleVisibility;
 use crate::typecheck::TypeChecker;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
-use structured_agent_runtime::symbols::Visibility;
 
 use crate::ast::ParsedModule;
 use combine::Parser as CombineParser;
@@ -69,7 +67,6 @@ impl CompilationUnit {
 
 pub struct CompiledProgram {
     pub metadata: MetaData<BytecodeRefs>,
-    module_visibility: ModuleVisibility,
     main_function: Option<FunctionName>,
     source_path: Option<String>,
 }
@@ -93,7 +90,6 @@ impl CompiledProgram {
     pub fn new() -> Self {
         Self {
             metadata: MetaData::default(),
-            module_visibility: HashMap::new(),
             main_function: None,
             source_path: None,
         }
@@ -101,11 +97,6 @@ impl CompiledProgram {
 
     pub fn with_source_path(mut self, path: Option<String>) -> Self {
         self.source_path = path;
-        self
-    }
-
-    fn with_module_visibility(mut self, visibility: ModuleVisibility) -> Self {
-        self.module_visibility = visibility;
         self
     }
 
@@ -122,10 +113,6 @@ impl CompiledProgram {
             .as_ref()
             .and_then(|n| self.metadata.functions.get(n))
             .and_then(|d| d.body_ref.as_ref())
-    }
-
-    pub fn module_visibility(&self) -> &ModuleVisibility {
-        &self.module_visibility
     }
 }
 
@@ -190,6 +177,7 @@ impl Compiler {
 
         let native_names: std::collections::HashSet<String> =
             self.modules.keys().cloned().collect();
+
         let modules = discover(
             entry_path,
             entry_source,
@@ -216,14 +204,6 @@ impl Compiler {
                 }
                 format!("Type error: {}", e)
             })?;
-        let module_visibility: ModuleVisibility = typed_metadata
-            .functions
-            .iter()
-            .map(|(name, fdef)| {
-                let qname = format!("{}::{}", name.module, name.name);
-                (qname, matches!(fdef.visibility, Visibility::Public))
-            })
-            .collect();
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
@@ -234,9 +214,7 @@ impl Compiler {
             }
         }
 
-        let mut compiled = CompiledProgram::new()
-            .with_source_path(source_path)
-            .with_module_visibility(module_visibility);
+        let mut compiled = CompiledProgram::new().with_source_path(source_path);
 
         let bytecode_metadata = compile_metadata(typed_metadata)
             .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
@@ -472,14 +450,6 @@ fn main(): String {
             module: ModuleName::from_str("greetlib"),
             kind: FunctionNameKind::Function
         }));
-        assert_eq!(
-            compiled.module_visibility().get("greetlib::greet"),
-            Some(&true)
-        );
-        assert_eq!(
-            compiled.module_visibility().get("greetlib::internal"),
-            Some(&false)
-        );
     }
 
     #[test]
