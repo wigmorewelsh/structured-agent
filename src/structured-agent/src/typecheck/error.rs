@@ -568,3 +568,14 @@ impl fmt::Display for TypeError {
 }
 
 impl std::error::Error for TypeError {}
+
+unsafe impl salsa::Update for TypeError {
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        if *old_pointer != new_value {
+            *old_pointer = new_value;
+            true
+        } else {
+            false
+        }
+    }
+}

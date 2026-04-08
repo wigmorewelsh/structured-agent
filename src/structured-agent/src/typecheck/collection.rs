@@ -3,6 +3,7 @@ use super::{TypeChecker, ast_type_to_type_name};
 use crate::ast::{Definition, Module, Parameter, ParsedModule, Type as AstType, TypeParam};
 
 use crate::types::{FileId, Span};
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
@@ -26,7 +27,7 @@ impl TypeChecker {
         for (name, module) in builtins {
             let type_name = TypeName {
                 name: name.to_string(),
-                module: ModuleName::from_str(module),
+                module: ModuleName::new(NonEmpty::new(module.to_string())),
             };
             let entry = TypeDefinition {
                 name: type_name.clone(),
@@ -38,7 +39,6 @@ impl TypeChecker {
         }
     }
 
-    #[allow(deprecated)]
     pub(super) fn collect_native_sigs(
         &mut self,
         parsed: &ParsedModule,
@@ -79,7 +79,10 @@ impl TypeChecker {
             let fn_key = match qname.rsplit_once("::") {
                 Some((module, name)) => FunctionName {
                     name: name.to_string(),
-                    module: ModuleName::from_str(module),
+                    module: ModuleName::new(
+                        NonEmpty::from_vec(module.split("::").map(|s| s.to_string()).collect())
+                            .unwrap(),
+                    ),
                     kind: FunctionNameKind::Function,
                 },
                 None => FunctionName {
@@ -128,12 +131,12 @@ impl TypeChecker {
             name: name.name.clone(),
             module: name.module.clone(),
         };
-        let return_type_name = ast_type_to_type_name(&return_type, &name.module.to_string());
+        let return_type_name = ast_type_to_type_name(&return_type, &name.module);
         let parameters: Vec<ParameterDefinition> = params
             .iter()
             .map(|p| ParameterDefinition {
                 name: p.name.clone(),
-                type_name: ast_type_to_type_name(&p.param_type, &name.module.to_string()),
+                type_name: ast_type_to_type_name(&p.param_type, &name.module),
             })
             .collect();
         let generic_parameters: Vec<GenericParameterDefinition> = type_params
@@ -183,18 +186,17 @@ impl TypeChecker {
             .register_type(fn_type_name, Arc::new(type_def));
     }
 
-    #[allow(deprecated)]
     pub(super) fn collect_function_signatures(
         &mut self,
         module: &Module,
         file_id: FileId,
-        module_name: &str,
+        module_name: &ModuleName,
     ) {
         for definition in &module.definitions {
             if let Definition::Struct(struct_def) = definition {
                 let type_name = TypeName {
                     name: struct_def.name.clone(),
-                    module: ModuleName::from_str(module_name),
+                    module: module_name.clone(),
                 };
                 let entry = TypeDefinition {
                     name: type_name.clone(),
@@ -221,7 +223,7 @@ impl TypeChecker {
                 Definition::Function(func) => {
                     let fn_key = FunctionName {
                         name: func.name.to_string(),
-                        module: ModuleName::from_str(module_name),
+                        module: module_name.clone(),
                         kind: FunctionNameKind::Function,
                     };
                     let fn_type_name = TypeName {
@@ -281,7 +283,12 @@ impl TypeChecker {
                     let fn_key = match ext_func.name.rsplit_once("::") {
                         Some((module, name)) => FunctionName {
                             name: name.to_string(),
-                            module: ModuleName::from_str(module),
+                            module: ModuleName::new(
+                                NonEmpty::from_vec(
+                                    module.split("::").map(|s| s.to_string()).collect(),
+                                )
+                                .unwrap(),
+                            ),
                             kind: FunctionNameKind::Function,
                         },
                         None => FunctionName {
@@ -313,7 +320,7 @@ impl TypeChecker {
                 Definition::Trait(s) => {
                     let trait_name = TraitName {
                         name: s.name.clone(),
-                        module: ModuleName::from_str(module_name),
+                        module: module_name.clone(),
                     };
                     let entry = TraitDefinition {
                         name: trait_name.clone(),
@@ -339,11 +346,11 @@ impl TypeChecker {
 
                     let sym_type_name = TypeName {
                         name: type_name.clone(),
-                        module: ModuleName::from_str(module_name),
+                        module: module_name.clone(),
                     };
                     let sym_trait_name = TraitName {
                         name: trait_name.clone(),
-                        module: ModuleName::from_str(module_name),
+                        module: module_name.clone(),
                     };
                     let key = ImplKey {
                         type_name: sym_type_name.clone(),
@@ -351,7 +358,7 @@ impl TypeChecker {
                     };
                     let impl_entry = ImplDefinition {
                         key: key.clone(),
-                        module: ModuleName::from_str(module_name),
+                        module: module_name.clone(),
                         source_ref: SourceLocation(file_id, *span),
                         ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
                     };
@@ -359,7 +366,7 @@ impl TypeChecker {
                     for func in functions {
                         let resolved_return = Self::substitute_self(&func.return_type, type_name);
                         let impl_fn_key = {
-                            let mn = ModuleName::from_str(module_name);
+                            let mn = module_name.clone();
                             FunctionName {
                                 name: func.name.to_string(),
                                 module: mn.clone(),

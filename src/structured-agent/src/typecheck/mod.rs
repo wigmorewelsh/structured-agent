@@ -23,7 +23,8 @@ use crate::ast::{
 };
 use crate::typed_ast;
 use crate::types::{FileId, Span};
-use db::{ArcPtr, SymbolTablesInput, TypeCheckDb};
+use db::{ArcPtr, ParsedModuleInput, SymbolTablesInput, TypeCheckDb};
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
@@ -37,6 +38,7 @@ pub struct TypeChecker {
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
     pub(super) db: TypeCheckDb,
     pub(super) symbol_tables: Option<SymbolTablesInput>,
+    pub(super) parsed_inputs: HashMap<String, ParsedModuleInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,27 +59,27 @@ pub(super) struct CheckContext<'a> {
     pub(super) file_id: FileId,
     pub(super) alias_map: &'a HashMap<String, String>,
     pub(super) alias_to_qualified: &'a AliasToQualified,
-    pub(super) module_name: Option<&'a str>,
+    pub(super) module_name: &'a ModuleName,
     pub(super) type_imports: &'a HashMap<String, UseImport>,
 }
 
-pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &str) -> TypeName {
+pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {
     match ty {
         AstType::Struct(name) => TypeName {
             name: name.clone(),
-            module: ModuleName::from_str(module_name),
+            module: module_name.clone(),
         },
         AstType::List(_) => TypeName {
             name: "List".to_string(),
-            module: ModuleName::from_str("prelude"),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
         },
         AstType::Option(_) => TypeName {
             name: "Option".to_string(),
-            module: ModuleName::from_str("prelude"),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
         },
         other => TypeName {
             name: other.to_string(),
-            module: ModuleName::from_str("prelude"),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
         },
     }
 }
@@ -117,6 +119,7 @@ impl TypeChecker {
             primitive_types: HashMap::new(),
             db: TypeCheckDb::default(),
             symbol_tables: None,
+            parsed_inputs: HashMap::new(),
         };
         checker.seed_builtin_types();
         checker
@@ -144,12 +147,17 @@ impl TypeChecker {
             } else {
                 parsed.name.as_str()
             };
+            let effective_module_name = ModuleName::new(NonEmpty::new(effective_name.to_string()));
             self.collect_native_sigs(parsed, native_modules);
-            self.collect_function_signatures(&parsed.module, parsed.file_id, effective_name);
-            let exports = self.collect_module_exports(&ModuleName::from_str(effective_name));
+            self.collect_function_signatures(
+                &parsed.module,
+                parsed.file_id,
+                &effective_module_name,
+            );
+            let exports = self.collect_module_exports(&effective_module_name);
             let use_imports = extract_use_imports(&parsed.module);
             let module_def = ModuleDefinition {
-                name: ModuleName::from_str(effective_name),
+                name: effective_module_name.clone(),
                 visibility: if parsed.is_entry {
                     Visibility::Public
                 } else {
@@ -162,7 +170,7 @@ impl TypeChecker {
             };
             self.metadata
                 .modules
-                .insert(ModuleName::from_str(effective_name), Arc::new(module_def));
+                .insert(effective_module_name, Arc::new(module_def));
         }
         let tables = SymbolTablesInput::new(
             &self.db,
@@ -173,6 +181,16 @@ impl TypeChecker {
             ArcPtr::new(self.metadata.modules.clone()),
         );
         self.symbol_tables = Some(tables);
+        for parsed in modules {
+            let input = ParsedModuleInput::new(
+                &self.db,
+                parsed.name.clone(),
+                parsed.is_entry,
+                parsed.file_id,
+                parsed.module.clone(),
+            );
+            self.parsed_inputs.insert(parsed.name.clone(), input);
+        }
         Ok(())
     }
 
@@ -180,12 +198,15 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
     ) -> Result<HashMap<String, typed_ast::Module>, TypeError> {
+        let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_modules = HashMap::new();
         for parsed in modules {
-            typed_modules.insert(
-                parsed.name.clone(),
-                self.check_single_module_expressions(parsed)?,
-            );
+            let parsed_input = *self
+                .parsed_inputs
+                .get(&parsed.name)
+                .expect("parsed input not found");
+            let arc_module = db::check_module(&self.db, parsed_input, tables)?;
+            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
         }
         Ok(typed_modules)
     }

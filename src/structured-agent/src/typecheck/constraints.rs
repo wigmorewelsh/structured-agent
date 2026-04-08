@@ -1,9 +1,100 @@
-use super::{CheckerAstRef, TypeChecker};
+use super::TypeChecker;
+use super::db::{SymbolTablesInput, TypeCheckDatabase};
+use super::refs::CheckerAstRef;
 use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{ModuleName, UseImport};
+
+pub(super) fn resolve_type(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    t: &AstType,
+    module: &ModuleName,
+    type_imports: &HashMap<String, UseImport>,
+) -> AstType {
+    match t {
+        AstType::Generic(name)
+            if tables
+                .types(db)
+                .get()
+                .get(&TypeChecker::resolve_named_type(name, module, type_imports))
+                .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
+                .unwrap_or(false) =>
+        {
+            AstType::Struct(name.clone())
+        }
+        AstType::List(inner) => AstType::List(Box::new(resolve_type(
+            db,
+            tables,
+            inner,
+            module,
+            type_imports,
+        ))),
+        AstType::Option(inner) => AstType::Option(Box::new(resolve_type(
+            db,
+            tables,
+            inner,
+            module,
+            type_imports,
+        ))),
+        other => other.clone(),
+    }
+}
+
+pub(super) fn validate_type_with_params(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    ast_type: &AstType,
+    span: Span,
+    file_id: FileId,
+    type_params: &[TypeParam],
+    module: &ModuleName,
+    type_imports: &HashMap<String, UseImport>,
+) -> Result<(), TypeError> {
+    match ast_type {
+        AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
+        AstType::Generic(name) => {
+            if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
+                Ok(())
+            } else {
+                Err(TypeError::UnboundTypeParameter {
+                    name: name.clone(),
+                    span,
+                    file_id,
+                })
+            }
+        }
+        AstType::List(inner) | AstType::Option(inner) => validate_type_with_params(
+            db,
+            tables,
+            inner,
+            span,
+            file_id,
+            type_params,
+            module,
+            type_imports,
+        ),
+        AstType::Struct(name) => {
+            if tables
+                .types(db)
+                .get()
+                .get(&TypeChecker::resolve_named_type(name, module, type_imports))
+                .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
+                .unwrap_or(false)
+            {
+                Ok(())
+            } else {
+                Err(TypeError::UnsupportedType {
+                    type_name: name.clone(),
+                    span,
+                    file_id,
+                })
+            }
+        }
+    }
+}
 
 impl TypeChecker {
     pub(super) fn resolve_type(
@@ -12,25 +103,13 @@ impl TypeChecker {
         module: &ModuleName,
         type_imports: &HashMap<String, UseImport>,
     ) -> AstType {
-        match t {
-            AstType::Generic(name)
-                if self
-                    .metadata
-                    .types
-                    .get(&Self::resolve_named_type(name, module, type_imports))
-                    .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
-                    .unwrap_or(false) =>
-            {
-                AstType::Struct(name.clone())
-            }
-            AstType::List(inner) => {
-                AstType::List(Box::new(self.resolve_type(inner, module, type_imports)))
-            }
-            AstType::Option(inner) => {
-                AstType::Option(Box::new(self.resolve_type(inner, module, type_imports)))
-            }
-            other => other.clone(),
-        }
+        resolve_type(
+            &self.db,
+            self.symbol_tables.expect("symbol tables not populated"),
+            t,
+            module,
+            type_imports,
+        )
     }
 
     pub(super) fn validate_type_with_params(
@@ -42,45 +121,16 @@ impl TypeChecker {
         module: &ModuleName,
         type_imports: &HashMap<String, UseImport>,
     ) -> Result<(), TypeError> {
-        match ast_type {
-            AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
-            AstType::Generic(name) => {
-                if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
-                    Ok(())
-                } else {
-                    Err(TypeError::UnboundTypeParameter {
-                        name: name.clone(),
-                        span,
-                        file_id,
-                    })
-                }
-            }
-            AstType::List(inner) | AstType::Option(inner) => self.validate_type_with_params(
-                inner,
-                span,
-                file_id,
-                type_params,
-                module,
-                type_imports,
-            ),
-            AstType::Struct(name) => {
-                if self
-                    .metadata
-                    .types
-                    .get(&Self::resolve_named_type(name, module, type_imports))
-                    .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
-                    .unwrap_or(false)
-                {
-                    Ok(())
-                } else {
-                    Err(TypeError::UnsupportedType {
-                        type_name: name.clone(),
-                        span,
-                        file_id,
-                    })
-                }
-            }
-        }
+        validate_type_with_params(
+            &self.db,
+            self.symbol_tables.expect("symbol tables not populated"),
+            ast_type,
+            span,
+            file_id,
+            type_params,
+            module,
+            type_imports,
+        )
     }
 
     pub(super) fn unify_type(

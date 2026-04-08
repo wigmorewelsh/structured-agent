@@ -1,6 +1,8 @@
 use super::refs::{CheckerAstRef, CheckerRefs};
-use crate::ast::Module as AstModule;
+use crate::ast::{Definition, Module as AstModule};
+use crate::typed_ast;
 use crate::types::FileId;
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -197,6 +199,48 @@ pub(super) fn lookup_impl_def<'db>(
         .get()
         .get(&impl_key)
         .map(|d| d.module.clone())
+}
+
+#[salsa::tracked]
+pub(super) fn check_module(
+    db: &dyn TypeCheckDatabase,
+    parsed: ParsedModuleInput,
+    tables: SymbolTablesInput,
+) -> Result<ArcPtr<typed_ast::Module>, super::error::TypeError> {
+    let name_str = parsed.name(db);
+    let effective_name = if parsed.is_entry(db) {
+        "main".to_string()
+    } else {
+        name_str.clone()
+    };
+    let module_name = ModuleName::new(NonEmpty::new(effective_name.clone()));
+    let module = parsed.module(db);
+    let alias_map = super::query::build_alias_map(&module);
+    let alias_to_qualified = super::query::build_alias_to_qualified(db, tables, &module);
+    let type_imports = super::query::build_type_import_map(&module, db, tables);
+    let ctx = super::CheckContext {
+        file_id: parsed.file_id(db),
+        alias_map: &alias_map,
+        alias_to_qualified: &alias_to_qualified,
+        module_name: &module_name,
+        type_imports: &type_imports,
+    };
+    let typed_definitions = module
+        .definitions
+        .iter()
+        .filter(|def| {
+            !matches!(
+                def,
+                Definition::ModuleHeader { .. } | Definition::Signature(_)
+            )
+        })
+        .map(|def| super::elaboration::check_definition(db, tables, def, &ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ArcPtr::new(typed_ast::Module {
+        definitions: typed_definitions,
+        span: module.span,
+        file_id: parsed.file_id(db),
+    }))
 }
 
 #[salsa::tracked]
