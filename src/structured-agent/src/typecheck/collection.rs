@@ -45,14 +45,11 @@ impl TypeChecker {
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
         for def in &parsed.module.definitions {
-            let Definition::Use { path, .. } = def else {
+            let Definition::Use { path, name, .. } = def else {
                 continue;
             };
-            if path.len() < 2 {
-                continue;
-            }
-            let native_mod_name = &path[0];
-            let fn_name = path.last().unwrap();
+            let native_mod_name = &path.head;
+            let fn_name = name;
             let Some(native_mod) = native_modules.get(native_mod_name) else {
                 continue;
             };
@@ -521,31 +518,29 @@ impl TypeChecker {
                 Definition::ModuleBinding {
                     name,
                     sig_path,
+                    sig_name,
                     impl_path,
                     span,
                 } => {
-                    if sig_path.len() >= 2 && !impl_path.is_empty() {
-                        let sig_module = sig_path[0].clone();
-                        let sig_name = sig_path.last().unwrap().clone();
-                        let concrete = impl_path[0].clone();
-                        let key = ImplKey {
-                            type_name: TypeName {
-                                name: name.clone(),
-                                module: ModuleName::from_str("__param__"),
-                            },
-                            trait_name: TraitName {
-                                name: sig_name,
-                                module: ModuleName::from_str(&sig_module),
-                            },
-                        };
-                        let entry = ImplDefinition {
-                            key: key.clone(),
-                            module: ModuleName::from_str(&concrete),
-                            source_ref: SourceLocation(file_id, *span),
-                            ast_ref: NoAst,
-                        };
-                        self.param_bindings.insert(key, Arc::new(entry));
-                    }
+                    let sig_module = sig_path.head.clone();
+                    let concrete = impl_path.head.clone();
+                    let key = ImplKey {
+                        type_name: TypeName {
+                            name: name.clone(),
+                            module: ModuleName::from_str("__param__"),
+                        },
+                        trait_name: TraitName {
+                            name: sig_name.clone(),
+                            module: ModuleName::from_str(&sig_module),
+                        },
+                    };
+                    let entry = ImplDefinition {
+                        key: key.clone(),
+                        module: ModuleName::from_str(&concrete),
+                        source_ref: SourceLocation(file_id, *span),
+                        ast_ref: NoAst,
+                    };
+                    self.param_bindings.insert(key, Arc::new(entry));
                 }
                 Definition::Struct(_)
                 | Definition::Use { .. }

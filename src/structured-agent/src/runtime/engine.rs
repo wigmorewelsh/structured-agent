@@ -241,6 +241,7 @@ impl Runtime {
         self.function_registry.insert(name, expression);
     }
 
+    // #[allow(deprecated)] NOPE THIS SHOULD NOT USE DEPRECATED FUNCTION NAME
     pub fn get_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>> {
         if let Some(func) = self.function_registry.get(name) {
             return Some(func.clone());
@@ -265,7 +266,7 @@ impl Runtime {
         if !name.contains("::") {
             let main_func_name = FunctionName {
                 name: name.to_string(),
-                module: ModuleName::from_str("main"),
+                module: ModuleName::new(nonempty::NonEmpty::new("main".to_string())),
                 kind: FunctionNameKind::Function,
             };
             if let Some(func_def) = cached.metadata.functions.get(&main_func_name)

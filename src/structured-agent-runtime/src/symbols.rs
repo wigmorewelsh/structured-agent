@@ -141,6 +141,11 @@ impl fmt::Display for ModuleName {
 }
 
 impl ModuleName {
+    pub fn new(segments: NonEmpty<String>) -> Self {
+        ModuleName { segments }
+    }
+
+    #[deprecated(note = "stop using magic strings for module names")]
     pub fn from_str(s: &str) -> Self {
         let v: Vec<String> = s.split("::").map(|p| p.to_string()).collect();
         ModuleName {
@@ -267,18 +272,20 @@ impl FunctionName {
         }
     }
 
+    pub fn parse(s: &str) -> Option<Self> {
+        s.rsplit_once("::").map(|(module_str, name)| FunctionName {
+            name: name.to_string(),
+            module: ModuleName::new(
+                NonEmpty::from_vec(module_str.split("::").map(|s| s.to_string()).collect())
+                    .expect("non-empty after rsplit_once"),
+            ),
+            kind: FunctionNameKind::Function,
+        })
+    }
+
     #[deprecated(note = "use .name directly")]
     pub fn fn_name(&self) -> &str {
         &self.name
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        let (module_str, name) = s.rsplit_once("::")?;
-        Some(FunctionName {
-            name: name.to_string(),
-            module: ModuleName::from_str(module_str),
-            kind: FunctionNameKind::Function,
-        })
     }
 }
 

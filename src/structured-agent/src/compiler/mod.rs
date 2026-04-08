@@ -221,7 +221,9 @@ impl Compiler {
         compiled.metadata = bytecode_metadata;
 
         for name in compiled.metadata.functions.keys() {
-            if name.module == ModuleName::from_str("main") && name.name == "main" {
+            if name.module == ModuleName::new(nonempty::NonEmpty::new("main".to_string()))
+                && name.name == "main"
+            {
                 compiled.main_function = Some(name.clone());
                 break;
             }

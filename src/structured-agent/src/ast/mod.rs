@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::types::{FileId, Span, Spanned};
+use nonempty::NonEmpty;
 
 #[derive(Debug)]
 pub struct ParsedModule {
@@ -117,7 +118,8 @@ pub enum Definition {
     ExternalFunction(Arc<ExternalFunction>),
     Struct(Arc<StructDefinition>),
     Use {
-        path: Vec<String>,
+        path: NonEmpty<String>,
+        name: String,
         alias: Option<String>,
         is_pub: bool,
         span: Span,
@@ -129,8 +131,9 @@ pub enum Definition {
     },
     ModuleBinding {
         name: String,
-        sig_path: Vec<String>,
-        impl_path: Vec<String>,
+        sig_path: NonEmpty<String>,
+        sig_name: String,
+        impl_path: NonEmpty<String>,
         span: Span,
     },
     WiringSite {
@@ -496,6 +499,7 @@ impl fmt::Display for Definition {
             }
             Definition::Use {
                 path,
+                name,
                 alias,
                 is_pub,
                 ..
@@ -503,7 +507,12 @@ impl fmt::Display for Definition {
                 if *is_pub {
                     write!(f, "pub ")?;
                 }
-                write!(f, "use {}", path.join("::"))?;
+                write!(
+                    f,
+                    "use {}::{}",
+                    path.iter().cloned().collect::<Vec<_>>().join("::"),
+                    name
+                )?;
                 if let Some(a) = alias {
                     write!(f, " as {}", a)?;
                 }
@@ -526,15 +535,17 @@ impl fmt::Display for Definition {
             Definition::ModuleBinding {
                 name,
                 sig_path,
+                sig_name,
                 impl_path,
                 ..
             } => {
                 write!(
                     f,
-                    "mod {}: {} = {}",
+                    "mod {}: {}::{} = {}",
                     name,
-                    sig_path.join("::"),
-                    impl_path.join("::")
+                    sig_path.iter().cloned().collect::<Vec<_>>().join("::"),
+                    sig_name,
+                    impl_path.iter().cloned().collect::<Vec<_>>().join("::")
                 )
             }
             Definition::WiringSite { name, args, .. } => {

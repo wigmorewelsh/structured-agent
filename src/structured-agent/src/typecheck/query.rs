@@ -195,12 +195,12 @@ impl TypeChecker {
             .iter()
             .filter_map(|def| {
                 if let Definition::Use {
-                    path,
+                    name,
                     alias: Some(a),
                     ..
                 } = def
                 {
-                    Some((a.clone(), path.last().cloned().unwrap_or_default()))
+                    Some((a.clone(), name.clone()))
                 } else {
                     None
                 }
@@ -216,26 +216,23 @@ impl TypeChecker {
             .definitions
             .iter()
             .filter_map(|def| {
-                if let Definition::Use { path, alias, .. } = def {
-                    if path.len() >= 2 {
-                        let import = UseImport {
-                            local: alias
-                                .clone()
-                                .unwrap_or_else(|| path.last().unwrap().clone()),
-                            module: ModuleName::from_str(&path[0]),
-                            name: path.last().unwrap().clone(),
-                        };
-                        if metadata
-                            .type_def(&TypeName {
-                                name: import.name.clone(),
-                                module: import.module.clone(),
-                            })
-                            .is_some()
-                        {
-                            Some((import.local.clone(), import))
-                        } else {
-                            None
-                        }
+                if let Definition::Use {
+                    path, name, alias, ..
+                } = def
+                {
+                    let import = UseImport {
+                        local: alias.clone().unwrap_or_else(|| name.clone()),
+                        module: ModuleName::new(path.clone()),
+                        name: name.clone(),
+                    };
+                    if metadata
+                        .type_def(&TypeName {
+                            name: import.name.clone(),
+                            module: import.module.clone(),
+                        })
+                        .is_some()
+                    {
+                        Some((import.local.clone(), import))
                     } else {
                         None
                     }
@@ -268,19 +265,17 @@ impl TypeChecker {
         let mut map = AliasToQualified::new();
 
         for def in &module.definitions {
-            let Definition::Use { path, alias, .. } = def else {
+            let Definition::Use {
+                path, name, alias, ..
+            } = def
+            else {
                 continue;
             };
-            if path.len() < 2 {
-                continue;
-            }
 
             let import = UseImport {
-                local: alias
-                    .clone()
-                    .unwrap_or_else(|| path.last().unwrap().clone()),
-                module: ModuleName::from_str(&path[0]),
-                name: path.last().unwrap().clone(),
+                local: alias.clone().unwrap_or_else(|| name.clone()),
+                module: ModuleName::new(path.clone()),
+                name: name.clone(),
             };
             let fn_key = FunctionName {
                 name: import.name.clone(),

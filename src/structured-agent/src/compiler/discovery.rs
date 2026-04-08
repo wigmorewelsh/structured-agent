@@ -104,14 +104,14 @@ pub(crate) fn referenced_module_names(module: &Module) -> Vec<String> {
         .definitions
         .iter()
         .flat_map(|def| match def {
-            Definition::Use { path, .. } if path.len() > 1 => vec![path[0].clone()],
+            Definition::Use { path, .. } => vec![path.head.clone()],
             Definition::ModuleHeader { params, .. } => params
                 .iter()
                 .filter(|p| !p.path.is_empty())
                 .map(|p| p.path[0].clone())
                 .collect(),
-            Definition::ModuleBinding { impl_path, .. } if !impl_path.is_empty() => {
-                vec![impl_path[0].clone()]
+            Definition::ModuleBinding { impl_path, .. } => {
+                vec![impl_path.head.clone()]
             }
             _ => vec![],
         })

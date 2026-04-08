@@ -86,16 +86,15 @@ fn extract_use_imports(module: &AstModule) -> Vec<UseImport> {
         .definitions
         .iter()
         .filter_map(|def| {
-            if let Definition::Use { path, alias, .. } = def
-                && path.len() >= 2
+            if let Definition::Use {
+                path, name, alias, ..
+            } = def
             {
-                let local = alias
-                    .clone()
-                    .unwrap_or_else(|| path.last().unwrap().clone());
+                let local = alias.clone().unwrap_or_else(|| name.clone());
                 Some(UseImport {
                     local,
-                    module: ModuleName::from_str(&path[0]),
-                    name: path.last().unwrap().clone(),
+                    module: ModuleName::new(path.clone()),
+                    name: name.clone(),
                 })
             } else {
                 None

@@ -3,6 +3,7 @@
 use crate::ast::{ExternalFunction, ModuleParam, Parameter, SigFunction, StructDefinition, Type};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
+use nonempty::NonEmpty;
 use structured_agent_runtime::FunctionName;
 
 #[derive(Clone)]
@@ -18,7 +19,8 @@ pub enum Definition {
     ExternalFunction(ExternalFunction),
     Struct(StructDefinition),
     Use {
-        path: Vec<String>,
+        path: NonEmpty<String>,
+        name: String,
         alias: Option<String>,
         is_pub: bool,
         span: Span,
@@ -30,8 +32,9 @@ pub enum Definition {
     },
     ModuleBinding {
         name: String,
-        sig_path: Vec<String>,
-        impl_path: Vec<String>,
+        sig_path: NonEmpty<String>,
+        sig_name: String,
+        impl_path: NonEmpty<String>,
         span: Span,
     },
     WiringSite {

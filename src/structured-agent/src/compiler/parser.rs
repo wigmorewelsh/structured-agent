@@ -11,6 +11,7 @@ use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
 use combine::{Parser, Stream, attempt, between, optional, position, sep_by1};
+use nonempty::NonEmpty;
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
@@ -221,11 +222,30 @@ where
         position(),
     )
         .map(
-            |(start, _, name, _, sig_path, _, impl_path, end)| Definition::ModuleBinding {
-                name,
-                sig_path,
-                impl_path,
-                span: Span::new(start, end),
+            |(start, _, name, _, mut sig_path_vec, _, impl_path_vec, end): (
+                _,
+                _,
+                String,
+                _,
+                Vec<String>,
+                _,
+                Vec<String>,
+                _,
+            )| {
+                let sig_name = sig_path_vec
+                    .pop()
+                    .expect("sig_path requires module::SigName");
+                let sig_path = NonEmpty::from_vec(sig_path_vec)
+                    .expect("sig_path must have at least one module segment");
+                let impl_path =
+                    NonEmpty::from_vec(impl_path_vec).expect("impl_path must be non-empty");
+                Definition::ModuleBinding {
+                    name,
+                    sig_path,
+                    sig_name,
+                    impl_path,
+                    span: Span::new(start, end),
+                }
             },
         )
 }
@@ -528,17 +548,25 @@ where
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("use"),
-        sep_by1(identifier_raw(), attempt(string("::"))),
+        identifier_raw(),
+        many1::<Vec<String>, _, _>(attempt((string("::"), identifier_raw()).map(|(_, id)| id))),
         optional(attempt(
             (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
         )),
         position(),
     )
-        .map(|(start, pub_kw, _, path, alias, end)| Definition::Use {
-            path,
-            alias,
-            is_pub: pub_kw.is_some(),
-            span: Span::new(start, end),
+        .map(|(start, pub_kw, _, first_seg, mut rest, alias, end)| {
+            let name = rest.pop().unwrap();
+            let mut path_vec = vec![first_seg];
+            path_vec.extend(rest);
+            let path = NonEmpty::from_vec(path_vec).unwrap();
+            Definition::Use {
+                path,
+                name,
+                alias,
+                is_pub: pub_kw.is_some(),
+                span: Span::new(start, end),
+            }
         })
 }
 
@@ -2866,15 +2894,20 @@ pub fn greet(name: String): String {
         let use_def = match &module.definitions[0] {
             Definition::Use {
                 path,
+                name,
                 alias,
                 is_pub,
                 ..
-            } => (path.clone(), alias.clone(), *is_pub),
+            } => (path.clone(), name.clone(), alias.clone(), *is_pub),
             _ => panic!("Expected Use definition"),
         };
-        assert_eq!(use_def.0, vec!["foo", "bar", "baz"]);
-        assert_eq!(use_def.1, None);
-        assert!(!use_def.2);
+        assert_eq!(
+            use_def.0.iter().cloned().collect::<Vec<_>>(),
+            vec!["foo", "bar"]
+        );
+        assert_eq!(use_def.1, "baz");
+        assert_eq!(use_def.2, None);
+        assert!(!use_def.3);
     }
 
     #[test]
@@ -2883,11 +2916,14 @@ pub fn greet(name: String): String {
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         let use_def = match &module.definitions[0] {
-            Definition::Use { path, alias, .. } => (path.clone(), alias.clone()),
+            Definition::Use {
+                path, name, alias, ..
+            } => (path.clone(), name.clone(), alias.clone()),
             _ => panic!("Expected Use definition"),
         };
-        assert_eq!(use_def.0, vec!["foo", "bar"]);
-        assert_eq!(use_def.1, Some("fb".to_string()));
+        assert_eq!(use_def.0.iter().cloned().collect::<Vec<_>>(), vec!["foo"]);
+        assert_eq!(use_def.1, "bar");
+        assert_eq!(use_def.2, Some("fb".to_string()));
     }
 
     #[test]
@@ -2906,7 +2942,7 @@ pub fn greet(name: String): String {
     fn test_use_alias_resolves_in_typecheck() {
         let input = r#"
 extern fn greet(name: String): String
-use greet as hello
+use main::greet as hello
 fn main(): String {
     return hello("world")
 }
@@ -3046,12 +3082,14 @@ fn main(): String {
             Definition::ModuleBinding {
                 name,
                 sig_path,
+                sig_name,
                 impl_path,
                 ..
             } => {
                 assert_eq!(name, "fmt");
-                assert_eq!(sig_path, &vec!["formatter", "Formatter"]);
-                assert_eq!(impl_path, &vec!["formatter"]);
+                assert_eq!(*sig_path, nonempty::nonempty!["formatter".to_string()]);
+                assert_eq!(sig_name, "Formatter");
+                assert_eq!(*impl_path, nonempty::nonempty!["formatter".to_string()]);
             }
             other => panic!("Expected ModuleBinding, got {:?}", other),
         }
@@ -3068,12 +3106,17 @@ fn main(): String {
             Definition::ModuleBinding {
                 name,
                 sig_path,
+                sig_name,
                 impl_path,
                 ..
             } => {
                 assert_eq!(name, "io");
-                assert_eq!(sig_path, &vec!["storage", "Storage"]);
-                assert_eq!(impl_path, &vec!["storage", "disk"]);
+                assert_eq!(*sig_path, nonempty::nonempty!["storage".to_string()]);
+                assert_eq!(sig_name, "Storage");
+                assert_eq!(
+                    *impl_path,
+                    nonempty::nonempty!["storage".to_string(), "disk".to_string()]
+                );
             }
             other => panic!("Expected ModuleBinding, got {:?}", other),
         }

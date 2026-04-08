@@ -72,11 +72,13 @@ impl TypeChecker {
             Definition::Struct(s) => Ok(typed_ast::Definition::Struct((**s).clone())),
             Definition::Use {
                 path,
+                name,
                 alias,
                 is_pub,
                 span,
             } => Ok(typed_ast::Definition::Use {
                 path: path.clone(),
+                name: name.clone(),
                 alias: alias.clone(),
                 is_pub: *is_pub,
                 span: *span,
@@ -91,11 +93,13 @@ impl TypeChecker {
             Definition::ModuleBinding {
                 name,
                 sig_path,
+                sig_name,
                 impl_path,
                 span,
             } => Ok(typed_ast::Definition::ModuleBinding {
                 name: name.clone(),
                 sig_path: sig_path.clone(),
+                sig_name: sig_name.clone(),
                 impl_path: impl_path.clone(),
                 span: *span,
             }),
