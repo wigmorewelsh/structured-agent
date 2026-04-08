@@ -1,8 +1,6 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::ast;
-use crate::typecheck::checker::{
-    FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs,
-};
+use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
 use std::collections::HashMap;

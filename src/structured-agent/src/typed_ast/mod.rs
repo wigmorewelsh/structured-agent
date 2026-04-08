@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::ast::{ExternalFunction, ModuleParam, Parameter, SigFunction, StructDefinition, Type};
-use crate::typecheck::checker::FunctionKind;
+use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 use structured_agent_runtime::FunctionName;
 

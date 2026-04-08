@@ -14,8 +14,8 @@ use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
 use crate::il_analysis::{
     IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
 };
+use crate::typecheck::ModuleVisibility;
 use crate::typecheck::TypeChecker;
-use crate::typecheck::checker::ModuleVisibility;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use structured_agent_runtime::symbols::Visibility;
 

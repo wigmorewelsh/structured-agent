@@ -1630,7 +1630,7 @@ mod tests {
 #[cfg(test)]
 mod typed_ast_tests {
     use super::*;
-    use crate::typecheck::checker::{FunctionKind, TypedCheckerAstRef};
+    use crate::typecheck::{FunctionKind, TypedCheckerAstRef};
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -2424,7 +2424,7 @@ mod typed_ast_tests {
 mod metadata_query_tests {
     use super::*;
     use crate::ast::{SigFunction, StructDefinition, StructField};
-    use crate::typecheck::checker::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
+    use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
         FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName,

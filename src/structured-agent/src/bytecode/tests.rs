@@ -93,7 +93,7 @@ mod compilation_tests {
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
     use crate::typecheck::TypeChecker;
-    use crate::typecheck::checker::TypedCheckerAstRef;
+    use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
     use std::collections::HashMap;
 
@@ -843,7 +843,7 @@ mod vm_execution_tests {
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{Context, ExpressionValue, Runtime};
     use crate::typecheck::TypeChecker;
-    use crate::typecheck::checker::TypedCheckerAstRef;
+    use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -960,7 +960,7 @@ mod vm_execution_tests {
                     module: ModuleName::from_str("test"),
                     kind: FunctionNameKind::Function,
                 },
-                kind: crate::typecheck::checker::FunctionKind::External,
+                kind: crate::typecheck::FunctionKind::External,
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
                 ty: Type::Unit,
                 span: *span,
@@ -1435,7 +1435,7 @@ mod struct_bytecode_tests {
     use crate::diagnostics::DiagnosticManager;
     use crate::runtime::{ExpressionValue, Runtime};
     use crate::typecheck::TypeChecker;
-    use crate::typecheck::checker::TypedCheckerAstRef;
+    use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
     use arrow::array::Array;
     use std::collections::HashMap;

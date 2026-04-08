@@ -4,7 +4,7 @@ use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
-use crate::typecheck::checker::{CheckerAstRef, TypedCheckerAstRef};
+use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
     NativeFunction,

@@ -8,7 +8,7 @@ use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::parser;
 use structured_agent::runtime::{Context, Runtime};
 use structured_agent::typecheck::TypeChecker;
-use structured_agent::typecheck::checker::TypedCheckerAstRef;
+use structured_agent::typecheck::TypedCheckerAstRef;
 use structured_agent::typed_ast;
 use structured_agent::types::FileId;
 use structured_agent::types::Span;
