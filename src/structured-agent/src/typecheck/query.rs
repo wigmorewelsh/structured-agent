@@ -9,7 +9,7 @@ use structured_agent_runtime::symbols::{
 };
 
 impl TypeChecker {
-    pub(super) fn get_function_sig(&self, name: &FunctionName) -> Option<FunctionSignature> {
+    fn get_function_sig(&self, name: &FunctionName) -> Option<FunctionSignature> {
         self.metadata.function(name).and_then(|f| match &f.ast_ref {
             CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
                 parameters: func

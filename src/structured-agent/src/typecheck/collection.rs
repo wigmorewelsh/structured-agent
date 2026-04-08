@@ -103,7 +103,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
+    fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
         use structured_agent_runtime::types::Type as RT;
         match ty {
             RT::String => AstType::String,
@@ -117,7 +117,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn insert_fn(
+    fn insert_fn(
         &mut self,
         name: FunctionName,
         params: Vec<crate::ast::Parameter>,
