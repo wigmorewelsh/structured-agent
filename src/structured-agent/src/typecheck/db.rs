@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     FunctionDefinition, FunctionName, ImplDefinition, ImplKey, ModuleDefinition, ModuleName,
-    TraitDefinition, TraitName, TypeDefinition, TypeName,
+    TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
 };
 
 #[salsa::db]
@@ -94,7 +94,6 @@ unsafe impl<T> salsa::Update for ArcPtr<T> {
 pub(super) struct SymbolTablesInput {
     pub(super) functions: ArcPtr<HashMap<FunctionName, Arc<FunctionDefinition<CheckerRefs>>>>,
     pub(super) types: ArcPtr<HashMap<TypeName, Arc<TypeDefinition<CheckerRefs>>>>,
-    pub(super) traits: ArcPtr<HashMap<TraitName, Arc<TraitDefinition<CheckerRefs>>>>,
     pub(super) impls: ArcPtr<HashMap<ImplKey, Arc<ImplDefinition<CheckerRefs>>>>,
     pub(super) modules: ArcPtr<HashMap<ModuleName, Arc<ModuleDefinition<CheckerRefs>>>>,
 }
@@ -162,12 +161,17 @@ pub(super) fn lookup_trait_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     key: InternedTraitName<'db>,
-) -> Option<ArcPtr<TraitDefinition<CheckerRefs>>> {
+) -> Option<ArcPtr<TypeDefinition<CheckerRefs>>> {
     let name = key.name(db);
+    let type_name = TypeName {
+        name: name.name,
+        module: name.module,
+    };
     tables
-        .traits(db)
+        .types(db)
         .get()
-        .get(&name)
+        .get(&type_name)
+        .filter(|td| matches!(td.kind, TypeDefinitionKind::Trait { .. }))
         .map(|arc| ArcPtr::from_arc(arc.clone()))
 }
 
@@ -248,8 +252,11 @@ pub(super) fn find_trait_for_impl_call<'db>(
     fn_name: InternedString<'db>,
     type_name: InternedTypeName<'db>,
 ) -> Option<InternedTraitName<'db>> {
-    for (trait_key, trait_def) in tables.traits(db).get() {
-        let CheckerAstRef::Trait(ast_trait) = &trait_def.ast_ref else {
+    for (type_key, type_def) in tables.types(db).get() {
+        let TypeDefinitionKind::Trait { .. } = &type_def.kind else {
+            continue;
+        };
+        let CheckerAstRef::Trait(ast_trait) = &type_def.ast_ref else {
             continue;
         };
         if ast_trait
@@ -257,10 +264,14 @@ pub(super) fn find_trait_for_impl_call<'db>(
             .iter()
             .any(|f| f.name == fn_name.value(db))
         {
+            let trait_name = TraitName {
+                name: type_key.name.clone(),
+                module: type_key.module.clone(),
+            };
             let interned_type = InternedTypeName::new(db, type_name.name(db).clone());
-            let interned_trait = InternedTraitName::new(db, trait_key.clone());
+            let interned_trait = InternedTraitName::new(db, trait_name.clone());
             if lookup_impl_exists(db, tables, interned_type, interned_trait) {
-                return Some(InternedTraitName::new(db, trait_key.clone()));
+                return Some(InternedTraitName::new(db, trait_name));
             }
         }
     }

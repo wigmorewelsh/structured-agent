@@ -212,15 +212,14 @@ pub(super) fn get_trait_functions(
         name: resolved.name,
         module: resolved.module,
     };
-    let extract = |ast_ref: &CheckerAstRef| {
-        if let CheckerAstRef::Trait(t) = ast_ref {
+    let key = InternedTraitName::new(db, trait_name);
+    lookup_trait_def(db, tables, key).and_then(|arc_ptr| {
+        if let CheckerAstRef::Trait(t) = &arc_ptr.get().ast_ref {
             Some(t.functions.clone())
         } else {
             None
         }
-    };
-    let key = InternedTraitName::new(db, trait_name);
-    lookup_trait_def(db, tables, key).and_then(|arc_ptr| extract(&arc_ptr.get().ast_ref))
+    })
 }
 
 pub(super) fn type_implements_trait(

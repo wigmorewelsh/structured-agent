@@ -30,8 +30,7 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition, ImplDefinition,
     MetaData, ModuleDefinition, ModuleName, ParameterDefinition, SignatureEntry, SymbolQuery,
-    TraitDefinition, TypeDefinition, TypeDefinitionKind, TypeName, UseImport, Visibility,
-    clone_kind_typenames,
+    TypeDefinition, TypeDefinitionKind, TypeName, UseImport, Visibility, clone_kind_typenames,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -242,7 +241,6 @@ impl TypeChecker {
             &self.db,
             ArcPtr::new(self.metadata.functions.clone()),
             ArcPtr::new(self.metadata.types.clone()),
-            ArcPtr::new(self.metadata.traits.clone()),
             ArcPtr::new(self.metadata.impls.clone()),
             ArcPtr::new(self.metadata.modules.clone()),
         );
@@ -407,25 +405,7 @@ impl TypeChecker {
                 .types
                 .insert(type_key.clone(), Arc::new(new_def));
         }
-        for (trait_key, trait_def) in &self.metadata.traits {
-            let new_def = TraitDefinition {
-                name: trait_def.name.clone(),
-                functions: trait_def
-                    .functions
-                    .iter()
-                    .map(|e| SignatureEntry {
-                        name: e.name.clone(),
-                        type_name: ast_type_to_type_name(&e.type_name, &trait_key.module),
-                    })
-                    .collect(),
-                witness_ref: NoWitness,
-                source_ref: SourceLocation(trait_def.source_ref.0, trait_def.source_ref.1),
-                ast_ref: TypedCheckerAstRef::Other(trait_def.ast_ref.clone()),
-            };
-            typed_metadata
-                .traits
-                .insert(trait_key.clone(), Arc::new(new_def));
-        }
+
         for (impl_key, impl_def) in &self.metadata.impls {
             let new_def = ImplDefinition {
                 key: impl_def.key.clone(),

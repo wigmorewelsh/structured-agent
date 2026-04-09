@@ -105,10 +105,12 @@ pub struct MetaData<R: References> {
     pub modules: HashMap<ModuleName, Arc<ModuleDefinition<R>>>,
     pub functions: HashMap<FunctionName, Arc<FunctionDefinition<R>>>,
     pub types: HashMap<TypeName, Arc<TypeDefinition<R>>>,
+    #[deprecated(note = "merged into the types table")]
     pub traits: HashMap<TraitName, Arc<TraitDefinition<R>>>,
     pub impls: HashMap<ImplKey, Arc<ImplDefinition<R>>>,
 }
 
+#[allow(deprecated)]
 impl<R: References> Default for MetaData<R> {
     fn default() -> Self {
         MetaData {
@@ -121,6 +123,7 @@ impl<R: References> Default for MetaData<R> {
     }
 }
 
+#[allow(deprecated)]
 impl<R: References> SymbolQuery for MetaData<R> {
     type Refs = R;
 

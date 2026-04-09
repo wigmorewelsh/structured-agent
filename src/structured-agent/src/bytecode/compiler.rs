@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     BodyRef, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
-    SignatureEntry, TraitDefinition, TypeDefinition, TypeName, clone_kind_typenames,
+    TypeDefinition, TypeName, clone_kind_typenames,
 };
 use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
@@ -756,26 +756,6 @@ pub fn compile_metadata(
             Arc::new(TypeDefinition {
                 name: arc_def.name.clone(),
                 kind: clone_kind_typenames(&arc_def.kind),
-                source_ref: arc_def.source_ref.clone(),
-                ast_ref: arc_def.ast_ref.clone(),
-            }),
-        );
-    }
-
-    for (name, arc_def) in &typed_metadata.traits {
-        new_metadata.traits.insert(
-            name.clone(),
-            Arc::new(TraitDefinition {
-                name: arc_def.name.clone(),
-                functions: arc_def
-                    .functions
-                    .iter()
-                    .map(|e| SignatureEntry {
-                        name: e.name.clone(),
-                        type_name: e.type_name.clone(),
-                    })
-                    .collect(),
-                witness_ref: arc_def.witness_ref.clone(),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
             }),
