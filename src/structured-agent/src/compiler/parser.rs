@@ -116,26 +116,26 @@ where
     identifier_raw().skip(skip_spaces())
 }
 
-fn parse_type_param<Input>() -> impl Parser<Input, Output = TypeParam>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        identifier(),
-        optional(attempt(
-            (
-                skip_spaces(),
-                lex_char(':'),
-                sep_by1(identifier(), lex_char('+')),
-            )
-                .map(|(_, _, bounds)| bounds),
-        )),
-    )
-        .map(|(name, bounds_opt)| TypeParam {
-            name,
-            bounds: bounds_opt.unwrap_or_default(),
-        })
+combine::parser! {
+    fn parse_type_param[Input]()(Input) -> TypeParam
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            identifier(),
+            optional(attempt(
+                (
+                    skip_spaces(),
+                    lex_char(':'),
+                    sep_by1(parse_type(), lex_char('+')),
+                )
+                    .map(|(_, _, bounds)| bounds),
+            )),
+        )
+            .map(|(name, bounds_opt)| TypeParam {
+                name,
+                bounds: bounds_opt.unwrap_or_default(),
+            })
+    }
 }
 
 pub fn parse_program<Input>(file_id: FileId) -> impl Parser<Input, Output = Module>
@@ -3229,7 +3229,10 @@ fn main(): String {
         if let Definition::Function(f) = &module.definitions[0] {
             assert_eq!(f.type_params.len(), 1);
             assert_eq!(f.type_params[0].name, "T");
-            assert_eq!(f.type_params[0].bounds, vec!["Add"]);
+            assert_eq!(
+                f.type_params[0].bounds,
+                vec![Type::Struct("Add".to_string())]
+            );
         } else {
             panic!("expected function");
         }
@@ -3243,7 +3246,13 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[0] {
-            assert_eq!(f.type_params[0].bounds, vec!["Add", "Sub"]);
+            assert_eq!(
+                f.type_params[0].bounds,
+                vec![
+                    Type::Struct("Add".to_string()),
+                    Type::Struct("Sub".to_string())
+                ]
+            );
         } else {
             panic!("expected function");
         }

@@ -22,7 +22,7 @@ pub enum FunctionKind {
 #[derive(Clone)]
 pub struct SourceLocation(pub FileId, pub Span);
 pub struct NoBody;
-#[derive(Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NoWitness;
 
 #[derive(Clone)]

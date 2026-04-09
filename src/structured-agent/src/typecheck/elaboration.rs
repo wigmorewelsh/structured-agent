@@ -618,12 +618,17 @@ fn check_call(
                     _ => continue,
                 };
                 for bound in &tp.bounds {
+                    let trait_name = match bound {
+                        AstType::Struct(n) => n.as_str(),
+                        AstType::Generic(n) => n.as_str(),
+                        _ => continue,
+                    };
                     let satisfied =
-                        super::query::type_implements_trait(db, tables, type_name, bound);
+                        super::query::type_implements_trait(db, tables, type_name, trait_name);
                     if !satisfied {
                         return Err(TypeError::TraitBoundNotSatisfied {
                             type_name: type_name.to_string(),
-                            trait_name: bound.clone(),
+                            trait_name: trait_name.to_string(),
                             param_name: tp.name.clone(),
                             span,
                             file_id: ctx.file_id,

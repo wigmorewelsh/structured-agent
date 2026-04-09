@@ -7,10 +7,10 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
-    GenericParameterDefinition, ImplDefinition, ImplKey, ModuleName, NoAst, ParameterDefinition,
-    SignatureEntry, SymbolQuery, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind,
-    TypeName, Visibility,
+    ExportedName, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
+    GenericParameterDefinition, ImplDefinition, ImplKey, ModuleDefinition, ModuleName, NoAst,
+    ParameterDefinition, SignatureEntry, SymbolQuery, TraitDefinition, TraitName, TypeDefinition,
+    TypeDefinitionKind, TypeName, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -43,8 +43,6 @@ impl TypeChecker {
         &mut self,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
-        use super::refs::CheckerAstRef;
-        use structured_agent_runtime::symbols::{ExportedName, ModuleDefinition, UseImport};
         for (mod_name, native_mod) in native_modules {
             let module_name = ModuleName::new(NonEmpty::new(mod_name.clone()));
             for func in native_mod.functions() {
@@ -138,18 +136,11 @@ impl TypeChecker {
                 type_name: p.param_type.clone(),
             })
             .collect();
-        let generic_parameters: Vec<GenericParameterDefinition> = type_params
+        let generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = type_params
             .iter()
             .map(|tp| GenericParameterDefinition {
                 name: tp.name.clone(),
-                constraints: tp
-                    .bounds
-                    .iter()
-                    .map(|b| TraitName {
-                        name: b.clone(),
-                        module: name.module.clone(),
-                    })
-                    .collect(),
+                constraints: tp.bounds.clone(),
             })
             .collect();
         let entry = FunctionDefinition {
@@ -257,19 +248,12 @@ impl TypeChecker {
                             type_name: p.param_type.clone(),
                         })
                         .collect();
-                    let fn_generic_parameters: Vec<GenericParameterDefinition> = func
+                    let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
                         .type_params
                         .iter()
                         .map(|tp| GenericParameterDefinition {
                             name: tp.name.clone(),
-                            constraints: tp
-                                .bounds
-                                .iter()
-                                .map(|b| TraitName {
-                                    name: b.clone(),
-                                    module: fn_type_name.module.clone(),
-                                })
-                                .collect(),
+                            constraints: tp.bounds.clone(),
                         })
                         .collect();
                     let fn_type_def = TypeDefinition {
@@ -335,7 +319,7 @@ impl TypeChecker {
                             .iter()
                             .map(|f| SignatureEntry {
                                 name: f.name.clone(),
-                                type_name: ast_type_to_type_name(&f.return_type, module_name),
+                                type_name: f.return_type.clone(),
                             })
                             .collect(),
                         witness_ref: NoWitness,

@@ -5,7 +5,7 @@ use nonempty::NonEmpty;
 pub trait SourceRef {}
 pub trait AstRef {}
 pub trait BodyRef {}
-pub trait WitnessRef {}
+pub trait WitnessRef: fmt::Debug + Clone {}
 pub trait TypeAnnotation: fmt::Debug + Clone {}
 
 impl TypeAnnotation for TypeName {}
@@ -14,6 +14,7 @@ pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefini
 where
     R1: References<TypeAnnotation = TypeName>,
     R2: References<TypeAnnotation = TypeName>,
+    R2::Witness: Default,
 {
     match kind {
         TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
@@ -37,11 +38,33 @@ where
                     type_name: p.type_name.clone(),
                 })
                 .collect(),
-            generic_parameters: generic_parameters.clone(),
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp.constraints.clone(),
+                })
+                .collect(),
             return_type: return_type.clone(),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries.clone(),
+            entries: entries
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: e.type_name.clone(),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
+            functions: functions
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: e.type_name.clone(),
+                })
+                .collect(),
+            witness_ref: R2::Witness::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
     }
@@ -351,9 +374,9 @@ pub struct ParameterDefinition<R: References> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GenericParameterDefinition {
+pub struct GenericParameterDefinition<R: References> {
     pub name: String,
-    pub constraints: Vec<TraitName>,
+    pub constraints: Vec<R::TypeAnnotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -391,10 +414,11 @@ impl fmt::Display for TypeName {
     }
 }
 
+// note add R: References here and use R::TypeAnnotation for the type_name field
 #[derive(Debug, Clone)]
-pub struct SignatureEntry {
+pub struct SignatureEntry<R: References> {
     pub name: String,
-    pub type_name: TypeName,
+    pub type_name: R::TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -412,11 +436,15 @@ pub enum TypeDefinitionKind<R: References> {
     },
     Function {
         parameters: Vec<ParameterDefinition<R>>,
-        generic_parameters: Vec<GenericParameterDefinition>,
+        generic_parameters: Vec<GenericParameterDefinition<R>>,
         return_type: R::TypeAnnotation,
     },
     Signature {
-        entries: Vec<SignatureEntry>,
+        entries: Vec<SignatureEntry<R>>,
+    },
+    Trait {
+        functions: Vec<SignatureEntry<R>>,
+        witness_ref: R::Witness,
     },
     Primitive,
 }
@@ -442,7 +470,7 @@ impl fmt::Display for TraitName {
 #[derive(Debug, Clone)]
 pub struct TraitDefinition<R: References> {
     pub name: TraitName,
-    pub functions: Vec<SignatureEntry>,
+    pub functions: Vec<SignatureEntry<R>>,
     pub witness_ref: R::Witness,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,

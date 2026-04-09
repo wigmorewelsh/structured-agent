@@ -29,7 +29,7 @@ pub struct ModuleParam {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeParam {
     pub name: String,
-    pub bounds: Vec<String>,
+    pub bounds: Vec<Type>,
 }
 
 impl TypeParam {
@@ -75,7 +75,8 @@ impl fmt::Display for TypeParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if !self.bounds.is_empty() {
-            write!(f, ": {}", self.bounds.join(" + "))?;
+            let bounds: Vec<String> = self.bounds.iter().map(|b| b.to_string()).collect();
+            write!(f, ": {}", bounds.join(" + "))?;
         }
         Ok(())
     }

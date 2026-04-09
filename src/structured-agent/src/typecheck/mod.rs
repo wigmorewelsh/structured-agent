@@ -28,9 +28,10 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    ExportedName, FieldDefinition, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition,
-    ModuleName, ParameterDefinition, SymbolQuery, TraitDefinition, TypeDefinition,
-    TypeDefinitionKind, TypeName, UseImport, Visibility, clone_kind_typenames,
+    ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition, ImplDefinition,
+    MetaData, ModuleDefinition, ModuleName, ParameterDefinition, SignatureEntry, SymbolQuery,
+    TraitDefinition, TypeDefinition, TypeDefinitionKind, TypeName, UseImport, Visibility,
+    clone_kind_typenames,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -151,11 +152,37 @@ fn convert_type_kind(
                     type_name: ast_type_to_type_name(&p.type_name, module),
                 })
                 .collect(),
-            generic_parameters: generic_parameters.clone(),
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp
+                        .constraints
+                        .iter()
+                        .map(|c| ast_type_to_type_name(c, module))
+                        .collect(),
+                })
+                .collect(),
             return_type: ast_type_to_type_name(return_type, module),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries.clone(),
+            entries: entries
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: ast_type_to_type_name(&e.type_name, module),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
+            functions: functions
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: ast_type_to_type_name(&e.type_name, module),
+                })
+                .collect(),
+            witness_ref: NoWitness,
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
     }
@@ -383,7 +410,14 @@ impl TypeChecker {
         for (trait_key, trait_def) in &self.metadata.traits {
             let new_def = TraitDefinition {
                 name: trait_def.name.clone(),
-                functions: trait_def.functions.clone(),
+                functions: trait_def
+                    .functions
+                    .iter()
+                    .map(|e| SignatureEntry {
+                        name: e.name.clone(),
+                        type_name: ast_type_to_type_name(&e.type_name, &trait_key.module),
+                    })
+                    .collect(),
                 witness_ref: NoWitness,
                 source_ref: SourceLocation(trait_def.source_ref.0, trait_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(trait_def.ast_ref.clone()),
