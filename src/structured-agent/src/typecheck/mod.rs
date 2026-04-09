@@ -131,7 +131,8 @@ impl TypeChecker {
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<(MetaData<TypedRefs>, HashMap<String, typed_ast::Module>), TypeError> {
         self.populate_symbol_tables(modules, native_modules)?;
-        let typed_modules = self.elaborate_modules(modules)?;
+        let arc_modules = self.typecheck_modules(modules)?;
+        let typed_modules = self.elaborate_modules(arc_modules);
         let typed_metadata = self.materialize_metadata(modules, &typed_modules);
         Ok((typed_metadata, typed_modules))
     }
@@ -194,10 +195,10 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn elaborate_modules(
+    fn typecheck_modules(
         &mut self,
         modules: &[ParsedModule],
-    ) -> Result<HashMap<String, typed_ast::Module>, TypeError> {
+    ) -> Result<HashMap<String, ArcPtr<typed_ast::Module>>, TypeError> {
         let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_modules = HashMap::new();
         for parsed in modules {
@@ -206,9 +207,19 @@ impl TypeChecker {
                 .get(&parsed.name)
                 .expect("parsed input not found");
             let arc_module = db::check_module(&self.db, parsed_input, tables)?;
-            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
+            typed_modules.insert(parsed.name.clone(), arc_module);
         }
         Ok(typed_modules)
+    }
+
+    fn elaborate_modules(
+        &self,
+        typed: HashMap<String, ArcPtr<typed_ast::Module>>,
+    ) -> HashMap<String, typed_ast::Module> {
+        typed
+            .into_iter()
+            .map(|(k, v)| (k, v.get().clone()))
+            .collect()
     }
 
     fn materialize_metadata(
