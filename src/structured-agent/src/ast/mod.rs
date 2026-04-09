@@ -6,6 +6,7 @@ use nonempty::NonEmpty;
 #[derive(Debug)]
 pub struct ParsedModule {
     pub name: String,
+    pub path: NonEmpty<String>,
     pub module: Module,
     pub is_entry: bool,
     pub file_id: FileId,

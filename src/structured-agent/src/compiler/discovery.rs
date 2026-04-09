@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
+use nonempty::NonEmpty;
+
 use crate::ast::{Definition, Module, ParsedModule};
 use crate::types::FileId;
 
@@ -88,8 +90,16 @@ pub(crate) fn discover(
             }
         }
 
+        let relative = file_path
+            .strip_prefix(&format!("{}/", entry_dir))
+            .unwrap_or(&file_path);
+        let without_ext = relative.strip_suffix(".sa").unwrap_or(relative);
+        let path =
+            NonEmpty::from_vec(without_ext.split('/').map(|s| s.to_string()).collect()).unwrap();
+
         result.push(ParsedModule {
             name,
+            path,
             file_id,
             module,
             is_entry,
