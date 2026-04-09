@@ -216,7 +216,8 @@ mod tests {
 
     #[test]
     fn relative_use_from_submodule_resolves_within_subdir() {
-        let discoverer = make_discoverer(vec![("submodule/yetanother", "")]);
+        let discoverer =
+            make_discoverer(vec![("submodule/other", ""), ("submodule/yetanother", "")]);
         let mut call_count = 0u32;
         let result = discover("root/main.sa", "", &discoverer, &HashSet::new(), |_, _| {
             let module = if call_count == 0 {

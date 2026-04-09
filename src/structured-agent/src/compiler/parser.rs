@@ -2952,9 +2952,10 @@ fn main(): String {
         assert!(result.is_ok());
         let (module, _) = result.unwrap();
         use crate::typecheck::TypeChecker;
+        use nonempty::NonEmpty;
         use std::collections::HashMap;
         let parsed = crate::ast::ParsedModule {
-            name: "test".to_string(),
+            name: NonEmpty::new("test".to_string()),
             module,
             is_entry: true,
             file_id: TEST_FILE_ID,
@@ -3009,7 +3010,15 @@ fn main(): String {
                 assert_eq!(name, "db");
                 assert_eq!(params.len(), 1);
                 assert_eq!(params[0].name, "io");
-                assert_eq!(params[0].path, vec!["storage", "Storage"]);
+                assert_eq!(
+                    params[0].path,
+                    NonEmpty::from_vec(vec![
+                        "".to_string(),
+                        "storage".to_string(),
+                        "Storage".to_string()
+                    ])
+                    .unwrap()
+                );
             }
             other => panic!("Expected ModuleHeader, got {:?}", other),
         }

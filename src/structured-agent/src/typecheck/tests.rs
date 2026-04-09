@@ -68,11 +68,12 @@ fn create_generic_test_function(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nonempty::NonEmpty;
     use std::sync::Arc;
 
     fn check(module: crate::ast::Module) -> Result<(), crate::typecheck::TypeError> {
         let parsed = crate::ast::ParsedModule {
-            name: "test".to_string(),
+            name: NonEmpty::new("test".to_string()),
             module,
             is_entry: true,
             file_id: 0,
@@ -1641,7 +1642,7 @@ mod typed_ast_tests {
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let parsed = crate::ast::ParsedModule {
-            name: "main".to_string(),
+            name: NonEmpty::new("main".to_string()),
             module: module.clone(),
             is_entry: false,
             file_id: 0,
@@ -2431,7 +2432,7 @@ mod metadata_query_tests {
 
     fn check_meta(module: crate::ast::Module) -> MetaData<TypedRefs> {
         let parsed = crate::ast::ParsedModule {
-            name: "main".to_string(),
+            name: NonEmpty::new("main".to_string()),
             module,
             is_entry: true,
             file_id: 0,
@@ -2554,7 +2555,7 @@ mod metadata_query_tests {
             .unwrap()
             .0;
         let parsed = crate::ast::ParsedModule {
-            name: "main".to_string(),
+            name: NonEmpty::new("main".to_string()),
             module,
             is_entry: true,
             file_id: 0,

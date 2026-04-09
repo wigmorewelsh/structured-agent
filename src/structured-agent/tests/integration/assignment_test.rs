@@ -1,5 +1,6 @@
 use combine::Parser;
 use combine::stream::position;
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent::ast::ParsedModule;
@@ -31,7 +32,7 @@ fn test_assignment(): () {
     let (module, _) = parse_result.unwrap();
 
     let parsed = ParsedModule {
-        name: "test".to_string(),
+        name: NonEmpty::new("test".to_string()),
         module,
         is_entry: true,
         file_id: TEST_FILE_ID,
@@ -117,7 +118,7 @@ fn test_var_assignment(): () {
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
 
     let parsed = ParsedModule {
-        name: "test".to_string(),
+        name: NonEmpty::new("test".to_string()),
         module,
         is_entry: true,
         file_id: TEST_FILE_ID,
@@ -187,7 +188,7 @@ fn test_return(): () {
     let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
 
     let parsed = ParsedModule {
-        name: "test".to_string(),
+        name: NonEmpty::new("test".to_string()),
         module,
         is_entry: true,
         file_id: TEST_FILE_ID,

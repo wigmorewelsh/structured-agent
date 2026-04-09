@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     BodyRef, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
-    TraitDefinition, TypeDefinition,
+    TraitDefinition, TypeDefinition, TypeName, clone_kind_typenames,
 };
 use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
@@ -22,6 +22,7 @@ pub struct BytecodeRef {
     pub documentation: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct BytecodeRefs;
 
 impl BodyRef for BytecodeRef {}
@@ -31,6 +32,7 @@ impl References for BytecodeRefs {
     type Ast = TypedCheckerAstRef;
     type Body = BytecodeRef;
     type Witness = NoWitness;
+    type TypeAnnotation = TypeName;
 }
 
 #[derive(Clone, Debug)]
@@ -753,7 +755,7 @@ pub fn compile_metadata(
             name.clone(),
             Arc::new(TypeDefinition {
                 name: arc_def.name.clone(),
-                kind: arc_def.kind.clone(),
+                kind: clone_kind_typenames(&arc_def.kind),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
             }),

@@ -6,6 +6,46 @@ pub trait SourceRef {}
 pub trait AstRef {}
 pub trait BodyRef {}
 pub trait WitnessRef {}
+pub trait TypeAnnotation: fmt::Debug + Clone {}
+
+impl TypeAnnotation for TypeName {}
+
+pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefinitionKind<R2>
+where
+    R1: References<TypeAnnotation = TypeName>,
+    R2: References<TypeAnnotation = TypeName>,
+{
+    match kind {
+        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
+            fields: fields
+                .iter()
+                .map(|f| FieldDefinition {
+                    name: f.name.clone(),
+                    type_name: f.type_name.clone(),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Function {
+            parameters,
+            generic_parameters,
+            return_type,
+        } => TypeDefinitionKind::Function {
+            parameters: parameters
+                .iter()
+                .map(|p| ParameterDefinition {
+                    name: p.name.clone(),
+                    type_name: p.type_name.clone(),
+                })
+                .collect(),
+            generic_parameters: generic_parameters.clone(),
+            return_type: return_type.clone(),
+        },
+        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
+            entries: entries.clone(),
+        },
+        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+    }
+}
 
 #[derive(Clone)]
 pub struct NoAst;
@@ -16,6 +56,7 @@ pub trait References {
     type Ast: AstRef;
     type Body: BodyRef;
     type Witness: WitnessRef;
+    type TypeAnnotation: TypeAnnotation;
 }
 
 pub trait SymbolQuery {
@@ -304,9 +345,9 @@ pub struct FunctionDefinition<R: References> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParameterDefinition {
+pub struct ParameterDefinition<R: References> {
     pub name: String,
-    pub type_name: TypeName,
+    pub type_name: R::TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -359,20 +400,20 @@ pub struct SignatureEntry {
 #[derive(Debug, Clone)]
 pub struct TypeDefinition<R: References> {
     pub name: TypeName,
-    pub kind: TypeDefinitionKind,
+    pub kind: TypeDefinitionKind<R>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeDefinitionKind {
+pub enum TypeDefinitionKind<R: References> {
     Struct {
-        fields: Vec<FieldDefinition>,
+        fields: Vec<FieldDefinition<R>>,
     },
     Function {
-        parameters: Vec<ParameterDefinition>,
+        parameters: Vec<ParameterDefinition<R>>,
         generic_parameters: Vec<GenericParameterDefinition>,
-        return_type: TypeName,
+        return_type: R::TypeAnnotation,
     },
     Signature {
         entries: Vec<SignatureEntry>,
@@ -381,9 +422,9 @@ pub enum TypeDefinitionKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct FieldDefinition {
+pub struct FieldDefinition<R: References> {
     pub name: String,
-    pub type_name: TypeName,
+    pub type_name: R::TypeAnnotation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

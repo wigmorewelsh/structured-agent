@@ -1,6 +1,6 @@
-use super::refs::{CheckerAstRef, FunctionKind, NoWitness, SourceLocation};
+use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation};
 use super::{TypeChecker, ast_type_to_type_name};
-use crate::ast::{Definition, Module, Parameter, ParsedModule, Type as AstType, TypeParam};
+use crate::ast::{Definition, Module, Parameter, Type as AstType, TypeParam};
 
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -9,8 +9,8 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
     GenericParameterDefinition, ImplDefinition, ImplKey, ModuleName, NoAst, ParameterDefinition,
-    SignatureEntry, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
-    Visibility,
+    SignatureEntry, SymbolQuery, TraitDefinition, TraitName, TypeDefinition, TypeDefinitionKind,
+    TypeName, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -39,56 +39,66 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn collect_native_sigs(
+    pub(super) fn register_native_modules(
         &mut self,
-        parsed: &ParsedModule,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
-        for def in &parsed.module.definitions {
-            let Definition::Use { path, name, .. } = def else {
-                continue;
-            };
-            let native_mod_name = &path.head;
-            let fn_name = name;
-            let Some(native_mod) = native_modules.get(native_mod_name) else {
-                continue;
-            };
-            let Some(func) = native_mod
-                .functions()
+        use super::refs::CheckerAstRef;
+        use structured_agent_runtime::symbols::{ExportedName, ModuleDefinition, UseImport};
+        for (mod_name, native_mod) in native_modules {
+            let module_name = ModuleName::new(NonEmpty::new(mod_name.clone()));
+            for func in native_mod.functions() {
+                let fn_key = FunctionName {
+                    name: func.name().to_string(),
+                    module: module_name.clone(),
+                    kind: FunctionNameKind::Function,
+                };
+                let parameters = func
+                    .parameters()
+                    .iter()
+                    .map(|p| Parameter {
+                        name: p.name.clone(),
+                        param_type: Self::runtime_type_to_ast(&p.param_type),
+                        span: Span::dummy(),
+                    })
+                    .collect();
+                let return_type = Self::runtime_type_to_ast(func.return_type());
+                let type_params = func
+                    .type_params()
+                    .iter()
+                    .map(|s| TypeParam::from(s.as_str()))
+                    .collect();
+                self.insert_fn(
+                    fn_key,
+                    parameters,
+                    return_type,
+                    type_params,
+                    FunctionKind::External,
+                    Visibility::Public,
+                    SourceLocation(0, Span::dummy()),
+                );
+            }
+            let exports = self
+                .metadata
+                .functions_in_module(&module_name)
                 .into_iter()
-                .find(|f| f.name() == fn_name)
-            else {
-                continue;
-            };
-            let parameters = func
-                .parameters()
-                .iter()
-                .map(|p| Parameter {
-                    name: p.name.clone(),
-                    param_type: Self::runtime_type_to_ast(&p.param_type),
+                .map(|f| ExportedName::Function(f.name.clone()))
+                .collect();
+            let module_def = ModuleDefinition {
+                name: module_name.clone(),
+                visibility: Visibility::Public,
+                exports,
+                source_ref: SourceLocation(0, Span::dummy()),
+                ast_ref: CheckerAstRef::Module(Arc::new(Module {
+                    definitions: vec![],
                     span: Span::dummy(),
-                })
-                .collect();
-            let return_type = Self::runtime_type_to_ast(func.return_type());
-            let type_params = func
-                .type_params()
-                .iter()
-                .map(|s| TypeParam::from(s.as_str()))
-                .collect();
-            let fn_key = FunctionName {
-                name: fn_name.to_string(),
-                module: ModuleName::new(NonEmpty::new(native_mod_name.to_string())),
-                kind: FunctionNameKind::Function,
+                    file_id: 0,
+                })),
+                use_imports: vec![],
             };
-            self.insert_fn(
-                fn_key,
-                parameters,
-                return_type,
-                type_params,
-                FunctionKind::External,
-                Visibility::Public,
-                SourceLocation(parsed.file_id, Span::dummy()),
-            );
+            self.metadata
+                .modules
+                .insert(module_name, Arc::new(module_def));
         }
     }
 
@@ -121,11 +131,11 @@ impl TypeChecker {
             module: name.module.clone(),
         };
         let return_type_name = ast_type_to_type_name(&return_type, &name.module);
-        let parameters: Vec<ParameterDefinition> = params
+        let parameters: Vec<ParameterDefinition<CheckerRefs>> = params
             .iter()
             .map(|p| ParameterDefinition {
                 name: p.name.clone(),
-                type_name: ast_type_to_type_name(&p.param_type, &name.module),
+                type_name: p.param_type.clone(),
             })
             .collect();
         let generic_parameters: Vec<GenericParameterDefinition> = type_params
@@ -161,7 +171,7 @@ impl TypeChecker {
             kind: TypeDefinitionKind::Function {
                 parameters,
                 generic_parameters,
-                return_type: return_type_name,
+                return_type: return_type.clone(),
             },
             source_ref: SourceLocation(source_ref.0, source_ref.1),
             ast_ref: CheckerAstRef::ExternalFn {
@@ -175,7 +185,7 @@ impl TypeChecker {
             .register_type(fn_type_name, Arc::new(type_def));
     }
 
-    pub(super) fn collect_function_signatures(
+    pub(super) fn register_type_definitions(
         &mut self,
         module: &Module,
         file_id: FileId,
@@ -195,7 +205,7 @@ impl TypeChecker {
                             .iter()
                             .map(|f| FieldDefinition {
                                 name: f.name.clone(),
-                                type_name: ast_type_to_type_name(&f.field_type, module_name),
+                                type_name: f.field_type.clone(),
                             })
                             .collect(),
                     },
@@ -206,7 +216,14 @@ impl TypeChecker {
                 self.metadata.register_type(type_name, Arc::new(entry));
             }
         }
+    }
 
+    pub(super) fn register_function_signatures(
+        &mut self,
+        module: &Module,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
@@ -232,12 +249,12 @@ impl TypeChecker {
                         body_ref: None,
                     };
                     self.metadata.register_function(fn_key, Arc::new(entry));
-                    let fn_parameters: Vec<ParameterDefinition> = func
+                    let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
                         .parameters
                         .iter()
                         .map(|p| ParameterDefinition {
                             name: p.name.clone(),
-                            type_name: ast_type_to_type_name(&p.param_type, module_name),
+                            type_name: p.param_type.clone(),
                         })
                         .collect();
                     let fn_generic_parameters: Vec<GenericParameterDefinition> = func
@@ -260,7 +277,7 @@ impl TypeChecker {
                         kind: TypeDefinitionKind::Function {
                             parameters: fn_parameters,
                             generic_parameters: fn_generic_parameters,
-                            return_type: ast_type_to_type_name(&func.return_type, module_name),
+                            return_type: func.return_type.clone(),
                         },
                         source_ref: SourceLocation(file_id, func.span),
                         ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),

@@ -96,6 +96,7 @@ mod compilation_tests {
     use crate::typecheck::TypeChecker;
     use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
+    use nonempty::NonEmpty;
     use std::collections::HashMap;
 
     fn parse_code(code: &str) -> crate::ast::Module {
@@ -111,7 +112,7 @@ mod compilation_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: "".to_string(),
+            name: NonEmpty::new("".to_string()),
             module,
             is_entry: false,
             file_id,
@@ -864,7 +865,7 @@ mod vm_execution_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: "".to_string(),
+            name: NonEmpty::new("".to_string()),
             module,
             is_entry: false,
             file_id,
@@ -1432,6 +1433,7 @@ mod struct_bytecode_tests {
     use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
     use arrow::array::Array;
+    use nonempty::NonEmpty;
     use std::collections::HashMap;
 
     fn parse_code(code: &str) -> crate::ast::Module {
@@ -1447,7 +1449,7 @@ mod struct_bytecode_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: "".to_string(),
+            name: NonEmpty::new("".to_string()),
             module,
             is_entry: false,
             file_id,

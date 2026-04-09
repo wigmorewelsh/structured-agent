@@ -28,8 +28,9 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    ExportedName, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, ModuleName,
-    SymbolQuery, TraitDefinition, TypeDefinition, TypeName, UseImport, Visibility,
+    ExportedName, FieldDefinition, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition,
+    ModuleName, ParameterDefinition, SymbolQuery, TraitDefinition, TypeDefinition,
+    TypeDefinitionKind, TypeName, UseImport, Visibility, clone_kind_typenames,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -84,24 +85,36 @@ pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> T
     }
 }
 
-fn extract_use_imports(module: &AstModule) -> Vec<UseImport> {
+fn extract_use_imports(module: &AstModule, module_name: &NonEmpty<String>) -> Vec<UseImport> {
+    let mut parent: Vec<String> = module_name.iter().cloned().collect();
+    parent.pop();
     module
         .definitions
         .iter()
-        .filter_map(|def| {
-            if let Definition::Use {
+        .flat_map(|def| match def {
+            Definition::Use {
                 path, name, alias, ..
-            } = def
-            {
+            } => {
+                let mut segs = parent.clone();
+                segs.extend(path.iter().cloned());
+                let resolved = NonEmpty::from_vec(segs).unwrap();
                 let local = alias.clone().unwrap_or_else(|| name.clone());
-                Some(UseImport {
+                vec![UseImport {
                     local,
-                    module: ModuleName::new(path.clone()),
+                    module: ModuleName::new(resolved),
                     name: name.clone(),
-                })
-            } else {
-                None
+                }]
             }
+            Definition::ModuleHeader { params, .. } => params
+                .iter()
+                .filter(|p| !p.path.is_empty())
+                .map(|p| UseImport {
+                    local: p.name.clone(),
+                    module: ModuleName::new(p.path.clone()),
+                    name: p.name.clone(),
+                })
+                .collect(),
+            _ => vec![],
         })
         .collect()
 }
@@ -109,6 +122,42 @@ fn extract_use_imports(module: &AstModule) -> Vec<UseImport> {
 impl Default for TypeChecker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn convert_type_kind(
+    kind: &TypeDefinitionKind<refs::CheckerRefs>,
+    module: &ModuleName,
+) -> TypeDefinitionKind<refs::TypedRefs> {
+    match kind {
+        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
+            fields: fields
+                .iter()
+                .map(|f| FieldDefinition {
+                    name: f.name.clone(),
+                    type_name: ast_type_to_type_name(&f.type_name, module),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Function {
+            parameters,
+            generic_parameters,
+            return_type,
+        } => TypeDefinitionKind::Function {
+            parameters: parameters
+                .iter()
+                .map(|p| ParameterDefinition {
+                    name: p.name.clone(),
+                    type_name: ast_type_to_type_name(&p.type_name, module),
+                })
+                .collect(),
+            generic_parameters: generic_parameters.clone(),
+            return_type: ast_type_to_type_name(return_type, module),
+        },
+        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
+            entries: entries.clone(),
+        },
+        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
     }
 }
 
@@ -147,35 +196,20 @@ impl TypeChecker {
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<(), TypeError> {
+        self.register_native_modules(native_modules);
         for parsed in modules {
             let effective_module_name = if parsed.is_entry {
                 ModuleName::new(NonEmpty::new("main".to_string()))
             } else {
                 ModuleName::new(parsed.name.clone())
             };
-            self.collect_native_sigs(parsed, native_modules);
-            self.collect_function_signatures(
+            self.register_type_definitions(&parsed.module, parsed.file_id, &effective_module_name);
+            self.register_function_signatures(
                 &parsed.module,
                 parsed.file_id,
                 &effective_module_name,
             );
-            let exports = self.collect_module_exports(&effective_module_name);
-            let use_imports = extract_use_imports(&parsed.module);
-            let module_def = ModuleDefinition {
-                name: effective_module_name.clone(),
-                visibility: if parsed.is_entry {
-                    Visibility::Public
-                } else {
-                    Visibility::Private
-                },
-                exports,
-                source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
-                use_imports,
-            };
-            self.metadata
-                .modules
-                .insert(effective_module_name, Arc::new(module_def));
+            self.register_module_definition(parsed, effective_module_name);
         }
         let tables = SymbolTablesInput::new(
             &self.db,
@@ -197,6 +231,30 @@ impl TypeChecker {
             self.parsed_inputs.insert(parsed.name.clone(), input);
         }
         Ok(())
+    }
+
+    fn register_module_definition(
+        &mut self,
+        parsed: &ParsedModule,
+        effective_module_name: ModuleName,
+    ) {
+        let exports = self.collect_module_exports(&effective_module_name);
+        let use_imports = extract_use_imports(&parsed.module, &parsed.name);
+        let module_def = ModuleDefinition {
+            name: effective_module_name.clone(),
+            visibility: if parsed.is_entry {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            },
+            exports,
+            source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
+            ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
+            use_imports,
+        };
+        self.metadata
+            .modules
+            .insert(effective_module_name, Arc::new(module_def));
     }
 
     fn typecheck_modules(
@@ -300,9 +358,10 @@ impl TypeChecker {
                 .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
         }
         for type_def in self.metadata.all_types() {
+            let kind = convert_type_kind(&type_def.kind, &type_def.name.module);
             let new_def = TypeDefinition {
                 name: type_def.name.clone(),
-                kind: type_def.kind.clone(),
+                kind,
                 source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(type_def.ast_ref.clone()),
             };
@@ -313,7 +372,7 @@ impl TypeChecker {
         for (type_key, type_def) in &self.primitive_types {
             let new_def = TypeDefinition {
                 name: type_def.name.clone(),
-                kind: type_def.kind.clone(),
+                kind: clone_kind_typenames(&type_def.kind),
                 source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::NoAst,
             };
