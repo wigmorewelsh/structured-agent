@@ -38,7 +38,7 @@ pub struct TypeChecker {
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
     db: TypeCheckDb,
     symbol_tables: Option<SymbolTablesInput>,
-    parsed_inputs: HashMap<String, ParsedModuleInput>,
+    parsed_inputs: HashMap<NonEmpty<String>, ParsedModuleInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,10 +129,15 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<(MetaData<TypedRefs>, HashMap<String, typed_ast::Module>), TypeError> {
+    ) -> Result<
+        (
+            MetaData<TypedRefs>,
+            HashMap<NonEmpty<String>, typed_ast::Module>,
+        ),
+        TypeError,
+    > {
         self.populate_symbol_tables(modules, native_modules)?;
-        let arc_modules = self.typecheck_modules(modules)?;
-        let typed_modules = self.elaborate_modules(arc_modules);
+        let typed_modules = self.typecheck_modules(modules)?;
         let typed_metadata = self.materialize_metadata(modules, &typed_modules);
         Ok((typed_metadata, typed_modules))
     }
@@ -143,12 +148,11 @@ impl TypeChecker {
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<(), TypeError> {
         for parsed in modules {
-            let effective_name = if parsed.is_entry {
-                "main"
+            let effective_module_name = if parsed.is_entry {
+                ModuleName::new(NonEmpty::new("main".to_string()))
             } else {
-                parsed.name.as_str()
+                ModuleName::new(parsed.name.clone())
             };
-            let effective_module_name = ModuleName::new(NonEmpty::new(effective_name.to_string()));
             self.collect_native_sigs(parsed, native_modules);
             self.collect_function_signatures(
                 &parsed.module,
@@ -198,7 +202,7 @@ impl TypeChecker {
     fn typecheck_modules(
         &mut self,
         modules: &[ParsedModule],
-    ) -> Result<HashMap<String, ArcPtr<typed_ast::Module>>, TypeError> {
+    ) -> Result<HashMap<NonEmpty<String>, typed_ast::Module>, TypeError> {
         let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_modules = HashMap::new();
         for parsed in modules {
@@ -207,7 +211,7 @@ impl TypeChecker {
                 .get(&parsed.name)
                 .expect("parsed input not found");
             let arc_module = db::check_module(&self.db, parsed_input, tables)?;
-            typed_modules.insert(parsed.name.clone(), arc_module);
+            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
         }
         Ok(typed_modules)
     }
@@ -215,15 +219,15 @@ impl TypeChecker {
     fn materialize_metadata(
         &self,
         modules: &[ParsedModule],
-        typed_modules: &HashMap<String, typed_ast::Module>,
+        typed_modules: &HashMap<NonEmpty<String>, typed_ast::Module>,
     ) -> MetaData<TypedRefs> {
-        let effective_name_to_typed: HashMap<String, &typed_ast::Module> = modules
+        let effective_name_to_typed: HashMap<ModuleName, &typed_ast::Module> = modules
             .iter()
             .map(|p| {
                 let eff = if p.is_entry {
-                    "main".to_string()
+                    ModuleName::new(NonEmpty::new("main".to_string()))
                 } else {
-                    p.name.clone()
+                    ModuleName::new(p.name.clone())
                 };
                 (eff, typed_modules.get(&p.name).unwrap())
             })
@@ -232,8 +236,7 @@ impl TypeChecker {
         for fn_def in self.metadata.all_functions() {
             let typed_ast_ref = match &fn_def.ast_ref {
                 CheckerAstRef::Function(_, kind) => {
-                    let module_name = fn_def.name.module.to_string();
-                    let typed_module = effective_name_to_typed[&module_name];
+                    let typed_module = effective_name_to_typed[&fn_def.name.module];
                     let typed_fn = typed_module
                         .definitions
                         .iter()
@@ -252,8 +255,7 @@ impl TypeChecker {
                     TypedCheckerAstRef::Function(Arc::new(typed_fn), kind.clone())
                 }
                 CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
-                    let module_name = fn_def.name.module.to_string();
-                    let typed_module = effective_name_to_typed[&module_name];
+                    let typed_module = effective_name_to_typed[&fn_def.name.module];
                     let typed_fn = typed_module
                         .definitions
                         .iter()

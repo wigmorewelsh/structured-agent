@@ -29,7 +29,7 @@ impl TypeCheckDatabase for TypeCheckDb {}
 
 #[salsa::input]
 pub(super) struct ParsedModuleInput {
-    pub(super) name: String,
+    pub(super) name: NonEmpty<String>,
     pub(super) is_entry: bool,
     pub(super) file_id: FileId,
     pub(super) module: AstModule,
@@ -207,13 +207,11 @@ pub(super) fn check_module(
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
 ) -> Result<ArcPtr<typed_ast::Module>, super::error::TypeError> {
-    let name_str = parsed.name(db);
-    let effective_name = if parsed.is_entry(db) {
-        "main".to_string()
+    let module_name = if parsed.is_entry(db) {
+        ModuleName::new(NonEmpty::new("main".to_string()))
     } else {
-        name_str.clone()
+        ModuleName::new(parsed.name(db))
     };
-    let module_name = ModuleName::new(NonEmpty::new(effective_name.clone()));
     let module = parsed.module(db);
     let alias_map = super::query::build_alias_map(&module);
     let alias_to_qualified = super::query::build_alias_to_qualified(db, tables, &module);

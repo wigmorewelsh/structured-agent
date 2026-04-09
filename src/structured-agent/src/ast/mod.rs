@@ -526,7 +526,16 @@ impl fmt::Display for Definition {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        write!(f, "{}: {}", p.name, p.path.join("::"))?;
+                        write!(
+                            f,
+                            "{}: {}",
+                            p.name,
+                            p.path
+                                .iter()
+                                .map(String::as_str)
+                                .collect::<Vec<_>>()
+                                .join("::")
+                        )?;
                     }
                     write!(f, ")")?;
                 }
