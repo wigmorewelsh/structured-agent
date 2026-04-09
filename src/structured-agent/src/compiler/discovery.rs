@@ -8,7 +8,6 @@ use crate::types::FileId;
 
 pub(crate) trait Discoverer {
     fn resolve(&self, path: &str) -> Result<String, String>;
-    fn dep_path(&self, entry_dir: &str, module_name: &str) -> String;
 }
 
 pub(crate) struct FileDiscoverer;
@@ -16,10 +15,6 @@ pub(crate) struct FileDiscoverer;
 impl Discoverer for FileDiscoverer {
     fn resolve(&self, path: &str) -> Result<String, String> {
         std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path, e))
-    }
-
-    fn dep_path(&self, entry_dir: &str, module_name: &str) -> String {
-        format!("{}/{}.sa", entry_dir, module_name)
     }
 }
 
@@ -40,17 +35,32 @@ impl Discoverer for InMemoryDiscoverer {
             .cloned()
             .ok_or_else(|| format!("Module not found: {}", path))
     }
+}
 
-    fn dep_path(&self, _entry_dir: &str, module_name: &str) -> String {
-        module_name.to_string()
-    }
+fn to_file_path(entry_dir: &str, rel_path: &NonEmpty<String>) -> String {
+    format!(
+        "{}/{}.sa",
+        entry_dir,
+        rel_path.iter().cloned().collect::<Vec<_>>().join("/")
+    )
+}
+
+fn to_resolve_key(rel_path: &NonEmpty<String>) -> String {
+    rel_path.iter().cloned().collect::<Vec<_>>().join("/")
+}
+
+fn resolve_relative(current: &NonEmpty<String>, import: &NonEmpty<String>) -> NonEmpty<String> {
+    let mut segments: Vec<String> = current.iter().cloned().collect();
+    segments.pop();
+    segments.extend(import.iter().cloned());
+    NonEmpty::from_vec(segments).unwrap()
 }
 
 pub(crate) fn discover(
     entry_path: &str,
     entry_source: &str,
     discoverer: &impl Discoverer,
-    native_module_names: &std::collections::HashSet<String>,
+    native_module_names: &HashSet<String>,
     mut parse: impl FnMut(&str, &str) -> Result<(FileId, Module), String>,
 ) -> Result<Vec<ParsedModule>, String> {
     let entry_dir = Path::new(entry_path)
@@ -64,42 +74,44 @@ pub(crate) fn discover(
         .unwrap_or("main")
         .to_string();
 
-    let mut queue: VecDeque<(String, String, bool)> = VecDeque::new();
-    queue.push_back((entry_stem, entry_path.to_string(), true));
+    let entry_rel = NonEmpty::new(entry_stem);
 
-    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<(NonEmpty<String>, bool)> = VecDeque::new();
+    queue.push_back((entry_rel, true));
+
+    let mut visited: HashSet<NonEmpty<String>> = HashSet::new();
     let mut result: Vec<ParsedModule> = Vec::new();
 
-    while let Some((name, file_path, is_entry)) = queue.pop_front() {
-        if !visited.insert(name.clone()) {
+    while let Some((rel_path, is_entry)) = queue.pop_front() {
+        if !visited.insert(rel_path.clone()) {
             continue;
         }
 
         let source = if is_entry {
             entry_source.to_string()
         } else {
-            discoverer.resolve(&file_path)?
+            let key = to_resolve_key(&rel_path);
+            discoverer
+                .resolve(&key)
+                .or_else(|_| discoverer.resolve(&to_file_path(&entry_dir, &rel_path)))?
         };
 
-        let (file_id, module) = parse(&file_path, &source)?;
+        let parse_path = to_file_path(&entry_dir, &rel_path);
+        let (file_id, module) = parse(&parse_path, &source)?;
 
-        for dep in referenced_module_names(&module) {
-            if !visited.contains(&dep) && !native_module_names.contains(&dep) {
-                let dep_path = discoverer.dep_path(&entry_dir, &dep);
-                queue.push_back((dep.clone(), dep_path, false));
+        for import in referenced_module_names(&module) {
+            let dep_rel = match import {
+                ImportType::Relative(path) => resolve_relative(&rel_path, &path),
+                ImportType::Absolute(path) => path,
+            };
+            let dep_name = dep_rel.last().to_string();
+            if !visited.contains(&dep_rel) && !native_module_names.contains(&dep_name) {
+                queue.push_back((dep_rel, false));
             }
         }
 
-        let relative = file_path
-            .strip_prefix(&format!("{}/", entry_dir))
-            .unwrap_or(&file_path);
-        let without_ext = relative.strip_suffix(".sa").unwrap_or(relative);
-        let path =
-            NonEmpty::from_vec(without_ext.split('/').map(|s| s.to_string()).collect()).unwrap();
-
         result.push(ParsedModule {
-            name,
-            path,
+            name: rel_path,
             file_id,
             module,
             is_entry,
@@ -109,21 +121,239 @@ pub(crate) fn discover(
     Ok(result)
 }
 
-pub(crate) fn referenced_module_names(module: &Module) -> Vec<String> {
+#[derive(Debug, Clone)]
+enum ImportType {
+    Relative(NonEmpty<String>),
+    Absolute(NonEmpty<String>),
+}
+
+pub(crate) fn referenced_module_names(module: &Module) -> Vec<ImportType> {
     module
         .definitions
         .iter()
         .flat_map(|def| match def {
-            Definition::Use { path, .. } => vec![path.head.clone()],
+            Definition::Use { path, .. } => vec![ImportType::Relative(path.clone())],
             Definition::ModuleHeader { params, .. } => params
                 .iter()
                 .filter(|p| !p.path.is_empty())
-                .map(|p| p.path[0].clone())
+                .map(|p| ImportType::Absolute(p.path.clone()))
                 .collect(),
-            Definition::ModuleBinding { impl_path, .. } => {
-                vec![impl_path.head.clone()]
-            }
             _ => vec![],
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Module, ModuleParam};
+    use crate::types::Span;
+
+    fn empty_module() -> Module {
+        Module {
+            definitions: vec![],
+            span: Span::dummy(),
+            file_id: 0,
+        }
+    }
+
+    fn make_discoverer(entries: Vec<(&str, &str)>) -> InMemoryDiscoverer {
+        InMemoryDiscoverer::new(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn discovers_entry_only() {
+        let discoverer = make_discoverer(vec![]);
+        let result = discover(
+            "main.sa",
+            "fn main(): () {}",
+            &discoverer,
+            &HashSet::new(),
+            |_, _| Ok((0, empty_module())),
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, NonEmpty::new("main".to_string()));
+        assert!(result[0].is_entry);
+    }
+
+    #[test]
+    fn discovers_relative_use_dep() {
+        let discoverer = make_discoverer(vec![("sample", "")]);
+        let mut call_count = 0u32;
+        let result = discover("main.sa", "", &discoverer, &HashSet::new(), |_, _| {
+            let module = if call_count == 0 {
+                call_count += 1;
+                Module {
+                    definitions: vec![Definition::Use {
+                        path: NonEmpty::new("sample".to_string()),
+                        name: "Thing".to_string(),
+                        alias: None,
+                        is_pub: false,
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                }
+            } else {
+                empty_module()
+            };
+            Ok((0, module))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 2);
+        let names: Vec<&NonEmpty<String>> = result.iter().map(|m| &m.name).collect();
+        assert!(names.contains(&&NonEmpty::new("main".to_string())));
+        assert!(names.contains(&&NonEmpty::new("sample".to_string())));
+    }
+
+    #[test]
+    fn relative_use_from_submodule_resolves_within_subdir() {
+        let discoverer = make_discoverer(vec![("submodule/yetanother", "")]);
+        let mut call_count = 0u32;
+        let result = discover("root/main.sa", "", &discoverer, &HashSet::new(), |_, _| {
+            let module = if call_count == 0 {
+                call_count += 1;
+                Module {
+                    definitions: vec![Definition::Use {
+                        path: nonempty::nonempty!["submodule".to_string(), "other".to_string()],
+                        name: "Thing".to_string(),
+                        alias: None,
+                        is_pub: false,
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                }
+            } else if call_count == 1 {
+                call_count += 1;
+                Module {
+                    definitions: vec![Definition::Use {
+                        path: NonEmpty::new("yetanother".to_string()),
+                        name: "Thing".to_string(),
+                        alias: None,
+                        is_pub: false,
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                }
+            } else {
+                empty_module()
+            };
+            Ok((0, module))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 3);
+        let names: Vec<&NonEmpty<String>> = result.iter().map(|m| &m.name).collect();
+        assert!(names.contains(&&nonempty::nonempty![
+            "submodule".to_string(),
+            "other".to_string()
+        ]));
+        assert!(names.contains(&&nonempty::nonempty![
+            "submodule".to_string(),
+            "yetanother".to_string()
+        ]));
+    }
+
+    #[test]
+    fn module_header_absolute_param_resolves_from_root() {
+        let discoverer = make_discoverer(vec![("sample", "")]);
+        let mut call_count = 0u32;
+        let result = discover(
+            "root/submodule/other.sa",
+            "",
+            &discoverer,
+            &HashSet::new(),
+            |_, _| {
+                let module = if call_count == 0 {
+                    call_count += 1;
+                    Module {
+                        definitions: vec![Definition::ModuleHeader {
+                            name: "other".to_string(),
+                            params: vec![ModuleParam {
+                                name: "sample".to_string(),
+                                path: NonEmpty::new("sample".to_string()),
+                                span: Span::dummy(),
+                            }],
+                            span: Span::dummy(),
+                        }],
+                        span: Span::dummy(),
+                        file_id: 0,
+                    }
+                } else {
+                    empty_module()
+                };
+                Ok((0, module))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 2);
+        let names: Vec<&NonEmpty<String>> = result.iter().map(|m| &m.name).collect();
+        assert!(names.contains(&&NonEmpty::new("sample".to_string())));
+    }
+
+    #[test]
+    fn skips_native_modules() {
+        let discoverer = make_discoverer(vec![]);
+        let mut native = HashSet::new();
+        native.insert("io".to_string());
+
+        let result = discover("main.sa", "", &discoverer, &native, |_, _| {
+            Ok((
+                0,
+                Module {
+                    definitions: vec![Definition::Use {
+                        path: NonEmpty::new("io".to_string()),
+                        name: "print".to_string(),
+                        alias: None,
+                        is_pub: false,
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                },
+            ))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn does_not_revisit_modules() {
+        let discoverer = make_discoverer(vec![("sample", "")]);
+        let mut call_count = 0u32;
+        let result = discover("main.sa", "", &discoverer, &HashSet::new(), |_, _| {
+            let module = if call_count < 2 {
+                call_count += 1;
+                Module {
+                    definitions: vec![Definition::Use {
+                        path: NonEmpty::new("sample".to_string()),
+                        name: "Thing".to_string(),
+                        alias: None,
+                        is_pub: false,
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                }
+            } else {
+                empty_module()
+            };
+            Ok((0, module))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 2);
+    }
 }

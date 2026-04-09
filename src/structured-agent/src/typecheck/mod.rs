@@ -212,16 +212,6 @@ impl TypeChecker {
         Ok(typed_modules)
     }
 
-    fn elaborate_modules(
-        &self,
-        typed: HashMap<String, ArcPtr<typed_ast::Module>>,
-    ) -> HashMap<String, typed_ast::Module> {
-        typed
-            .into_iter()
-            .map(|(k, v)| (k, v.get().clone()))
-            .collect()
-    }
-
     fn materialize_metadata(
         &self,
         modules: &[ParsedModule],

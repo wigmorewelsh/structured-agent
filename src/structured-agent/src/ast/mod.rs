@@ -5,8 +5,7 @@ use nonempty::NonEmpty;
 
 #[derive(Debug)]
 pub struct ParsedModule {
-    pub name: String,
-    pub path: NonEmpty<String>,
+    pub name: NonEmpty<String>,
     pub module: Module,
     pub is_entry: bool,
     pub file_id: FileId,
@@ -23,7 +22,7 @@ pub struct Module {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleParam {
     pub name: String,
-    pub path: Vec<String>,
+    pub path: NonEmpty<String>,
     pub span: Span,
 }
 
