@@ -1,5 +1,5 @@
 use super::TypeChecker;
-use super::db::{SymbolTablesInput, TypeCheckDatabase};
+use super::db::{InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase};
 use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
@@ -8,6 +8,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
+use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind};
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,
@@ -29,7 +30,6 @@ pub(super) fn check_definition(
                 ctx.file_id,
                 &f.type_params,
                 &module,
-                ctx.type_imports,
             )?;
             for param in &f.parameters {
                 super::constraints::validate_type_with_params(
@@ -40,20 +40,14 @@ pub(super) fn check_definition(
                     ctx.file_id,
                     &f.type_params,
                     &module,
-                    ctx.type_imports,
                 )?;
             }
             Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
         }
         Definition::Struct(s) => {
             for f in &s.fields {
-                let resolved = super::constraints::resolve_type(
-                    db,
-                    tables,
-                    &f.field_type,
-                    ctx.module_name,
-                    ctx.type_imports,
-                );
+                let resolved =
+                    super::constraints::resolve_type(db, tables, &f.field_type, ctx.module_name);
                 super::constraints::validate_type_with_params(
                     db,
                     tables,
@@ -62,7 +56,6 @@ pub(super) fn check_definition(
                     ctx.file_id,
                     &[],
                     ctx.module_name,
-                    ctx.type_imports,
                 )?;
             }
             Ok(typed_ast::Definition::Struct((**s).clone()))
@@ -106,13 +99,8 @@ pub(super) fn check_definition(
         Definition::TraitImpl(t) => {
             let (type_name, trait_name, functions, span) =
                 (&t.type_name, &t.trait_name, &t.functions, &t.span);
-            let trait_fns = super::query::get_trait_functions(
-                db,
-                tables,
-                trait_name,
-                ctx.module_name,
-                ctx.type_imports,
-            );
+            let trait_fns =
+                super::query::get_trait_functions(db, tables, trait_name, ctx.module_name);
             if let Some(trait_fns) = trait_fns {
                 for trait_fn in &trait_fns {
                     if !functions.iter().any(|f| f.name == trait_fn.name) {
@@ -159,13 +147,8 @@ pub(super) fn check_function(
     let mut env = TypeEnvironment::new();
     let module = ctx.module_name.clone();
     for param in &func.parameters {
-        let resolved_param_type = super::constraints::resolve_type(
-            db,
-            tables,
-            &param.param_type,
-            &module,
-            ctx.type_imports,
-        );
+        let resolved_param_type =
+            super::constraints::resolve_type(db, tables, &param.param_type, &module);
         super::constraints::validate_type_with_params(
             db,
             tables,
@@ -174,12 +157,11 @@ pub(super) fn check_function(
             ctx.file_id,
             &func.type_params,
             &module,
-            ctx.type_imports,
         )?;
         env.declare_variable(param.name.clone(), resolved_param_type, param.span);
     }
     let resolved_return_type =
-        super::constraints::resolve_type(db, tables, &func.return_type, &module, ctx.type_imports);
+        super::constraints::resolve_type(db, tables, &func.return_type, &module);
     super::constraints::validate_type_with_params(
         db,
         tables,
@@ -188,7 +170,6 @@ pub(super) fn check_function(
         ctx.file_id,
         &func.type_params,
         &module,
-        ctx.type_imports,
     )?;
     let mut typed_stmts = Vec::new();
     for statement in &func.body.statements {
@@ -489,53 +470,36 @@ fn check_call(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
-    let resolved = ctx
-        .alias_map
-        .get(function)
-        .map(String::as_str)
-        .unwrap_or(function);
+    let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
+    let interned_fn = InternedString::new(db, function.to_string());
 
-    let qual_import = ctx
-        .alias_to_qualified
-        .get(function)
-        .or_else(|| ctx.alias_to_qualified.get(resolved));
-    let qual_str;
-    let qualified_for_vis = if let Some(import) = qual_import {
-        qual_str = format!("{}::{}", import.module, import.name);
-        qual_str.as_str()
-    } else {
-        resolved
+    let alias_resolved =
+        super::db::resolve_function_alias(db, tables, interned_current, interned_fn);
+
+    let fn_name_in_module = FunctionName {
+        name: function.to_string(),
+        module: ctx.module_name.clone(),
+        kind: FunctionNameKind::Function,
     };
+    let (resolved_fn_name, sig) = alias_resolved
+        .and_then(|fn_name| {
+            super::query::get_function_sig(db, tables, &fn_name).map(|sig| (fn_name, sig))
+        })
+        .or_else(|| {
+            super::query::get_function_sig(db, tables, &fn_name_in_module)
+                .map(|sig| (fn_name_in_module, sig))
+        })
+        .or_else(|| super::query::resolve_impl_call(db, tables, function, arguments, env, ctx))
+        .ok_or_else(|| TypeError::UnknownFunction {
+            name: function.to_string(),
+            span,
+            file_id: ctx.file_id,
+        })?;
 
-    super::query::check_visibility(db, tables, qualified_for_vis, resolved, span, ctx)?;
+    super::query::check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
 
-    let (resolved_fn_name, kind, return_type, parameters, type_params) =
-        if let Some(sig) = super::query::lookup_sig(db, tables, resolved, ctx) {
-            let fn_name = TypeChecker::make_function_name(resolved, ctx, &sig.kind);
-            (
-                fn_name,
-                sig.kind,
-                sig.return_type,
-                sig.parameters,
-                sig.type_params,
-            )
-        } else if let Some((fn_name, sig)) =
-            super::query::resolve_impl_call(db, tables, function, arguments, env, ctx)
-        {
-            (
-                fn_name,
-                sig.kind,
-                sig.return_type,
-                sig.parameters,
-                sig.type_params,
-            )
-        } else {
-            return Err(TypeError::UnknownFunction {
-                name: function.to_string(),
-                span,
-                file_id: ctx.file_id,
-            });
-        };
+    let (kind, return_type, parameters, type_params) =
+        (sig.kind, sig.return_type, sig.parameters, sig.type_params);
 
     if arguments.len() != parameters.len() {
         return Err(TypeError::ArgumentCountMismatch {
@@ -806,13 +770,12 @@ fn check_struct_literal(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
-    let definition =
-        super::query::get_struct_fields(db, tables, struct_name, ctx.module_name, ctx.type_imports)
-            .ok_or_else(|| TypeError::UnsupportedType {
-                type_name: struct_name.to_string(),
-                span,
-                file_id: ctx.file_id,
-            })?;
+    let definition = super::query::get_struct_fields(db, tables, struct_name, ctx.module_name)
+        .ok_or_else(|| TypeError::UnsupportedType {
+            type_name: struct_name.to_string(),
+            span,
+            file_id: ctx.file_id,
+        })?;
 
     let mut seen = std::collections::HashSet::new();
     let mut typed_fields = Vec::new();
@@ -884,18 +847,12 @@ fn check_field_access(
     let base_type = typed_base.ty().clone();
     match base_type {
         AstType::Struct(name) | AstType::Generic(name) => {
-            let definition = super::query::get_struct_fields(
-                db,
-                tables,
-                &name,
-                ctx.module_name,
-                ctx.type_imports,
-            )
-            .ok_or_else(|| TypeError::UnsupportedType {
-                type_name: name.clone(),
-                span,
-                file_id: ctx.file_id,
-            })?;
+            let definition = super::query::get_struct_fields(db, tables, &name, ctx.module_name)
+                .ok_or_else(|| TypeError::UnsupportedType {
+                    type_name: name.clone(),
+                    span,
+                    file_id: ctx.file_id,
+                })?;
             let field_type = definition
                 .iter()
                 .find(|(n, _)| n == field)

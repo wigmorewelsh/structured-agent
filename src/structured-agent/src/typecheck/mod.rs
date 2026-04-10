@@ -57,10 +57,7 @@ pub(super) struct TypeEnvironment {
 
 pub(super) struct CheckContext<'a> {
     pub(super) file_id: FileId,
-    pub(super) alias_map: &'a HashMap<String, String>,
-    pub(super) alias_to_qualified: &'a AliasToQualified,
     pub(super) module_name: &'a ModuleName,
-    pub(super) type_imports: &'a HashMap<String, UseImport>,
 }
 
 pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {

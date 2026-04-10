@@ -217,15 +217,9 @@ pub(super) fn check_module(
         ModuleName::new(parsed.name(db))
     };
     let module = parsed.module(db);
-    let alias_map = super::query::build_alias_map(&module);
-    let alias_to_qualified = super::query::build_alias_to_qualified(db, tables, &parsed);
-    let type_imports = super::query::build_type_import_map(&parsed, db, tables);
     let ctx = super::CheckContext {
         file_id: parsed.file_id(db),
-        alias_map: &alias_map,
-        alias_to_qualified: &alias_to_qualified,
         module_name: &module_name,
-        type_imports: &type_imports,
     };
     let typed_definitions = module
         .definitions
