@@ -188,7 +188,7 @@ pub(super) fn lookup_impl_exists<'db>(
         .impls(db)
         .get()
         .keys()
-        .any(|k| k.type_name.name == tn.name && k.trait_name.name == trn.name)
+        .any(|k| k.type_name == tn.name && k.trait_name == trn.name)
 }
 
 #[salsa::tracked]

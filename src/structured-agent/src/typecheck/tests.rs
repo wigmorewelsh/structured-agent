@@ -2403,14 +2403,8 @@ mod typed_ast_tests {
                 name: "add".to_string(),
                 module: mn.clone(),
                 kind: FunctionNameKind::Impl {
-                    type_name: TypeName {
-                        name: "Vec2".to_string(),
-                        module: mn.clone(),
-                    },
-                    trait_name: TypeName {
-                        name: "Add".to_string(),
-                        module: mn,
-                    },
+                    type_name: "Vec2".to_string(),
+                    trait_name: "Add".to_string(),
                 },
             }
         });

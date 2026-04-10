@@ -10,66 +10,6 @@ pub trait TypeAnnotation: fmt::Debug + Clone {}
 
 impl TypeAnnotation for TypeName {}
 
-pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefinitionKind<R2>
-where
-    R1: References<TypeAnnotation = TypeName>,
-    R2: References<TypeAnnotation = TypeName>,
-    R2::Witness: Default,
-{
-    match kind {
-        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
-            fields: fields
-                .iter()
-                .map(|f| FieldDefinition {
-                    name: f.name.clone(),
-                    type_name: f.type_name.clone(),
-                })
-                .collect(),
-        },
-        TypeDefinitionKind::Function {
-            parameters,
-            generic_parameters,
-            return_type,
-        } => TypeDefinitionKind::Function {
-            parameters: parameters
-                .iter()
-                .map(|p| ParameterDefinition {
-                    name: p.name.clone(),
-                    type_name: p.type_name.clone(),
-                })
-                .collect(),
-            generic_parameters: generic_parameters
-                .iter()
-                .map(|gp| GenericParameterDefinition {
-                    name: gp.name.clone(),
-                    constraints: gp.constraints.clone(),
-                })
-                .collect(),
-            return_type: return_type.clone(),
-        },
-        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: e.type_name.clone(),
-                })
-                .collect(),
-        },
-        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
-            functions: functions
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: e.type_name.clone(),
-                })
-                .collect(),
-            witness_ref: R2::Witness::default(),
-        },
-        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
-    }
-}
-
 #[derive(Clone)]
 pub struct NoAst;
 impl AstRef for NoAst {}
@@ -141,17 +81,15 @@ impl<R: References> SymbolQuery for MetaData<R> {
         trait_name: &TypeName,
     ) -> Option<Arc<ImplDefinition<R>>> {
         self.impls
-            .get(&ImplKey {
-                type_name: type_name.clone(),
-                trait_name: trait_name.clone(),
-            })
-            .cloned()
+            .iter()
+            .find(|(k, _)| k.type_name == type_name.name && k.trait_name == trait_name.name)
+            .map(|(_, v)| v.clone())
     }
 
     fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<R>>> {
         self.impls
             .iter()
-            .filter(|(k, _)| &k.type_name == type_name)
+            .filter(|(k, _)| k.type_name == type_name.name)
             .map(|(_, v)| v.clone())
             .collect()
     }
@@ -274,12 +212,12 @@ impl fmt::Display for FunctionName {
                 trait_name,
             } => {
                 if module_str.is_empty() {
-                    write!(f, "{}::{}::{}", type_name.name, trait_name.name, self.name)
+                    write!(f, "{}::{}::{}", type_name, trait_name, self.name)
                 } else {
                     write!(
                         f,
                         "{}::{}::{}::{}",
-                        self.module, type_name.name, trait_name.name, self.name
+                        self.module, type_name, trait_name, self.name
                     )
                 }
             }
@@ -288,64 +226,6 @@ impl fmt::Display for FunctionName {
 }
 
 impl FunctionName {
-    #[deprecated(note = "use structured constructors")]
-    pub fn plain(module: &str, name: &str) -> Self {
-        FunctionName {
-            name: name.to_string(),
-            module: ModuleName::new(NonEmpty::new(module.to_string())),
-            kind: FunctionNameKind::Function,
-        }
-    }
-
-    #[deprecated(note = "use structured constructors")]
-    pub fn impl_fn(module: &str, type_name: &str, trait_name: &str, fn_name: &str) -> Self {
-        let module_name = ModuleName::new(NonEmpty::new(module.to_string()));
-        FunctionName {
-            name: fn_name.to_string(),
-            module: module_name.clone(),
-            kind: FunctionNameKind::Impl {
-                type_name: TypeName {
-                    name: type_name.to_string(),
-                    module: module_name.clone(),
-                },
-                trait_name: TypeName {
-                    name: trait_name.to_string(),
-                    module: module_name,
-                },
-            },
-        }
-    }
-
-    #[deprecated(note = "use structured constructors")]
-    pub fn from_qualified_str(s: &str) -> Self {
-        match s.rsplit_once("::") {
-            Some((module, name)) => FunctionName {
-                name: name.to_string(),
-                module: ModuleName::new(
-                    NonEmpty::from_vec(module.split("::").map(|s| s.to_string()).collect())
-                        .unwrap(),
-                ),
-                kind: FunctionNameKind::Function,
-            },
-            None => FunctionName {
-                name: s.to_string(),
-                module: ModuleName::new(NonEmpty::new(String::new())),
-                kind: FunctionNameKind::Function,
-            },
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        s.rsplit_once("::").map(|(module_str, name)| FunctionName {
-            name: name.to_string(),
-            module: ModuleName::new(
-                NonEmpty::from_vec(module_str.split("::").map(|s| s.to_string()).collect())
-                    .expect("non-empty after rsplit_once"),
-            ),
-            kind: FunctionNameKind::Function,
-        })
-    }
-
     #[deprecated(note = "use .name directly")]
     pub fn fn_name(&self) -> &str {
         &self.name
@@ -378,15 +258,16 @@ pub struct GenericParameterDefinition<R: References> {
 pub enum FunctionNameKind {
     Function,
     Impl {
-        type_name: TypeName,
-        trait_name: TypeName,
+        type_name: String,
+        trait_name: String,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplKey {
-    pub type_name: TypeName,
-    pub trait_name: TypeName,
+    pub type_name: String,
+    pub trait_name: String,
+    pub impl_module: ModuleName,
 }
 
 #[derive(Debug, Clone)]
@@ -448,4 +329,64 @@ pub enum TypeDefinitionKind<R: References> {
 pub struct FieldDefinition<R: References> {
     pub name: String,
     pub type_name: R::TypeAnnotation,
+}
+
+pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefinitionKind<R2>
+where
+    R1: References<TypeAnnotation = TypeName>,
+    R2: References<TypeAnnotation = TypeName>,
+    R2::Witness: Default,
+{
+    match kind {
+        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
+            fields: fields
+                .iter()
+                .map(|f| FieldDefinition {
+                    name: f.name.clone(),
+                    type_name: f.type_name.clone(),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Function {
+            parameters,
+            generic_parameters,
+            return_type,
+        } => TypeDefinitionKind::Function {
+            parameters: parameters
+                .iter()
+                .map(|p| ParameterDefinition {
+                    name: p.name.clone(),
+                    type_name: p.type_name.clone(),
+                })
+                .collect(),
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp.constraints.clone(),
+                })
+                .collect(),
+            return_type: return_type.clone(),
+        },
+        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
+            entries: entries
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: e.type_name.clone(),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
+            functions: functions
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: e.type_name.clone(),
+                })
+                .collect(),
+            witness_ref: R2::Witness::default(),
+        },
+        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+    }
 }

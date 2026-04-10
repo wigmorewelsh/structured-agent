@@ -9,8 +9,8 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
     GenericParameterDefinition, ImplDefinition, ImplKey, ModuleDefinition, ModuleName, NoAst,
-    ParameterDefinition, SignatureEntry, SymbolQuery, TypeDefinition,
-    TypeDefinitionKind, TypeName, Visibility,
+    ParameterDefinition, SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, TypeName,
+    Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -323,17 +323,10 @@ impl TypeChecker {
                     let functions = &impl_arc.functions;
                     let span = &impl_arc.span;
 
-                    let sym_type_name = TypeName {
-                        name: type_name.clone(),
-                        module: module_name.clone(),
-                    };
-                    let sym_trait_name = TypeName {
-                        name: trait_name.clone(),
-                        module: module_name.clone(),
-                    };
                     let key = ImplKey {
-                        type_name: sym_type_name.clone(),
-                        trait_name: sym_trait_name.clone(),
+                        type_name: type_name.clone(),
+                        trait_name: trait_name.clone(),
+                        impl_module: module_name.clone(),
                     };
                     let impl_entry = ImplDefinition {
                         key: key.clone(),
@@ -350,14 +343,8 @@ impl TypeChecker {
                                 name: func.name.to_string(),
                                 module: mn.clone(),
                                 kind: FunctionNameKind::Impl {
-                                    type_name: TypeName {
-                                        name: type_name.to_string(),
-                                        module: mn.clone(),
-                                    },
-                                    trait_name: TypeName {
-                                        name: trait_name.to_string(),
-                                        module: mn,
-                                    },
+                                    type_name: type_name.to_string(),
+                                    trait_name: trait_name.to_string(),
                                 },
                             }
                         };

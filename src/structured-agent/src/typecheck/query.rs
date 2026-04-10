@@ -276,14 +276,8 @@ pub(super) fn resolve_impl_call(
                 name: fn_name.to_string(),
                 module: mn.clone(),
                 kind: FunctionNameKind::Impl {
-                    type_name: TypeName {
-                        name: type_name.to_string(),
-                        module: mn.clone(),
-                    },
-                    trait_name: TypeName {
-                        name: trait_key_name.name.to_string(),
-                        module: mn,
-                    },
+                    type_name: type_name.to_string(),
+                    trait_name: trait_key_name.name.to_string(),
                 },
             }
         };
