@@ -44,7 +44,7 @@ fn test_assignment(): () {
         .functions
         .values()
         .filter_map(|f| {
-            if f.name.module.to_string() != "main" {
+            if f.name.module.to_string() != "test" {
                 return None;
             }
             if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -130,7 +130,7 @@ fn test_var_assignment(): () {
         .functions
         .values()
         .filter_map(|f| {
-            if f.name.module.to_string() != "main" {
+            if f.name.module.to_string() != "test" {
                 return None;
             }
             if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -200,7 +200,7 @@ fn test_return(): () {
         .functions
         .values()
         .filter_map(|f| {
-            if f.name.module.to_string() != "main" {
+            if f.name.module.to_string() != "test" {
                 return None;
             }
             if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {

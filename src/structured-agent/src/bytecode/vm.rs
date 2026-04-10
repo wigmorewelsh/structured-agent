@@ -278,6 +278,7 @@ impl VM {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
         let name_str = function_name.to_string();
+        let lookup_name = function_name.name.clone();
 
         let resolved_params: HashMap<String, ExpressionValue> = params
             .iter()
@@ -299,11 +300,11 @@ impl VM {
 
         let func = self
             .runtime
-            .get_native_function(&name_str)
+            .get_native_function(&lookup_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
         let state = self
-            .invoke_function(state, func, &name_str, params, dest)
+            .invoke_function(state, func, &lookup_name, params, dest)
             .await?;
 
         let result = Self::read_variable(&state, dest)?;

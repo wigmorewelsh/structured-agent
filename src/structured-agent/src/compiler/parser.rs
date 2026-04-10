@@ -3231,7 +3231,7 @@ fn main(): String {
             assert_eq!(f.type_params[0].name, "T");
             assert_eq!(
                 f.type_params[0].bounds,
-                vec![Type::Struct("Add".to_string())]
+                vec![Type::Generic("Add".to_string())]
             );
         } else {
             panic!("expected function");
@@ -3249,8 +3249,8 @@ fn main(): String {
             assert_eq!(
                 f.type_params[0].bounds,
                 vec![
-                    Type::Struct("Add".to_string()),
-                    Type::Struct("Sub".to_string())
+                    Type::Generic("Add".to_string()),
+                    Type::Generic("Sub".to_string())
                 ]
             );
         } else {

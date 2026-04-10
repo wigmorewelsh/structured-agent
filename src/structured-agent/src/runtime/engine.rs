@@ -563,7 +563,7 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
             && func_def.source_ref.1 != crate::types::Span::dummy()
         {
             let ast_ext = crate::ast::ExternalFunction {
-                name: func_def.name.to_string(),
+                name: func_def.name.name.clone(),
                 parameters: params.clone(),
                 return_type: return_type.clone(),
                 type_params: type_params.clone(),
