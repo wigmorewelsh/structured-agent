@@ -88,11 +88,10 @@ pub trait SymbolQuery {
     fn module(&self, name: &ModuleName) -> Option<Arc<ModuleDefinition<Self::Refs>>>;
     fn function(&self, name: &FunctionName) -> Option<Arc<FunctionDefinition<Self::Refs>>>;
     fn type_def(&self, name: &TypeName) -> Option<Arc<TypeDefinition<Self::Refs>>>;
-    fn trait_def(&self, name: &TraitName) -> Option<Arc<TraitDefinition<Self::Refs>>>;
     fn impl_for(
         &self,
         type_name: &TypeName,
-        trait_name: &TraitName,
+        trait_name: &TypeName,
     ) -> Option<Arc<ImplDefinition<Self::Refs>>>;
     fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<Self::Refs>>>;
 
@@ -105,8 +104,6 @@ pub struct MetaData<R: References> {
     pub modules: HashMap<ModuleName, Arc<ModuleDefinition<R>>>,
     pub functions: HashMap<FunctionName, Arc<FunctionDefinition<R>>>,
     pub types: HashMap<TypeName, Arc<TypeDefinition<R>>>,
-    #[deprecated(note = "merged into the types table")]
-    pub traits: HashMap<TraitName, Arc<TraitDefinition<R>>>,
     pub impls: HashMap<ImplKey, Arc<ImplDefinition<R>>>,
 }
 
@@ -117,7 +114,6 @@ impl<R: References> Default for MetaData<R> {
             modules: HashMap::new(),
             functions: HashMap::new(),
             types: HashMap::new(),
-            traits: HashMap::new(),
             impls: HashMap::new(),
         }
     }
@@ -139,14 +135,10 @@ impl<R: References> SymbolQuery for MetaData<R> {
         self.types.get(name).cloned()
     }
 
-    fn trait_def(&self, name: &TraitName) -> Option<Arc<TraitDefinition<R>>> {
-        self.traits.get(name).cloned()
-    }
-
     fn impl_for(
         &self,
         type_name: &TypeName,
-        trait_name: &TraitName,
+        trait_name: &TypeName,
     ) -> Option<Arc<ImplDefinition<R>>> {
         self.impls
             .get(&ImplKey {
@@ -239,7 +231,7 @@ pub enum ExportedName {
     Module(ModuleName),
     Function(FunctionName),
     Type(TypeName),
-    Trait(TraitName),
+    Trait(TypeName),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -316,7 +308,7 @@ impl FunctionName {
                     name: type_name.to_string(),
                     module: module_name.clone(),
                 },
-                trait_name: TraitName {
+                trait_name: TypeName {
                     name: trait_name.to_string(),
                     module: module_name,
                 },
@@ -387,14 +379,14 @@ pub enum FunctionNameKind {
     Function,
     Impl {
         type_name: TypeName,
-        trait_name: TraitName,
+        trait_name: TypeName,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplKey {
     pub type_name: TypeName,
-    pub trait_name: TraitName,
+    pub trait_name: TypeName,
 }
 
 #[derive(Debug, Clone)]
@@ -456,25 +448,4 @@ pub enum TypeDefinitionKind<R: References> {
 pub struct FieldDefinition<R: References> {
     pub name: String,
     pub type_name: R::TypeAnnotation,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TraitName {
-    pub name: String,
-    pub module: ModuleName,
-}
-
-impl fmt::Display for TraitName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}::{}", self.module, self.name)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TraitDefinition<R: References> {
-    pub name: TraitName,
-    pub functions: Vec<SignatureEntry<R>>,
-    pub witness_ref: R::Witness,
-    pub source_ref: R::Source,
-    pub ast_ref: R::Ast,
 }

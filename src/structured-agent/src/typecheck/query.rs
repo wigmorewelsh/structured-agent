@@ -11,8 +11,7 @@ use crate::types::Span;
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{
-    FunctionDefinition, FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName, UseImport,
-    Visibility,
+    FunctionDefinition, FunctionName, FunctionNameKind, ModuleName, TypeName, UseImport, Visibility,
 };
 
 pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {
@@ -208,7 +207,7 @@ pub(super) fn get_trait_functions(
     type_imports: &HashMap<String, UseImport>,
 ) -> Option<Vec<SigFunction>> {
     let resolved = TypeChecker::resolve_named_type(name, current_module, type_imports);
-    let trait_name = TraitName {
+    let trait_name = TypeName {
         name: resolved.name,
         module: resolved.module,
     };
@@ -232,7 +231,7 @@ pub(super) fn type_implements_trait(
         name: type_name.to_string(),
         module: ModuleName::new(NonEmpty::new(String::new())),
     };
-    let trn = TraitName {
+    let trn = TypeName {
         name: trait_name.to_string(),
         module: ModuleName::new(NonEmpty::new(String::new())),
     };
@@ -281,7 +280,7 @@ pub(super) fn resolve_impl_call(
                         name: type_name.to_string(),
                         module: mn.clone(),
                     },
-                    trait_name: TraitName {
+                    trait_name: TypeName {
                         name: trait_key_name.name.to_string(),
                         module: mn,
                     },

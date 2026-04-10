@@ -1636,9 +1636,7 @@ mod typed_ast_tests {
     use nonempty::NonEmpty;
 
     use std::sync::Arc;
-    use structured_agent_runtime::symbols::{
-        FunctionName, FunctionNameKind, ModuleName, TraitName, TypeName,
-    };
+    use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName, TypeName};
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let parsed = crate::ast::ParsedModule {
@@ -2409,7 +2407,7 @@ mod typed_ast_tests {
                         name: "Vec2".to_string(),
                         module: mn.clone(),
                     },
-                    trait_name: TraitName {
+                    trait_name: TypeName {
                         name: "Add".to_string(),
                         module: mn,
                     },
@@ -2426,8 +2424,8 @@ mod metadata_query_tests {
     use nonempty::NonEmpty;
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
-        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TraitName,
-        TypeDefinitionKind, TypeName,
+        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TypeDefinitionKind,
+        TypeName,
     };
 
     fn check_meta(module: crate::ast::Module) -> MetaData<TypedRefs> {
@@ -2524,7 +2522,7 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .trait_def(&TraitName {
+                .type_def(&TypeName {
                     name: "Greetable".to_string(),
                     module: ModuleName::new(NonEmpty::new("main".to_string())),
                 })
@@ -2567,7 +2565,7 @@ mod metadata_query_tests {
             name: "Foo".to_string(),
             module: ModuleName::new(NonEmpty::new("main".to_string())),
         };
-        let trait_name = TraitName {
+        let trait_name = TypeName {
             name: "Add".to_string(),
             module: ModuleName::new(NonEmpty::new("main".to_string())),
         };

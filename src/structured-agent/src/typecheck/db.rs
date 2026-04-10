@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     FunctionDefinition, FunctionName, ImplDefinition, ImplKey, ModuleDefinition, ModuleName,
-    TraitName, TypeDefinition, TypeDefinitionKind, TypeName,
+    TypeDefinition, TypeDefinitionKind, TypeName,
 };
 
 #[salsa::db]
@@ -115,7 +115,7 @@ pub(super) struct InternedTypeName {
 
 #[salsa::interned]
 pub(super) struct InternedTraitName {
-    pub(super) name: TraitName,
+    pub(super) name: TypeName,
 }
 
 #[salsa::interned]
@@ -264,7 +264,7 @@ pub(super) fn find_trait_for_impl_call<'db>(
             .iter()
             .any(|f| f.name == fn_name.value(db))
         {
-            let trait_name = TraitName {
+            let trait_name = TypeName {
                 name: type_key.name.clone(),
                 module: type_key.module.clone(),
             };

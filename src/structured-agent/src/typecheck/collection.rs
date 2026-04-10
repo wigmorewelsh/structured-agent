@@ -9,7 +9,7 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
     GenericParameterDefinition, ImplDefinition, ImplKey, ModuleDefinition, ModuleName, NoAst,
-    ParameterDefinition, SignatureEntry, SymbolQuery, TraitDefinition, TraitName, TypeDefinition,
+    ParameterDefinition, SignatureEntry, SymbolQuery, TypeDefinition,
     TypeDefinitionKind, TypeName, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
@@ -327,7 +327,7 @@ impl TypeChecker {
                         name: type_name.clone(),
                         module: module_name.clone(),
                     };
-                    let sym_trait_name = TraitName {
+                    let sym_trait_name = TypeName {
                         name: trait_name.clone(),
                         module: module_name.clone(),
                     };
@@ -354,7 +354,7 @@ impl TypeChecker {
                                         name: type_name.to_string(),
                                         module: mn.clone(),
                                     },
-                                    trait_name: TraitName {
+                                    trait_name: TypeName {
                                         name: trait_name.to_string(),
                                         module: mn,
                                     },
