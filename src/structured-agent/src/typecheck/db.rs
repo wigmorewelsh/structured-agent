@@ -211,11 +211,7 @@ pub(super) fn check_module(
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
 ) -> Result<ArcPtr<typed_ast::Module>, super::error::TypeError> {
-    let module_name = if parsed.is_entry(db) {
-        ModuleName::new(NonEmpty::new("main".to_string()))
-    } else {
-        ModuleName::new(parsed.name(db))
-    };
+    let module_name = ModuleName::new(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
         file_id: parsed.file_id(db),

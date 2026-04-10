@@ -97,6 +97,7 @@ impl SymbolTableBuilder {
             let module_def = ModuleDefinition {
                 name: module_name.clone(),
                 visibility: Visibility::Public,
+                is_entry: false,
                 exports,
                 source_ref: SourceLocation(0, Span::dummy()),
                 ast_ref: CheckerAstRef::Module(Arc::new(Module {
@@ -386,21 +387,13 @@ impl SymbolTableBuilder {
         db: &TypeCheckDb,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> (MetaData<CheckerRefs>, SymbolTablesInput) {
+    ) -> SymbolTablesInput {
         self.register_native_modules(native_modules);
         for parsed in modules {
-            let effective_module_name = if parsed.is_entry {
-                ModuleName::new(NonEmpty::new("main".to_string()))
-            } else {
-                ModuleName::new(parsed.name.clone())
-            };
-            self.register_type_definitions(&parsed.module, parsed.file_id, &effective_module_name);
-            self.register_function_signatures(
-                &parsed.module,
-                parsed.file_id,
-                &effective_module_name,
-            );
-            self.register_module_definition(parsed, effective_module_name);
+            let module_name = ModuleName::new(parsed.name.clone());
+            self.register_type_definitions(&parsed.module, parsed.file_id, &module_name);
+            self.register_function_signatures(&parsed.module, parsed.file_id, &module_name);
+            self.register_module_definition(parsed, module_name);
         }
         let tables = SymbolTablesInput::new(
             db,
@@ -409,7 +402,7 @@ impl SymbolTableBuilder {
             ArcPtr::new(self.metadata.impls.clone()),
             ArcPtr::new(self.metadata.modules.clone()),
         );
-        (self.metadata, tables)
+        tables
     }
 
     fn register_module_definition(
@@ -426,6 +419,7 @@ impl SymbolTableBuilder {
             } else {
                 Visibility::Private
             },
+            is_entry: parsed.is_entry,
             exports,
             source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
             ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),

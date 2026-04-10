@@ -10,7 +10,6 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
-use structured_agent_runtime::symbols::FunctionName;
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,

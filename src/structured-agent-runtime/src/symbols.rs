@@ -184,6 +184,7 @@ pub struct UseImport {
 pub struct ModuleDefinition<R: References> {
     pub name: ModuleName,
     pub visibility: Visibility,
+    pub is_entry: bool,
     pub exports: Vec<ExportedName>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,

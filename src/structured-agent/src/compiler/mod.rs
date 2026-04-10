@@ -23,7 +23,7 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{FunctionName, MetaData, ModuleName};
+use structured_agent_runtime::symbols::{FunctionName, MetaData};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -221,7 +221,11 @@ impl Compiler {
         compiled.metadata = bytecode_metadata;
 
         for name in compiled.metadata.functions.keys() {
-            if name.module == ModuleName::new(nonempty::NonEmpty::new("main".to_string()))
+            if compiled
+                .metadata
+                .modules
+                .get(&name.module)
+                .is_some_and(|m| m.is_entry)
                 && name.name == "main"
             {
                 compiled.main_function = Some(name.clone());
@@ -439,7 +443,7 @@ fn main(): String {
 
         assert!(compiled.metadata.functions.contains_key(&FunctionName {
             name: "main".to_string(),
-            module: ModuleName::new(NonEmpty::new("main".to_string())),
+            module: ModuleName::new(NonEmpty::new("mainproj".to_string())),
             kind: FunctionNameKind::Function
         }));
         assert!(compiled.metadata.functions.contains_key(&FunctionName {

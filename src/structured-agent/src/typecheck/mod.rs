@@ -29,13 +29,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     FieldDefinition, FunctionDefinition, GenericParameterDefinition, ImplDefinition, MetaData,
-    ModuleDefinition, ModuleName, ParameterDefinition, SignatureEntry, SymbolQuery, TypeDefinition,
+    ModuleDefinition, ModuleName, ParameterDefinition, SignatureEntry, TypeDefinition,
     TypeDefinitionKind, TypeName,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
-    metadata: MetaData<CheckerRefs>,
     db: TypeCheckDb,
     symbol_tables: Option<SymbolTablesInput>,
 }
@@ -151,7 +150,6 @@ fn convert_type_kind(
 impl TypeChecker {
     pub fn new() -> Self {
         Self {
-            metadata: MetaData::default(),
             db: TypeCheckDb::default(),
             symbol_tables: None,
         }
@@ -170,7 +168,7 @@ impl TypeChecker {
     > {
         self.populate_symbol_tables(modules, native_modules)?;
         let typed_modules = self.typecheck_modules(modules)?;
-        let typed_metadata = self.materialize_metadata(modules, &typed_modules);
+        let typed_metadata = self.materialize_metadata(&typed_modules);
         Ok((typed_metadata, typed_modules))
     }
 
@@ -179,10 +177,8 @@ impl TypeChecker {
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<(), TypeError> {
-        let (metadata, tables) =
-            SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules);
-        self.metadata = metadata;
-        self.symbol_tables = Some(tables);
+        self.symbol_tables =
+            Some(SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules));
         Ok(())
     }
 
@@ -208,25 +204,14 @@ impl TypeChecker {
 
     fn materialize_metadata(
         &self,
-        modules: &[ParsedModule],
         typed_modules: &HashMap<NonEmpty<String>, typed_ast::Module>,
     ) -> MetaData<TypedRefs> {
-        let effective_name_to_typed: HashMap<ModuleName, &typed_ast::Module> = modules
-            .iter()
-            .map(|p| {
-                let eff = if p.is_entry {
-                    ModuleName::new(NonEmpty::new("main".to_string()))
-                } else {
-                    ModuleName::new(p.name.clone())
-                };
-                (eff, typed_modules.get(&p.name).unwrap())
-            })
-            .collect();
+        let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
-        for fn_def in self.metadata.all_functions() {
+        for fn_def in tables.functions(&self.db).get().values() {
             let typed_ast_ref = match &fn_def.ast_ref {
                 CheckerAstRef::Function(_, kind) => {
-                    let typed_module = effective_name_to_typed[&fn_def.name.module];
+                    let typed_module = typed_modules.get(&fn_def.name.module.segments).unwrap();
                     let typed_fn = typed_module
                         .definitions
                         .iter()
@@ -245,7 +230,7 @@ impl TypeChecker {
                     TypedCheckerAstRef::Function(Arc::new(typed_fn), kind.clone())
                 }
                 CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
-                    let typed_module = effective_name_to_typed[&fn_def.name.module];
+                    let typed_module = typed_modules.get(&fn_def.name.module.segments).unwrap();
                     let typed_fn = typed_module
                         .definitions
                         .iter()
@@ -289,7 +274,7 @@ impl TypeChecker {
                 .functions
                 .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
         }
-        for type_def in self.metadata.all_types() {
+        for type_def in tables.types(&self.db).get().values() {
             let kind = convert_type_kind(&type_def.kind, &type_def.name.module);
             let new_def = TypeDefinition {
                 name: type_def.name.clone(),
@@ -302,7 +287,7 @@ impl TypeChecker {
                 .insert(type_def.name.clone(), Arc::new(new_def));
         }
 
-        for (impl_key, impl_def) in &self.metadata.impls {
+        for (impl_key, impl_def) in tables.impls(&self.db).get() {
             let new_def = ImplDefinition {
                 key: impl_def.key.clone(),
                 module: impl_def.module.clone(),
@@ -314,10 +299,11 @@ impl TypeChecker {
                 .insert(impl_key.clone(), Arc::new(new_def));
         }
 
-        for (module_key, module_def) in &self.metadata.modules {
+        for (module_key, module_def) in tables.modules(&self.db).get() {
             let new_def = ModuleDefinition {
                 name: module_def.name.clone(),
                 visibility: module_def.visibility.clone(),
+                is_entry: module_def.is_entry,
                 exports: module_def.exports.clone(),
                 source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
                 ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
@@ -331,15 +317,11 @@ impl TypeChecker {
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
-        Self::function_kinds_from_metadata(&self.metadata)
-    }
-
-    fn function_kinds_from_metadata(
-        metadata: &MetaData<CheckerRefs>,
-    ) -> HashMap<String, FunctionKind> {
-        metadata
-            .all_functions()
-            .into_iter()
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        tables
+            .functions(&self.db)
+            .get()
+            .values()
             .filter_map(|f| match &f.ast_ref {
                 CheckerAstRef::Function(_, kind) | CheckerAstRef::ExternalFn { kind, .. } => {
                     Some((f.name.to_string(), kind.clone()))

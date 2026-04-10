@@ -742,6 +742,7 @@ pub fn compile_metadata(
             Arc::new(ModuleDefinition {
                 name: arc_def.name.clone(),
                 visibility: arc_def.visibility.clone(),
+                is_entry: arc_def.is_entry,
                 exports: arc_def.exports.clone(),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
