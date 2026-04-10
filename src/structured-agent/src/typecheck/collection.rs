@@ -1,21 +1,33 @@
 use super::TypeChecker;
+use super::db::{ArcPtr, SymbolTablesInput, TypeCheckDb};
 use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation};
-use crate::ast::{Definition, Module, Parameter, Type as AstType, TypeParam};
-
+use crate::ast::{Definition, Module, Parameter, ParsedModule, Type as AstType, TypeParam};
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
-    GenericParameterDefinition, ImplDefinition, ImplKey, ModuleDefinition, ModuleName, NoAst,
+    GenericParameterDefinition, ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName,
     ParameterDefinition, SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, TypeName,
-    Visibility,
+    UseImport, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
-impl TypeChecker {
-    pub(super) fn seed_builtin_types(&mut self) {
+pub(super) struct SymbolTableBuilder {
+    metadata: MetaData<CheckerRefs>,
+}
+
+impl SymbolTableBuilder {
+    pub(super) fn new() -> Self {
+        let mut builder = Self {
+            metadata: MetaData::default(),
+        };
+        builder.seed_builtin_types();
+        builder
+    }
+
+    fn seed_builtin_types(&mut self) {
         let builtins = [
             ("()", "prelude"),
             ("Boolean", "prelude"),
@@ -33,13 +45,13 @@ impl TypeChecker {
                 name: type_name.clone(),
                 kind: TypeDefinitionKind::Primitive,
                 source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: NoAst,
+                ast_ref: CheckerAstRef::Primitive,
             };
-            self.primitive_types.insert(type_name, Arc::new(entry));
+            self.metadata.register_type(type_name, Arc::new(entry));
         }
     }
 
-    pub(super) fn register_native_modules(
+    fn register_native_modules(
         &mut self,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
@@ -175,7 +187,7 @@ impl TypeChecker {
             .register_type(fn_type_name, Arc::new(type_def));
     }
 
-    pub(super) fn register_type_definitions(
+    fn register_type_definitions(
         &mut self,
         module: &Module,
         file_id: FileId,
@@ -208,7 +220,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn register_function_signatures(
+    fn register_function_signatures(
         &mut self,
         module: &Module,
         file_id: FileId,
@@ -336,7 +348,8 @@ impl TypeChecker {
                     };
                     self.metadata.impls.insert(key, Arc::new(impl_entry));
                     for func in functions {
-                        let resolved_return = Self::substitute_self(&func.return_type, type_name);
+                        let resolved_return =
+                            TypeChecker::substitute_self(&func.return_type, type_name);
                         let impl_fn_key = {
                             let mn = module_name.clone();
                             FunctionName {
@@ -367,6 +380,124 @@ impl TypeChecker {
             }
         }
     }
+
+    pub(super) fn build_symbol_tables(
+        mut self,
+        db: &TypeCheckDb,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> (MetaData<CheckerRefs>, SymbolTablesInput) {
+        self.register_native_modules(native_modules);
+        for parsed in modules {
+            let effective_module_name = if parsed.is_entry {
+                ModuleName::new(NonEmpty::new("main".to_string()))
+            } else {
+                ModuleName::new(parsed.name.clone())
+            };
+            self.register_type_definitions(&parsed.module, parsed.file_id, &effective_module_name);
+            self.register_function_signatures(
+                &parsed.module,
+                parsed.file_id,
+                &effective_module_name,
+            );
+            self.register_module_definition(parsed, effective_module_name);
+        }
+        let tables = SymbolTablesInput::new(
+            db,
+            ArcPtr::new(self.metadata.functions.clone()),
+            ArcPtr::new(self.metadata.types.clone()),
+            ArcPtr::new(self.metadata.impls.clone()),
+            ArcPtr::new(self.metadata.modules.clone()),
+        );
+        (self.metadata, tables)
+    }
+
+    fn register_module_definition(
+        &mut self,
+        parsed: &ParsedModule,
+        effective_module_name: ModuleName,
+    ) {
+        let exports = self.collect_module_exports(&effective_module_name);
+        let use_imports = extract_use_imports(&parsed.module, &parsed.name);
+        let module_def = ModuleDefinition {
+            name: effective_module_name.clone(),
+            visibility: if parsed.is_entry {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            },
+            exports,
+            source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
+            ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
+            use_imports,
+        };
+        self.metadata
+            .modules
+            .insert(effective_module_name, Arc::new(module_def));
+    }
+
+    fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {
+        let mut exports: Vec<ExportedName> = self
+            .metadata
+            .functions_in_module(module_name)
+            .into_iter()
+            .filter(|f| matches!(f.visibility, Visibility::Public))
+            .map(|f| ExportedName::Function(f.name.clone()))
+            .collect();
+        let type_exports: Vec<ExportedName> = self
+            .metadata
+            .types
+            .values()
+            .filter(|t| &t.name.module == module_name)
+            .filter_map(|t| match &t.kind {
+                TypeDefinitionKind::Struct { .. } => Some(ExportedName::Type(t.name.clone())),
+                TypeDefinitionKind::Trait { .. } => Some(ExportedName::Trait(t.name.clone())),
+                _ => None,
+            })
+            .collect();
+        exports.extend(type_exports);
+        exports
+    }
+}
+
+fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<UseImport> {
+    let mut parent: Vec<String> = module_name.iter().cloned().collect();
+    parent.pop();
+    module
+        .definitions
+        .iter()
+        .flat_map(|def| match def {
+            Definition::Use {
+                path,
+                name,
+                alias,
+                is_pub,
+                ..
+            } => {
+                let mut segs = parent.clone();
+                segs.extend(path.iter().cloned());
+                let resolved = NonEmpty::from_vec(segs).unwrap();
+                let local = alias.clone().unwrap_or_else(|| name.clone());
+                vec![UseImport {
+                    local,
+                    module: ModuleName::new(resolved),
+                    name: name.clone(),
+                    is_pub: *is_pub,
+                }]
+            }
+            Definition::ModuleHeader { params, .. } => params
+                .iter()
+                .filter(|p| !p.path.is_empty())
+                .map(|p| UseImport {
+                    local: p.name.clone(),
+                    module: ModuleName::new(p.path.clone()),
+                    name: p.name.clone(),
+                    is_pub: false,
+                })
+                .collect(),
+            _ => vec![],
+        })
+        .collect()
 }
 
 fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {

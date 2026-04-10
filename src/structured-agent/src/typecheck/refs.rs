@@ -39,6 +39,7 @@ pub enum CheckerAstRef {
     Trait(Arc<AstTrait>),
     Impl(Arc<AstTraitImpl>),
     Module(Arc<Module>),
+    Primitive,
 }
 
 impl SourceRef for SourceLocation {}
