@@ -1,5 +1,5 @@
+use super::TypeChecker;
 use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation};
-use super::{TypeChecker, ast_type_to_type_name};
 use crate::ast::{Definition, Module, Parameter, Type as AstType, TypeParam};
 
 use crate::types::{FileId, Span};
@@ -366,5 +366,26 @@ impl TypeChecker {
                 }
             }
         }
+    }
+}
+
+fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {
+    match ty {
+        AstType::Struct(name) => TypeName {
+            name: name.clone(),
+            module: module_name.clone(),
+        },
+        AstType::List(_) => TypeName {
+            name: "List".to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        },
+        AstType::Option(_) => TypeName {
+            name: "Option".to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        },
+        other => TypeName {
+            name: other.to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        },
     }
 }

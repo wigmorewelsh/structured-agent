@@ -35,6 +35,12 @@ pub(super) struct ParsedModuleInput {
     pub(super) module: AstModule,
 }
 
+impl ParsedModuleInput {
+    pub fn parent_path(&self, db: &dyn TypeCheckDatabase) -> Vec<String> {
+        self.name(db).iter().cloned().collect()
+    }
+}
+
 pub(super) struct ArcPtr<T>(Arc<T>);
 
 impl<T> ArcPtr<T> {
@@ -219,7 +225,7 @@ pub(super) fn check_module(
     let module = parsed.module(db);
     let alias_map = super::query::build_alias_map(&module);
     let alias_to_qualified = super::query::build_alias_to_qualified(db, tables, &module);
-    let type_imports = super::query::build_type_import_map(&module, db, tables);
+    let type_imports = super::query::build_type_import_map(&parsed, db, tables);
     let ctx = super::CheckContext {
         file_id: parsed.file_id(db),
         alias_map: &alias_map,

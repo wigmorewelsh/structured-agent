@@ -7,6 +7,7 @@ use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{ModuleName, UseImport};
 
+
 pub(super) fn resolve_type(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,

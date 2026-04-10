@@ -127,7 +127,7 @@ enum ImportType {
     Absolute(NonEmpty<String>),
 }
 
-pub(crate) fn referenced_module_names(module: &Module) -> Vec<ImportType> {
+fn referenced_module_names(module: &Module) -> Vec<ImportType> {
     module
         .definitions
         .iter()

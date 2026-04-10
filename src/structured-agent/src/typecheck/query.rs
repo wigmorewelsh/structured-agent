@@ -6,6 +6,7 @@ use super::db::{
 use super::refs::{AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker, TypeEnvironment};
 use crate::ast::{Definition, Expression, Module, SigFunction, Type as AstType};
+use crate::typecheck::ParsedModuleInput;
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use nonempty::NonEmpty;
@@ -34,11 +35,12 @@ pub(super) fn build_alias_map(module: &Module) -> HashMap<String, String> {
 }
 
 pub(super) fn build_type_import_map(
-    module: &Module,
+    module: &ParsedModuleInput,
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
 ) -> HashMap<String, UseImport> {
     module
+        .module(db)
         .definitions
         .iter()
         .filter_map(|def| {
@@ -46,9 +48,13 @@ pub(super) fn build_type_import_map(
                 path, name, alias, ..
             } = def
             {
+                let parent = module.parent_path(db);
+                let mut full_path = parent.clone();
+                full_path.extend(path.iter().cloned());
+                let full_path_nonempty = NonEmpty::from_vec(full_path).unwrap();
                 let import = UseImport {
                     local: alias.clone().unwrap_or_else(|| name.clone()),
-                    module: ModuleName::new(path.clone()),
+                    module: ModuleName::new(full_path_nonempty),
                     name: name.clone(),
                 };
                 let type_name = TypeName {
@@ -332,6 +338,7 @@ pub(super) fn check_visibility(
     }
 }
 
+#[deprecated(note = "This function should not be used as its incorrect and will be deleted")]
 pub(super) fn lookup_sig(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
