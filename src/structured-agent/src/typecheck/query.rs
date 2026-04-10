@@ -1,14 +1,16 @@
 use super::db::{
-    InternedFunctionName, InternedString, InternedTraitName, InternedTypeName, SymbolTablesInput,
-    TypeCheckDatabase, find_trait_for_impl_call, lookup_function_def, lookup_impl_exists,
-    lookup_trait_def, lookup_type_def,
+    InternedFunctionName, InternedModuleName, InternedString, InternedTraitName, InternedTypeName,
+    SymbolTablesInput, TypeCheckDatabase, find_trait_for_impl_call, lookup_function_def,
+    lookup_impl_exists, lookup_trait_def, lookup_type_def, resolve_function_alias,
+    resolve_type_alias,
 };
 use super::refs::{AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker, TypeEnvironment};
 use crate::ast::{Definition, Expression, Module, SigFunction, Type as AstType};
-use crate::typecheck::ParsedModuleInput;
+use crate::typecheck::db::ParsedModuleInput;
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
+
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use structured_agent_runtime::symbols::{
@@ -39,36 +41,31 @@ pub(super) fn build_type_import_map(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
 ) -> HashMap<String, UseImport> {
+    let module_name = if module.is_entry(db) {
+        ModuleName::new(NonEmpty::new("main".to_string()))
+    } else {
+        ModuleName::new(module.name(db))
+    };
+    let current = InternedModuleName::new(db, module_name);
     module
         .module(db)
         .definitions
         .iter()
         .filter_map(|def| {
-            if let Definition::Use {
-                path, name, alias, ..
-            } = def
-            {
-                let parent = module.parent_path(db);
-                let mut full_path = parent.clone();
-                full_path.extend(path.iter().cloned());
-                let full_path_nonempty = NonEmpty::from_vec(full_path).unwrap();
+            let Definition::Use { name, alias, .. } = def else {
+                return None;
+            };
+            let local = alias.as_ref().unwrap_or(name).clone();
+            let alias_interned = InternedString::new(db, local.clone());
+            resolve_type_alias(db, tables, current, alias_interned).map(|tn| {
                 let import = UseImport {
-                    local: alias.clone().unwrap_or_else(|| name.clone()),
-                    module: ModuleName::new(full_path_nonempty),
-                    name: name.clone(),
+                    local: local.clone(),
+                    module: tn.module,
+                    name: tn.name,
+                    is_pub: false,
                 };
-                let type_name = TypeName {
-                    name: import.name.clone(),
-                    module: import.module.clone(),
-                };
-                if tables.types(db).get().get(&type_name).is_some() {
-                    Some((import.local.clone(), import))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+                (local, import)
+            })
         })
         .collect()
 }
@@ -76,30 +73,29 @@ pub(super) fn build_type_import_map(
 pub(super) fn build_alias_to_qualified(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
-    module: &Module,
+    parsed: &ParsedModuleInput,
 ) -> AliasToQualified {
+    let module_name = if parsed.is_entry(db) {
+        ModuleName::new(NonEmpty::new("main".to_string()))
+    } else {
+        ModuleName::new(parsed.name(db))
+    };
+    let current = InternedModuleName::new(db, module_name);
     let mut map = AliasToQualified::new();
-    for def in &module.definitions {
-        let Definition::Use {
-            path, name, alias, ..
-        } = def
-        else {
+    for def in &parsed.module(db).definitions {
+        let Definition::Use { name, alias, .. } = def else {
             continue;
         };
-        let import = UseImport {
-            local: alias.clone().unwrap_or_else(|| name.clone()),
-            module: ModuleName::new(path.clone()),
-            name: name.clone(),
-        };
-        let fn_key = FunctionName {
-            name: import.name.clone(),
-            module: import.module.clone(),
-            kind: FunctionNameKind::Function,
-        };
-        let interned = InternedFunctionName::new(db, fn_key);
-        let fn_exists = lookup_function_def(db, tables, interned).is_some();
-        if fn_exists {
-            map.insert(import.local.clone(), import);
+        let local = alias.as_ref().unwrap_or(name).clone();
+        let alias_interned = InternedString::new(db, local.clone());
+        if let Some(fn_name) = resolve_function_alias(db, tables, current, alias_interned) {
+            let import = UseImport {
+                local: local.clone(),
+                module: fn_name.module,
+                name: fn_name.name,
+                is_pub: false,
+            };
+            map.insert(local, import);
         }
     }
     map

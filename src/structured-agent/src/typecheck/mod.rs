@@ -39,7 +39,6 @@ pub struct TypeChecker {
     pub(super) primitive_types: HashMap<TypeName, Arc<TypeDefinition<PrimitiveRefs>>>,
     db: TypeCheckDb,
     symbol_tables: Option<SymbolTablesInput>,
-    parsed_inputs: HashMap<NonEmpty<String>, ParsedModuleInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,7 +92,11 @@ fn extract_use_imports(module: &AstModule, module_name: &NonEmpty<String>) -> Ve
         .iter()
         .flat_map(|def| match def {
             Definition::Use {
-                path, name, alias, ..
+                path,
+                name,
+                alias,
+                is_pub,
+                ..
             } => {
                 let mut segs = parent.clone();
                 segs.extend(path.iter().cloned());
@@ -103,6 +106,7 @@ fn extract_use_imports(module: &AstModule, module_name: &NonEmpty<String>) -> Ve
                     local,
                     module: ModuleName::new(resolved),
                     name: name.clone(),
+                    is_pub: *is_pub,
                 }]
             }
             Definition::ModuleHeader { params, .. } => params
@@ -112,6 +116,7 @@ fn extract_use_imports(module: &AstModule, module_name: &NonEmpty<String>) -> Ve
                     local: p.name.clone(),
                     module: ModuleName::new(p.path.clone()),
                     name: p.name.clone(),
+                    is_pub: false,
                 })
                 .collect(),
             _ => vec![],
@@ -194,7 +199,6 @@ impl TypeChecker {
             primitive_types: HashMap::new(),
             db: TypeCheckDb::default(),
             symbol_tables: None,
-            parsed_inputs: HashMap::new(),
         };
         checker.seed_builtin_types();
         checker
@@ -245,16 +249,6 @@ impl TypeChecker {
             ArcPtr::new(self.metadata.modules.clone()),
         );
         self.symbol_tables = Some(tables);
-        for parsed in modules {
-            let input = ParsedModuleInput::new(
-                &self.db,
-                parsed.name.clone(),
-                parsed.is_entry,
-                parsed.file_id,
-                parsed.module.clone(),
-            );
-            self.parsed_inputs.insert(parsed.name.clone(), input);
-        }
         Ok(())
     }
 
@@ -289,10 +283,13 @@ impl TypeChecker {
         let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_modules = HashMap::new();
         for parsed in modules {
-            let parsed_input = *self
-                .parsed_inputs
-                .get(&parsed.name)
-                .expect("parsed input not found");
+            let parsed_input = ParsedModuleInput::new(
+                &self.db,
+                parsed.name.clone(),
+                parsed.is_entry,
+                parsed.file_id,
+                parsed.module.clone(),
+            );
             let arc_module = db::check_module(&self.db, parsed_input, tables)?;
             typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
         }
@@ -435,12 +432,26 @@ impl TypeChecker {
     }
 
     fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {
-        self.metadata
+        let mut exports: Vec<ExportedName> = self
+            .metadata
             .functions_in_module(module_name)
             .into_iter()
             .filter(|f| matches!(f.visibility, Visibility::Public))
             .map(|f| ExportedName::Function(f.name.clone()))
-            .collect()
+            .collect();
+        let type_exports: Vec<ExportedName> = self
+            .metadata
+            .types
+            .values()
+            .filter(|t| &t.name.module == module_name)
+            .filter_map(|t| match &t.kind {
+                TypeDefinitionKind::Struct { .. } => Some(ExportedName::Type(t.name.clone())),
+                TypeDefinitionKind::Trait { .. } => Some(ExportedName::Trait(t.name.clone())),
+                _ => None,
+            })
+            .collect();
+        exports.extend(type_exports);
+        exports
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {

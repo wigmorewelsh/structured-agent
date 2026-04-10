@@ -177,6 +177,7 @@ pub struct UseImport {
     pub local: String,
     pub module: ModuleName,
     pub name: String,
+    pub is_pub: bool,
 }
 
 #[derive(Debug, Clone)]
