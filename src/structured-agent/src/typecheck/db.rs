@@ -482,3 +482,14 @@ pub(super) fn resolve_function_alias<'db>(
     }
     None
 }
+
+#[salsa::tracked]
+pub(super) fn resolve_function_call<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<FunctionName> {
+    resolve_function_alias(db, tables, current_module, symbol)
+        .or_else(|| resolve_function_in_module(db, tables, current_module, symbol))
+}

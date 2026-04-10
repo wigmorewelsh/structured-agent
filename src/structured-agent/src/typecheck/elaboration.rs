@@ -1,5 +1,7 @@
 use super::TypeChecker;
-use super::db::{InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase};
+use super::db::{
+    InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase, resolve_function_call,
+};
 use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
@@ -8,7 +10,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
-use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind};
+use structured_agent_runtime::symbols::FunctionName;
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,
@@ -473,21 +475,9 @@ fn check_call(
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = InternedString::new(db, function.to_string());
 
-    let alias_resolved =
-        super::db::resolve_function_alias(db, tables, interned_current, interned_fn);
-
-    let fn_name_in_module = FunctionName {
-        name: function.to_string(),
-        module: ctx.module_name.clone(),
-        kind: FunctionNameKind::Function,
-    };
-    let (resolved_fn_name, sig) = alias_resolved
+    let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {
             super::query::get_function_sig(db, tables, &fn_name).map(|sig| (fn_name, sig))
-        })
-        .or_else(|| {
-            super::query::get_function_sig(db, tables, &fn_name_in_module)
-                .map(|sig| (fn_name_in_module, sig))
         })
         .or_else(|| super::query::resolve_impl_call(db, tables, function, arguments, env, ctx))
         .ok_or_else(|| TypeError::UnknownFunction {

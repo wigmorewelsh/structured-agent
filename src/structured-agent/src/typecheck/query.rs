@@ -3,14 +3,14 @@ use super::db::{
     SymbolTablesInput, TypeCheckDatabase, find_trait_for_impl_call, lookup_function_def,
     lookup_impl_exists, lookup_trait_def, lookup_type_def, resolve_type_alias,
 };
-use super::refs::{CheckerAstRef, CheckerRefs};
+use super::refs::{CheckerAstRef, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker, TypeEnvironment};
-use crate::ast::{Expression, SigFunction, Type as AstType};
+use crate::ast::{Expression, Parameter, SigFunction, Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use nonempty::NonEmpty;
 use structured_agent_runtime::symbols::{
-    FunctionDefinition, FunctionName, FunctionNameKind, ModuleName, TypeName, Visibility,
+    FunctionName, FunctionNameKind, ModuleName, TypeDefinitionKind, TypeName, Visibility,
 };
 
 pub(super) fn get_function_sig(
@@ -18,70 +18,58 @@ pub(super) fn get_function_sig(
     tables: SymbolTablesInput,
     name: &FunctionName,
 ) -> Option<FunctionSignature> {
-    let make_sig = |f: &FunctionDefinition<CheckerRefs>| match &f.ast_ref {
-        CheckerAstRef::Function(func, kind) => Some(FunctionSignature {
-            parameters: func
-                .parameters
-                .iter()
-                .map(|p| crate::ast::Parameter {
-                    name: p.name.clone(),
-                    param_type: super::constraints::resolve_type(
-                        db,
-                        tables,
-                        &p.param_type,
-                        &name.module,
-                    ),
-                    span: p.span,
-                })
-                .collect(),
-            return_type: super::constraints::resolve_type(
-                db,
-                tables,
-                &func.return_type,
-                &name.module,
-            ),
-            type_params: func.type_params.clone(),
-            kind: kind.clone(),
-        }),
-        CheckerAstRef::ImplFunction(func, concrete_type, kind) => Some(FunctionSignature {
-            parameters: func
-                .parameters
-                .iter()
-                .map(|p| crate::ast::Parameter {
-                    name: p.name.clone(),
-                    param_type: super::constraints::resolve_type(
-                        db,
-                        tables,
-                        &TypeChecker::substitute_self(&p.param_type, concrete_type),
-                        &name.module,
-                    ),
-                    span: p.span,
-                })
-                .collect(),
-            return_type: super::constraints::resolve_type(
-                db,
-                tables,
-                &TypeChecker::substitute_self(&func.return_type, concrete_type),
-                &name.module,
-            ),
-            type_params: func.type_params.clone(),
-            kind: kind.clone(),
-        }),
-        CheckerAstRef::ExternalFn {
-            params,
-            return_type,
-            type_params,
-            kind,
-        } => Some(FunctionSignature {
-            parameters: params.clone(),
-            return_type: return_type.clone(),
-            type_params: type_params.clone(),
-            kind: kind.clone(),
-        }),
+    let key = InternedFunctionName::new(db, name.clone());
+    let fn_def = lookup_function_def(db, tables, key)?;
+
+    let kind = match &fn_def.get().ast_ref {
+        CheckerAstRef::ExternalFn { .. } => FunctionKind::External,
+        _ => FunctionKind::Bytecode,
+    };
+
+    let concrete_type = match &name.kind {
+        FunctionNameKind::Impl { type_name, .. } => Some(type_name.clone()),
         _ => None,
     };
-    let key = InternedFunctionName::new(db, name.clone());
-    lookup_function_def(db, tables, key).and_then(|arc_ptr| make_sig(arc_ptr.get()))
+
+    let type_key = InternedTypeName::new(db, fn_def.get().type_name.clone());
+    let type_def = lookup_type_def(db, tables, type_key)?;
+
+    let TypeDefinitionKind::Function {
+        parameters,
+        generic_parameters,
+        return_type,
+    } = &type_def.get().kind
+    else {
+        return None;
+    };
+
+    let resolve = |ty: &AstType| {
+        let substituted = match &concrete_type {
+            Some(ct) => TypeChecker::substitute_self(ty, ct),
+            None => ty.clone(),
+        };
+        super::constraints::resolve_type(db, tables, &substituted, &name.module)
+    };
+
+    Some(FunctionSignature {
+        parameters: parameters
+            .iter()
+            .map(|p| Parameter {
+                name: p.name.clone(),
+                param_type: resolve(&p.type_name),
+                span: Span::dummy(),
+            })
+            .collect(),
+        return_type: resolve(return_type),
+        type_params: generic_parameters
+            .iter()
+            .map(|gp| TypeParam {
+                name: gp.name.clone(),
+                bounds: gp.constraints.clone(),
+            })
+            .collect(),
+        kind,
+    })
 }
 
 pub(super) fn get_struct_fields(
@@ -214,6 +202,9 @@ pub(super) fn check_visibility(
     span: Span,
     ctx: &CheckContext,
 ) -> Result<(), TypeError> {
+    if &fn_name.module == ctx.module_name {
+        return Ok(());
+    }
     let interned = InternedFunctionName::new(db, fn_name.clone());
     let is_visible = lookup_function_def(db, tables, interned)
         .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
