@@ -5,7 +5,21 @@ use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
+use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{ModuleName, TypeName};
+
+pub(super) fn ast_to_runtime(t: &AstType) -> RT {
+    match t {
+        AstType::Unit => RT::Unit,
+        AstType::Boolean => RT::Boolean,
+        AstType::String => RT::String,
+        AstType::Int => RT::Int,
+        AstType::Struct(n) => RT::Struct(n.clone()),
+        AstType::List(inner) => RT::List(Box::new(ast_to_runtime(inner))),
+        AstType::Option(inner) => RT::Option(Box::new(ast_to_runtime(inner))),
+        AstType::Generic(n) => RT::Generic(n.clone()),
+    }
+}
 
 pub(super) fn resolve_type(
     db: &dyn TypeCheckDatabase,
@@ -94,13 +108,9 @@ pub(super) fn validate_type_with_params(
 }
 
 impl TypeChecker {
-    pub(super) fn unify_type(
-        formal: &AstType,
-        actual: &AstType,
-        subst: &mut HashMap<String, AstType>,
-    ) -> bool {
+    pub(super) fn unify_type(formal: &RT, actual: &RT, subst: &mut HashMap<String, RT>) -> bool {
         match formal {
-            AstType::Generic(name) => {
+            RT::Generic(name) => {
                 if let Some(bound) = subst.get(name) {
                     bound == actual
                 } else {
@@ -108,15 +118,15 @@ impl TypeChecker {
                     true
                 }
             }
-            AstType::List(inner_formal) => {
-                if let AstType::List(inner_actual) = actual {
+            RT::List(inner_formal) => {
+                if let RT::List(inner_actual) = actual {
                     Self::unify_type(inner_formal, inner_actual, subst)
                 } else {
                     false
                 }
             }
-            AstType::Option(inner_formal) => {
-                if let AstType::Option(inner_actual) = actual {
+            RT::Option(inner_formal) => {
+                if let RT::Option(inner_actual) = actual {
                     Self::unify_type(inner_formal, inner_actual, subst)
                 } else {
                     false
@@ -126,11 +136,11 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn apply_subst(ty: &AstType, subst: &HashMap<String, AstType>) -> AstType {
+    pub(super) fn apply_subst(ty: &RT, subst: &HashMap<String, RT>) -> RT {
         match ty {
-            AstType::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
-            AstType::List(inner) => AstType::List(Box::new(Self::apply_subst(inner, subst))),
-            AstType::Option(inner) => AstType::Option(Box::new(Self::apply_subst(inner, subst))),
+            RT::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+            RT::List(inner) => RT::List(Box::new(Self::apply_subst(inner, subst))),
+            RT::Option(inner) => RT::Option(Box::new(Self::apply_subst(inner, subst))),
             other => other.clone(),
         }
     }

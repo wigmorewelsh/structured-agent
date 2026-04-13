@@ -5,7 +5,7 @@ use super::db::{
 };
 use super::refs::{CheckerAstRef, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker, TypeEnvironment};
-use crate::ast::{Expression, Parameter, SigFunction, Type as AstType, TypeParam};
+use crate::ast::{Expression, SigFunction, Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use nonempty::NonEmpty;
@@ -54,13 +54,13 @@ pub(super) fn get_function_sig(
     Some(FunctionSignature {
         parameters: parameters
             .iter()
-            .map(|p| Parameter {
+            .map(|p| crate::typed_ast::Parameter {
                 name: p.name.clone(),
-                param_type: resolve(&p.type_name),
+                param_type: super::constraints::ast_to_runtime(&resolve(&p.type_name)),
                 span: Span::dummy(),
             })
             .collect(),
-        return_type: resolve(return_type),
+        return_type: super::constraints::ast_to_runtime(&resolve(return_type)),
         type_params: generic_parameters
             .iter()
             .map(|gp| TypeParam {
@@ -161,10 +161,10 @@ pub(super) fn resolve_impl_call(
     let first_arg =
         super::elaboration::check_expression(db, tables, &arguments[0], env, ctx).ok()?;
     let type_name = match first_arg.ty() {
-        AstType::Int => "Int".to_string(),
-        AstType::String => "String".to_string(),
-        AstType::Boolean => "Boolean".to_string(),
-        AstType::Struct(n) => n.clone(),
+        structured_agent_runtime::Type::Int => "Int".to_string(),
+        structured_agent_runtime::Type::String => "String".to_string(),
+        structured_agent_runtime::Type::Boolean => "Boolean".to_string(),
+        structured_agent_runtime::Type::Struct(n) => n.clone(),
         _ => return None,
     };
     let interned_fn = fn_name.intern(db);

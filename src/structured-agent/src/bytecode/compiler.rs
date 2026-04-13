@@ -1,5 +1,5 @@
 use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
-use crate::ast;
+
 use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
@@ -72,7 +72,7 @@ impl BytecodeCompiler {
             builder.emit(Instruction::Decl {
                 name: return_temp.clone(),
             });
-            if typed_func.return_type == ast::Type::Unit {
+            if typed_func.return_type == structured_agent_runtime::Type::Unit {
                 builder.emit(Instruction::LdcUnit {
                     dest: return_temp.clone(),
                 });
@@ -98,9 +98,9 @@ impl BytecodeCompiler {
             parameters: typed_func
                 .parameters
                 .iter()
-                .map(|p| Parameter::new(p.name.clone(), Self::convert_type(&p.param_type)))
+                .map(|p| Parameter::new(p.name.clone(), p.param_type.clone()))
                 .collect(),
-            return_type: Self::convert_type(&typed_func.return_type),
+            return_type: typed_func.return_type.clone(),
             instructions,
             labels,
             documentation: typed_func.documentation.clone(),
@@ -649,23 +649,8 @@ impl BytecodeCompiler {
         Ok(())
     }
 
-    fn convert_type(ast_type: &ast::Type) -> crate::types::Type {
-        match ast_type {
-            ast::Type::Unit => crate::types::Type::Unit,
-            ast::Type::Boolean => crate::types::Type::Boolean,
-            ast::Type::String => crate::types::Type::String,
-            ast::Type::Int => crate::types::Type::Int,
-            ast::Type::Struct(name) => crate::types::Type::Struct(name.clone()),
-            ast::Type::List(inner) => crate::types::Type::List(Box::new(Self::convert_type(inner))),
-            ast::Type::Option(inner) => {
-                crate::types::Type::Option(Box::new(Self::convert_type(inner)))
-            }
-            ast::Type::Generic(name) => crate::types::Type::Struct(name.clone()),
-        }
-    }
-
-    fn type_to_string(ast_type: &ast::Type) -> String {
-        format!("{}", ast_type)
+    fn type_to_string(t: &structured_agent_runtime::Type) -> String {
+        t.name()
     }
 }
 

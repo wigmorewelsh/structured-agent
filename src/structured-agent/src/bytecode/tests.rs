@@ -919,9 +919,24 @@ mod vm_execution_tests {
         panic!("Function '{}' not found in module", name);
     }
 
+    fn ast_type_to_rt(t: &crate::ast::Type) -> structured_agent_runtime::Type {
+        use crate::ast::Type as AT;
+        use structured_agent_runtime::Type as RT;
+        match t {
+            AT::Unit => RT::Unit,
+            AT::Boolean => RT::Boolean,
+            AT::String => RT::String,
+            AT::Int => RT::Int,
+            AT::Struct(n) => RT::Struct(n.clone()),
+            AT::List(inner) => RT::List(Box::new(ast_type_to_rt(inner))),
+            AT::Option(inner) => RT::Option(Box::new(ast_type_to_rt(inner))),
+            AT::Generic(n) => RT::Generic(n.clone()),
+        }
+    }
+
     fn ast_expr_to_typed(expr: &crate::ast::Expression) -> typed_ast::Expression {
         use crate::ast::Expression as AE;
-        use crate::ast::Type;
+        use structured_agent_runtime::Type;
         let _dummy = crate::types::Span::dummy();
         match expr {
             AE::StringLiteral { value, span } => typed_ast::Expression::StringLiteral {
@@ -1018,7 +1033,7 @@ mod vm_execution_tests {
                         .collect(),
                     span: select.span,
                 },
-                crate::ast::Type::Unit,
+                structured_agent_runtime::Type::Unit,
             ),
         }
     }
@@ -1077,8 +1092,16 @@ mod vm_execution_tests {
     fn ast_func_to_typed(f: &crate::ast::Function) -> typed_ast::Function {
         typed_ast::Function {
             name: f.name.clone(),
-            parameters: f.parameters.clone(),
-            return_type: f.return_type.clone(),
+            parameters: f
+                .parameters
+                .iter()
+                .map(|p| typed_ast::Parameter {
+                    name: p.name.clone(),
+                    param_type: ast_type_to_rt(&p.param_type),
+                    span: p.span,
+                })
+                .collect(),
+            return_type: ast_type_to_rt(&f.return_type),
             body: typed_ast::FunctionBody {
                 statements: f.body.statements.iter().map(ast_stmt_to_typed).collect(),
                 span: f.body.span,

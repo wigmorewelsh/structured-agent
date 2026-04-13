@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
-use crate::ast::{ExternalFunction, Parameter, StructDefinition, Type};
+use crate::ast::{ExternalFunction, StructDefinition};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
 use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::Type;
 
 #[derive(Clone, Debug)]
 pub struct Module {
@@ -50,6 +51,13 @@ pub enum Definition {
         functions: Vec<Function>,
         span: crate::types::Span,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Parameter {
+    pub name: String,
+    pub param_type: Type,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]

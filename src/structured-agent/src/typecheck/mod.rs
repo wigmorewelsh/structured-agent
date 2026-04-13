@@ -18,7 +18,7 @@ pub use refs::{
     NoWitness, PrimitiveRefs, SourceLocation, TypedCheckerAstRef, TypedRefs,
 };
 
-use crate::ast::{Parameter, ParsedModule, Type as AstType, TypeParam};
+use crate::ast::{ParsedModule, Type as AstType, TypeParam};
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use collection::SymbolTableBuilder;
@@ -39,17 +39,17 @@ pub struct TypeChecker {
     symbol_tables: Option<SymbolTablesInput>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct FunctionSignature {
-    pub(super) parameters: Vec<Parameter>,
-    pub(super) return_type: AstType,
+    pub(super) parameters: Vec<crate::typed_ast::Parameter>,
+    pub(super) return_type: structured_agent_runtime::Type,
     pub(super) kind: FunctionKind,
     pub(super) type_params: Vec<TypeParam>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct TypeEnvironment {
-    pub(super) variables: HashMap<String, (AstType, Span)>,
+    pub(super) variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
     pub(super) parent: Option<Box<TypeEnvironment>>,
 }
 
@@ -347,11 +347,16 @@ impl TypeEnvironment {
         }
     }
 
-    fn declare_variable(&mut self, name: String, var_type: AstType, span: Span) {
+    fn declare_variable(
+        &mut self,
+        name: String,
+        var_type: structured_agent_runtime::Type,
+        span: Span,
+    ) {
         self.variables.insert(name, (var_type, span));
     }
 
-    fn lookup_variable(&self, name: &str) -> Option<AstType> {
+    fn lookup_variable(&self, name: &str) -> Option<structured_agent_runtime::Type> {
         if let Some((ty, _)) = self.variables.get(name) {
             Some(ty.clone())
         } else if let Some(parent) = &self.parent {
@@ -361,7 +366,10 @@ impl TypeEnvironment {
         }
     }
 
-    fn lookup_variable_with_span(&self, name: &str) -> Option<(AstType, Span)> {
+    fn lookup_variable_with_span(
+        &self,
+        name: &str,
+    ) -> Option<(structured_agent_runtime::Type, Span)> {
         if let Some((ty, span)) = self.variables.get(name) {
             Some((ty.clone(), *span))
         } else if let Some(parent) = &self.parent {

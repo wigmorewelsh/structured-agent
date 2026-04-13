@@ -8,6 +8,7 @@ use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
+use structured_agent_runtime::Type as RT;
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,
@@ -145,31 +146,39 @@ pub(super) fn check_function(
 ) -> Result<typed_ast::Function, TypeError> {
     let mut env = TypeEnvironment::new();
     let module = ctx.module_name.clone();
+    let mut typed_parameters = Vec::new();
     for param in &func.parameters {
-        let resolved_param_type =
+        let resolved_ast_type =
             super::constraints::resolve_type(db, tables, &param.param_type, &module);
         super::constraints::validate_type_with_params(
             db,
             tables,
-            &resolved_param_type,
+            &resolved_ast_type,
             param.span,
             ctx.file_id,
             &func.type_params,
             &module,
         )?;
-        env.declare_variable(param.name.clone(), resolved_param_type, param.span);
+        let runtime_type = super::constraints::ast_to_runtime(&resolved_ast_type);
+        env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
+        typed_parameters.push(typed_ast::Parameter {
+            name: param.name.clone(),
+            param_type: runtime_type,
+            span: param.span,
+        });
     }
-    let resolved_return_type =
+    let resolved_return_ast =
         super::constraints::resolve_type(db, tables, &func.return_type, &module);
     super::constraints::validate_type_with_params(
         db,
         tables,
-        &resolved_return_type,
+        &resolved_return_ast,
         func.span,
         ctx.file_id,
         &func.type_params,
         &module,
     )?;
+    let runtime_return_type = super::constraints::ast_to_runtime(&resolved_return_ast);
     let mut typed_stmts = Vec::new();
     for statement in &func.body.statements {
         let (typed_stmt, new_env) = check_statement(
@@ -178,7 +187,7 @@ pub(super) fn check_function(
             statement,
             env,
             &func.name,
-            &resolved_return_type,
+            &runtime_return_type,
             ctx,
         )?;
         typed_stmts.push(typed_stmt);
@@ -186,8 +195,8 @@ pub(super) fn check_function(
     }
     Ok(typed_ast::Function {
         name: func.name.clone(),
-        parameters: func.parameters.clone(),
-        return_type: func.return_type.clone(),
+        parameters: typed_parameters,
+        return_type: runtime_return_type,
         body: typed_ast::FunctionBody {
             statements: typed_stmts,
             span: func.body.span,
@@ -204,7 +213,7 @@ fn check_statement(
     statement: &Statement,
     mut env: TypeEnvironment,
     function_name: &str,
-    return_type: &AstType,
+    return_type: &RT,
     ctx: &CheckContext,
 ) -> Result<(typed_ast::Statement, TypeEnvironment), TypeError> {
     match statement {
@@ -247,8 +256,8 @@ fn check_statement(
             if expr_type != existing_type {
                 return Err(TypeError::VariableTypeMismatch {
                     variable: variable.clone(),
-                    expected: format!("{}", existing_type),
-                    found: format!("{}", expr_type),
+                    expected: existing_type.name(),
+                    found: expr_type.name(),
                     span: expression.span(),
                     declaration_span,
                     file_id: ctx.file_id,
@@ -335,8 +344,8 @@ fn check_statement(
             if *typed_expr.ty() != *return_type {
                 return Err(TypeError::ReturnTypeMismatch {
                     function: function_name.to_string(),
-                    expected: format!("{}", return_type),
-                    found: format!("{}", typed_expr.ty()),
+                    expected: return_type.name(),
+                    found: typed_expr.ty().name(),
                     span: expr.span(),
                     file_id: ctx.file_id,
                 });
@@ -354,12 +363,12 @@ fn check_boolean_condition(
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
     let typed_cond = check_expression(db, tables, condition, env, ctx)?;
-    if matches!(typed_cond.ty(), AstType::Boolean) {
+    if matches!(typed_cond.ty(), RT::Boolean) {
         Ok(typed_cond)
     } else {
         Err(TypeError::TypeMismatch {
             expected: "Boolean".to_string(),
-            found: format!("{}", typed_cond.ty()),
+            found: typed_cond.ty().name(),
             span: condition.span(),
             file_id: ctx.file_id,
         })
@@ -372,7 +381,7 @@ fn check_block(
     stmts: &[Statement],
     mut env: TypeEnvironment,
     function_name: &str,
-    return_type: &AstType,
+    return_type: &RT,
     ctx: &CheckContext,
 ) -> Result<Vec<typed_ast::Statement>, TypeError> {
     let mut typed_stmts = Vec::new();
@@ -414,21 +423,21 @@ pub(super) fn check_expression(
         }
         Expression::StringLiteral { value, span } => Ok(typed_ast::Expression::StringLiteral {
             value: value.clone(),
-            ty: AstType::String,
+            ty: RT::String,
             span: *span,
         }),
         Expression::BooleanLiteral { value, span } => Ok(typed_ast::Expression::BooleanLiteral {
             value: *value,
-            ty: AstType::Boolean,
+            ty: RT::Boolean,
             span: *span,
         }),
         Expression::IntLiteral { value, span } => Ok(typed_ast::Expression::IntLiteral {
             value: *value,
-            ty: AstType::Int,
+            ty: RT::Int,
             span: *span,
         }),
         Expression::UnitLiteral { span } => Ok(typed_ast::Expression::UnitLiteral {
-            ty: AstType::Unit,
+            ty: RT::Unit,
             span: *span,
         }),
         Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
@@ -514,8 +523,8 @@ fn check_call(
                 return Err(TypeError::ArgumentTypeMismatch {
                     function: function.to_string(),
                     parameter: param.name.clone(),
-                    expected: format!("{}", param.param_type),
-                    found: format!("{}", typed_arg.ty()),
+                    expected: param.param_type.name(),
+                    found: typed_arg.ty().name(),
                     span: arg.span(),
                     file_id: ctx.file_id,
                 });
@@ -532,7 +541,7 @@ fn check_call(
             span,
         })
     } else {
-        let mut subst: HashMap<String, AstType> = HashMap::new();
+        let mut subst: HashMap<String, RT> = HashMap::new();
         for (arg, param) in arguments.iter().zip(&parameters) {
             if matches!(arg, Expression::Placeholder { .. }) {
                 typed_args.push(typed_ast::Expression::Placeholder {
@@ -547,8 +556,8 @@ fn check_call(
                 return Err(TypeError::ArgumentTypeMismatch {
                     function: function.to_string(),
                     parameter: param.name.clone(),
-                    expected: format!("{}", expected),
-                    found: format!("{}", typed_arg.ty()),
+                    expected: expected.name(),
+                    found: typed_arg.ty().name(),
                     span: arg.span(),
                     file_id: ctx.file_id,
                 });
@@ -562,10 +571,10 @@ fn check_call(
             }
             if let Some(concrete) = subst.get(&tp.name) {
                 let type_name = match concrete {
-                    AstType::Int => "Int",
-                    AstType::String => "String",
-                    AstType::Boolean => "Boolean",
-                    AstType::Struct(n) => n.as_str(),
+                    RT::Int => "Int",
+                    RT::String => "String",
+                    RT::Boolean => "Boolean",
+                    RT::Struct(n) => n.as_str(),
                     _ => continue,
                 };
                 for bound in &tp.bounds {
@@ -626,8 +635,8 @@ fn check_list_literal(
         let typed_elem = check_expression(db, tables, elem, env, ctx)?;
         if *typed_elem.ty() != first_type {
             return Err(TypeError::TypeMismatch {
-                expected: format!("{}", first_type),
-                found: format!("{}", typed_elem.ty()),
+                expected: first_type.name(),
+                found: typed_elem.ty().name(),
                 span: elem.span(),
                 file_id: ctx.file_id,
             });
@@ -637,7 +646,7 @@ fn check_list_literal(
 
     Ok(typed_ast::Expression::ListLiteral {
         elements: typed_elements,
-        ty: AstType::List(Box::new(first_type)),
+        ty: RT::List(Box::new(first_type)),
         span,
     })
 }
@@ -690,8 +699,8 @@ fn check_select(
         let typed_next = check_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
         if first_type != *typed_next.ty() {
             return Err(TypeError::SelectBranchTypeMismatch {
-                expected: format!("{}", first_type),
-                found: format!("{}", typed_next.ty()),
+                expected: first_type.name(),
+                found: typed_next.ty().name(),
                 branch_index: i,
                 span: clause.expression_next.span(),
                 first_branch_span: first.expression_next.span(),
@@ -731,8 +740,8 @@ fn check_if_else_expression(
 
     if typed_then.ty() != typed_else.ty() {
         return Err(TypeError::TypeMismatch {
-            expected: format!("{}", typed_then.ty()),
-            found: format!("{}", typed_else.ty()),
+            expected: typed_then.ty().name(),
+            found: typed_else.ty().name(),
             span: else_expr.span(),
             file_id: ctx.file_id,
         });
@@ -777,7 +786,7 @@ fn check_struct_literal(
             });
         }
 
-        let declared_type = definition
+        let declared_ast_type = definition
             .iter()
             .find(|(n, _)| n == field_name)
             .map(|(_, t)| t.clone())
@@ -788,13 +797,14 @@ fn check_struct_literal(
                 file_id: ctx.file_id,
             })?;
 
+        let declared_type = super::constraints::ast_to_runtime(&declared_ast_type);
         let typed_value = check_expression(db, tables, value_expr, env, ctx)?;
         if typed_value.ty() != &declared_type {
             return Err(TypeError::StructFieldTypeMismatch {
                 struct_name: struct_name.to_string(),
                 field_name: field_name.clone(),
-                expected: format!("{}", declared_type),
-                found: format!("{}", typed_value.ty()),
+                expected: declared_ast_type.to_string(),
+                found: typed_value.ty().name(),
                 span: value_expr.span(),
                 file_id: ctx.file_id,
             });
@@ -816,7 +826,7 @@ fn check_struct_literal(
     Ok(typed_ast::Expression::StructLiteral {
         struct_name: struct_name.to_string(),
         fields: typed_fields,
-        ty: AstType::Struct(struct_name.to_string()),
+        ty: RT::Struct(struct_name.to_string()),
         span,
     })
 }
@@ -833,14 +843,14 @@ fn check_field_access(
     let typed_base = check_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     match base_type {
-        AstType::Struct(name) | AstType::Generic(name) => {
+        RT::Struct(name) | RT::Generic(name) => {
             let definition = super::query::get_struct_fields(db, tables, &name, ctx.module_name)
                 .ok_or_else(|| TypeError::UnsupportedType {
                     type_name: name.clone(),
                     span,
                     file_id: ctx.file_id,
                 })?;
-            let field_type = definition
+            let field_ast_type = definition
                 .iter()
                 .find(|(n, _)| n == field)
                 .map(|(_, t)| t.clone())
@@ -853,13 +863,13 @@ fn check_field_access(
             Ok(typed_ast::Expression::FieldAccess {
                 base: Box::new(typed_base),
                 field: field.to_string(),
-                ty: field_type,
+                ty: super::constraints::ast_to_runtime(&field_ast_type),
                 span,
             })
         }
         other => Err(TypeError::TypeMismatch {
             expected: "struct".to_string(),
-            found: format!("{}", other),
+            found: other.name(),
             span,
             file_id: ctx.file_id,
         }),
