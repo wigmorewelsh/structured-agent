@@ -210,9 +210,6 @@ pub struct ExternalFunction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Unit,
-    Boolean,
-    String,
-    Int,
     Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
@@ -374,9 +371,6 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Unit => write!(f, "()"),
-            Type::Boolean => write!(f, "Boolean"),
-            Type::String => write!(f, "String"),
-            Type::Int => write!(f, "Int"),
             Type::Struct(name) => write!(f, "{}", name),
             Type::List(inner) => write!(f, "List<{}>", inner),
             Type::Option(inner) => write!(f, "Option<{}>", inner),

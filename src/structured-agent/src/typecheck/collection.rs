@@ -116,9 +116,9 @@ impl SymbolTableBuilder {
     fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
         use structured_agent_runtime::types::Type as RT;
         match ty {
-            RT::String => AstType::String,
-            RT::Boolean => AstType::Boolean,
-            RT::Int => AstType::Int,
+            RT::String => AstType::Generic("String".to_string()),
+            RT::Boolean => AstType::Generic("Boolean".to_string()),
+            RT::Int => AstType::Generic("Int".to_string()),
             RT::Unit => AstType::Unit,
             RT::List(inner) => AstType::List(Box::new(Self::runtime_type_to_ast(inner))),
             RT::Option(inner) => AstType::Option(Box::new(Self::runtime_type_to_ast(inner))),

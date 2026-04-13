@@ -924,13 +924,15 @@ mod vm_execution_tests {
         use structured_agent_runtime::Type as RT;
         match t {
             AT::Unit => RT::Unit,
-            AT::Boolean => RT::Boolean,
-            AT::String => RT::String,
-            AT::Int => RT::Int,
             AT::Struct(n) => RT::Struct(n.clone()),
             AT::List(inner) => RT::List(Box::new(ast_type_to_rt(inner))),
             AT::Option(inner) => RT::Option(Box::new(ast_type_to_rt(inner))),
-            AT::Generic(n) => RT::Generic(n.clone()),
+            AT::Generic(n) => match n.as_str() {
+                "Boolean" => RT::Boolean,
+                "String" => RT::String,
+                "Int" => RT::Int,
+                _ => RT::Generic(n.clone()),
+            },
         }
     }
 

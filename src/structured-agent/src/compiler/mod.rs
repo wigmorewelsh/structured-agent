@@ -270,13 +270,15 @@ pub fn compile_external_function(
 fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
     match ast_type {
         crate::ast::Type::Unit => Type::unit(),
-        crate::ast::Type::Boolean => Type::boolean(),
-        crate::ast::Type::String => Type::string(),
         crate::ast::Type::List(inner) => Type::list(ast_type_to_type(inner)),
         crate::ast::Type::Option(inner) => Type::option(ast_type_to_type(inner)),
-        crate::ast::Type::Int => Type::int(),
         crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
-        crate::ast::Type::Generic(name) => Type::Struct(name.clone()),
+        crate::ast::Type::Generic(name) => match name.as_str() {
+            "Boolean" => Type::boolean(),
+            "String" => Type::string(),
+            "Int" => Type::int(),
+            _ => Type::Struct(name.clone()),
+        },
     }
 }
 

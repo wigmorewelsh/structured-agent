@@ -11,13 +11,15 @@ use structured_agent_runtime::symbols::{ModuleName, TypeName};
 pub(super) fn ast_to_runtime(t: &AstType) -> RT {
     match t {
         AstType::Unit => RT::Unit,
-        AstType::Boolean => RT::Boolean,
-        AstType::String => RT::String,
-        AstType::Int => RT::Int,
         AstType::Struct(n) => RT::Struct(n.clone()),
         AstType::List(inner) => RT::List(Box::new(ast_to_runtime(inner))),
         AstType::Option(inner) => RT::Option(Box::new(ast_to_runtime(inner))),
-        AstType::Generic(n) => RT::Generic(n.clone()),
+        AstType::Generic(n) => match n.as_str() {
+            "Boolean" => RT::Boolean,
+            "String" => RT::String,
+            "Int" => RT::Int,
+            _ => RT::Generic(n.clone()),
+        },
     }
 }
 
@@ -65,9 +67,12 @@ pub(super) fn validate_type_with_params(
     module: &ModuleName,
 ) -> Result<(), TypeError> {
     match ast_type {
-        AstType::Unit | AstType::Boolean | AstType::String | AstType::Int => Ok(()),
+        AstType::Unit => Ok(()),
         AstType::Generic(name) => {
-            if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
+            if name == "Self"
+                || type_params.iter().any(|tp| tp.name == *name)
+                || matches!(name.as_str(), "Boolean" | "String" | "Int")
+            {
                 Ok(())
             } else {
                 Err(TypeError::UnboundTypeParameter {
