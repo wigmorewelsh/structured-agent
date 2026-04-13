@@ -22,12 +22,10 @@ struct CachedProgram {
     metadata: Arc<MetaData<BytecodeRefs>>,
     main_function: Option<FunctionName>,
     extern_registry: HashMap<String, ExternalFunctionDefinition>,
-    aliases: HashMap<String, FunctionName>,
 }
 
 pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
-    external_function_registry: HashMap<String, ExternalFunctionDefinition>,
     struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
     language_engine: Arc<dyn LanguageEngine>,
     compiler: Arc<Compiler>,
@@ -214,7 +212,6 @@ impl RuntimeBuilder {
 
         Runtime {
             function_registry,
-            external_function_registry: HashMap::new(),
             struct_registry: HashMap::new(),
             language_engine: self
                 .language_engine
@@ -258,15 +255,6 @@ impl Runtime {
         )))
     }
 
-    pub fn register_external_function(&mut self, function: ExternalFunctionDefinition) {
-        self.external_function_registry
-            .insert(function.name.clone(), function);
-    }
-
-    pub fn get_external_function(&self, name: &str) -> Option<&ExternalFunctionDefinition> {
-        self.external_function_registry.get(name)
-    }
-
     pub fn list_functions(&self) -> Vec<&str> {
         self.function_registry.keys().map(|s| s.as_str()).collect()
     }
@@ -298,13 +286,10 @@ impl Runtime {
         let cached = self.ensure_compiled()?;
         let mut runtime = self.create_runtime_ref();
 
-        for (name, def) in &cached.extern_registry {
-            runtime
-                .external_function_registry
-                .insert(name.clone(), def.clone());
-        }
-
-        if let Err(e) = runtime.map_providers_to_functions().await {
+        if let Err(e) = runtime
+            .map_providers_to_functions(&cached.extern_registry)
+            .await
+        {
             error!("Failed to map providers to functions: {:?}", e);
             return Err(e);
         }
@@ -407,7 +392,6 @@ impl Runtime {
     fn create_runtime_ref(&self) -> Runtime {
         Runtime {
             function_registry: self.function_registry.clone(),
-            external_function_registry: self.external_function_registry.clone(),
             struct_registry: self.struct_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
@@ -484,7 +468,10 @@ impl Runtime {
             })
     }
 
-    async fn map_providers_to_functions(&mut self) -> Result<(), RuntimeError> {
+    async fn map_providers_to_functions(
+        &mut self,
+        extern_registry: &HashMap<String, ExternalFunctionDefinition>,
+    ) -> Result<(), RuntimeError> {
         let mut provider_functions = HashMap::new();
 
         for provider in &self.providers {
@@ -500,7 +487,7 @@ impl Runtime {
 
         let mut functions_to_register = Vec::new();
 
-        for (name, definition) in &self.external_function_registry {
+        for (name, definition) in extern_registry {
             let matches = provider_functions.get(name).ok_or_else(|| {
                 RuntimeError::ExecutionError(format!(
                     "No provider found for extern function '{}'",
@@ -523,11 +510,6 @@ impl Runtime {
     #[cfg(test)]
     pub fn providers_count(&self) -> usize {
         self.providers.len()
-    }
-
-    #[cfg(test)]
-    pub async fn test_map_providers_to_functions(&mut self) -> Result<(), RuntimeError> {
-        self.map_providers_to_functions().await
     }
 }
 
@@ -576,25 +558,12 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
         }
     }
 
-    let mut aliases = HashMap::new();
-    for module in compiled.metadata.modules.values() {
-        for import in &module.use_imports {
-            let canonical = FunctionName {
-                name: import.name.clone(),
-                module: import.module.clone(),
-                kind: FunctionNameKind::Function,
-            };
-            aliases.insert(import.local.clone(), canonical);
-        }
-    }
-
     let metadata = Arc::new(compiled.metadata);
 
     Ok(CachedProgram {
         metadata,
         main_function,
         extern_registry,
-        aliases,
     })
 }
 
