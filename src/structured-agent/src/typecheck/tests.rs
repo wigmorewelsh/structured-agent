@@ -895,7 +895,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TypeError::UnsupportedType { .. }
+            TypeError::UnboundTypeParameter { .. }
         ));
     }
 
@@ -1308,7 +1308,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TypeError::UnsupportedType { .. }
+            TypeError::UnboundTypeParameter { .. }
         ));
     }
 
@@ -2117,7 +2117,15 @@ mod typed_ast_tests {
             Definition::Function(Arc::new(func)),
         ]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Struct("Point".to_string()));
+        assert_eq!(
+            expr.ty(),
+            &RT::Struct(structured_agent_runtime::symbols::TypeName {
+                name: "Point".to_string(),
+                module: structured_agent_runtime::symbols::ModuleName::new(
+                    nonempty::NonEmpty::new("main".to_string())
+                ),
+            })
+        );
     }
 
     #[test]

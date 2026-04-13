@@ -8,106 +8,61 @@ use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{ModuleName, TypeName};
 
-pub(super) fn ast_to_runtime(t: &AstType) -> RT {
-    match t {
-        AstType::Struct(n) => RT::Struct(n.clone()),
-        AstType::List(inner) => RT::List(Box::new(ast_to_runtime(inner))),
-        AstType::Option(inner) => RT::Option(Box::new(ast_to_runtime(inner))),
-        AstType::Generic(n) => match n.as_str() {
-            "Boolean" => RT::Boolean,
-            "String" => RT::String,
-            "Int" => RT::Int,
-            "Unit" => RT::Unit,
-            _ => RT::Generic(n.clone()),
-        },
-    }
-}
-
-pub(super) fn resolve_type(
+pub(super) fn resolve(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     t: &AstType,
     module: &ModuleName,
-) -> AstType {
-    match t {
-        AstType::Generic(name)
-            if {
-                let interned_mod = module.intern(db);
-                let interned_name = name.intern(db);
-                let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
-                    .unwrap_or_else(|| TypeName {
-                        name: name.clone(),
-                        module: module.clone(),
-                    });
-                tables
-                    .types(db)
-                    .get()
-                    .get(&resolved)
-                    .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
-                    .unwrap_or(false)
-            } =>
-        {
-            AstType::Struct(name.clone())
-        }
-        AstType::List(inner) => AstType::List(Box::new(resolve_type(db, tables, inner, module))),
-        AstType::Option(inner) => {
-            AstType::Option(Box::new(resolve_type(db, tables, inner, module)))
-        }
-        other => other.clone(),
-    }
-}
-
-pub(super) fn validate_type_with_params(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    ast_type: &AstType,
+    type_params: &[TypeParam],
     span: Span,
     file_id: FileId,
-    type_params: &[TypeParam],
-    module: &ModuleName,
-) -> Result<(), TypeError> {
-    match ast_type {
-        AstType::Generic(name) => {
-            if name == "Self"
-                || type_params.iter().any(|tp| tp.name == *name)
-                || matches!(name.as_str(), "Boolean" | "String" | "Int" | "Unit")
-            {
-                Ok(())
-            } else {
-                Err(TypeError::UnboundTypeParameter {
-                    name: name.clone(),
-                    span,
-                    file_id,
-                })
+) -> Result<RT, TypeError> {
+    match t {
+        AstType::Generic(name) | AstType::Struct(name) => {
+            match name.as_str() {
+                "Unit" => return Ok(RT::Unit),
+                "Boolean" => return Ok(RT::Boolean),
+                "String" => return Ok(RT::String),
+                "Int" => return Ok(RT::Int),
+                _ => {}
             }
-        }
-        AstType::List(inner) | AstType::Option(inner) => {
-            validate_type_with_params(db, tables, inner, span, file_id, type_params, module)
-        }
-        AstType::Struct(name) => {
+            if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
+                return Ok(RT::Generic(name.clone()));
+            }
             let interned_mod = module.intern(db);
             let interned_name = name.intern(db);
-            let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
+            let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)
                 .unwrap_or_else(|| TypeName {
                     name: name.clone(),
                     module: module.clone(),
                 });
-            if tables
-                .types(db)
-                .get()
-                .get(&resolved)
-                .map(|td| matches!(td.ast_ref, CheckerAstRef::Struct(_)))
-                .unwrap_or(false)
-            {
-                Ok(())
-            } else {
-                Err(TypeError::UnsupportedType {
-                    type_name: name.clone(),
+            match tables.types(db).get().get(&type_name).map(|td| &td.ast_ref) {
+                Some(CheckerAstRef::Struct(_)) => Ok(RT::Struct(type_name)),
+                _ => Err(TypeError::UnboundTypeParameter {
+                    name: name.clone(),
                     span,
                     file_id,
-                })
+                }),
             }
         }
+        AstType::List(inner) => Ok(RT::List(Box::new(resolve(
+            db,
+            tables,
+            inner,
+            module,
+            type_params,
+            span,
+            file_id,
+        )?))),
+        AstType::Option(inner) => Ok(RT::Option(Box::new(resolve(
+            db,
+            tables,
+            inner,
+            module,
+            type_params,
+            span,
+            file_id,
+        )?))),
     }
 }
 

@@ -122,7 +122,7 @@ impl SymbolTableBuilder {
             RT::Unit => AstType::Generic("Unit".to_string()),
             RT::List(inner) => AstType::List(Box::new(Self::runtime_type_to_ast(inner))),
             RT::Option(inner) => AstType::Option(Box::new(Self::runtime_type_to_ast(inner))),
-            RT::Struct(name) => AstType::Struct(name.clone()),
+            RT::Struct(tn) => AstType::Struct(tn.name.clone()),
             RT::Generic(name) => AstType::Generic(name.clone()),
         }
     }

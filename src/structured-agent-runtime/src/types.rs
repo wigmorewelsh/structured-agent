@@ -2,6 +2,7 @@ use async_trait::async_trait;
 
 use crate::actor::AgentHandle;
 use crate::expression::ExpressionValue;
+use crate::symbols::TypeName;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -9,7 +10,7 @@ pub enum Type {
     Boolean,
     Int,
     Unit,
-    Struct(std::string::String),
+    Struct(TypeName),
     List(Box<Type>),
     Option(Box<Type>),
     Generic(std::string::String),
@@ -64,10 +65,25 @@ impl Type {
             Type::Boolean => "Boolean".to_string(),
             Type::Int => "Int".to_string(),
             Type::Unit => "()".to_string(),
-            Type::Struct(name) => name.clone(),
+            Type::Struct(tn) => tn.name.clone(),
             Type::List(inner) => format!("List<{}>", inner.name()),
             Type::Option(inner) => format!("Option<{}>", inner.name()),
             Type::Generic(name) => name.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::String => write!(f, "String"),
+            Type::Boolean => write!(f, "Boolean"),
+            Type::Int => write!(f, "Int"),
+            Type::Unit => write!(f, "Unit"),
+            Type::Struct(tn) => write!(f, "{}", tn.name),
+            Type::List(inner) => write!(f, "List<{}>", inner),
+            Type::Option(inner) => write!(f, "Option<{}>", inner),
+            Type::Generic(name) => write!(f, "{}", name),
         }
     }
 }

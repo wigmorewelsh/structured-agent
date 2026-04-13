@@ -286,13 +286,13 @@ pub struct TypeName {
     pub module: ModuleName,
 }
 
+// this should be for pretty printing only.
 impl fmt::Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}::{}", self.module, self.name)
     }
 }
 
-// note add R: References here and use R::TypeAnnotation for the type_name field
 #[derive(Debug, Clone)]
 pub struct SignatureEntry<R: References> {
     pub name: String,

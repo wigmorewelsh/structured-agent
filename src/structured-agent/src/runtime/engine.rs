@@ -12,7 +12,7 @@ use crate::types::{
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
-use structured_agent_runtime::{FunctionName, FunctionNameKind, Module, SymbolQuery};
+use structured_agent_runtime::{FunctionName, Module, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -26,7 +26,6 @@ struct CachedProgram {
 
 pub struct Runtime {
     function_registry: HashMap<String, Arc<dyn ExecutableFunction>>,
-    struct_registry: HashMap<String, Vec<(String, crate::types::Type)>>,
     language_engine: Arc<dyn LanguageEngine>,
     compiler: Arc<Compiler>,
     providers: Vec<Arc<dyn FunctionProvider>>,
@@ -212,7 +211,6 @@ impl RuntimeBuilder {
 
         Runtime {
             function_registry,
-            struct_registry: HashMap::new(),
             language_engine: self
                 .language_engine
                 .unwrap_or_else(|| Arc::new(crate::types::PrintEngine {})),
@@ -344,32 +342,22 @@ impl Runtime {
         }
     }
 
-    pub fn get_struct(&self, name: &str) -> Option<Vec<(String, crate::types::Type)>> {
-        if let Some(fields) = self.struct_registry.get(name) {
-            return Some(fields.clone());
-        }
+    pub fn get_struct(
+        &self,
+        type_name: &structured_agent_runtime::symbols::TypeName,
+    ) -> Option<Vec<(String, crate::types::Type)>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
-        cached
-            .metadata
-            .types
-            .values()
-            .find(|td| td.name.name == name && matches!(td.kind, TypeDefinitionKind::Struct { .. }))
-            .and_then(|td| {
-                if let TypeDefinitionKind::Struct { fields } = &td.kind {
-                    Some(
-                        fields
-                            .iter()
-                            .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
-                            .collect(),
-                    )
-                } else {
-                    None
-                }
-            })
-    }
-
-    pub fn register_struct(&mut self, name: String, fields: Vec<(String, crate::types::Type)>) {
-        self.struct_registry.insert(name, fields);
+        let td = cached.metadata.types.get(type_name)?;
+        if let TypeDefinitionKind::Struct { fields } = &td.kind {
+            Some(
+                fields
+                    .iter()
+                    .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
+                    .collect(),
+            )
+        } else {
+            None
+        }
     }
 
     fn compile(&self) -> Result<CompiledProgram, String> {
@@ -392,7 +380,6 @@ impl Runtime {
     fn create_runtime_ref(&self) -> Runtime {
         Runtime {
             function_registry: self.function_registry.clone(),
-            struct_registry: self.struct_registry.clone(),
             language_engine: self.language_engine.clone(),
             compiler: self.compiler.clone(),
             providers: self.providers.clone(),
@@ -527,7 +514,7 @@ fn field_type_name_to_type(
         "String" => crate::types::Type::string(),
         "Boolean" => crate::types::Type::boolean(),
         "Unit" => crate::types::Type::unit(),
-        _ => crate::types::Type::Struct(type_name.name.clone()),
+        _ => crate::types::Type::Struct(type_name.clone()),
     }
 }
 
@@ -552,7 +539,9 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
                 is_pub: true,
                 span: crate::types::Span::dummy(),
             };
-            if let Ok(ext_def) = crate::compiler::compile_external_function(&ast_ext) {
+            if let Ok(ext_def) =
+                crate::compiler::compile_external_function(&ast_ext, &func_def.name.module)
+            {
                 extern_registry.insert(ext_def.name.clone(), ext_def);
             }
         }
@@ -721,11 +710,17 @@ fn main(): Int {
 
     #[test]
     fn test_get_struct_returns_none_for_unknown() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         let runtime = Runtime::builder(ProgramSource::Inline(
             "fn main(): () { return () }".to_string(),
         ))
         .build();
-        assert!(runtime.get_struct("Unknown").is_none());
+        let type_name = TypeName {
+            name: "Unknown".to_string(),
+            module: ModuleName::new(NonEmpty::new("test".to_string())),
+        };
+        assert!(runtime.get_struct(&type_name).is_none());
     }
 
     #[tokio::test]
@@ -739,21 +734,21 @@ fn main(): () {
     return ()
 }
 "#;
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let compiled = compiler.compile_source(&unit).unwrap();
-        let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        use structured_agent_runtime::symbols::TypeDefinitionKind;
-        for type_def in compiled.metadata.all_types() {
-            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
-                let converted: Vec<(String, crate::types::Type)> = fields
-                    .iter()
-                    .map(|f| (f.name.clone(), field_type_name_to_type(&f.type_name)))
-                    .collect();
-                runtime.register_struct(type_def.name.name.clone(), converted);
-            }
-        }
-        let fields = runtime.get_struct("Task").unwrap();
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        runtime.run().await.unwrap();
+        let task_type_name = runtime
+            .compiled
+            .get()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .metadata
+            .types
+            .keys()
+            .find(|tn| tn.name == "Task")
+            .cloned()
+            .unwrap();
+        let fields = runtime.get_struct(&task_type_name).unwrap();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].0, "title");
         assert_eq!(fields[1].0, "steps");

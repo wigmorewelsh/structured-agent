@@ -57,11 +57,11 @@ impl GeminiEngine {
             Type::Option(inner_type) => Self::build_value_schema(inner_type, context),
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
-            Type::Struct(name) => {
+            Type::Struct(type_name) => {
                 let fields = context
                     .runtime()
-                    .get_struct(name)
-                    .ok_or_else(|| format!("Unknown struct: {}", name))?;
+                    .get_struct(type_name)
+                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name))?;
                 let mut obj = JsonSchemaBuilder::object();
                 for (field_name, field_type) in &fields {
                     let field_schema = Self::build_value_schema(field_type, context)?;
@@ -168,14 +168,14 @@ impl GeminiEngine {
                     Ok(ExpressionValue::option_some(inner))
                 }
             }
-            Type::Struct(name) => {
+            Type::Struct(type_name) => {
                 let obj = json_value
                     .as_object()
-                    .ok_or_else(|| format!("Expected JSON object for struct {}", name))?;
+                    .ok_or_else(|| format!("Expected JSON object for struct {}", type_name.name))?;
                 let fields = context
                     .runtime()
-                    .get_struct(name)
-                    .ok_or_else(|| format!("Unknown struct: {}", name))?
+                    .get_struct(type_name)
+                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name))?
                     .clone();
                 let field_values: Vec<(&str, ExpressionValue)> = fields
                     .iter()
@@ -430,50 +430,36 @@ impl LanguageEngine for GeminiEngine {
 mod tests {
     use super::*;
     use crate::cli::config::ProgramSource;
-    use crate::compiler::{CompilationUnit, Compiler};
+
     use crate::runtime::Runtime;
 
     fn make_context_with_struct(code: &str) -> crate::runtime::Context {
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let compiled = compiler.compile_source(&unit).unwrap();
-        let mut runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        use structured_agent_runtime::SymbolQuery;
-        use structured_agent_runtime::symbols::TypeDefinitionKind;
-        for type_def in compiled.metadata.all_types() {
-            if let TypeDefinitionKind::Struct { fields } = &type_def.kind {
-                let converted: Vec<(String, crate::types::Type)> = fields
-                    .iter()
-                    .map(|f| {
-                        let t = match f.type_name.name.as_str() {
-                            "Int" => crate::types::Type::int(),
-                            "String" => crate::types::Type::string(),
-                            "Boolean" => crate::types::Type::boolean(),
-                            "Unit" => crate::types::Type::unit(),
-                            other => crate::types::Type::Struct(other.to_string()),
-                        };
-                        (f.name.clone(), t)
-                    })
-                    .collect();
-                runtime.register_struct(type_def.name.name.clone(), converted);
-            }
-        }
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        runtime.check().unwrap();
         crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
     }
 
     #[test]
     fn test_build_value_schema_struct_unknown_returns_error() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         let code = "fn main(): () { return () }";
-        let runtime =
-            std::sync::Arc::new(Runtime::builder(ProgramSource::Inline(code.to_string())).build());
-        let context = crate::runtime::Context::with_runtime(runtime);
-        let result = GeminiEngine::build_value_schema(&Type::Struct("Ghost".to_string()), &context);
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        runtime.check().unwrap();
+        let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
+        let ghost_type = Type::Struct(TypeName {
+            name: "Ghost".to_string(),
+            module: ModuleName::new(NonEmpty::new("test".to_string())),
+        });
+        let result = GeminiEngine::build_value_schema(&ghost_type, &context);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Ghost"));
     }
 
     #[test]
     fn test_build_value_schema_struct_with_fields() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         let code = r#"
 struct Task {
     title: String,
@@ -482,12 +468,18 @@ struct Task {
 fn main(): () { return () }
 "#;
         let context = make_context_with_struct(code);
-        let result = GeminiEngine::build_value_schema(&Type::Struct("Task".to_string()), &context);
+        let task_type = Type::Struct(TypeName {
+            name: "Task".to_string(),
+            module: ModuleName::new(NonEmpty::new("main".to_string())),
+        });
+        let result = GeminiEngine::build_value_schema(&task_type, &context);
         assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
     }
 
     #[test]
     fn test_parse_json_value_struct() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         let code = r#"
 struct Point {
     x: Int,
@@ -497,8 +489,11 @@ fn main(): () { return () }
 "#;
         let context = make_context_with_struct(code);
         let json = serde_json::json!({"x": 10, "y": 20});
-        let result =
-            GeminiEngine::parse_json_value(json, &Type::Struct("Point".to_string()), &context);
+        let point_type = Type::Struct(TypeName {
+            name: "Point".to_string(),
+            module: ModuleName::new(NonEmpty::new("main".to_string())),
+        });
+        let result = GeminiEngine::parse_json_value(json, &point_type, &context);
         assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
         let value = result.unwrap();
         assert_eq!(

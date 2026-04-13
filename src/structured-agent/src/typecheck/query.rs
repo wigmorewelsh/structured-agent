@@ -43,31 +43,56 @@ pub(super) fn get_function_sig(
         return None;
     };
 
-    let resolve = |ty: &AstType| {
+    let type_params_vec: Vec<TypeParam> = generic_parameters
+        .iter()
+        .map(|gp| TypeParam {
+            name: gp.name.clone(),
+            bounds: gp.constraints.clone(),
+        })
+        .collect();
+
+    let mut resolved_params = Vec::with_capacity(parameters.len());
+    for p in parameters {
         let substituted = match &concrete_type {
-            Some(ct) => TypeChecker::substitute_self(ty, ct),
-            None => ty.clone(),
+            Some(ct) => TypeChecker::substitute_self(&p.type_name, ct),
+            None => p.type_name.clone(),
         };
-        super::constraints::resolve_type(db, tables, &substituted, &name.module)
+        let param_type = super::constraints::resolve(
+            db,
+            tables,
+            &substituted,
+            &name.module,
+            &type_params_vec,
+            Span::dummy(),
+            0,
+        )
+        .ok()?;
+        resolved_params.push(crate::typed_ast::Parameter {
+            name: p.name.clone(),
+            param_type,
+            span: Span::dummy(),
+        });
+    }
+
+    let subst_return = match &concrete_type {
+        Some(ct) => TypeChecker::substitute_self(return_type, ct),
+        None => return_type.clone(),
     };
+    let resolved_return = super::constraints::resolve(
+        db,
+        tables,
+        &subst_return,
+        &name.module,
+        &type_params_vec,
+        Span::dummy(),
+        0,
+    )
+    .ok()?;
 
     Some(FunctionSignature {
-        parameters: parameters
-            .iter()
-            .map(|p| crate::typed_ast::Parameter {
-                name: p.name.clone(),
-                param_type: super::constraints::ast_to_runtime(&resolve(&p.type_name)),
-                span: Span::dummy(),
-            })
-            .collect(),
-        return_type: super::constraints::ast_to_runtime(&resolve(return_type)),
-        type_params: generic_parameters
-            .iter()
-            .map(|gp| TypeParam {
-                name: gp.name.clone(),
-                bounds: gp.constraints.clone(),
-            })
-            .collect(),
+        parameters: resolved_params,
+        return_type: resolved_return,
+        type_params: type_params_vec,
         kind,
     })
 }
@@ -164,7 +189,7 @@ pub(super) fn resolve_impl_call(
         structured_agent_runtime::Type::Int => "Int".to_string(),
         structured_agent_runtime::Type::String => "String".to_string(),
         structured_agent_runtime::Type::Boolean => "Boolean".to_string(),
-        structured_agent_runtime::Type::Struct(n) => n.clone(),
+        structured_agent_runtime::Type::Struct(tn) => tn.name.clone(),
         _ => return None,
     };
     let interned_fn = fn_name.intern(db);

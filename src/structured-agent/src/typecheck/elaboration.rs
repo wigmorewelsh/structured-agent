@@ -1,5 +1,7 @@
 use super::TypeChecker;
-use super::db::{Intern, SymbolTablesInput, TypeCheckDatabase, resolve_function_call};
+use super::db::{
+    Intern, SymbolTablesInput, TypeCheckDatabase, resolve_function_call, resolve_type_alias,
+};
 use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
@@ -9,6 +11,7 @@ use crate::typed_ast;
 use crate::types::{Span, Spanned};
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
+use structured_agent_runtime::symbols::TypeName;
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,
@@ -22,40 +25,38 @@ pub(super) fn check_definition(
         )?)),
         Definition::ExternalFunction(f) => {
             let module = ctx.module_name.clone();
-            super::constraints::validate_type_with_params(
+            super::constraints::resolve(
                 db,
                 tables,
                 &f.return_type,
+                &module,
+                &f.type_params,
                 f.span,
                 ctx.file_id,
-                &f.type_params,
-                &module,
             )?;
             for param in &f.parameters {
-                super::constraints::validate_type_with_params(
+                super::constraints::resolve(
                     db,
                     tables,
                     &param.param_type,
+                    &module,
+                    &f.type_params,
                     param.span,
                     ctx.file_id,
-                    &f.type_params,
-                    &module,
                 )?;
             }
             Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
         }
         Definition::Struct(s) => {
             for f in &s.fields {
-                let resolved =
-                    super::constraints::resolve_type(db, tables, &f.field_type, ctx.module_name);
-                super::constraints::validate_type_with_params(
+                super::constraints::resolve(
                     db,
                     tables,
-                    &resolved,
+                    &f.field_type,
+                    ctx.module_name,
+                    &[],
                     f.span,
                     ctx.file_id,
-                    &[],
-                    ctx.module_name,
                 )?;
             }
             Ok(typed_ast::Definition::Struct((**s).clone()))
@@ -148,18 +149,15 @@ pub(super) fn check_function(
     let module = ctx.module_name.clone();
     let mut typed_parameters = Vec::new();
     for param in &func.parameters {
-        let resolved_ast_type =
-            super::constraints::resolve_type(db, tables, &param.param_type, &module);
-        super::constraints::validate_type_with_params(
+        let runtime_type = super::constraints::resolve(
             db,
             tables,
-            &resolved_ast_type,
+            &param.param_type,
+            &module,
+            &func.type_params,
             param.span,
             ctx.file_id,
-            &func.type_params,
-            &module,
         )?;
-        let runtime_type = super::constraints::ast_to_runtime(&resolved_ast_type);
         env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
         typed_parameters.push(typed_ast::Parameter {
             name: param.name.clone(),
@@ -167,18 +165,15 @@ pub(super) fn check_function(
             span: param.span,
         });
     }
-    let resolved_return_ast =
-        super::constraints::resolve_type(db, tables, &func.return_type, &module);
-    super::constraints::validate_type_with_params(
+    let runtime_return_type = super::constraints::resolve(
         db,
         tables,
-        &resolved_return_ast,
+        &func.return_type,
+        &module,
+        &func.type_params,
         func.span,
         ctx.file_id,
-        &func.type_params,
-        &module,
     )?;
-    let runtime_return_type = super::constraints::ast_to_runtime(&resolved_return_ast);
     let mut typed_stmts = Vec::new();
     for statement in &func.body.statements {
         let (typed_stmt, new_env) = check_statement(
@@ -574,7 +569,7 @@ fn check_call(
                     RT::Int => "Int",
                     RT::String => "String",
                     RT::Boolean => "Boolean",
-                    RT::Struct(n) => n.as_str(),
+                    RT::Struct(n) => n.name.as_str(),
                     _ => continue,
                 };
                 for bound in &tp.bounds {
@@ -797,7 +792,15 @@ fn check_struct_literal(
                 file_id: ctx.file_id,
             })?;
 
-        let declared_type = super::constraints::ast_to_runtime(&declared_ast_type);
+        let declared_type = super::constraints::resolve(
+            db,
+            tables,
+            &declared_ast_type,
+            ctx.module_name,
+            &[],
+            value_expr.span(),
+            ctx.file_id,
+        )?;
         let typed_value = check_expression(db, tables, value_expr, env, ctx)?;
         if typed_value.ty() != &declared_type {
             return Err(TypeError::StructFieldTypeMismatch {
@@ -826,7 +829,16 @@ fn check_struct_literal(
     Ok(typed_ast::Expression::StructLiteral {
         struct_name: struct_name.to_string(),
         fields: typed_fields,
-        ty: RT::Struct(struct_name.to_string()),
+        ty: RT::Struct({
+            let interned_mod = ctx.module_name.intern(db);
+            let interned_name = struct_name.intern(db);
+            resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| {
+                TypeName {
+                    name: struct_name.to_string(),
+                    module: ctx.module_name.clone(),
+                }
+            })
+        }),
         span,
     })
 }
@@ -843,7 +855,40 @@ fn check_field_access(
     let typed_base = check_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     match base_type {
-        RT::Struct(name) | RT::Generic(name) => {
+        RT::Struct(type_name) => {
+            let definition =
+                super::query::get_struct_fields(db, tables, &type_name.name, ctx.module_name)
+                    .ok_or_else(|| TypeError::UnsupportedType {
+                        type_name: type_name.name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    })?;
+            let field_ast_type = definition
+                .iter()
+                .find(|(n, _)| n == field)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| TypeError::UnknownField {
+                    struct_name: type_name.name.clone(),
+                    field_name: field.to_string(),
+                    span,
+                    file_id: ctx.file_id,
+                })?;
+            Ok(typed_ast::Expression::FieldAccess {
+                base: Box::new(typed_base),
+                field: field.to_string(),
+                ty: super::constraints::resolve(
+                    db,
+                    tables,
+                    &field_ast_type,
+                    ctx.module_name,
+                    &[],
+                    span,
+                    ctx.file_id,
+                )?,
+                span,
+            })
+        }
+        RT::Generic(name) => {
             let definition = super::query::get_struct_fields(db, tables, &name, ctx.module_name)
                 .ok_or_else(|| TypeError::UnsupportedType {
                     type_name: name.clone(),
@@ -863,7 +908,15 @@ fn check_field_access(
             Ok(typed_ast::Expression::FieldAccess {
                 base: Box::new(typed_base),
                 field: field.to_string(),
-                ty: super::constraints::ast_to_runtime(&field_ast_type),
+                ty: super::constraints::resolve(
+                    db,
+                    tables,
+                    &field_ast_type,
+                    ctx.module_name,
+                    &[],
+                    span,
+                    ctx.file_id,
+                )?,
                 span,
             })
         }

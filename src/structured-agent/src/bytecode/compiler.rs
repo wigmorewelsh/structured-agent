@@ -77,10 +77,9 @@ impl BytecodeCompiler {
                     dest: return_temp.clone(),
                 });
             } else {
-                let return_type_str = Self::type_to_string(&typed_func.return_type);
                 builder.emit(Instruction::LlmGenerate {
                     dest: return_temp.clone(),
-                    return_type: return_type_str,
+                    return_type: typed_func.return_type.clone(),
                 });
             }
             builder.emit(Instruction::Ret { var: return_temp });
@@ -332,8 +331,8 @@ impl BytecodeCompiler {
             typed_ast::Expression::ListLiteral { elements, .. } => {
                 self.compile_list_literal(builder, elements, dest_var)
             }
-            typed_ast::Expression::Placeholder { .. } => {
-                Self::compile_placeholder(builder, dest_var)
+            typed_ast::Expression::Placeholder { ty, .. } => {
+                Self::compile_placeholder(builder, dest_var, ty)
             }
             typed_ast::Expression::UnitLiteral { .. } => {
                 Self::compile_unit_literal(builder, dest_var)
@@ -475,11 +474,15 @@ impl BytecodeCompiler {
         Ok(())
     }
 
-    fn compile_placeholder(builder: &mut InstructionBuilder, dest_var: &str) -> Result<(), String> {
+    fn compile_placeholder(
+        builder: &mut InstructionBuilder,
+        dest_var: &str,
+        ty: &structured_agent_runtime::Type,
+    ) -> Result<(), String> {
         builder.emit(Instruction::LlmPlaceholder {
             dest: dest_var.to_string(),
             param_name: "placeholder".to_string(),
-            param_type: "Unknown".to_string(),
+            param_type: ty.clone(),
         });
         Ok(())
     }
@@ -647,10 +650,6 @@ impl BytecodeCompiler {
             field: field.to_string(),
         });
         Ok(())
-    }
-
-    fn type_to_string(t: &structured_agent_runtime::Type) -> String {
-        t.name()
     }
 }
 

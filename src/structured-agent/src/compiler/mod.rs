@@ -23,7 +23,7 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{FunctionName, MetaData};
+use structured_agent_runtime::symbols::{FunctionName, MetaData, ModuleName, TypeName};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -254,30 +254,37 @@ fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
 
 pub fn compile_external_function(
     ast_ext_func: &crate::ast::ExternalFunction,
+    module: &ModuleName,
 ) -> Result<ExternalFunctionDefinition, String> {
     let parameters = ast_ext_func
         .parameters
         .iter()
-        .map(|p| Parameter::new(p.name.clone(), ast_type_to_type(&p.param_type)))
+        .map(|p| Parameter::new(p.name.clone(), ast_type_to_type(&p.param_type, module)))
         .collect();
     Ok(ExternalFunctionDefinition::new(
         ast_ext_func.name.clone(),
         parameters,
-        ast_type_to_type(&ast_ext_func.return_type),
+        ast_type_to_type(&ast_ext_func.return_type, module),
     ))
 }
 
-fn ast_type_to_type(ast_type: &crate::ast::Type) -> Type {
+fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
     match ast_type {
-        crate::ast::Type::List(inner) => Type::list(ast_type_to_type(inner)),
-        crate::ast::Type::Option(inner) => Type::option(ast_type_to_type(inner)),
-        crate::ast::Type::Struct(name) => Type::Struct(name.clone()),
+        crate::ast::Type::List(inner) => Type::list(ast_type_to_type(inner, module)),
+        crate::ast::Type::Option(inner) => Type::option(ast_type_to_type(inner, module)),
+        crate::ast::Type::Struct(name) => Type::Struct(TypeName {
+            name: name.clone(),
+            module: module.clone(),
+        }),
         crate::ast::Type::Generic(name) => match name.as_str() {
             "Boolean" => Type::boolean(),
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
-            _ => Type::Struct(name.clone()),
+            _ => Type::Struct(TypeName {
+                name: name.clone(),
+                module: module.clone(),
+            }),
         },
     }
 }

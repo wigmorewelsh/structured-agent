@@ -784,7 +784,7 @@ fn test(): Int {
 ): String {
       0: decl $tmp0
       1: decl $tmp1
-      2: llm.placeholder $tmp1, placeholder, Unknown
+      2: llm.placeholder $tmp1, placeholder, String
       3: call.external foo, [$tmp1], $tmp0
       4: ret $tmp0
 }
@@ -921,9 +921,14 @@ mod vm_execution_tests {
 
     fn ast_type_to_rt(t: &crate::ast::Type) -> structured_agent_runtime::Type {
         use crate::ast::Type as AT;
+        use nonempty::NonEmpty;
         use structured_agent_runtime::Type as RT;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         match t {
-            AT::Struct(n) => RT::Struct(n.clone()),
+            AT::Struct(n) => RT::Struct(TypeName {
+                name: n.clone(),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
+            }),
             AT::List(inner) => RT::List(Box::new(ast_type_to_rt(inner))),
             AT::Option(inner) => RT::Option(Box::new(ast_type_to_rt(inner))),
             AT::Generic(n) => match n.as_str() {

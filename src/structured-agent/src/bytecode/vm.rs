@@ -404,14 +404,13 @@ impl VM {
         mut state: VMState,
         dest: &str,
         param_name: &str,
-        param_type: &str,
+        param_type: &crate::types::Type,
     ) -> Result<VMState, String> {
-        let param_type_obj = self.parse_type(param_type, state.context.runtime())?;
         let value = state
             .context
             .runtime()
             .engine()
-            .fill_parameter(&state.context, param_name, &param_type_obj)
+            .fill_parameter(&state.context, param_name, param_type)
             .await?;
 
         Self::write_variable(&mut state, dest, ExpressionResult::new(value));
@@ -455,14 +454,13 @@ impl VM {
         &self,
         mut state: VMState,
         dest: &str,
-        return_type: &str,
+        return_type: &crate::types::Type,
     ) -> Result<VMState, String> {
-        let return_type_obj = self.parse_type(return_type, state.context.runtime())?;
         let value = state
             .context
             .runtime()
             .engine()
-            .typed(&state.context, &return_type_obj)
+            .typed(&state.context, return_type)
             .await?;
 
         state
@@ -555,37 +553,5 @@ impl VM {
             crate::runtime::ExpressionResult::new(field_value),
         );
         Ok(Self::advance_pc(state))
-    }
-}
-
-impl VM {
-    fn parse_type(
-        &self,
-        type_str: &str,
-        runtime: &crate::runtime::Runtime,
-    ) -> Result<crate::types::Type, String> {
-        match type_str {
-            "String" => Ok(crate::types::Type::String),
-            "Boolean" => Ok(crate::types::Type::Boolean),
-            "Int" => Ok(crate::types::Type::Int),
-            "Unit" | "()" => Ok(crate::types::Type::Unit),
-            "Unknown" => Ok(crate::types::Type::String),
-            s if s.starts_with("List<") && s.ends_with(">") => {
-                let inner = &s[5..s.len() - 1];
-                Ok(crate::types::Type::List(Box::new(
-                    self.parse_type(inner, runtime)?,
-                )))
-            }
-            s if s.starts_with("Option<") && s.ends_with(">") => {
-                let inner = &s[7..s.len() - 1];
-                Ok(crate::types::Type::Option(Box::new(
-                    self.parse_type(inner, runtime)?,
-                )))
-            }
-            name if runtime.get_struct(name).is_some() => {
-                Ok(crate::types::Type::Struct(name.to_string()))
-            }
-            _ => Err(format!("Unknown type: {}", type_str)),
-        }
     }
 }

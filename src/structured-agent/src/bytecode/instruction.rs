@@ -1,5 +1,5 @@
 use std::fmt;
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::{FunctionName, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -71,7 +71,7 @@ pub enum Instruction {
     LlmPlaceholder {
         dest: String,
         param_name: String,
-        param_type: String,
+        param_type: Type,
     },
     /// Await LLM clause choice, store selected index in dest
     LlmSelect {
@@ -79,7 +79,7 @@ pub enum Instruction {
         dest: String,
     },
     /// Await LLM generation with context, store result in dest
-    LlmGenerate { dest: String, return_type: String },
+    LlmGenerate { dest: String, return_type: Type },
 
     /// Create a new struct value from named field variables
     StructNew {
