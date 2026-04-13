@@ -612,7 +612,7 @@ combine::parser! {
                 )
                     .map(|(_, _, inner, _)| Type::Option(Box::new(inner))),
             ),
-            attempt(lex_string("()").map(|_| Type::Unit)),
+            attempt(lex_string("()").map(|_| Type::Generic("Unit".to_string()))),
 
             attempt(
                 (

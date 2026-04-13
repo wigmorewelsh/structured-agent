@@ -923,7 +923,6 @@ mod vm_execution_tests {
         use crate::ast::Type as AT;
         use structured_agent_runtime::Type as RT;
         match t {
-            AT::Unit => RT::Unit,
             AT::Struct(n) => RT::Struct(n.clone()),
             AT::List(inner) => RT::List(Box::new(ast_type_to_rt(inner))),
             AT::Option(inner) => RT::Option(Box::new(ast_type_to_rt(inner))),
@@ -931,6 +930,7 @@ mod vm_execution_tests {
                 "Boolean" => RT::Boolean,
                 "String" => RT::String,
                 "Int" => RT::Int,
+                "Unit" => RT::Unit,
                 _ => RT::Generic(n.clone()),
             },
         }

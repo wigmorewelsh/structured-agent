@@ -108,7 +108,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::Return(Expression::Variable {
                 name: "unknown".to_string(),
                 span: crate::types::Span::dummy(),
@@ -143,7 +143,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![Expression::StringLiteral {
@@ -180,7 +180,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![Expression::BooleanLiteral {
@@ -222,7 +222,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![],
@@ -251,14 +251,14 @@ mod tests {
                 "data",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![],
         );
 
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "test".to_string(),
                 arguments: vec![Expression::Placeholder {
@@ -295,7 +295,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::Assignment {
                     variable: "name".to_string(),
@@ -330,7 +330,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::Assignment {
                     variable: "flag".to_string(),
@@ -366,7 +366,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::If {
                 condition: Expression::StringLiteral {
                     value: "hello".to_string(),
@@ -393,7 +393,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::While {
                 condition: Expression::StringLiteral {
                     value: "hello".to_string(),
@@ -616,7 +616,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "concat".to_string(),
                 arguments: vec![
@@ -646,7 +646,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::If {
                     condition: Expression::BooleanLiteral {
@@ -844,7 +844,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -886,7 +886,7 @@ mod tests {
                     "x",
                     AstType::Struct("Unknown".to_string()),
                 )],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -944,7 +944,7 @@ mod tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Ghost".to_string(),
                     fields: vec![],
@@ -966,7 +966,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -995,7 +995,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1188,7 +1188,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "consume",
                 vec![create_parameter("p", AstType::Struct("Point".to_string()))],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -1196,7 +1196,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make_and_pass",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::Call {
                     function: "consume".to_string(),
                     arguments: vec![Expression::StructLiteral {
@@ -1232,7 +1232,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -1450,7 +1450,7 @@ mod tests {
         let caller = create_test_function(
             "main",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "make_none".to_string(),
                 arguments: vec![],
@@ -1485,7 +1485,7 @@ mod tests {
                 "item",
                 AstType::Option(Box::new(AstType::Generic("String".to_string()))),
             )],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![],
         );
         let caller = create_test_function(
@@ -1494,7 +1494,7 @@ mod tests {
                 "xs",
                 AstType::List(Box::new(AstType::Generic("String".to_string()))),
             )],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::Assignment {
                     variable: "result".to_string(),
@@ -1566,7 +1566,7 @@ mod tests {
             "bad",
             vec![],
             vec![create_parameter("x", AstType::Generic("T".to_string()))],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![],
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
@@ -1809,7 +1809,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::Return(Expression::UnitLiteral {
                 span: crate::types::Span::dummy(),
             })],
@@ -1893,7 +1893,7 @@ mod typed_ast_tests {
                 "s",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::Return(Expression::UnitLiteral {
                 span: crate::types::Span::dummy(),
             })],
@@ -1901,7 +1901,7 @@ mod typed_ast_tests {
         let caller = create_test_function(
             "f",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![Statement::Return(Expression::Call {
                 function: "process".to_string(),
                 arguments: vec![Expression::Placeholder {
@@ -1942,7 +1942,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::Assignment {
                     variable: "x".to_string(),
@@ -2036,7 +2036,7 @@ mod typed_ast_tests {
                 "flag",
                 AstType::Generic("Boolean".to_string()),
             )],
-            AstType::Unit,
+            AstType::Generic("Unit".to_string()),
             vec![
                 Statement::If {
                     condition: Expression::Variable {
@@ -2515,7 +2515,7 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Unit,
+                AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],

@@ -102,5 +102,5 @@ fn greet(name: String): () {
 
     assert!(output.contains("## This function greets users"));
     assert!(output.contains("## It takes a name parameter"));
-    assert!(output.contains("fn greet(name: String): ()"));
+    assert!(output.contains("fn greet(name: String): Unit"));
 }

@@ -119,7 +119,7 @@ impl SymbolTableBuilder {
             RT::String => AstType::Generic("String".to_string()),
             RT::Boolean => AstType::Generic("Boolean".to_string()),
             RT::Int => AstType::Generic("Int".to_string()),
-            RT::Unit => AstType::Unit,
+            RT::Unit => AstType::Generic("Unit".to_string()),
             RT::List(inner) => AstType::List(Box::new(Self::runtime_type_to_ast(inner))),
             RT::Option(inner) => AstType::Option(Box::new(Self::runtime_type_to_ast(inner))),
             RT::Struct(name) => AstType::Struct(name.clone()),

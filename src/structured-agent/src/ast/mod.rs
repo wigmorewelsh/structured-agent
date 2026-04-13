@@ -209,7 +209,6 @@ pub struct ExternalFunction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Unit,
     Struct(std::string::String),
     List(Box<Type>),
     Option(Box<Type>),
@@ -370,7 +369,6 @@ impl Spanned for SelectClause {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Unit => write!(f, "()"),
             Type::Struct(name) => write!(f, "{}", name),
             Type::List(inner) => write!(f, "List<{}>", inner),
             Type::Option(inner) => write!(f, "Option<{}>", inner),

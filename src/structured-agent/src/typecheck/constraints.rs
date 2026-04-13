@@ -10,7 +10,6 @@ use structured_agent_runtime::symbols::{ModuleName, TypeName};
 
 pub(super) fn ast_to_runtime(t: &AstType) -> RT {
     match t {
-        AstType::Unit => RT::Unit,
         AstType::Struct(n) => RT::Struct(n.clone()),
         AstType::List(inner) => RT::List(Box::new(ast_to_runtime(inner))),
         AstType::Option(inner) => RT::Option(Box::new(ast_to_runtime(inner))),
@@ -18,6 +17,7 @@ pub(super) fn ast_to_runtime(t: &AstType) -> RT {
             "Boolean" => RT::Boolean,
             "String" => RT::String,
             "Int" => RT::Int,
+            "Unit" => RT::Unit,
             _ => RT::Generic(n.clone()),
         },
     }
@@ -67,11 +67,10 @@ pub(super) fn validate_type_with_params(
     module: &ModuleName,
 ) -> Result<(), TypeError> {
     match ast_type {
-        AstType::Unit => Ok(()),
         AstType::Generic(name) => {
             if name == "Self"
                 || type_params.iter().any(|tp| tp.name == *name)
-                || matches!(name.as_str(), "Boolean" | "String" | "Int")
+                || matches!(name.as_str(), "Boolean" | "String" | "Int" | "Unit")
             {
                 Ok(())
             } else {
