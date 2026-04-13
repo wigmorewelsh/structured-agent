@@ -1,7 +1,5 @@
 use super::TypeChecker;
-use super::db::{
-    InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase, resolve_type_alias,
-};
+use super::db::{Intern, SymbolTablesInput, TypeCheckDatabase, resolve_type_alias};
 use super::refs::CheckerAstRef;
 use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
@@ -18,8 +16,8 @@ pub(super) fn resolve_type(
     match t {
         AstType::Generic(name)
             if {
-                let interned_mod = InternedModuleName::new(db, module.clone());
-                let interned_name = InternedString::new(db, name.clone());
+                let interned_mod = module.intern(db);
+                let interned_name = name.intern(db);
                 let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
                     .unwrap_or_else(|| TypeName {
                         name: name.clone(),
@@ -69,8 +67,8 @@ pub(super) fn validate_type_with_params(
             validate_type_with_params(db, tables, inner, span, file_id, type_params, module)
         }
         AstType::Struct(name) => {
-            let interned_mod = InternedModuleName::new(db, module.clone());
-            let interned_name = InternedString::new(db, name.clone());
+            let interned_mod = module.intern(db);
+            let interned_name = name.intern(db);
             let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
                 .unwrap_or_else(|| TypeName {
                     name: name.clone(),

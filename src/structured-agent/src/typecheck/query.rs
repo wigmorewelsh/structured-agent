@@ -1,7 +1,7 @@
 use super::db::{
-    InternedFunctionName, InternedModuleName, InternedString, InternedTraitName, InternedTypeName,
-    SymbolTablesInput, TypeCheckDatabase, find_trait_for_impl_call, lookup_function_def,
-    lookup_impl_exists, lookup_trait_def, lookup_type_def, resolve_type_alias,
+    Intern, InternedTraitName, InternedTypeName, SymbolTablesInput, TypeCheckDatabase,
+    find_trait_for_impl_call, lookup_function_def, lookup_impl_exists, lookup_trait_def,
+    lookup_type_def, resolve_type_alias,
 };
 use super::refs::{CheckerAstRef, FunctionKind};
 use super::{CheckContext, FunctionSignature, TypeChecker, TypeEnvironment};
@@ -18,7 +18,7 @@ pub(super) fn get_function_sig(
     tables: SymbolTablesInput,
     name: &FunctionName,
 ) -> Option<FunctionSignature> {
-    let key = InternedFunctionName::new(db, name.clone());
+    let key = name.intern(db);
     let fn_def = lookup_function_def(db, tables, key)?;
 
     let kind = match &fn_def.get().ast_ref {
@@ -78,8 +78,8 @@ pub(super) fn get_struct_fields(
     name: &str,
     current_module: &ModuleName,
 ) -> Option<Vec<(String, AstType)>> {
-    let interned_mod = InternedModuleName::new(db, current_module.clone());
-    let interned_name = InternedString::new(db, name.to_string());
+    let interned_mod = current_module.intern(db);
+    let interned_name = name.intern(db);
     let resolved =
         resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
             name: name.to_string(),
@@ -107,8 +107,8 @@ pub(super) fn get_trait_functions(
     name: &str,
     current_module: &ModuleName,
 ) -> Option<Vec<SigFunction>> {
-    let interned_mod = InternedModuleName::new(db, current_module.clone());
-    let interned_name = InternedString::new(db, name.to_string());
+    let interned_mod = current_module.intern(db);
+    let interned_name = name.intern(db);
     let resolved =
         resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
             name: name.to_string(),
@@ -167,7 +167,7 @@ pub(super) fn resolve_impl_call(
         AstType::Struct(n) => n.clone(),
         _ => return None,
     };
-    let interned_fn = InternedString::new(db, fn_name.to_string());
+    let interned_fn = fn_name.intern(db);
     let interned_type = InternedTypeName::new(
         db,
         TypeName {
@@ -205,7 +205,7 @@ pub(super) fn check_visibility(
     if &fn_name.module == ctx.module_name {
         return Ok(());
     }
-    let interned = InternedFunctionName::new(db, fn_name.clone());
+    let interned = fn_name.intern(db);
     let is_visible = lookup_function_def(db, tables, interned)
         .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
         .unwrap_or(true);

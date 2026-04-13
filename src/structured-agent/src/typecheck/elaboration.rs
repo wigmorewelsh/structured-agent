@@ -1,7 +1,5 @@
 use super::TypeChecker;
-use super::db::{
-    InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase, resolve_function_call,
-};
+use super::db::{Intern, SymbolTablesInput, TypeCheckDatabase, resolve_function_call};
 use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
@@ -471,8 +469,8 @@ fn check_call(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
-    let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
-    let interned_fn = InternedString::new(db, function.to_string());
+    let interned_current = ctx.module_name.intern(db);
+    let interned_fn = function.intern(db);
 
     let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {

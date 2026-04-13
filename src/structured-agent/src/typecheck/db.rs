@@ -128,6 +128,60 @@ pub(super) struct InternedModuleName {
     pub(super) name: ModuleName,
 }
 
+pub(super) trait Intern<'db> {
+    type Interned;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned;
+}
+
+impl<'db> Intern<'db> for ModuleName {
+    type Interned = InternedModuleName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedModuleName::new(db, self)
+    }
+}
+
+impl<'db> Intern<'db> for &ModuleName {
+    type Interned = InternedModuleName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedModuleName::new(db, self.clone())
+    }
+}
+
+impl<'db> Intern<'db> for String {
+    type Interned = InternedString<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedString::new(db, self)
+    }
+}
+
+impl<'db> Intern<'db> for &String {
+    type Interned = InternedString<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedString::new(db, self.clone())
+    }
+}
+
+impl<'db> Intern<'db> for &str {
+    type Interned = InternedString<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedString::new(db, self.to_string())
+    }
+}
+
+impl<'db> Intern<'db> for FunctionName {
+    type Interned = InternedFunctionName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedFunctionName::new(db, self)
+    }
+}
+
+impl<'db> Intern<'db> for &FunctionName {
+    type Interned = InternedFunctionName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedFunctionName::new(db, self.clone())
+    }
+}
+
 #[salsa::tracked]
 pub(super) fn lookup_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
@@ -307,8 +361,8 @@ pub(super) fn module_exports_type<'db>(
     let symbol_str = symbol.value(db);
     for import in &module_def.use_imports {
         if import.is_pub && import.local == symbol_str {
-            let import_module = InternedModuleName::new(db, import.module.clone());
-            let import_name = InternedString::new(db, import.name.clone());
+            let import_module = (&import.module).intern(db);
+            let import_name = (&import.name).intern(db);
             if let Some(found) = module_exports_type(db, tables, import_module, import_name) {
                 return Some(found);
             }
@@ -357,8 +411,8 @@ pub(super) fn module_exports_function<'db>(
     let symbol_str = symbol.value(db);
     for import in &module_def.use_imports {
         if import.is_pub && import.local == symbol_str {
-            let import_module = InternedModuleName::new(db, import.module.clone());
-            let import_name = InternedString::new(db, import.name.clone());
+            let import_module = (&import.module).intern(db);
+            let import_name = (&import.name).intern(db);
             if let Some(found) = module_exports_function(db, tables, import_module, import_name) {
                 return Some(found);
             }
@@ -431,10 +485,10 @@ pub(super) fn resolve_type_alias<'db>(
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective == alias_str.as_str() {
-                let use_path = InternedModuleName::new(db, ModuleName::new(path.clone()));
+                let use_path = ModuleName::new(path.clone()).intern(db);
                 let resolved = resolve_module_path(db, tables, current_module, use_path);
-                let resolved_module = InternedModuleName::new(db, resolved);
-                let resolved_name = InternedString::new(db, name.clone());
+                let resolved_module = resolved.intern(db);
+                let resolved_name = name.intern(db);
                 return module_exports_type(db, tables, resolved_module, resolved_name);
             }
         }
@@ -468,10 +522,10 @@ pub(super) fn resolve_function_alias<'db>(
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective == alias_str.as_str() {
-                let use_path = InternedModuleName::new(db, ModuleName::new(path.clone()));
+                let use_path = ModuleName::new(path.clone()).intern(db);
                 let resolved = resolve_module_path(db, tables, current_module, use_path);
-                let resolved_module = InternedModuleName::new(db, resolved);
-                let resolved_name = InternedString::new(db, name.clone());
+                let resolved_module = resolved.intern(db);
+                let resolved_name = name.intern(db);
                 return module_exports_function(db, tables, resolved_module, resolved_name);
             }
         }
