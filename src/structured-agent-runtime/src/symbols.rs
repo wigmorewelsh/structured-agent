@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt, sync::Arc};
 
+use crate::runtime_value::RuntimeValueFactory;
+
 use nonempty::NonEmpty;
 
 pub trait SourceRef {}
@@ -325,6 +327,10 @@ pub enum TypeDefinitionKind<R: References> {
         witness_ref: R::Witness,
     },
     Primitive,
+    Native {
+        generic_parameters: Vec<GenericParameterDefinition<R>>,
+        factory: Arc<dyn RuntimeValueFactory>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -390,5 +396,18 @@ where
             witness_ref: R2::Witness::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+        TypeDefinitionKind::Native {
+            generic_parameters,
+            factory,
+        } => TypeDefinitionKind::Native {
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp.constraints.clone(),
+                })
+                .collect(),
+            factory: factory.clone(),
+        },
     }
 }

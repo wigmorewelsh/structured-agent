@@ -144,6 +144,23 @@ fn convert_type_kind(
             witness_ref: NoWitness,
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+        TypeDefinitionKind::Native {
+            generic_parameters,
+            factory,
+        } => TypeDefinitionKind::Native {
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp
+                        .constraints
+                        .iter()
+                        .map(|c| ast_type_to_type_name(c, module))
+                        .collect(),
+                })
+                .collect(),
+            factory: factory.clone(),
+        },
     }
 }
 

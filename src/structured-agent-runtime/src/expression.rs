@@ -10,6 +10,7 @@ use arrow::datatypes::{DataType, Field, FieldRef, Fields, UnionFields};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::runtime_value::{RuntimeValue, UnitValue};
 use crate::symbols::FunctionName;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +36,7 @@ impl ExpressionParameter {
 pub enum ExpressionValue {
     Arrow(Arc<dyn Array>),
     Module(FunctionName),
+    Dynamic(Arc<dyn RuntimeValue>),
 }
 
 impl PartialEq for ExpressionValue {
@@ -42,6 +44,7 @@ impl PartialEq for ExpressionValue {
         match (self, other) {
             (ExpressionValue::Arrow(a), ExpressionValue::Arrow(b)) => a.as_ref() == b.as_ref(),
             (ExpressionValue::Module(a), ExpressionValue::Module(b)) => a == b,
+            (ExpressionValue::Dynamic(a), ExpressionValue::Dynamic(b)) => a.eq(b.as_any()),
             _ => false,
         }
     }
@@ -87,7 +90,7 @@ impl ExpressionResult {
 
 impl ExpressionValue {
     pub fn unit() -> Self {
-        Self::Arrow(Arc::new(NullArray::new(1)))
+        Self::Dynamic(Arc::new(UnitValue))
     }
 
     pub fn string(s: impl Into<String>) -> Self {
@@ -374,6 +377,7 @@ impl ExpressionValue {
         match self {
             ExpressionValue::Arrow(data) => data,
             ExpressionValue::Module(_) => panic!("expected Arrow value, got Module"),
+            ExpressionValue::Dynamic(_) => panic!("expected Arrow value, got Dynamic"),
         }
     }
 
@@ -453,6 +457,7 @@ impl ExpressionValue {
         match self {
             ExpressionValue::Arrow(data) => matches!(data.data_type(), DataType::Union(_, _)),
             ExpressionValue::Module(_) => false,
+            ExpressionValue::Dynamic(_) => false,
         }
     }
 
@@ -466,6 +471,7 @@ impl ExpressionValue {
     pub fn type_name(&self) -> &str {
         match self {
             ExpressionValue::Module(_) => "Module",
+            ExpressionValue::Dynamic(v) => v.type_name(),
             ExpressionValue::Arrow(data) => match data.data_type() {
                 DataType::Null => "Unit",
                 DataType::Utf8 => "String",
@@ -524,6 +530,9 @@ impl ExpressionValue {
         if let ExpressionValue::Module(name) = self {
             return format!("Module({})", name);
         }
+        if let ExpressionValue::Dynamic(v) = self {
+            return v.format_for_llm();
+        }
         let data = self.arrow_data();
         if data.as_any().is::<NullArray>() {
             "()".to_string()
@@ -567,6 +576,9 @@ impl ExpressionValue {
     pub fn format_for_llm(&self) -> String {
         if let ExpressionValue::Module(name) = self {
             return format!("Module({})", name);
+        }
+        if let ExpressionValue::Dynamic(v) = self {
+            return v.format_for_llm();
         }
         let data = self.arrow_data();
         if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>()
@@ -703,5 +715,102 @@ impl From<Arc<ListArray>> for ExpressionValue {
 impl std::fmt::Display for ExpressionValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::array::NullArray;
+
+    use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
+    use crate::symbols::{
+        GenericParameterDefinition, ModuleName, NoAst, TypeDefinition, TypeDefinitionKind, TypeName,
+    };
+
+    use super::ExpressionValue;
+
+    struct NoSource;
+    impl crate::symbols::SourceRef for NoSource {}
+    struct NoBody;
+    impl crate::symbols::BodyRef for NoBody {}
+    #[derive(Debug, Clone, Default)]
+    struct NoWitness;
+    impl crate::symbols::WitnessRef for NoWitness {}
+
+    struct TestRefs;
+    impl crate::symbols::References for TestRefs {
+        type Source = NoSource;
+        type Ast = NoAst;
+        type Body = NoBody;
+        type Witness = NoWitness;
+        type TypeAnnotation = TypeName;
+    }
+
+    #[derive(Debug)]
+    struct NullFactory;
+
+    impl RuntimeValueFactory for NullFactory {
+        fn type_name(&self) -> &str {
+            "Null"
+        }
+
+        fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+            Arc::new(UnitValue)
+        }
+    }
+
+    fn test_type_name() -> TypeName {
+        TypeName {
+            name: "Test".to_string(),
+            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        }
+    }
+
+    #[test]
+    fn unit_equals_unit() {
+        assert_eq!(ExpressionValue::unit(), ExpressionValue::unit());
+    }
+
+    #[test]
+    fn unit_not_equal_to_string() {
+        assert_ne!(ExpressionValue::unit(), ExpressionValue::string("hello"));
+    }
+
+    #[test]
+    fn unit_type_name() {
+        assert_eq!(ExpressionValue::unit().type_name(), "Unit");
+    }
+
+    #[test]
+    fn unit_to_arrow_is_null_array() {
+        let v = UnitValue;
+        let arr = v.to_arrow();
+        assert!(arr.as_any().downcast_ref::<NullArray>().is_some());
+    }
+
+    #[test]
+    fn unit_eq_same_type() {
+        let a = UnitValue;
+        let b = UnitValue;
+        assert!(a.eq(b.as_any()));
+    }
+
+    #[test]
+    fn native_type_definition_kind() {
+        let def = TypeDefinition::<TestRefs> {
+            name: test_type_name(),
+            kind: TypeDefinitionKind::Native {
+                generic_parameters: vec![GenericParameterDefinition {
+                    name: "T".to_string(),
+                    constraints: vec![],
+                }],
+                factory: Arc::new(NullFactory),
+            },
+            source_ref: NoSource,
+            ast_ref: NoAst,
+        };
+        assert!(matches!(def.kind, TypeDefinitionKind::Native { .. }));
     }
 }
