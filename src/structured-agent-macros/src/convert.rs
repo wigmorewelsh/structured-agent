@@ -51,10 +51,23 @@ fn option_to_expr_value(
     ty: &SynType,
     type_params: &[String],
 ) -> syn::Result<TokenStream2> {
-    let some_convert = to_expr_value(&quote! { __iv }, generic_arg(ty)?, type_params)?;
+    let inner = generic_arg(ty)?;
+    let some_convert = to_expr_value(&quote! { __iv }, inner, type_params)?;
+
+    let none_expr = if let Ok(inner_ident) = path_ident(inner) {
+        match inner_ident.to_string().as_str() {
+            "String" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_utf8() },
+            "bool" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_boolean() },
+            "i64" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_int64() },
+            _ => quote! { ::structured_agent_runtime::ExpressionValue::option_none() },
+        }
+    } else {
+        quote! { ::structured_agent_runtime::ExpressionValue::option_none() }
+    };
+
     Ok(quote! {
         match #val {
-            None => ::structured_agent_runtime::ExpressionValue::option_none(),
+            None => #none_expr,
             Some(__iv) => ::structured_agent_runtime::ExpressionValue::option_some(#some_convert),
         }
     })

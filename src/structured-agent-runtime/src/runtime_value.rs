@@ -195,6 +195,40 @@ impl OptionValue {
         }
     }
 
+    pub fn none_with_type(some_type: DataType) -> Self {
+        let union_fields = UnionFields::try_new(
+            [0_i8, 1_i8],
+            [
+                Field::new("none", DataType::Null, true),
+                Field::new("some", some_type.clone(), false),
+            ],
+        )
+        .expect("valid option_none_with_type union fields");
+        let type_ids: ScalarBuffer<i8> = [0_i8].into_iter().collect();
+        let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
+        let children: Vec<Arc<dyn Array>> = vec![
+            Arc::new(NullArray::new(1)),
+            arrow::array::new_empty_array(&some_type),
+        ];
+        let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
+            .expect("valid option_none_with_type union");
+        Self {
+            union: Arc::new(union_array),
+        }
+    }
+
+    pub fn none_utf8() -> Self {
+        Self::none_with_type(DataType::Utf8)
+    }
+
+    pub fn none_boolean() -> Self {
+        Self::none_with_type(DataType::Boolean)
+    }
+
+    pub fn none_int64() -> Self {
+        Self::none_with_type(DataType::Int64)
+    }
+
     pub fn some(inner: Arc<dyn Array>) -> Self {
         let inner_type = inner.data_type().clone();
         let union_fields = UnionFields::try_new(
@@ -221,6 +255,35 @@ impl OptionValue {
             0 => None,
             1 => Some(ExpressionValue::Arrow(union.value(0))),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ListValueFactory;
+
+impl RuntimeValueFactory for ListValueFactory {
+    fn type_name(&self) -> &str {
+        "List"
+    }
+
+    fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(ListValue::from_elements(args).expect("ListValueFactory::construct failed"))
+    }
+}
+
+#[derive(Debug)]
+pub struct OptionValueFactory;
+
+impl RuntimeValueFactory for OptionValueFactory {
+    fn type_name(&self) -> &str {
+        "Option"
+    }
+
+    fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        match args.into_iter().next() {
+            Some(v) => Arc::new(OptionValue::some(v.arrow_data())),
+            None => Arc::new(OptionValue::none()),
         }
     }
 }

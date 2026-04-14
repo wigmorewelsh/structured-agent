@@ -158,7 +158,9 @@ impl LanguageEngine for PrintEngine {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
+            Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
+                structured_agent_runtime::rt_type_to_arrow_datatype(inner),
+            )),
             Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
             Type::Generic(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
@@ -189,7 +191,9 @@ impl LanguageEngine for PrintEngine {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Option(_) => Ok(crate::runtime::ExpressionValue::option_none()),
+            Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
+                structured_agent_runtime::rt_type_to_arrow_datatype(inner),
+            )),
             Type::Unit | Type::Struct(_) | Type::Generic(_) => {
                 Ok(crate::runtime::ExpressionValue::unit())
             }

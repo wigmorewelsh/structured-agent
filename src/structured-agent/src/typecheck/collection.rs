@@ -28,15 +28,13 @@ impl SymbolTableBuilder {
     }
 
     fn seed_builtin_types(&mut self) {
-        let builtins = [
+        let primitives = [
             ("()", "prelude"),
             ("Boolean", "prelude"),
             ("String", "prelude"),
             ("Int", "prelude"),
-            ("List", "prelude"),
-            ("Option", "prelude"),
         ];
-        for (name, module) in builtins {
+        for (name, module) in primitives {
             let type_name = TypeName {
                 name: name.to_string(),
                 module: ModuleName::new(NonEmpty::new(module.to_string())),
@@ -49,6 +47,45 @@ impl SymbolTableBuilder {
             };
             self.metadata.register_type(type_name, Arc::new(entry));
         }
+
+        let t_param = GenericParameterDefinition {
+            name: "T".to_string(),
+            constraints: vec![],
+        };
+
+        let list_name = TypeName {
+            name: "List".to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        };
+        self.metadata.register_type(
+            list_name.clone(),
+            Arc::new(TypeDefinition {
+                name: list_name,
+                kind: TypeDefinitionKind::Native {
+                    generic_parameters: vec![t_param.clone()],
+                    factory: Arc::new(structured_agent_runtime::runtime_value::ListValueFactory),
+                },
+                source_ref: SourceLocation(0, crate::types::Span::dummy()),
+                ast_ref: CheckerAstRef::Primitive,
+            }),
+        );
+
+        let option_name = TypeName {
+            name: "Option".to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        };
+        self.metadata.register_type(
+            option_name.clone(),
+            Arc::new(TypeDefinition {
+                name: option_name,
+                kind: TypeDefinitionKind::Native {
+                    generic_parameters: vec![t_param],
+                    factory: Arc::new(structured_agent_runtime::runtime_value::OptionValueFactory),
+                },
+                source_ref: SourceLocation(0, crate::types::Span::dummy()),
+                ast_ref: CheckerAstRef::Primitive,
+            }),
+        );
     }
 
     fn register_native_modules(

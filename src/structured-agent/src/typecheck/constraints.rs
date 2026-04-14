@@ -1,12 +1,12 @@
 use super::TypeChecker;
 use super::db::{Intern, SymbolTablesInput, TypeCheckDatabase, resolve_type_alias};
-use super::refs::CheckerAstRef;
+
 use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::{ModuleName, TypeName};
+use structured_agent_runtime::symbols::{ModuleName, TypeDefinitionKind, TypeName};
 
 pub(super) fn resolve(
     db: &dyn TypeCheckDatabase,
@@ -36,9 +36,16 @@ pub(super) fn resolve(
                     name: name.clone(),
                     module: module.clone(),
                 });
-            match tables.types(db).get().get(&type_name).map(|td| &td.ast_ref) {
-                Some(CheckerAstRef::Struct(_)) => Ok(RT::Struct(type_name)),
-                _ => Err(TypeError::UnboundTypeParameter {
+            match tables.types(db).get().get(&type_name) {
+                Some(td) => match &td.kind {
+                    TypeDefinitionKind::Struct { .. } => Ok(RT::Struct(type_name)),
+                    _ => Err(TypeError::UnboundTypeParameter {
+                        name: name.clone(),
+                        span,
+                        file_id,
+                    }),
+                },
+                None => Err(TypeError::UnboundTypeParameter {
                     name: name.clone(),
                     span,
                     file_id,

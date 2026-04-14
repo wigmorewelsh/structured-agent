@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::runtime_value::{ListValue, OptionValue, RuntimeValue, UnitValue};
 use crate::symbols::FunctionName;
+use crate::types::Type;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionResult {
@@ -149,6 +150,22 @@ impl ExpressionValue {
 
     pub fn option_none() -> Self {
         Self::Dynamic(Arc::new(OptionValue::none()))
+    }
+
+    pub fn option_none_utf8() -> Self {
+        Self::Dynamic(Arc::new(OptionValue::none_utf8()))
+    }
+
+    pub fn option_none_boolean() -> Self {
+        Self::Dynamic(Arc::new(OptionValue::none_boolean()))
+    }
+
+    pub fn option_none_int64() -> Self {
+        Self::Dynamic(Arc::new(OptionValue::none_int64()))
+    }
+
+    pub fn option_none_with_type(inner_type: DataType) -> Self {
+        Self::Dynamic(Arc::new(OptionValue::none_with_type(inner_type)))
     }
 
     pub fn option_some(inner: ExpressionValue) -> Self {
@@ -494,6 +511,20 @@ impl ExpressionValue {
     }
 }
 
+pub fn rt_type_to_arrow_datatype(t: &Type) -> DataType {
+    match t {
+        Type::String => DataType::Utf8,
+        Type::Boolean => DataType::Boolean,
+        Type::Int => DataType::Int64,
+        Type::Unit => DataType::Null,
+        Type::List(inner) => {
+            let inner_dt = rt_type_to_arrow_datatype(inner);
+            DataType::List(Arc::new(Field::new("item", inner_dt, true)))
+        }
+        Type::Option(_) | Type::Struct(_) | Type::Generic(_) => DataType::Null,
+    }
+}
+
 impl From<String> for ExpressionValue {
     fn from(s: String) -> Self {
         Self::string(s)
@@ -528,7 +559,7 @@ impl std::fmt::Display for ExpressionValue {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::NullArray;
+    use arrow::array::{NullArray, UnionArray};
 
     use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
     use crate::symbols::{
@@ -765,5 +796,42 @@ mod tests {
             .as_option()
             .unwrap();
         assert!(opt.is_some());
+    }
+
+    #[test]
+    fn option_none_utf8_has_utf8_some_schema() {
+        let opt = ExpressionValue::option_none_utf8();
+        let data = opt.arrow_data();
+        let ua = data.as_any().downcast_ref::<UnionArray>().unwrap();
+        let (_, some_field): (i8, &arrow::datatypes::FieldRef) = ua.fields().iter().nth(1).unwrap();
+        assert_eq!(some_field.data_type(), &arrow::datatypes::DataType::Utf8);
+    }
+
+    #[test]
+    fn option_list_with_typed_none_uses_concat_path() {
+        let some = ExpressionValue::option_some(ExpressionValue::string("hello"));
+        let none = ExpressionValue::option_none_utf8();
+        let list = ExpressionValue::from_elements(vec![some, none]).unwrap();
+        assert_eq!(list.type_name(), "List");
+        let arr = list.as_list().unwrap();
+        let values = arr.value(0);
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn rt_type_to_arrow_datatype_maps_primitives() {
+        use crate::types::Type;
+        assert_eq!(
+            super::rt_type_to_arrow_datatype(&Type::String),
+            arrow::datatypes::DataType::Utf8
+        );
+        assert_eq!(
+            super::rt_type_to_arrow_datatype(&Type::Boolean),
+            arrow::datatypes::DataType::Boolean
+        );
+        assert_eq!(
+            super::rt_type_to_arrow_datatype(&Type::Int),
+            arrow::datatypes::DataType::Int64
+        );
     }
 }
