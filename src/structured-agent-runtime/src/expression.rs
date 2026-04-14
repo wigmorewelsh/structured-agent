@@ -1,12 +1,7 @@
-use arrow::array::ListBuilder;
 use arrow::array::{
-    Array, BooleanArray, BooleanBuilder, Int64Array, Int64Builder, ListArray, NullArray,
-    StringArray, StringBuilder, StructArray, StructBuilder, UnionArray,
+    Array, BooleanArray, Int64Array, ListArray, NullArray, StringArray, StructArray, UnionArray,
 };
-use arrow::buffer::OffsetBuffer;
-use arrow::buffer::ScalarBuffer;
-use arrow::compute::concat;
-use arrow::datatypes::{DataType, Field, FieldRef, Fields, UnionFields};
+use arrow::datatypes::{DataType, Field, Fields};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -114,177 +109,7 @@ impl ExpressionValue {
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
-        let list_value = Self::build_list(elements)?;
-        Ok(Self::Dynamic(Arc::new(list_value)))
-    }
-
-    fn build_list(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
-        if elements.is_empty() {
-            let mut builder: ListBuilder<Box<dyn arrow::array::ArrayBuilder>> =
-                ListBuilder::new(Box::new(StringBuilder::new()));
-            builder.append(true);
-            return Ok(ListValue::new(Arc::new(builder.finish())));
-        }
-
-        match elements[0].type_name() {
-            "String" => {
-                let mut builder = ListBuilder::new(StringBuilder::new());
-                for elem in &elements {
-                    builder.values().append_value(elem.as_string()?);
-                }
-                builder.append(true);
-                Ok(ListValue::new(Arc::new(builder.finish())))
-            }
-            "Int" => {
-                let mut builder = ListBuilder::new(Int64Builder::new());
-                for elem in &elements {
-                    builder.values().append_value(elem.as_integer()?);
-                }
-                builder.append(true);
-                Ok(ListValue::new(Arc::new(builder.finish())))
-            }
-            "Boolean" => {
-                let mut builder = ListBuilder::new(BooleanBuilder::new());
-                for elem in &elements {
-                    builder.values().append_value(elem.as_boolean()?);
-                }
-                builder.append(true);
-                Ok(ListValue::new(Arc::new(builder.finish())))
-            }
-            "Struct" => Self::list_from_structs(elements),
-            "Option" => Self::list_from_options(elements),
-            other => Err(format!("Unsupported list element type: {}", other)),
-        }
-    }
-
-    fn list_from_structs(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
-        let first_data = elements[0].arrow_data();
-        let first = first_data
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .ok_or("Expected StructArray")?;
-
-        let fields: Fields = first.fields().clone();
-        let mut struct_builder = StructBuilder::from_fields(fields.clone(), elements.len());
-
-        for elem in &elements {
-            let sa_data = elem.arrow_data();
-            let sa = sa_data
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or("Expected StructArray in list")?;
-
-            for (i, field) in fields.iter().enumerate() {
-                let col = sa.column(i);
-                match field.data_type() {
-                    DataType::Utf8 => {
-                        let b = struct_builder
-                            .field_builder::<StringBuilder>(i)
-                            .ok_or("Expected StringBuilder")?;
-                        let val = col
-                            .as_any()
-                            .downcast_ref::<StringArray>()
-                            .ok_or("Expected StringArray")?;
-                        b.append_value(val.value(0));
-                    }
-                    DataType::Int64 => {
-                        let b = struct_builder
-                            .field_builder::<Int64Builder>(i)
-                            .ok_or("Expected Int64Builder")?;
-                        let val = col
-                            .as_any()
-                            .downcast_ref::<Int64Array>()
-                            .ok_or("Expected Int64Array")?;
-                        b.append_value(val.value(0));
-                    }
-                    DataType::Boolean => {
-                        let b = struct_builder
-                            .field_builder::<BooleanBuilder>(i)
-                            .ok_or("Expected BooleanBuilder")?;
-                        let val = col
-                            .as_any()
-                            .downcast_ref::<BooleanArray>()
-                            .ok_or("Expected BooleanArray")?;
-                        b.append_value(val.value(0));
-                    }
-                    other => {
-                        return Err(format!(
-                            "Unsupported struct field type in list: {:?}",
-                            other
-                        ));
-                    }
-                }
-            }
-            struct_builder.append(true);
-        }
-
-        let struct_array = struct_builder.finish();
-        let field =
-            Arc::new(Field::new("item", struct_array.data_type().clone(), true)) as FieldRef;
-        let offsets = OffsetBuffer::new(vec![0i32, struct_array.len() as i32].into());
-        let list_array = ListArray::try_new(field, offsets, Arc::new(struct_array), None)
-            .map_err(|e| e.to_string())?;
-        Ok(ListValue::new(Arc::new(list_array)))
-    }
-
-    fn list_from_options(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
-        let inner_type = elements
-            .iter()
-            .find_map(|e| {
-                let e_data = e.arrow_data();
-                let ua = e_data.as_any().downcast_ref::<UnionArray>()?;
-                if ua.type_id(0) == 1 {
-                    Some(ua.value(0).data_type().clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(DataType::Null);
-
-        let normalised: Vec<Arc<dyn Array>> = elements
-            .iter()
-            .map(|e| {
-                let e_data = e.arrow_data();
-                let ua = e_data
-                    .as_any()
-                    .downcast_ref::<UnionArray>()
-                    .ok_or("Expected UnionArray")?;
-
-                if ua.type_id(0) == 0 {
-                    let union_fields = UnionFields::try_new(
-                        [0_i8, 1_i8],
-                        [
-                            Field::new("none", DataType::Null, true),
-                            Field::new("some", inner_type.clone(), false),
-                        ],
-                    )
-                    .map_err(|e| e.to_string())?;
-                    let type_ids: ScalarBuffer<i8> = [0_i8].into_iter().collect();
-                    let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
-                    let none_child = Arc::new(NullArray::new(1)) as Arc<dyn Array>;
-                    let some_child = arrow::array::new_empty_array(&inner_type);
-                    let ua = UnionArray::try_new(
-                        union_fields,
-                        type_ids,
-                        Some(offsets),
-                        vec![none_child, some_child],
-                    )
-                    .map_err(|e| e.to_string())?;
-                    Ok(Arc::new(ua) as Arc<dyn Array>)
-                } else {
-                    Ok(e.arrow_data().clone())
-                }
-            })
-            .collect::<Result<_, String>>()?;
-
-        let refs: Vec<&dyn Array> = normalised.iter().map(|a| a.as_ref()).collect();
-        let child = concat(&refs).map_err(|e| e.to_string())?;
-        let child_type = child.data_type().clone();
-        let field = Arc::new(Field::new("item", child_type, true)) as FieldRef;
-        let offsets = OffsetBuffer::new(vec![0i32, child.len() as i32].into());
-        let list_array =
-            ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
-        Ok(ListValue::new(Arc::new(list_array)))
+        Ok(Self::Dynamic(Arc::new(ListValue::from_elements(elements)?)))
     }
 
     pub fn from_array(data: Arc<dyn Array>) -> Self {
@@ -350,7 +175,7 @@ impl ExpressionValue {
         Self::Arrow(Arc::new(struct_array))
     }
 
-    fn arrow_data(&self) -> Arc<dyn Array> {
+    pub(crate) fn arrow_data(&self) -> Arc<dyn Array> {
         match self {
             ExpressionValue::Arrow(data) => data.clone(),
             ExpressionValue::Module(_) => panic!("expected Arrow value, got Module"),

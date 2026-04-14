@@ -2,8 +2,9 @@ use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::{Array, ListArray, NullArray, UnionArray};
-use arrow::buffer::ScalarBuffer;
-use arrow::datatypes::{DataType, Field, UnionFields};
+use arrow::buffer::{OffsetBuffer, ScalarBuffer};
+use arrow::compute::concat;
+use arrow::datatypes::{DataType, Field, FieldRef, UnionFields};
 
 use crate::expression::ExpressionValue;
 
@@ -57,6 +58,89 @@ impl ListValue {
 
     pub fn list_array(&self) -> &ListArray {
         &self.list
+    }
+
+    pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+        if elements.is_empty() {
+            let child = arrow::array::new_empty_array(&DataType::Utf8);
+            let field = Arc::new(Field::new("item", DataType::Utf8, true)) as FieldRef;
+            let offsets = OffsetBuffer::new(vec![0i32, 0i32].into());
+            let list_array =
+                ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
+            return Ok(Self::new(Arc::new(list_array)));
+        }
+
+        if elements[0].type_name() == "Option" {
+            return Self::from_options(elements);
+        }
+
+        let arrays: Vec<Arc<dyn Array>> = elements.iter().map(|e| e.arrow_data()).collect();
+        let refs: Vec<&dyn Array> = arrays.iter().map(|a| a.as_ref()).collect();
+        let child = concat(&refs).map_err(|e| e.to_string())?;
+        let field = Arc::new(Field::new("item", child.data_type().clone(), true)) as FieldRef;
+        let offsets = OffsetBuffer::new(vec![0i32, child.len() as i32].into());
+        let list_array =
+            ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
+        Ok(Self::new(Arc::new(list_array)))
+    }
+
+    fn from_options(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+        let inner_type = elements
+            .iter()
+            .find_map(|e| {
+                let e_data = e.arrow_data();
+                let union: &UnionArray = e_data.as_any().downcast_ref::<UnionArray>()?;
+                if union.type_id(0) == 1 {
+                    Some(union.value(0).data_type().clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DataType::Null);
+
+        let normalised: Vec<Arc<dyn Array>> = elements
+            .iter()
+            .map(|e| {
+                let e_data = e.arrow_data();
+                let ua: &UnionArray = e_data
+                    .as_any()
+                    .downcast_ref::<UnionArray>()
+                    .ok_or("Expected UnionArray")?;
+
+                if ua.type_id(0) == 0 {
+                    let union_fields = UnionFields::try_new(
+                        [0_i8, 1_i8],
+                        [
+                            Field::new("none", DataType::Null, true),
+                            Field::new("some", inner_type.clone(), false),
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let type_ids: ScalarBuffer<i8> = [0_i8].into_iter().collect();
+                    let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
+                    let none_child = Arc::new(NullArray::new(1)) as Arc<dyn Array>;
+                    let some_child = arrow::array::new_empty_array(&inner_type);
+                    let normalised_ua = UnionArray::try_new(
+                        union_fields,
+                        type_ids,
+                        Some(offsets),
+                        vec![none_child, some_child],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    Ok(Arc::new(normalised_ua) as Arc<dyn Array>)
+                } else {
+                    Ok(e.arrow_data())
+                }
+            })
+            .collect::<Result<_, String>>()?;
+
+        let refs: Vec<&dyn Array> = normalised.iter().map(|a| a.as_ref()).collect();
+        let child = concat(&refs).map_err(|e| e.to_string())?;
+        let field = Arc::new(Field::new("item", child.data_type().clone(), true)) as FieldRef;
+        let offsets = OffsetBuffer::new(vec![0i32, child.len() as i32].into());
+        let list_array =
+            ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
+        Ok(Self::new(Arc::new(list_array)))
     }
 }
 
