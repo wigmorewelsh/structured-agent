@@ -153,8 +153,8 @@ impl ExpressionValue {
     }
 
     fn list_from_structs(elements: Vec<ExpressionValue>) -> Result<Self, String> {
-        let first = elements[0]
-            .arrow_data()
+        let first_data = elements[0].arrow_data();
+        let first = first_data
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or("Expected StructArray")?;
@@ -163,8 +163,8 @@ impl ExpressionValue {
         let mut struct_builder = StructBuilder::from_fields(fields.clone(), elements.len());
 
         for elem in &elements {
-            let sa = elem
-                .arrow_data()
+            let sa_data = elem.arrow_data();
+            let sa = sa_data
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .ok_or("Expected StructArray in list")?;
@@ -226,7 +226,8 @@ impl ExpressionValue {
         let inner_type = elements
             .iter()
             .find_map(|e| {
-                let ua = e.arrow_data().as_any().downcast_ref::<UnionArray>()?;
+                let e_data = e.arrow_data();
+                let ua = e_data.as_any().downcast_ref::<UnionArray>()?;
                 if ua.type_id(0) == 1 {
                     Some(ua.value(0).data_type().clone())
                 } else {
@@ -238,8 +239,8 @@ impl ExpressionValue {
         let normalised: Vec<Arc<dyn Array>> = elements
             .iter()
             .map(|e| {
-                let ua = e
-                    .arrow_data()
+                let e_data = e.arrow_data();
+                let ua = e_data
                     .as_any()
                     .downcast_ref::<UnionArray>()
                     .ok_or("Expected UnionArray")?;
@@ -301,8 +302,8 @@ impl ExpressionValue {
     }
 
     pub fn get_struct_field(&self, field: &str) -> Result<ExpressionValue, String> {
-        let struct_array = self
-            .arrow_data()
+        let data = self.arrow_data();
+        let struct_array = data
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
@@ -373,51 +374,49 @@ impl ExpressionValue {
         Self::Arrow(Arc::new(struct_array))
     }
 
-    fn arrow_data(&self) -> &Arc<dyn Array> {
+    fn arrow_data(&self) -> Arc<dyn Array> {
         match self {
-            ExpressionValue::Arrow(data) => data,
+            ExpressionValue::Arrow(data) => data.clone(),
             ExpressionValue::Module(_) => panic!("expected Arrow value, got Module"),
-            ExpressionValue::Dynamic(_) => panic!("expected Arrow value, got Dynamic"),
+            ExpressionValue::Dynamic(v) => v.to_arrow(),
         }
     }
 
-    fn downcast_scalar<T: Array + 'static>(&self) -> Result<&T, String> {
-        self.arrow_data()
-            .as_any()
-            .downcast_ref::<T>()
-            .filter(|arr| arr.len() == 1)
-            .ok_or_else(|| format!("Expected scalar {}", std::any::type_name::<T>()))
-    }
-
-    pub fn as_string(&self) -> Result<&str, String> {
-        self.downcast_scalar::<StringArray>().and_then(|arr| {
-            if arr.is_null(0) {
-                Err("String array is null".to_string())
-            } else {
-                Ok(arr.value(0))
-            }
-        })
+    pub fn as_string(&self) -> Result<String, String> {
+        let data = self.arrow_data();
+        data.as_any()
+            .downcast_ref::<StringArray>()
+            .filter(|arr| arr.len() == 1 && !arr.is_null(0))
+            .map(|arr| arr.value(0).to_string())
+            .ok_or_else(|| format!("expected String, got {}", self.type_name()))
     }
 
     pub fn as_boolean(&self) -> Result<bool, String> {
-        self.downcast_scalar::<BooleanArray>().and_then(|arr| {
-            if arr.is_null(0) {
-                Err("Boolean array is null".to_string())
-            } else {
-                Ok(arr.value(0))
-            }
-        })
+        let data = self.arrow_data();
+        data.as_any()
+            .downcast_ref::<BooleanArray>()
+            .filter(|arr| arr.len() == 1 && !arr.is_null(0))
+            .map(|arr| arr.value(0))
+            .ok_or_else(|| format!("expected Boolean, got {}", self.type_name()))
     }
 
     pub fn as_integer(&self) -> Result<i64, String> {
-        self.downcast_scalar::<Int64Array>().map(|arr| arr.value(0))
+        let data = self.arrow_data();
+        data.as_any()
+            .downcast_ref::<Int64Array>()
+            .filter(|arr| arr.len() == 1)
+            .map(|arr| arr.value(0))
+            .ok_or_else(|| format!("expected Int, got {}", self.type_name()))
     }
 
     pub fn as_list(&self) -> Result<&ListArray, String> {
-        self.arrow_data()
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .ok_or_else(|| "Expected list".to_string())
+        match self {
+            ExpressionValue::Arrow(data) => data
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| "Expected list".to_string()),
+            _ => Err(format!("expected List, got {}", self.type_name())),
+        }
     }
 
     pub fn as_list_elements(&self) -> Result<Vec<ExpressionValue>, String> {
@@ -432,8 +431,8 @@ impl ExpressionValue {
     }
 
     pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {
-        let union_array = self
-            .arrow_data()
+        let data = self.arrow_data();
+        let union_array = data
             .as_any()
             .downcast_ref::<UnionArray>()
             .ok_or_else(|| "Expected option (union) type".to_string())?;
@@ -493,7 +492,8 @@ impl ExpressionValue {
     }
 
     pub fn as_metadata(&self) -> Result<(String, Option<String>), String> {
-        if let Some(struct_array) = self.arrow_data().as_any().downcast_ref::<StructArray>() {
+        let data = self.arrow_data();
+        if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>() {
             if !Self::is_metadata_struct(struct_array) {
                 return Err("Not a metadata struct".to_string());
             }
@@ -812,5 +812,45 @@ mod tests {
             ast_ref: NoAst,
         };
         assert!(matches!(def.kind, TypeDefinitionKind::Native { .. }));
+    }
+
+    #[test]
+    fn unit_value_string_is_unit_literal() {
+        assert_eq!(ExpressionValue::unit().value_string(), "()");
+    }
+
+    #[test]
+    fn unit_format_for_llm_is_unit_literal() {
+        assert_eq!(ExpressionValue::unit().format_for_llm(), "()");
+    }
+
+    #[test]
+    fn unit_as_string_is_err() {
+        assert!(ExpressionValue::unit().as_string().is_err());
+    }
+
+    #[test]
+    fn unit_as_boolean_is_err() {
+        assert!(ExpressionValue::unit().as_boolean().is_err());
+    }
+
+    #[test]
+    fn unit_as_integer_is_err() {
+        assert!(ExpressionValue::unit().as_integer().is_err());
+    }
+
+    #[test]
+    fn unit_as_list_is_err() {
+        assert!(ExpressionValue::unit().as_list().is_err());
+    }
+
+    #[test]
+    fn unit_as_option_is_err() {
+        assert!(ExpressionValue::unit().as_option().is_err());
+    }
+
+    #[test]
+    fn unit_as_metadata_is_err() {
+        assert!(ExpressionValue::unit().as_metadata().is_err());
     }
 }
