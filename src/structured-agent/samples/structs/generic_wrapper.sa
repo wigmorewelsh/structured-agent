@@ -1,0 +1,9 @@
+struct Wrapper<T> {
+    label: String,
+    value: T,
+}
+
+fn main(): String {
+    let w = Wrapper { label: "the answer", value: 42 }
+    return w.label
+}

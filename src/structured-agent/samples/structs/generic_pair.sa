@@ -1,0 +1,9 @@
+struct Pair<T> {
+    label: String,
+    value: T,
+}
+
+fn main(): String {
+    let p = Pair { label: "greeting", value: "hello" }
+    return p.label
+}

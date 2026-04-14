@@ -819,6 +819,7 @@ mod tests {
         use crate::ast::{StructDefinition, StructField};
         Definition::Struct(Arc::new(StructDefinition {
             name: name.to_string(),
+            type_params: vec![],
             fields: fields
                 .into_iter()
                 .map(|(field_name, field_type)| StructField {
@@ -2073,6 +2074,7 @@ mod typed_ast_tests {
     fn struct_literal_has_struct_type() {
         let struct_def = crate::ast::StructDefinition {
             name: "Point".to_string(),
+            type_params: vec![],
             fields: vec![
                 crate::ast::StructField {
                     name: "x".to_string(),
@@ -2132,6 +2134,7 @@ mod typed_ast_tests {
     fn field_access_has_field_type() {
         let struct_def = crate::ast::StructDefinition {
             name: "Point".to_string(),
+            type_params: vec![],
             fields: vec![
                 crate::ast::StructField {
                     name: "x".to_string(),
@@ -2567,6 +2570,7 @@ mod metadata_query_tests {
     fn metadata_struct_type_is_queryable() {
         let module = create_test_module(vec![Definition::Struct(Arc::new(StructDefinition {
             name: "Point".to_string(),
+            type_params: vec![],
             fields: vec![StructField {
                 name: "x".to_string(),
                 field_type: AstType::Generic("Int".to_string()),

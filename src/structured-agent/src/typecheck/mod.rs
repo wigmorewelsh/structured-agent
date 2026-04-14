@@ -90,12 +90,26 @@ fn convert_type_kind(
     module: &ModuleName,
 ) -> TypeDefinitionKind<refs::TypedRefs> {
     match kind {
-        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
+        TypeDefinitionKind::Struct {
+            fields,
+            generic_parameters,
+        } => TypeDefinitionKind::Struct {
             fields: fields
                 .iter()
                 .map(|f| FieldDefinition {
                     name: f.name.clone(),
                     type_name: ast_type_to_type_name(&f.type_name, module),
+                })
+                .collect(),
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp
+                        .constraints
+                        .iter()
+                        .map(|c| ast_type_to_type_name(c, module))
+                        .collect(),
                 })
                 .collect(),
         },

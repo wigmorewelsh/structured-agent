@@ -637,14 +637,29 @@ where
         position(),
         lex_string("struct"),
         identifier(),
+        optional(attempt(between(
+            lex_char('<'),
+            lex_char('>'),
+            sep_by1(parse_type_param(), lex_char(',')),
+        ))),
         between(lex_char('{'), lex_char('}'), many(parse_struct_field())),
         position(),
     )
-        .map(|(start, _, name, fields, end)| StructDefinition {
-            name,
-            fields,
-            span: Span::new(start, end),
-        })
+        .map(
+            |(start, _, name, type_params_opt, fields, end): (
+                _,
+                _,
+                _,
+                Option<Vec<TypeParam>>,
+                _,
+                _,
+            )| StructDefinition {
+                name,
+                type_params: type_params_opt.unwrap_or_default(),
+                fields,
+                span: Span::new(start, end),
+            },
+        )
 }
 
 fn parse_struct_field<Input>() -> impl Parser<Input, Output = StructField>
@@ -2726,6 +2741,54 @@ extern fn add(n: Int): Int
             );
         } else {
             panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_type_param() {
+        let input = "struct Pair<T> {\n    first: T,\n    second: T,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.name, "Pair");
+            assert_eq!(s.type_params.len(), 1);
+            assert_eq!(s.type_params[0].name, "T");
+            assert_eq!(s.fields.len(), 2);
+        } else {
+            panic!("expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_multiple_type_params() {
+        let input = "struct Either<A, B> {\n    left: A,\n    right: B,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.type_params.len(), 2);
+            assert_eq!(s.type_params[0].name, "A");
+            assert_eq!(s.type_params[1].name, "B");
+        } else {
+            panic!("expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_without_type_params_has_empty_list() {
+        let input = "struct Point {\n    x: Int,\n    y: Int,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert!(s.type_params.is_empty());
+        } else {
+            panic!("expected struct definition");
         }
     }
 

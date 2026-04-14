@@ -102,7 +102,7 @@ pub(super) fn get_struct_fields(
     tables: SymbolTablesInput,
     name: &str,
     current_module: &ModuleName,
-) -> Option<Vec<(String, AstType)>> {
+) -> Option<(Vec<(String, AstType)>, Vec<TypeParam>)> {
     let interned_mod = current_module.intern(db);
     let interned_name = name.intern(db);
     let resolved =
@@ -112,12 +112,13 @@ pub(super) fn get_struct_fields(
         });
     let extract = |ast_ref: &CheckerAstRef| {
         if let CheckerAstRef::Struct(s) = ast_ref {
-            Some(
-                s.fields
-                    .iter()
-                    .map(|f| (f.name.clone(), f.field_type.clone()))
-                    .collect(),
-            )
+            let fields = s
+                .fields
+                .iter()
+                .map(|f| (f.name.clone(), f.field_type.clone()))
+                .collect();
+            let type_params = s.type_params.clone();
+            Some((fields, type_params))
         } else {
             None
         }

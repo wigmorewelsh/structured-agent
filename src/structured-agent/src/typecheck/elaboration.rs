@@ -54,7 +54,7 @@ pub(super) fn check_definition(
                     tables,
                     &f.field_type,
                     ctx.module_name,
-                    &[],
+                    &s.type_params,
                     f.span,
                     ctx.file_id,
                 )?;
@@ -761,15 +761,18 @@ fn check_struct_literal(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
-    let definition = super::query::get_struct_fields(db, tables, struct_name, ctx.module_name)
-        .ok_or_else(|| TypeError::UnsupportedType {
-            type_name: struct_name.to_string(),
-            span,
-            file_id: ctx.file_id,
-        })?;
+    let (definition, type_params) =
+        super::query::get_struct_fields(db, tables, struct_name, ctx.module_name).ok_or_else(
+            || TypeError::UnsupportedType {
+                type_name: struct_name.to_string(),
+                span,
+                file_id: ctx.file_id,
+            },
+        )?;
 
     let mut seen = std::collections::HashSet::new();
     let mut typed_fields = Vec::new();
+    let mut subst: HashMap<String, RT> = HashMap::new();
 
     for (field_name, value_expr) in fields {
         if !seen.insert(field_name.clone()) {
@@ -797,16 +800,17 @@ fn check_struct_literal(
             tables,
             &declared_ast_type,
             ctx.module_name,
-            &[],
+            &type_params,
             value_expr.span(),
             ctx.file_id,
         )?;
         let typed_value = check_expression(db, tables, value_expr, env, ctx)?;
-        if typed_value.ty() != &declared_type {
+        if !TypeChecker::unify_type(&declared_type, typed_value.ty(), &mut subst) {
+            let expected = TypeChecker::apply_subst(&declared_type, &subst);
             return Err(TypeError::StructFieldTypeMismatch {
                 struct_name: struct_name.to_string(),
                 field_name: field_name.clone(),
-                expected: declared_ast_type.to_string(),
+                expected: expected.name(),
                 found: typed_value.ty().name(),
                 span: value_expr.span(),
                 file_id: ctx.file_id,
@@ -856,7 +860,7 @@ fn check_field_access(
     let base_type = typed_base.ty().clone();
     match base_type {
         RT::Struct(type_name) => {
-            let definition =
+            let (definition, _) =
                 super::query::get_struct_fields(db, tables, &type_name.name, ctx.module_name)
                     .ok_or_else(|| TypeError::UnsupportedType {
                         type_name: type_name.name.clone(),
@@ -889,12 +893,14 @@ fn check_field_access(
             })
         }
         RT::Generic(name) => {
-            let definition = super::query::get_struct_fields(db, tables, &name, ctx.module_name)
-                .ok_or_else(|| TypeError::UnsupportedType {
-                    type_name: name.clone(),
-                    span,
-                    file_id: ctx.file_id,
-                })?;
+            let (definition, _) =
+                super::query::get_struct_fields(db, tables, &name, ctx.module_name).ok_or_else(
+                    || TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
             let field_ast_type = definition
                 .iter()
                 .find(|(n, _)| n == field)

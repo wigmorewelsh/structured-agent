@@ -313,6 +313,7 @@ pub struct TypeDefinition<R: References> {
 pub enum TypeDefinitionKind<R: References> {
     Struct {
         fields: Vec<FieldDefinition<R>>,
+        generic_parameters: Vec<GenericParameterDefinition<R>>,
     },
     Function {
         parameters: Vec<ParameterDefinition<R>>,
@@ -346,12 +347,22 @@ where
     R2::Witness: Default,
 {
     match kind {
-        TypeDefinitionKind::Struct { fields } => TypeDefinitionKind::Struct {
+        TypeDefinitionKind::Struct {
+            fields,
+            generic_parameters,
+        } => TypeDefinitionKind::Struct {
             fields: fields
                 .iter()
                 .map(|f| FieldDefinition {
                     name: f.name.clone(),
                     type_name: f.type_name.clone(),
+                })
+                .collect(),
+            generic_parameters: generic_parameters
+                .iter()
+                .map(|gp| GenericParameterDefinition {
+                    name: gp.name.clone(),
+                    constraints: gp.constraints.clone(),
                 })
                 .collect(),
         },

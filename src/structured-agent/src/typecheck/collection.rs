@@ -211,6 +211,14 @@ impl SymbolTableBuilder {
                                 type_name: f.field_type.clone(),
                             })
                             .collect(),
+                        generic_parameters: struct_def
+                            .type_params
+                            .iter()
+                            .map(|tp| GenericParameterDefinition {
+                                name: tp.name.clone(),
+                                constraints: tp.bounds.clone(),
+                            })
+                            .collect(),
                     },
                     source_ref: SourceLocation(file_id, struct_def.span),
                     ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),

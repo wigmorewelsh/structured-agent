@@ -1,0 +1,8 @@
+struct Pair<T> {
+    first: T,
+    second: T,
+}
+
+fn main(): () {
+    let p = Pair { first: "hello", second: 42 }
+}

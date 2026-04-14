@@ -167,6 +167,7 @@ impl Spanned for Definition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
     pub name: String,
+    pub type_params: Vec<TypeParam>,
     pub fields: Vec<StructField>,
     pub span: Span,
 }
@@ -484,7 +485,13 @@ impl fmt::Display for Definition {
             Definition::Function(func) => write!(f, "{}", func),
             Definition::ExternalFunction(ext_func) => write!(f, "{}", ext_func),
             Definition::Struct(s) => {
-                write!(f, "struct {} {{", s.name)?;
+                if s.type_params.is_empty() {
+                    write!(f, "struct {} {{", s.name)?;
+                } else {
+                    let params: Vec<&str> =
+                        s.type_params.iter().map(|tp| tp.name.as_str()).collect();
+                    write!(f, "struct {}<{}> {{", s.name, params.join(", "))?;
+                }
                 for field in &s.fields {
                     write!(f, "\n    {}: {},", field.name, field.field_type)?;
                 }

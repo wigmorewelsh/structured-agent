@@ -348,7 +348,7 @@ impl Runtime {
     ) -> Option<Vec<(String, crate::types::Type)>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
         let td = cached.metadata.types.get(type_name)?;
-        if let TypeDefinitionKind::Struct { fields } = &td.kind {
+        if let TypeDefinitionKind::Struct { fields, .. } = &td.kind {
             Some(
                 fields
                     .iter()
