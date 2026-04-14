@@ -154,13 +154,16 @@ impl LanguageEngine for PrintEngine {
             Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
             Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
             Type::Unit => Ok(crate::runtime::ExpressionValue::unit()),
-            Type::List(_) => {
-                let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::string(value))
+            Type::Parameterized(n, args) => {
+                if n.name == "Option" {
+                    Ok(crate::runtime::ExpressionValue::option_none_with_type(
+                        context.runtime().type_to_arrow_datatype(&args[0]),
+                    ))
+                } else {
+                    let value = self.untyped(context).await;
+                    Ok(crate::runtime::ExpressionValue::string(value))
+                }
             }
-            Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
-                context.runtime().type_to_arrow_datatype(inner),
-            )),
             Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
             Type::Generic(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
@@ -187,13 +190,16 @@ impl LanguageEngine for PrintEngine {
             }
             Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
             Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
-            Type::List(_) => {
-                let value = self.untyped(context).await;
-                Ok(crate::runtime::ExpressionValue::string(value))
+            Type::Parameterized(n, args) => {
+                if n.name == "Option" {
+                    Ok(crate::runtime::ExpressionValue::option_none_with_type(
+                        context.runtime().type_to_arrow_datatype(&args[0]),
+                    ))
+                } else {
+                    let value = self.untyped(context).await;
+                    Ok(crate::runtime::ExpressionValue::string(value))
+                }
             }
-            Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
-                context.runtime().type_to_arrow_datatype(inner),
-            )),
             Type::Unit | Type::Struct(_) | Type::Generic(_) => {
                 Ok(crate::runtime::ExpressionValue::unit())
             }

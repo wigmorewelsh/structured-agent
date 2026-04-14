@@ -64,12 +64,8 @@ pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> T
             name: name.clone(),
             module: module_name.clone(),
         },
-        AstType::List(_) => TypeName {
-            name: "List".to_string(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-        },
-        AstType::Option(_) => TypeName {
-            name: "Option".to_string(),
+        AstType::Parameterized(name, _) => TypeName {
+            name: name.clone(),
             module: ModuleName::new(NonEmpty::new("prelude".to_string())),
         },
         other => TypeName {

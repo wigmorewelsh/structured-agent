@@ -522,12 +522,12 @@ where
         Type::Boolean => DataType::Boolean,
         Type::Int => DataType::Int64,
         Type::Unit => DataType::Null,
-        Type::List(inner) => {
-            let inner_dt = type_to_arrow_datatype(inner, metadata);
+        Type::Parameterized(type_name, args) if type_name.name == "List" && args.len() == 1 => {
+            let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
         Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, metadata),
-        Type::Option(_) | Type::Generic(_) => DataType::Null,
+        Type::Parameterized(..) | Type::Generic(_) => DataType::Null,
     }
 }
 

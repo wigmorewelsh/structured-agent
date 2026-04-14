@@ -1,8 +1,9 @@
 use async_trait::async_trait;
+use nonempty::NonEmpty;
 
 use crate::actor::AgentHandle;
 use crate::expression::ExpressionValue;
-use crate::symbols::TypeName;
+use crate::symbols::{ModuleName, TypeName};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -11,8 +12,7 @@ pub enum Type {
     Int,
     Unit,
     Struct(TypeName),
-    List(Box<Type>),
-    Option(Box<Type>),
+    Parameterized(TypeName, Vec<Type>),
     Generic(std::string::String),
 }
 
@@ -48,11 +48,31 @@ impl Type {
     }
 
     pub fn list(inner: Type) -> Self {
-        Self::List(Box::new(inner))
+        Self::Parameterized(
+            TypeName {
+                name: "List".to_string(),
+                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+            },
+            vec![inner],
+        )
     }
 
     pub fn option(inner: Type) -> Self {
-        Self::Option(Box::new(inner))
+        Self::Parameterized(
+            TypeName {
+                name: "Option".to_string(),
+                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+            },
+            vec![inner],
+        )
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, Type::Parameterized(n, _) if n.name == "List")
+    }
+
+    pub fn is_option(&self) -> bool {
+        matches!(self, Type::Parameterized(n, _) if n.name == "Option")
     }
 
     pub fn generic(name: impl Into<std::string::String>) -> Self {
@@ -66,8 +86,10 @@ impl Type {
             Type::Int => "Int".to_string(),
             Type::Unit => "()".to_string(),
             Type::Struct(tn) => tn.name.clone(),
-            Type::List(inner) => format!("List<{}>", inner.name()),
-            Type::Option(inner) => format!("Option<{}>", inner.name()),
+            Type::Parameterized(type_name, args) => {
+                let arg_names: Vec<String> = args.iter().map(|a| a.name()).collect();
+                format!("{}<{}>", type_name.name, arg_names.join(", "))
+            }
             Type::Generic(name) => name.clone(),
         }
     }
@@ -81,8 +103,10 @@ impl std::fmt::Display for Type {
             Type::Int => write!(f, "Int"),
             Type::Unit => write!(f, "Unit"),
             Type::Struct(tn) => write!(f, "{}", tn.name),
-            Type::List(inner) => write!(f, "List<{}>", inner),
-            Type::Option(inner) => write!(f, "Option<{}>", inner),
+            Type::Parameterized(type_name, args) => {
+                let arg_strs: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                write!(f, "{}<{}>", type_name.name, arg_strs.join(", "))
+            }
             Type::Generic(name) => write!(f, "{}", name),
         }
     }

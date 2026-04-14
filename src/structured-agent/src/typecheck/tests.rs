@@ -1372,9 +1372,15 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("T".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             vec![],
         );
         let caller = create_test_function(
@@ -1383,7 +1389,10 @@ mod tests {
                 "s",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Option(Box::new(AstType::Generic("String".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("String".to_string())),
+            ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1412,7 +1421,10 @@ mod tests {
             name: "wrap".to_string(),
             type_params: vec!["T".into()],
             parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
-            return_type: AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            return_type: AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             is_pub: false,
             span: crate::types::Span::dummy(),
         };
@@ -1422,7 +1434,10 @@ mod tests {
                 "s",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Option(Box::new(AstType::Generic("String".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("String".to_string())),
+            ),
             vec![Statement::Return(Expression::Call {
                 function: "wrap".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1445,7 +1460,10 @@ mod tests {
             "make_none",
             vec!["T".into()],
             vec![],
-            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             vec![],
         );
         let caller = create_test_function(
@@ -1475,16 +1493,25 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("T".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             vec![],
         );
         let consume = create_test_function(
             "consume",
             vec![create_parameter(
                 "item",
-                AstType::Option(Box::new(AstType::Generic("String".to_string()))),
+                AstType::Parameterized(
+                    "Option".to_string(),
+                    Box::new(AstType::Generic("String".to_string())),
+                ),
             )],
             AstType::Generic("Unit".to_string()),
             vec![],
@@ -1493,7 +1520,10 @@ mod tests {
             "main",
             vec![create_parameter(
                 "xs",
-                AstType::List(Box::new(AstType::Generic("String".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("String".to_string())),
+                ),
             )],
             AstType::Generic("Unit".to_string()),
             vec![
@@ -1974,7 +2004,10 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::List(Box::new(AstType::Generic("Int".to_string()))),
+            AstType::Parameterized(
+                "List".to_string(),
+                Box::new(AstType::Generic("Int".to_string())),
+            ),
             vec![Statement::Return(Expression::ListLiteral {
                 elements: vec![
                     Expression::IntLiteral {
@@ -1993,7 +2026,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::List(Box::new(RT::Int)));
+        assert_eq!(expr.ty(), &RT::list(RT::Int));
     }
 
     #[test]
@@ -2229,18 +2262,30 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("T".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::List(Box::new(AstType::Generic("String".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("String".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("String".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("String".to_string())),
+            ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2266,7 +2311,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Option(Box::new(RT::String)));
+        assert_eq!(expr.ty(), &RT::option(RT::String));
     }
 
     #[test]
@@ -2276,18 +2321,30 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::List(Box::new(AstType::Generic("T".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("T".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("T".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("T".to_string())),
+            ),
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::List(Box::new(AstType::Generic("Int".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("Int".to_string())),
+                ),
             )],
-            AstType::Option(Box::new(AstType::Generic("Int".to_string()))),
+            AstType::Parameterized(
+                "Option".to_string(),
+                Box::new(AstType::Generic("Int".to_string())),
+            ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2313,7 +2370,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Option(Box::new(RT::Int)));
+        assert_eq!(expr.ty(), &RT::option(RT::Int));
     }
 
     #[test]
@@ -2324,14 +2381,23 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "a",
-                    AstType::List(Box::new(AstType::Generic("A".to_string()))),
+                    AstType::Parameterized(
+                        "List".to_string(),
+                        Box::new(AstType::Generic("A".to_string())),
+                    ),
                 ),
                 create_parameter(
                     "b",
-                    AstType::List(Box::new(AstType::Generic("B".to_string()))),
+                    AstType::Parameterized(
+                        "List".to_string(),
+                        Box::new(AstType::Generic("B".to_string())),
+                    ),
                 ),
             ],
-            AstType::List(Box::new(AstType::Generic("A".to_string()))),
+            AstType::Parameterized(
+                "List".to_string(),
+                Box::new(AstType::Generic("A".to_string())),
+            ),
             vec![],
         );
         let caller = create_test_function(
@@ -2339,14 +2405,23 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "strs",
-                    AstType::List(Box::new(AstType::Generic("String".to_string()))),
+                    AstType::Parameterized(
+                        "List".to_string(),
+                        Box::new(AstType::Generic("String".to_string())),
+                    ),
                 ),
                 create_parameter(
                     "ints",
-                    AstType::List(Box::new(AstType::Generic("Int".to_string()))),
+                    AstType::Parameterized(
+                        "List".to_string(),
+                        Box::new(AstType::Generic("Int".to_string())),
+                    ),
                 ),
             ],
-            AstType::List(Box::new(AstType::Generic("String".to_string()))),
+            AstType::Parameterized(
+                "List".to_string(),
+                Box::new(AstType::Generic("String".to_string())),
+            ),
             vec![Statement::Return(Expression::Call {
                 function: "zip".to_string(),
                 arguments: vec![
@@ -2378,7 +2453,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::List(Box::new(RT::String)));
+        assert_eq!(expr.ty(), &RT::list(RT::String));
     }
 
     #[test]
@@ -2708,7 +2783,10 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "get_items",
                 vec![],
-                AstType::List(Box::new(AstType::Generic("Int".to_string()))),
+                AstType::Parameterized(
+                    "List".to_string(),
+                    Box::new(AstType::Generic("Int".to_string())),
+                ),
                 vec![Statement::Return(Expression::ListLiteral {
                     elements: vec![Expression::IntLiteral {
                         value: 1,

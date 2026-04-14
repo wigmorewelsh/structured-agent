@@ -641,7 +641,7 @@ fn check_list_literal(
 
     Ok(typed_ast::Expression::ListLiteral {
         elements: typed_elements,
-        ty: RT::List(Box::new(first_type)),
+        ty: RT::list(first_type),
         span,
     })
 }
@@ -939,10 +939,10 @@ impl TypeChecker {
     pub(super) fn substitute_self(ty: &AstType, concrete: &str) -> AstType {
         match ty {
             AstType::Generic(name) if name == "Self" => AstType::Struct(concrete.to_string()),
-            AstType::List(inner) => AstType::List(Box::new(Self::substitute_self(inner, concrete))),
-            AstType::Option(inner) => {
-                AstType::Option(Box::new(Self::substitute_self(inner, concrete)))
-            }
+            AstType::Parameterized(name, inner) => AstType::Parameterized(
+                name.clone(),
+                Box::new(Self::substitute_self(inner, concrete)),
+            ),
             other => other.clone(),
         }
     }

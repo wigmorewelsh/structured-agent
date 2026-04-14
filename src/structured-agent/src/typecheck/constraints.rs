@@ -53,51 +53,29 @@ pub(super) fn resolve(
                 }),
             }
         }
-        AstType::List(inner) => {
-            let type_name = TypeName {
-                name: "List".to_string(),
-                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-            };
+        AstType::Parameterized(name, inner) => {
+            let interned_mod = ModuleName::new(NonEmpty::new("prelude".to_string())).intern(db);
+            let interned_name = name.intern(db);
+            let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)
+                .unwrap_or_else(|| TypeName {
+                    name: name.clone(),
+                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+                });
             match tables.types(db).get().get(&type_name) {
                 Some(td) => match &td.kind {
                     TypeDefinitionKind::Native { .. } => {
                         let inner_rt =
                             resolve(db, tables, inner, module, type_params, span, file_id)?;
-                        Ok(RT::List(Box::new(inner_rt)))
+                        Ok(RT::Parameterized(type_name, vec![inner_rt]))
                     }
                     _ => Err(TypeError::UnboundTypeParameter {
-                        name: "List".to_string(),
+                        name: name.clone(),
                         span,
                         file_id,
                     }),
                 },
                 None => Err(TypeError::UnboundTypeParameter {
-                    name: "List".to_string(),
-                    span,
-                    file_id,
-                }),
-            }
-        }
-        AstType::Option(inner) => {
-            let type_name = TypeName {
-                name: "Option".to_string(),
-                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-            };
-            match tables.types(db).get().get(&type_name) {
-                Some(td) => match &td.kind {
-                    TypeDefinitionKind::Native { .. } => {
-                        let inner_rt =
-                            resolve(db, tables, inner, module, type_params, span, file_id)?;
-                        Ok(RT::Option(Box::new(inner_rt)))
-                    }
-                    _ => Err(TypeError::UnboundTypeParameter {
-                        name: "Option".to_string(),
-                        span,
-                        file_id,
-                    }),
-                },
-                None => Err(TypeError::UnboundTypeParameter {
-                    name: "Option".to_string(),
+                    name: name.clone(),
                     span,
                     file_id,
                 }),
@@ -117,16 +95,14 @@ impl TypeChecker {
                     true
                 }
             }
-            RT::List(inner_formal) => {
-                if let RT::List(inner_actual) = actual {
-                    Self::unify_type(inner_formal, inner_actual, subst)
-                } else {
-                    false
-                }
-            }
-            RT::Option(inner_formal) => {
-                if let RT::Option(inner_actual) = actual {
-                    Self::unify_type(inner_formal, inner_actual, subst)
+            RT::Parameterized(name_formal, args_formal) => {
+                if let RT::Parameterized(name_actual, args_actual) = actual {
+                    name_formal == name_actual
+                        && args_formal.len() == args_actual.len()
+                        && args_formal
+                            .iter()
+                            .zip(args_actual.iter())
+                            .all(|(f, a)| Self::unify_type(f, a, subst))
                 } else {
                     false
                 }
@@ -138,8 +114,10 @@ impl TypeChecker {
     pub(super) fn apply_subst(ty: &RT, subst: &HashMap<String, RT>) -> RT {
         match ty {
             RT::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
-            RT::List(inner) => RT::List(Box::new(Self::apply_subst(inner, subst))),
-            RT::Option(inner) => RT::Option(Box::new(Self::apply_subst(inner, subst))),
+            RT::Parameterized(name, args) => RT::Parameterized(
+                name.clone(),
+                args.iter().map(|a| Self::apply_subst(a, subst)).collect(),
+            ),
             other => other.clone(),
         }
     }
