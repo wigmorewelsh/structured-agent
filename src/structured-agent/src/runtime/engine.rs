@@ -360,6 +360,14 @@ impl Runtime {
         }
     }
 
+    pub fn type_to_arrow_datatype(&self, ty: &crate::types::Type) -> arrow::datatypes::DataType {
+        self.compiled
+            .get()
+            .and_then(|c| c.as_ref().ok())
+            .map(|c| structured_agent_runtime::type_to_arrow_datatype(ty, c.metadata.as_ref()))
+            .unwrap_or(arrow::datatypes::DataType::Null)
+    }
+
     fn compile(&self) -> Result<CompiledProgram, String> {
         match &self.program_source {
             ProgramSource::Inline(source) => {

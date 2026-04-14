@@ -159,7 +159,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
-                structured_agent_runtime::rt_type_to_arrow_datatype(inner),
+                context.runtime().type_to_arrow_datatype(inner),
             )),
             Type::Struct(_) => Ok(crate::runtime::ExpressionValue::unit()),
             Type::Generic(_) => Ok(crate::runtime::ExpressionValue::unit()),
@@ -192,7 +192,7 @@ impl LanguageEngine for PrintEngine {
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
             Type::Option(inner) => Ok(crate::runtime::ExpressionValue::option_none_with_type(
-                structured_agent_runtime::rt_type_to_arrow_datatype(inner),
+                context.runtime().type_to_arrow_datatype(inner),
             )),
             Type::Unit | Type::Struct(_) | Type::Generic(_) => {
                 Ok(crate::runtime::ExpressionValue::unit())

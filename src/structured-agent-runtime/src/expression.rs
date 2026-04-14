@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::runtime_value::{ListValue, OptionValue, RuntimeValue, UnitValue};
-use crate::symbols::FunctionName;
+use crate::symbols::{
+    FunctionName, MetaData, References, SymbolQuery, TypeDefinitionKind, TypeName,
+};
 use crate::types::Type;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -511,17 +513,52 @@ impl ExpressionValue {
     }
 }
 
-pub fn rt_type_to_arrow_datatype(t: &Type) -> DataType {
-    match t {
+pub fn type_to_arrow_datatype<R>(ty: &Type, metadata: &MetaData<R>) -> DataType
+where
+    R: References<TypeAnnotation = TypeName>,
+{
+    match ty {
         Type::String => DataType::Utf8,
         Type::Boolean => DataType::Boolean,
         Type::Int => DataType::Int64,
         Type::Unit => DataType::Null,
         Type::List(inner) => {
-            let inner_dt = rt_type_to_arrow_datatype(inner);
+            let inner_dt = type_to_arrow_datatype(inner, metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
-        Type::Option(_) | Type::Struct(_) | Type::Generic(_) => DataType::Null,
+        Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, metadata),
+        Type::Option(_) | Type::Generic(_) => DataType::Null,
+    }
+}
+
+fn type_name_to_arrow_datatype<R>(type_name: &TypeName, metadata: &MetaData<R>) -> DataType
+where
+    R: References<TypeAnnotation = TypeName>,
+{
+    match type_name.name.as_str() {
+        "Int" => DataType::Int64,
+        "String" => DataType::Utf8,
+        "Boolean" => DataType::Boolean,
+        "Unit" | "()" => DataType::Null,
+        _ => match metadata.type_def(type_name) {
+            Some(td) => match &td.kind {
+                TypeDefinitionKind::Struct { fields, .. } => {
+                    let arrow_fields: Vec<Field> = fields
+                        .iter()
+                        .map(|f| {
+                            Field::new(
+                                &f.name,
+                                type_name_to_arrow_datatype(&f.type_name, metadata),
+                                true,
+                            )
+                        })
+                        .collect();
+                    DataType::Struct(Fields::from(arrow_fields))
+                }
+                _ => DataType::Null,
+            },
+            None => DataType::Null,
+        },
     }
 }
 
@@ -821,16 +858,17 @@ mod tests {
     #[test]
     fn rt_type_to_arrow_datatype_maps_primitives() {
         use crate::types::Type;
+        let metadata = crate::symbols::MetaData::<TestRefs>::default();
         assert_eq!(
-            super::rt_type_to_arrow_datatype(&Type::String),
+            super::type_to_arrow_datatype(&Type::String, &metadata),
             arrow::datatypes::DataType::Utf8
         );
         assert_eq!(
-            super::rt_type_to_arrow_datatype(&Type::Boolean),
+            super::type_to_arrow_datatype(&Type::Boolean, &metadata),
             arrow::datatypes::DataType::Boolean
         );
         assert_eq!(
-            super::rt_type_to_arrow_datatype(&Type::Int),
+            super::type_to_arrow_datatype(&Type::Int, &metadata),
             arrow::datatypes::DataType::Int64
         );
     }

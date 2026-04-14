@@ -1704,7 +1704,7 @@ fn main(): Int {
     #[test]
     fn test_from_elements_option_list() {
         let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
-        let b = ExpressionValue::option_none();
+        let b = ExpressionValue::option_none_utf8();
         let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
         assert_eq!(list.type_name(), "List");
         let arr = list.as_list().unwrap();
@@ -1727,7 +1727,7 @@ fn main(): Int {
     #[test]
     fn test_format_for_llm_option_list() {
         let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
-        let b = ExpressionValue::option_none();
+        let b = ExpressionValue::option_none_utf8();
         let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
         let formatted = list.format_for_llm();
         assert!(formatted.contains("Some"), "got: {}", formatted);

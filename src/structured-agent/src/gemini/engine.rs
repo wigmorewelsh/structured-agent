@@ -163,7 +163,7 @@ impl GeminiEngine {
             Type::Option(inner_type) => {
                 if json_value.is_null() {
                     Ok(ExpressionValue::option_none_with_type(
-                        structured_agent_runtime::rt_type_to_arrow_datatype(inner_type),
+                        context.runtime().type_to_arrow_datatype(inner_type),
                     ))
                 } else {
                     let inner = Self::parse_json_value(json_value, inner_type, context)?;
