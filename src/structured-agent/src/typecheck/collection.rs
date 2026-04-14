@@ -410,7 +410,7 @@ impl SymbolTableBuilder {
                         let entry = FunctionDefinition {
                             name: impl_fn_key.clone(),
                             visibility: Visibility::Private,
-                            type_name: ast_type_to_type_name(&resolved_return, module_name),
+                            type_name: super::ast_type_to_type_name(&resolved_return, module_name),
                             source_ref: SourceLocation(file_id, func.span),
                             ast_ref: CheckerAstRef::ImplFunction(
                                 Arc::clone(func),
@@ -537,25 +537,4 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
             _ => vec![],
         })
         .collect()
-}
-
-fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {
-    match ty {
-        AstType::Struct(name) => TypeName {
-            name: name.clone(),
-            module: module_name.clone(),
-        },
-        AstType::List(_) => TypeName {
-            name: "List".to_string(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-        },
-        AstType::Option(_) => TypeName {
-            name: "Option".to_string(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-        },
-        other => TypeName {
-            name: other.to_string(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-        },
-    }
 }
