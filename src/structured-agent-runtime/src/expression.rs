@@ -10,7 +10,7 @@ use arrow::datatypes::{DataType, Field, FieldRef, Fields, UnionFields};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::runtime_value::{RuntimeValue, UnitValue};
+use crate::runtime_value::{ListValue, OptionValue, RuntimeValue, UnitValue};
 use crate::symbols::FunctionName;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +106,7 @@ impl ExpressionValue {
     }
 
     pub fn list(arr: Arc<ListArray>) -> Self {
-        Self::Arrow(arr)
+        Self::Dynamic(Arc::new(ListValue::new(arr)))
     }
 
     pub fn module(name: FunctionName) -> Self {
@@ -114,11 +114,16 @@ impl ExpressionValue {
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+        let list_value = Self::build_list(elements)?;
+        Ok(Self::Dynamic(Arc::new(list_value)))
+    }
+
+    fn build_list(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
         if elements.is_empty() {
             let mut builder: ListBuilder<Box<dyn arrow::array::ArrayBuilder>> =
                 ListBuilder::new(Box::new(StringBuilder::new()));
             builder.append(true);
-            return Ok(Self::list(Arc::new(builder.finish())));
+            return Ok(ListValue::new(Arc::new(builder.finish())));
         }
 
         match elements[0].type_name() {
@@ -128,7 +133,7 @@ impl ExpressionValue {
                     builder.values().append_value(elem.as_string()?);
                 }
                 builder.append(true);
-                Ok(Self::list(Arc::new(builder.finish())))
+                Ok(ListValue::new(Arc::new(builder.finish())))
             }
             "Int" => {
                 let mut builder = ListBuilder::new(Int64Builder::new());
@@ -136,7 +141,7 @@ impl ExpressionValue {
                     builder.values().append_value(elem.as_integer()?);
                 }
                 builder.append(true);
-                Ok(Self::list(Arc::new(builder.finish())))
+                Ok(ListValue::new(Arc::new(builder.finish())))
             }
             "Boolean" => {
                 let mut builder = ListBuilder::new(BooleanBuilder::new());
@@ -144,7 +149,7 @@ impl ExpressionValue {
                     builder.values().append_value(elem.as_boolean()?);
                 }
                 builder.append(true);
-                Ok(Self::list(Arc::new(builder.finish())))
+                Ok(ListValue::new(Arc::new(builder.finish())))
             }
             "Struct" => Self::list_from_structs(elements),
             "Option" => Self::list_from_options(elements),
@@ -152,7 +157,7 @@ impl ExpressionValue {
         }
     }
 
-    fn list_from_structs(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+    fn list_from_structs(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
         let first_data = elements[0].arrow_data();
         let first = first_data
             .as_any()
@@ -219,10 +224,10 @@ impl ExpressionValue {
         let offsets = OffsetBuffer::new(vec![0i32, struct_array.len() as i32].into());
         let list_array = ListArray::try_new(field, offsets, Arc::new(struct_array), None)
             .map_err(|e| e.to_string())?;
-        Ok(Self::list(Arc::new(list_array)))
+        Ok(ListValue::new(Arc::new(list_array)))
     }
 
-    fn list_from_options(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+    fn list_from_options(elements: Vec<ExpressionValue>) -> Result<ListValue, String> {
         let inner_type = elements
             .iter()
             .find_map(|e| {
@@ -279,7 +284,7 @@ impl ExpressionValue {
         let offsets = OffsetBuffer::new(vec![0i32, child.len() as i32].into());
         let list_array =
             ListArray::try_new(field, offsets, child, None).map_err(|e| e.to_string())?;
-        Ok(Self::list(Arc::new(list_array)))
+        Ok(ListValue::new(Arc::new(list_array)))
     }
 
     pub fn from_array(data: Arc<dyn Array>) -> Self {
@@ -318,40 +323,11 @@ impl ExpressionValue {
     }
 
     pub fn option_none() -> Self {
-        let union_fields = UnionFields::try_new(
-            [0_i8, 1_i8],
-            [
-                Field::new("none", DataType::Null, true),
-                Field::new("some", DataType::Null, true),
-            ],
-        )
-        .expect("valid option_none union fields");
-        let type_ids: ScalarBuffer<i8> = [0_i8].into_iter().collect();
-        let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
-        let children: Vec<Arc<dyn Array>> =
-            vec![Arc::new(NullArray::new(1)), Arc::new(NullArray::new(0))];
-        let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
-            .expect("valid option_none union");
-        Self::Arrow(Arc::new(union_array))
+        Self::Dynamic(Arc::new(OptionValue::none()))
     }
 
     pub fn option_some(inner: ExpressionValue) -> Self {
-        let inner_data = inner.arrow_data().clone();
-        let inner_type = inner_data.data_type().clone();
-        let union_fields = UnionFields::try_new(
-            [0_i8, 1_i8],
-            [
-                Field::new("none", DataType::Null, true),
-                Field::new("some", inner_type, false),
-            ],
-        )
-        .expect("valid option_some union fields");
-        let type_ids: ScalarBuffer<i8> = [1_i8].into_iter().collect();
-        let offsets: ScalarBuffer<i32> = [0_i32].into_iter().collect();
-        let children: Vec<Arc<dyn Array>> = vec![Arc::new(NullArray::new(0)), inner_data];
-        let union_array = UnionArray::try_new(union_fields, type_ids, Some(offsets), children)
-            .expect("valid option_some union");
-        Self::Arrow(Arc::new(union_array))
+        Self::Dynamic(Arc::new(OptionValue::some(inner.arrow_data())))
     }
 
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
@@ -415,6 +391,11 @@ impl ExpressionValue {
                 .as_any()
                 .downcast_ref::<ListArray>()
                 .ok_or_else(|| "Expected list".to_string()),
+            ExpressionValue::Dynamic(v) => v
+                .as_any()
+                .downcast_ref::<ListValue>()
+                .map(|lv| lv.list_array())
+                .ok_or_else(|| format!("expected List, got {}", self.type_name())),
             _ => Err(format!("expected List, got {}", self.type_name())),
         }
     }
@@ -455,8 +436,8 @@ impl ExpressionValue {
     pub fn is_option(&self) -> bool {
         match self {
             ExpressionValue::Arrow(data) => matches!(data.data_type(), DataType::Union(_, _)),
+            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<OptionValue>().is_some(),
             ExpressionValue::Module(_) => false,
-            ExpressionValue::Dynamic(_) => false,
         }
     }
 
@@ -852,5 +833,112 @@ mod tests {
     #[test]
     fn unit_as_metadata_is_err() {
         assert!(ExpressionValue::unit().as_metadata().is_err());
+    }
+
+    #[test]
+    fn list_type_name() {
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::string("a"),
+            ExpressionValue::string("b"),
+        ])
+        .unwrap();
+        assert_eq!(list.type_name(), "List");
+    }
+
+    #[test]
+    fn list_equals_list() {
+        let a = ExpressionValue::from_elements(vec![ExpressionValue::integer(1)]).unwrap();
+        let b = ExpressionValue::from_elements(vec![ExpressionValue::integer(1)]).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn list_not_equal_different_contents() {
+        let a = ExpressionValue::from_elements(vec![ExpressionValue::integer(1)]).unwrap();
+        let b = ExpressionValue::from_elements(vec![ExpressionValue::integer(2)]).unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn list_as_list_returns_list_array() {
+        let list = ExpressionValue::from_elements(vec![ExpressionValue::string("x")]).unwrap();
+        assert!(list.as_list().is_ok());
+    }
+
+    #[test]
+    fn list_to_arrow_is_list_array() {
+        use crate::runtime_value::ListValue;
+        let lv = ListValue::new(Arc::new(arrow::array::ListArray::from_iter_primitive::<
+            arrow::datatypes::Int64Type,
+            _,
+            _,
+        >(vec![Some(vec![Some(1i64)])])));
+        let arr = lv.to_arrow();
+        assert!(
+            arr.as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn option_none_type_name() {
+        assert_eq!(ExpressionValue::option_none().type_name(), "Option");
+    }
+
+    #[test]
+    fn option_some_type_name() {
+        assert_eq!(
+            ExpressionValue::option_some(ExpressionValue::string("hi")).type_name(),
+            "Option"
+        );
+    }
+
+    #[test]
+    fn option_none_equals_option_none() {
+        assert_eq!(
+            ExpressionValue::option_none(),
+            ExpressionValue::option_none()
+        );
+    }
+
+    #[test]
+    fn option_some_equals_option_some() {
+        let a = ExpressionValue::option_some(ExpressionValue::string("hi"));
+        let b = ExpressionValue::option_some(ExpressionValue::string("hi"));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn option_some_not_equal_option_none() {
+        let a = ExpressionValue::option_some(ExpressionValue::string("hi"));
+        let b = ExpressionValue::option_none();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn is_option_true_for_dynamic_option() {
+        assert!(ExpressionValue::option_none().is_option());
+        assert!(ExpressionValue::option_some(ExpressionValue::boolean(true)).is_option());
+    }
+
+    #[test]
+    fn is_option_false_for_list() {
+        let list = ExpressionValue::from_elements(vec![ExpressionValue::string("a")]).unwrap();
+        assert!(!list.is_option());
+    }
+
+    #[test]
+    fn as_option_none_returns_none() {
+        let opt = ExpressionValue::option_none().as_option().unwrap();
+        assert!(opt.is_none());
+    }
+
+    #[test]
+    fn as_option_some_returns_some() {
+        let opt = ExpressionValue::option_some(ExpressionValue::string("hi"))
+            .as_option()
+            .unwrap();
+        assert!(opt.is_some());
     }
 }
