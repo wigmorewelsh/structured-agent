@@ -3,7 +3,6 @@ use crate::gemini::types::GenerationConfig;
 use crate::gemini::types::JsonSchemaBuilder;
 use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use crate::runtime::Context;
-use crate::runtime::Event;
 use crate::runtime::ExpressionValue;
 use crate::types::LanguageEngine;
 use crate::types::Type;
@@ -90,33 +89,6 @@ impl GeminiEngine {
         }
     }
 
-    fn format_event(event: &Event) -> String {
-        let content = event.content.format_for_llm();
-
-        if let Some(name) = &event.name {
-            let params_xml = if let Some(params) = &event.params {
-                let params_str = params
-                    .iter()
-                    .map(|p| {
-                        let value = p.value.format_for_llm();
-                        format!("    <param name=\"{}\">{}</param>", p.name, value)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("{}\n", params_str)
-            } else {
-                String::new()
-            };
-
-            format!(
-                "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
-                name, params_xml, content, name
-            )
-        } else {
-            content
-        }
-    }
-
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
         let events: Vec<_> = context.iter_all_events().collect();
 
@@ -125,7 +97,7 @@ impl GeminiEngine {
         } else {
             events
                 .iter()
-                .map(|event| ChatMessage::system(Self::format_event(event)))
+                .map(|event| ChatMessage::system(crate::types::format_event(event)))
                 .collect()
         }
     }

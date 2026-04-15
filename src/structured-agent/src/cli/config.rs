@@ -59,31 +59,19 @@ impl Config {
     }
 
     fn from_run_args(args: RunArgs, file_config: &FileConfig) -> Self {
-        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
-        let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
-        let gemini_api_key = args
-            .gemini_api_key
-            .or_else(|| file_config.gemini_api_key.clone());
-        let gemini_model = args
-            .gemini_model
-            .or_else(|| file_config.gemini_model.clone());
-        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key, gemini_model);
-        let with_default_functions =
-            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
-        let with_unstable_functions =
-            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
-        let with_acp_functions =
-            args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
-
-        Config {
-            program_source,
-            mcp_servers,
-            engine,
-            with_default_functions,
-            with_unstable_functions,
-            with_acp_functions,
-            mode: Mode::Run,
-        }
+        Self::from_engine_args(
+            args.file,
+            args.inline,
+            args.mcp_server,
+            &args.engine,
+            args.gemini_api_key,
+            args.gemini_model,
+            args.with_default_functions,
+            args.with_unstable_functions,
+            args.with_acp_functions,
+            file_config,
+            Mode::Run,
+        )
     }
 
     fn from_check_args(args: CheckArgs, file_config: &FileConfig) -> Self {
@@ -108,21 +96,46 @@ impl Config {
     }
 
     fn from_acp_args(args: AcpArgs, file_config: &FileConfig) -> Self {
-        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
-        let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
-        let gemini_api_key = args
-            .gemini_api_key
-            .or_else(|| file_config.gemini_api_key.clone());
-        let gemini_model = args
-            .gemini_model
-            .or_else(|| file_config.gemini_model.clone());
-        let engine = Self::merge_engine(&args.engine, file_config, gemini_api_key, gemini_model);
+        Self::from_engine_args(
+            args.file,
+            args.inline,
+            args.mcp_server,
+            &args.engine,
+            args.gemini_api_key,
+            args.gemini_model,
+            args.with_default_functions,
+            args.with_unstable_functions,
+            args.with_acp_functions,
+            file_config,
+            Mode::Acp,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn from_engine_args(
+        file: Option<String>,
+        inline: Option<String>,
+        mcp_server: Vec<String>,
+        engine: &str,
+        gemini_api_key: Option<String>,
+        gemini_model: Option<String>,
+        with_default_functions: bool,
+        with_unstable_functions: bool,
+        with_acp_functions: bool,
+        file_config: &FileConfig,
+        mode: Mode,
+    ) -> Self {
+        let program_source = Self::merge_program_source(&file, &inline, file_config);
+        let mcp_servers = Self::merge_mcp_servers(&mcp_server, file_config);
+        let gemini_api_key = gemini_api_key.or_else(|| file_config.gemini_api_key.clone());
+        let gemini_model = gemini_model.or_else(|| file_config.gemini_model.clone());
+        let engine = Self::merge_engine(engine, file_config, gemini_api_key, gemini_model);
         let with_default_functions =
-            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
+            with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
-            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
+            with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
         let with_acp_functions =
-            args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
+            with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
 
         Config {
             program_source,
@@ -131,7 +144,7 @@ impl Config {
             with_default_functions,
             with_unstable_functions,
             with_acp_functions,
-            mode: Mode::Acp,
+            mode,
         }
     }
 

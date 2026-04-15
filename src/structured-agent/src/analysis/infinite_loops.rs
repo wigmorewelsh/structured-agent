@@ -1,5 +1,5 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Expression, Function, Module, Statement};
+use crate::ast::{Expression, Function, Statement};
 use crate::types::{FileId, Spanned};
 use std::collections::HashMap;
 
@@ -12,14 +12,6 @@ impl InfiniteLoopAnalyzer {
         Self {
             variable_assignments: HashMap::new(),
         }
-    }
-
-    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
-        self.variable_assignments.clear();
-        let mut warnings = Vec::new();
-        self.collect_variable_assignments(&func.body.statements);
-        self.analyze_statements(&func.body.statements, file_id, &mut warnings);
-        warnings
     }
 
     fn collect_variable_assignments(&mut self, statements: &[Statement]) {
@@ -134,15 +126,11 @@ impl Analyzer for InfiniteLoopAnalyzer {
         "infinite-loops"
     }
 
-    fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning> {
+    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
+        self.variable_assignments.clear();
         let mut warnings = Vec::new();
-
-        for definition in &module.definitions {
-            if let Definition::Function(func) = definition {
-                warnings.extend(self.analyze_function(func, file_id));
-            }
-        }
-
+        self.collect_variable_assignments(&func.body.statements);
+        self.analyze_statements(&func.body.statements, file_id, &mut warnings);
         warnings
     }
 }

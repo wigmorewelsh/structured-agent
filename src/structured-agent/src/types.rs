@@ -102,32 +102,30 @@ pub trait LanguageEngine: Send + Sync {
 
 pub struct PrintEngine {}
 
-impl PrintEngine {
-    fn format_event(event: &crate::runtime::Event) -> String {
-        let content = event.content.format_for_llm();
+pub(crate) fn format_event(event: &crate::runtime::Event) -> String {
+    let content = event.content.format_for_llm();
 
-        if let Some(name) = &event.name {
-            let params_xml = if let Some(params) = &event.params {
-                let params_str = params
-                    .iter()
-                    .map(|p| {
-                        let value = p.value.format_for_llm();
-                        format!("    <param name=\"{}\">{}</param>", p.name, value)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("{}\n", params_str)
-            } else {
-                String::new()
-            };
-
-            format!(
-                "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
-                name, params_xml, content, name
-            )
+    if let Some(name) = &event.name {
+        let params_xml = if let Some(params) = &event.params {
+            let params_str = params
+                .iter()
+                .map(|p| {
+                    let value = p.value.format_for_llm();
+                    format!("    <param name=\"{}\">{}</param>", p.name, value)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("{}\n", params_str)
         } else {
-            content
-        }
+            String::new()
+        };
+
+        format!(
+            "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
+            name, params_xml, content, name
+        )
+    } else {
+        content
     }
 }
 
@@ -135,7 +133,7 @@ impl PrintEngine {
 impl LanguageEngine for PrintEngine {
     async fn untyped(&self, context: &crate::runtime::Context) -> String {
         if let Some(last_event) = context.last_event() {
-            Self::format_event(&last_event)
+            format_event(&last_event)
         } else {
             "PrintEngine {}".to_string()
         }

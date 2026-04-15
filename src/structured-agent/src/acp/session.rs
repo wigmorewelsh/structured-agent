@@ -182,21 +182,31 @@ impl AcpSession {
         }
     }
 
+    async fn send_notification(
+        update: acp::SessionUpdate,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let notification = acp::SessionNotification::new(session_id.clone(), update);
+        update_tx.send((notification, tx)).map_err(|_| ())?;
+        rx.await.ok();
+        Ok(())
+    }
+
     async fn handle_string(
         s: String,
         session_id: &acp::SessionId,
         update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Result<(), ()> {
-        let (tx, rx) = oneshot::channel();
-        let notification = acp::SessionNotification::new(
-            session_id.clone(),
+        Self::send_notification(
             acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
                 acp::TextContent::new(s),
             ))),
-        );
-        update_tx.send((notification, tx)).map_err(|_| ())?;
-        rx.await.ok();
-        Ok(())
+            session_id,
+            update_tx,
+        )
+        .await
     }
 
     async fn handle_request_user_input(
@@ -232,24 +242,22 @@ impl AcpSession {
         session_id: &acp::SessionId,
         update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Result<(), ()> {
-        let (tx, rx) = oneshot::channel();
         let raw_input = serde_json::Value::Object(
             params
                 .into_iter()
                 .map(|(k, v)| (k, serde_json::Value::String(v.value_string())))
                 .collect(),
         );
-        let notification = acp::SessionNotification::new(
-            session_id.clone(),
+        Self::send_notification(
             acp::SessionUpdate::ToolCall(
                 acp::ToolCall::new(call_id, tool_name)
                     .status(acp::ToolCallStatus::InProgress)
                     .raw_input(raw_input),
             ),
-        );
-        update_tx.send((notification, tx)).map_err(|_| ())?;
-        rx.await.ok();
-        Ok(())
+            session_id,
+            update_tx,
+        )
+        .await
     }
 
     async fn handle_tool_call_finished(
@@ -259,12 +267,10 @@ impl AcpSession {
         session_id: &acp::SessionId,
         update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Result<(), ()> {
-        let (tx, rx) = oneshot::channel();
         let content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
             acp::TextContent::new(result.value_string()),
         ))];
-        let notification = acp::SessionNotification::new(
-            session_id.clone(),
+        Self::send_notification(
             acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
                 call_id,
                 acp::ToolCallUpdateFields::new()
@@ -272,10 +278,10 @@ impl AcpSession {
                     .title(tool_name)
                     .content(content),
             )),
-        );
-        update_tx.send((notification, tx)).map_err(|_| ())?;
-        rx.await.ok();
-        Ok(())
+            session_id,
+            update_tx,
+        )
+        .await
     }
 
     pub async fn send_prompt(&self, content: String) -> Result<(), AgentError> {

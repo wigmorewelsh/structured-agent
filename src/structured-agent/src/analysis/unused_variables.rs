@@ -1,5 +1,5 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Expression, Function, Module, Statement};
+use crate::ast::{Expression, Function, Statement};
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
 
@@ -34,20 +34,6 @@ impl UnusedVariableAnalyzer {
         if let Some(info) = self.variables.get_mut(name) {
             info.reads.push(span);
         }
-    }
-
-    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
-        self.variables.clear();
-
-        for param in &func.parameters {
-            self.track_declaration(&param.name, param.span);
-        }
-
-        for statement in &func.body.statements {
-            self.analyze_statement(statement);
-        }
-
-        self.check_unused_variables(file_id)
     }
 
     fn analyze_statement(&mut self, statement: &Statement) {
@@ -160,16 +146,18 @@ impl Analyzer for UnusedVariableAnalyzer {
         "unused-variables"
     }
 
-    fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning> {
-        let mut warnings = Vec::new();
+    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
+        self.variables.clear();
 
-        for definition in &module.definitions {
-            if let Definition::Function(func) = definition {
-                warnings.extend(self.analyze_function(func, file_id));
-            }
+        for param in &func.parameters {
+            self.track_declaration(&param.name, param.span);
         }
 
-        warnings
+        for statement in &func.body.statements {
+            self.analyze_statement(statement);
+        }
+
+        self.check_unused_variables(file_id)
     }
 }
 

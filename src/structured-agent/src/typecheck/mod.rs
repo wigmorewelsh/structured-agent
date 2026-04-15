@@ -81,6 +81,23 @@ impl Default for TypeChecker {
     }
 }
 
+fn convert_generic_params(
+    generic_parameters: &[GenericParameterDefinition<refs::CheckerRefs>],
+    module: &ModuleName,
+) -> Vec<GenericParameterDefinition<refs::TypedRefs>> {
+    generic_parameters
+        .iter()
+        .map(|gp| GenericParameterDefinition {
+            name: gp.name.clone(),
+            constraints: gp
+                .constraints
+                .iter()
+                .map(|c| ast_type_to_type_name(c, module))
+                .collect(),
+        })
+        .collect()
+}
+
 fn convert_type_kind(
     kind: &TypeDefinitionKind<refs::CheckerRefs>,
     module: &ModuleName,
@@ -97,17 +114,7 @@ fn convert_type_kind(
                     type_name: ast_type_to_type_name(&f.type_name, module),
                 })
                 .collect(),
-            generic_parameters: generic_parameters
-                .iter()
-                .map(|gp| GenericParameterDefinition {
-                    name: gp.name.clone(),
-                    constraints: gp
-                        .constraints
-                        .iter()
-                        .map(|c| ast_type_to_type_name(c, module))
-                        .collect(),
-                })
-                .collect(),
+            generic_parameters: convert_generic_params(generic_parameters, module),
         },
         TypeDefinitionKind::Function {
             parameters,
@@ -121,17 +128,7 @@ fn convert_type_kind(
                     type_name: ast_type_to_type_name(&p.type_name, module),
                 })
                 .collect(),
-            generic_parameters: generic_parameters
-                .iter()
-                .map(|gp| GenericParameterDefinition {
-                    name: gp.name.clone(),
-                    constraints: gp
-                        .constraints
-                        .iter()
-                        .map(|c| ast_type_to_type_name(c, module))
-                        .collect(),
-                })
-                .collect(),
+            generic_parameters: convert_generic_params(generic_parameters, module),
             return_type: ast_type_to_type_name(return_type, module),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
@@ -158,17 +155,7 @@ fn convert_type_kind(
             generic_parameters,
             factory,
         } => TypeDefinitionKind::Native {
-            generic_parameters: generic_parameters
-                .iter()
-                .map(|gp| GenericParameterDefinition {
-                    name: gp.name.clone(),
-                    constraints: gp
-                        .constraints
-                        .iter()
-                        .map(|c| ast_type_to_type_name(c, module))
-                        .collect(),
-                })
-                .collect(),
+            generic_parameters: convert_generic_params(generic_parameters, module),
             factory: factory.clone(),
         },
     }

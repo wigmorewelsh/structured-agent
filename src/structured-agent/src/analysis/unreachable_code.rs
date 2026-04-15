@@ -1,5 +1,5 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Expression, Function, Module, Statement};
+use crate::ast::{Expression, Function, Statement};
 use crate::types::{FileId, Span, Spanned};
 use std::collections::HashSet;
 
@@ -14,16 +14,6 @@ impl ReachabilityAnalyzer {
             reachable: HashSet::new(),
             all_statements: Vec::new(),
         }
-    }
-
-    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
-        self.reachable.clear();
-        self.all_statements.clear();
-
-        self.collect_all_statements(&func.body.statements);
-        self.analyze_statements(&func.body.statements, true);
-
-        self.check_unreachable(file_id)
     }
 
     fn collect_all_statements(&mut self, statements: &[Statement]) {
@@ -121,16 +111,14 @@ impl Analyzer for ReachabilityAnalyzer {
         "unreachable-code"
     }
 
-    fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning> {
-        let mut warnings = Vec::new();
+    fn analyze_function(&mut self, func: &Function, file_id: FileId) -> Vec<Warning> {
+        self.reachable.clear();
+        self.all_statements.clear();
 
-        for definition in &module.definitions {
-            if let Definition::Function(func) = definition {
-                warnings.extend(self.analyze_function(func, file_id));
-            }
-        }
+        self.collect_all_statements(&func.body.statements);
+        self.analyze_statements(&func.body.statements, true);
 
-        warnings
+        self.check_unreachable(file_id)
     }
 }
 

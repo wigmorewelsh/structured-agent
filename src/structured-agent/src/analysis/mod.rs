@@ -59,13 +59,24 @@ pub use unused_return_values::UnusedReturnValueAnalyzer;
 pub use unused_variables::UnusedVariableAnalyzer;
 pub use variable_shadowing::VariableShadowingAnalyzer;
 
-use crate::ast::Module;
+use crate::ast::{Definition, Function, Module};
 use crate::types::{FileId, Span};
 use codespan_reporting::diagnostic::Diagnostic;
 
 pub trait Analyzer {
     fn name(&self) -> &str;
-    fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning>;
+    fn analyze_function(&mut self, _func: &Function, _file_id: FileId) -> Vec<Warning> {
+        vec![]
+    }
+    fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning> {
+        let mut warnings = Vec::new();
+        for definition in &module.definitions {
+            if let Definition::Function(func) = definition {
+                warnings.extend(self.analyze_function(func, file_id));
+            }
+        }
+        warnings
+    }
 }
 
 #[derive(Debug, Clone)]
