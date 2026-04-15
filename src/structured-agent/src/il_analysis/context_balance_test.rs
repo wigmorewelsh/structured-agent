@@ -1,19 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use crate::bytecode::{BytecodeRef, Instruction};
+    use super::super::test_helpers::make_function;
+    use crate::bytecode::Instruction;
     use crate::il_analysis::{ContextBalanceAnalyzer, IlAnalyzer, IlWarning};
-    use crate::types::Type;
-    fn make_function(instructions: Vec<Instruction>) -> BytecodeRef {
-        BytecodeRef {
-            instructions,
-            labels: HashMap::new(),
-            parameters: vec![],
-            return_type: Type::Unit,
-            documentation: None,
-        }
-    }
 
     #[test]
     fn no_warning_for_balanced_ctx() {

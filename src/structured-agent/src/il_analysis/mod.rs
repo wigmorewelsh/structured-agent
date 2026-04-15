@@ -13,6 +13,9 @@ use crate::types::FileId;
 use codespan_reporting::diagnostic::Diagnostic;
 
 #[cfg(test)]
+mod test_helpers;
+
+#[cfg(test)]
 mod branch_target_test;
 
 #[cfg(test)]

@@ -24,3 +24,8 @@ pub use context::{Context, Event};
 pub use engine::{Runtime, RuntimeError};
 pub use native_provider::NativeFunctionProvider;
 pub use types::{ExpressionParameter, ExpressionResult, ExpressionValue};
+
+#[cfg(test)]
+pub fn program(source: &str) -> crate::cli::config::ProgramSource {
+    crate::cli::config::ProgramSource::Inline(source.to_string())
+}

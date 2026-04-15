@@ -1,12 +1,10 @@
+use super::helpers::run_program;
 use nonempty::NonEmpty;
-use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
-use structured_agent::runtime::Runtime;
 use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
 #[tokio::test]
 async fn test_full_pipeline_parse_compile_execute() {
-    // This test now uses the full pipeline with bytecode compiler
     let code = r#"
 fn test_func(): () {
     "Hello from function"!
@@ -17,24 +15,12 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Program execution failed");
-
-    // Verify the result is Unit type
-    let value = result.unwrap();
-    assert_eq!(
-        value.type_name(),
-        "Unit",
-        "Expected Unit return value, got: {:?}",
-        value
-    );
+    let value = run_program(code).await;
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
 async fn test_compile_and_execute_with_statements() {
-    // Note: BytecodeCompiler compiles whole functions, not individual statements.
-    // This test validates that a function with multiple statements executes correctly.
     let code = r#"
 fn test(): () {
     "Hello world"!
@@ -46,15 +32,8 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-    let result = runtime.run().await;
-    assert!(
-        result.is_ok(),
-        "Program with multiple statements failed to execute"
-    );
-
-    let value = result.unwrap();
-    assert_eq!(value.type_name(), "Unit", "Expected Unit return value");
+    let value = run_program(code).await;
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
@@ -70,17 +49,12 @@ fn main(): () {
 }
 "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Variable injection test failed");
-
-    let value = result.unwrap();
-    assert_eq!(value.type_name(), "Unit", "Expected Unit return value");
+    let value = run_program(code).await;
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
 async fn test_variable_usage() {
-    // BytecodeCompiler: Tests variable assignment and usage in a complete function
     let code = r#"
 fn test(): String {
     let result = "test value"
@@ -92,21 +66,12 @@ fn main(): String {
 }
 "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Variable usage test failed");
-
-    let value = result.unwrap();
-    assert_eq!(
-        value.as_string().unwrap(),
-        "test value",
-        "Expected 'test value'"
-    );
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "test value");
 }
 
 #[tokio::test]
 async fn test_compilation_produces_expected_functions() {
-    // Verify that bytecode compilation produces the expected function definitions
     let code = r#"
 fn helper(x: String): String {
     return "helper"
@@ -118,13 +83,11 @@ fn main(): String {
 "#;
 
     let program = CompilationUnit::from_string(code.to_string());
-    let compiler = structured_agent::compiler::Compiler::new();
-    let compiled = compiler.compile_source(&program);
+    let compiled = structured_agent::compiler::Compiler::new().compile_source(&program);
 
     assert!(compiled.is_ok(), "Compilation failed");
     let compiled_program = compiled.unwrap();
 
-    // Verify both functions were compiled
     assert_eq!(
         compiled_program
             .metadata
@@ -158,15 +121,6 @@ fn main(): String {
         "Expected 'main' function to be present"
     );
 
-    // Verify execution produces correct result
-    let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Execution failed");
-
-    let value = result.unwrap();
-    assert_eq!(
-        value.as_string().unwrap(),
-        "helper",
-        "Expected 'helper' return value"
-    );
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "helper");
 }

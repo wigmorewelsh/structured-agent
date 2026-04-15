@@ -1,16 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use super::super::test_helpers::parse_code;
     use crate::analysis::{Analyzer, ConstantConditionAnalyzer};
-    use crate::ast::Module;
-    use crate::compiler::{CodespanParser, CompilationUnit};
-    use crate::diagnostics::DiagnosticManager;
-
-    fn parse_code(code: &str) -> Module {
-        let unit = CompilationUnit::from_string(code.to_string());
-        let manager = DiagnosticManager::new();
-        let parser = CodespanParser::new();
-        parser.parse(&unit, 0, manager.reporter()).unwrap()
-    }
 
     #[test]
     fn detects_literal_true_condition() {

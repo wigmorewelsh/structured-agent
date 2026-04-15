@@ -1,6 +1,12 @@
 use crate::cli::config::ProgramSource;
-use crate::runtime::Runtime;
+use crate::runtime::{ExpressionValue, Runtime};
 use arrow::array::{Array, BooleanArray, Int64Array, StringArray, StructArray};
+
+async fn run_program(code: &str) -> ExpressionValue {
+    let program = ProgramSource::Inline(code.to_string());
+    let runtime = Runtime::builder(program).build();
+    runtime.run().await.expect("program failed")
+}
 
 #[tokio::test]
 async fn test_vm_simple_string_return() {
@@ -9,17 +15,8 @@ async fn test_vm_simple_string_return() {
             return "hello world"
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "hello world");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "hello world");
 }
 
 #[tokio::test]
@@ -30,17 +27,8 @@ async fn test_vm_variable_assignment_and_return() {
             return x
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "hello");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "hello");
 }
 
 #[tokio::test]
@@ -53,17 +41,8 @@ async fn test_vm_return_in_if_block() {
             return "unreachable"
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "from_if_block");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "from_if_block");
 }
 
 #[tokio::test]
@@ -74,13 +53,7 @@ async fn test_vm_variable_injection() {
             message!
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected successful execution");
-    let value = result.unwrap();
+    let value = run_program(code).await;
     assert_eq!(value.type_name(), "Unit");
 }
 
@@ -94,13 +67,7 @@ async fn test_vm_multiple_variable_injections() {
             name!
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected successful execution");
-    let value = result.unwrap();
+    let value = run_program(code).await;
     assert_eq!(value.type_name(), "Unit");
 }
 
@@ -115,17 +82,8 @@ async fn test_vm_function_call() {
             return helper()
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "helper_result");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "helper_result");
 }
 
 #[tokio::test]
@@ -139,17 +97,8 @@ async fn test_vm_function_call_with_parameter() {
             return helper("input_value")
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "input_value");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "input_value");
 }
 
 #[tokio::test]
@@ -160,13 +109,7 @@ async fn test_vm_multiple_statements() {
             let x = "test value"
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected successful execution");
-    let value = result.unwrap();
+    let value = run_program(code).await;
     assert_eq!(value.type_name(), "Unit");
 }
 
@@ -177,17 +120,8 @@ async fn test_vm_boolean_literal() {
             return true
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_boolean().unwrap(), true);
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_boolean().unwrap(), true);
 }
 
 #[tokio::test]
@@ -201,17 +135,8 @@ async fn test_vm_if_else_true_branch() {
             }
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "true_branch");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "true_branch");
 }
 
 #[tokio::test]
@@ -225,17 +150,8 @@ async fn test_vm_if_else_false_branch() {
             }
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "false_branch");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "false_branch");
 }
 
 #[tokio::test]
@@ -254,17 +170,8 @@ async fn test_vm_nested_function_calls() {
             return outer()
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            assert_eq!(value.as_string().unwrap(), "inner_value");
-        }
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "inner_value");
 }
 
 #[tokio::test]
@@ -274,16 +181,8 @@ async fn test_vm_unit_return() {
             return ()
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) if value.type_name() == "Unit" => (),
-        Ok(other) => panic!("Expected unit result, got: {:?}", other),
-        Err(e) => panic!("Test failed with error: {:?}", e),
-    }
+    let value = run_program(code).await;
+    assert_eq!(value.type_name(), "Unit");
 }
 
 #[tokio::test]
@@ -296,11 +195,7 @@ fn main(): Task {
     return Task { title: "done" }
 }
 "#;
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    let value = result.unwrap();
+    let value = run_program(code).await;
     assert_eq!(value.type_name(), "Struct");
 }
 
@@ -311,13 +206,7 @@ async fn test_vm_string_list_literal() {
             return ["apple", "banana", "cherry"]
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    let value = result.unwrap();
+    let value = run_program(code).await;
     let list = value.as_list().unwrap();
     assert_eq!(list.len(), 1);
     let values = list.value(0);
@@ -335,13 +224,7 @@ async fn test_vm_int_list_literal() {
             return [1, 2, 3]
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    let value = result.unwrap();
+    let value = run_program(code).await;
     let list = value.as_list().unwrap();
     assert_eq!(list.len(), 1);
     let values = list.value(0);
@@ -359,13 +242,7 @@ async fn test_vm_boolean_list_literal() {
             return [true, false, true]
         }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    let value = result.unwrap();
+    let value = run_program(code).await;
     let list = value.as_list().unwrap();
     assert_eq!(list.len(), 1);
     let values = list.value(0);
@@ -387,13 +264,7 @@ fn main(): List<Point> {
     return [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
 }
     "#;
-
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    let value = result.unwrap();
+    let value = run_program(code).await;
     let list = value.as_list().unwrap();
     assert_eq!(list.len(), 1);
     let values = list.value(0);
@@ -440,11 +311,9 @@ async fn test_vm_empty_list_literal_is_rejected() {
             return []
         }
     "#;
-
     let program = ProgramSource::Inline(code.to_string());
     let runtime = Runtime::builder(program).build();
     let result = runtime.run().await;
-
     assert!(
         result.is_err(),
         "Expected type error for empty list literal"
@@ -467,9 +336,6 @@ fn main(): Int {
     return sum_coords(p)
 }
 "#;
-    let program = ProgramSource::Inline(code.to_string());
-    let runtime = Runtime::builder(program).build();
-    let result = runtime.run().await;
-    assert!(result.is_ok(), "Expected ok, got: {:?}", result.err());
-    assert_eq!(result.unwrap().as_integer().unwrap(), 5);
+    let value = run_program(code).await;
+    assert_eq!(value.as_integer().unwrap(), 5);
 }

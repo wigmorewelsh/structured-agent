@@ -1,5 +1,4 @@
-use structured_agent::cli::config::ProgramSource;
-use structured_agent::runtime::Runtime;
+use super::helpers::run_program;
 
 #[tokio::test]
 async fn test_simple_function_call() {
@@ -9,20 +8,8 @@ async fn test_simple_function_call() {
         }
     "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string())).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            let s = value.as_string().unwrap();
-            println!("Success: {}", s);
-            assert_eq!(s, "hello world");
-        }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            panic!("Test failed with error: {:?}", e);
-        }
-    }
+    let value = run_program(program_source).await;
+    assert_eq!(value.as_string().unwrap(), "hello world");
 }
 
 #[tokio::test]
@@ -33,18 +20,6 @@ async fn test_simple_return_statement() {
         }
     "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string())).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            let s = value.as_string().unwrap();
-            println!("Success: {}", s);
-            assert_eq!(s, "returned_value");
-        }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            panic!("Test failed with error: {:?}", e);
-        }
-    }
+    let value = run_program(program_source).await;
+    assert_eq!(value.as_string().unwrap(), "returned_value");
 }

@@ -6,10 +6,6 @@ use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio;
 
-fn program(source: &str) -> ProgramSource {
-    ProgramSource::Inline(source.to_string())
-}
-
 fn test_runtime() -> Runtime {
     Runtime::builder(ProgramSource::Inline("fn main(): () {}".to_string())).build()
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::cli::config::ProgramSource;
+
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
@@ -7,10 +7,6 @@ use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
-
-fn program(source: &str) -> ProgramSource {
-    ProgramSource::Inline(source.to_string())
-}
 
 #[derive(Debug)]
 struct BooleanLoggingFunction {

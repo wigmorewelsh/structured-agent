@@ -1,5 +1,4 @@
 use super::*;
-use crate::cli::config::ProgramSource;
 use crate::runtime::ExpressionValue;
 use crate::types::{NativeFunction, Parameter, Type};
 use async_trait::async_trait;
@@ -7,10 +6,6 @@ use std::sync::Mutex;
 
 use std::sync::Arc;
 use tokio;
-
-fn program(source: &str) -> ProgramSource {
-    ProgramSource::Inline(source.to_string())
-}
 
 #[derive(Debug)]
 struct LoggingFunction {
@@ -114,11 +109,21 @@ impl NativeFunction for BooleanFunction {
     }
 }
 
+async fn run_logged(source: &str, logger: &Arc<LoggingFunction>) -> (ExpressionValue, Vec<String>) {
+    let runtime = Runtime::builder(program(source))
+        .with_native_function(logger.clone())
+        .build();
+    let result = runtime.run().await.unwrap();
+    let messages = logger.messages_vec();
+    (result, messages)
+}
+
 #[tokio::test]
 async fn test_if_statement_true_condition() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -127,15 +132,10 @@ fn main(): () {
     }
     log("after if")
 }
-"#;
-
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
+"#,
+        &logger,
+    )
+    .await;
 
     assert_eq!(messages, vec!["if body executed", "after if"]);
     assert_eq!(result, ExpressionValue::unit());
@@ -145,7 +145,8 @@ fn main(): () {
 async fn test_if_statement_false_condition() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -154,15 +155,10 @@ fn main(): () {
     }
     log("after if")
 }
-"#;
-
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
+"#,
+        &logger,
+    )
+    .await;
 
     assert_eq!(messages, vec!["after if"]);
     assert_eq!(result, ExpressionValue::unit());
@@ -172,7 +168,8 @@ fn main(): () {
 async fn test_if_statement_with_variable_condition() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -182,15 +179,11 @@ fn main(): () {
     }
     log("after if")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(messages, vec!["condition was true", "after if"]);
     assert_eq!(result, ExpressionValue::unit());
 }
@@ -228,7 +221,8 @@ fn main(): () {
 async fn test_while_statement_false_condition() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -237,15 +231,11 @@ fn main(): () {
     }
     log("after while")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(messages, vec!["after while"]);
     assert_eq!(result, ExpressionValue::unit());
 }
@@ -254,7 +244,8 @@ fn main(): () {
 async fn test_while_statement_with_counter() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -265,15 +256,11 @@ fn main(): () {
     }
     log("after while")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(messages, vec!["loop iteration", "after while"]);
     assert_eq!(result, ExpressionValue::unit());
 }
@@ -282,7 +269,8 @@ fn main(): () {
 async fn test_nested_if_statements() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -295,15 +283,11 @@ fn main(): () {
     }
     log("after outer if")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(
         messages,
         vec!["outer if", "inner if", "after inner if", "after outer if"]
@@ -315,7 +299,8 @@ fn main(): () {
 async fn test_if_and_while_combined() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -331,15 +316,11 @@ fn main(): () {
     }
     log("all done")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(
         messages,
         vec!["starting loop", "in loop", "loop done", "all done"]
@@ -405,7 +386,8 @@ fn main(): () {
 async fn test_if_with_variable_assignment_in_body() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -415,15 +397,11 @@ fn main(): () {
     }
     log("after if")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in if", "after if"]);
     assert_eq!(result, ExpressionValue::unit());
 }
@@ -432,7 +410,8 @@ fn main(): () {
 async fn test_while_with_variable_assignment_in_body() {
     let logger = Arc::new(LoggingFunction::new());
 
-    let program_source = r#"
+    let (result, messages) = run_logged(
+        r#"
 extern fn log(message: String): ()
 
 fn main(): () {
@@ -444,15 +423,11 @@ fn main(): () {
     }
     log("after while")
 }
-"#;
+"#,
+        &logger,
+    )
+    .await;
 
-    let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .build();
-
-    let result = runtime.run().await.unwrap();
-
-    let messages = logger.messages_vec();
     assert_eq!(messages, vec!["assigned in while", "after while"]);
     assert_eq!(result, ExpressionValue::unit());
 }

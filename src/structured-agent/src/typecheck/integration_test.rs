@@ -1,6 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::compiler::{CompilationUnit, Compiler};
+    use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
+
+    fn compile(code: &str) -> Result<CompiledProgram, String> {
+        let unit = CompilationUnit::from_string(code.to_string());
+        Compiler::new().compile_source(&unit)
+    }
 
     #[test]
     fn test_type_checker_integration_valid_program() {
@@ -14,9 +19,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -36,9 +39,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");
@@ -61,9 +62,7 @@ fn get_number(): String {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");
@@ -91,9 +90,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -121,9 +118,7 @@ fn main(): String {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         assert!(
             result.is_ok(),
@@ -151,9 +146,7 @@ fn main(): String {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         assert!(
             result.is_err(),
@@ -175,9 +168,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         assert!(
             result.is_ok(),
@@ -197,9 +188,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if result.is_ok() {
             println!("Expected error but compilation succeeded");
@@ -228,9 +217,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -254,9 +241,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -280,9 +265,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         assert!(
             result.is_err(),
@@ -304,9 +287,7 @@ fn main(): () {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);
@@ -329,9 +310,7 @@ fn main(xs: List<String>): Option<String> {
 }
 "#;
 
-        let unit = CompilationUnit::from_string(code.to_string());
-        let compiler = Compiler::new();
-        let result = compiler.compile_source(&unit);
+        let result = compile(code);
 
         if let Err(ref e) = result {
             println!("Compilation error: {}", e);

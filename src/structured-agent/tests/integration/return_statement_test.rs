@@ -1,5 +1,4 @@
-use structured_agent::cli::config::ProgramSource;
-use structured_agent::runtime::Runtime;
+use super::helpers::run_program;
 
 #[tokio::test]
 async fn test_return_statement_with_expression() {
@@ -9,20 +8,8 @@ async fn test_return_statement_with_expression() {
         }
     "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string())).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            let s = value.as_string().unwrap();
-            println!("Success: {}", s);
-            assert_eq!(s, "calculated_value");
-        }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            panic!("Test failed with error: {:?}", e);
-        }
-    }
+    let value = run_program(program_source).await;
+    assert_eq!(value.as_string().unwrap(), "calculated_value");
 }
 
 #[tokio::test]
@@ -35,20 +22,8 @@ async fn test_return_statement_end_to_end() {
         }
     "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string())).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            let s = value.as_string().unwrap();
-            println!("Success: {}", s);
-            assert_eq!(s, "hello");
-        }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            panic!("Test failed with error: {:?}", e);
-        }
-    }
+    let value = run_program(program_source).await;
+    assert_eq!(value.as_string().unwrap(), "hello");
 }
 
 #[tokio::test]
@@ -62,18 +37,6 @@ async fn test_return_in_nested_scope() {
         }
     "#;
 
-    let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string())).build();
-    let result = runtime.run().await;
-
-    match result {
-        Ok(value) => {
-            let s = value.as_string().unwrap();
-            println!("Success: {}", s);
-            assert_eq!(s, "from_if_block");
-        }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            panic!("Test failed with error: {:?}", e);
-        }
-    }
+    let value = run_program(program_source).await;
+    assert_eq!(value.as_string().unwrap(), "from_if_block");
 }

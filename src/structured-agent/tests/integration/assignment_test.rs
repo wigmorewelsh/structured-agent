@@ -1,20 +1,6 @@
-use combine::Parser;
-use combine::stream::position;
-use nonempty::NonEmpty;
-use std::collections::HashMap;
-use std::sync::Arc;
-use structured_agent::ast::ParsedModule;
+use super::helpers::{make_context, parse_and_type_check};
 use structured_agent::bytecode::BytecodeCompiler;
-use structured_agent::cli::config::ProgramSource;
-use structured_agent::compiler::parser;
-use structured_agent::runtime::{Context, Runtime};
-use structured_agent::typecheck::TypeChecker;
-use structured_agent::typecheck::TypedCheckerAstRef;
 use structured_agent::typed_ast;
-use structured_agent::types::FileId;
-use structured_agent::types::Span;
-
-const TEST_FILE_ID: FileId = 0;
 
 #[tokio::test]
 async fn test_assignment_full_pipeline() {
@@ -25,40 +11,7 @@ fn test_assignment(): () {
 }
 "#;
 
-    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
-    let parse_result = parser::parse_program(TEST_FILE_ID).parse(stream);
-    assert!(parse_result.is_ok());
-
-    let (module, _) = parse_result.unwrap();
-
-    let parsed = ParsedModule {
-        name: NonEmpty::new("test".to_string()),
-        module,
-        is_entry: true,
-        file_id: TEST_FILE_ID,
-    };
-    let (typed_metadata, _) = TypeChecker::new()
-        .check_modules(&[parsed], &HashMap::new())
-        .unwrap();
-    let definitions = typed_metadata
-        .functions
-        .values()
-        .filter_map(|f| {
-            if f.name.module.to_string() != "test" {
-                return None;
-            }
-            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
-                Some(typed_ast::Definition::Function((**func).clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let typed_module = typed_ast::Module {
-        definitions,
-        span: Span::dummy(),
-        file_id: TEST_FILE_ID,
-    };
+    let typed_module = parse_and_type_check(code);
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -83,17 +36,11 @@ fn test_assignment(): () {
     assert_eq!(function.name, "test_assignment");
     assert_eq!(function.body.statements.len(), 2);
 
-    let compilation_result = BytecodeCompiler::new().compile_function(function);
-    assert!(compilation_result.is_ok());
-    let compiled_function = compilation_result.unwrap();
-
-    let runtime =
-        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
-    let context = Context::with_runtime(runtime);
-    let execution_result = compiled_function.execute(context, vec![]).await;
-    assert!(execution_result.is_ok());
-
-    let (context, _) = execution_result.unwrap();
+    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
+    let (context, _) = compiled_function
+        .execute(make_context(), vec![])
+        .await
+        .unwrap();
 
     let stored_value = context.get_variable("message");
     assert!(stored_value.is_some());
@@ -114,37 +61,7 @@ fn test_var_assignment(): () {
 }
 "#;
 
-    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
-    let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
-
-    let parsed = ParsedModule {
-        name: NonEmpty::new("test".to_string()),
-        module,
-        is_entry: true,
-        file_id: TEST_FILE_ID,
-    };
-    let (typed_metadata, _) = TypeChecker::new()
-        .check_modules(&[parsed], &HashMap::new())
-        .unwrap();
-    let definitions = typed_metadata
-        .functions
-        .values()
-        .filter_map(|f| {
-            if f.name.module.to_string() != "test" {
-                return None;
-            }
-            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
-                Some(typed_ast::Definition::Function((**func).clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let typed_module = typed_ast::Module {
-        definitions,
-        span: Span::dummy(),
-        file_id: TEST_FILE_ID,
-    };
+    let typed_module = parse_and_type_check(code);
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -155,23 +72,20 @@ fn test_var_assignment(): () {
         })
         .collect();
     assert_eq!(functions.len(), 1);
-    let function = functions[0];
-    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
 
-    let runtime =
-        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
-    let context = Context::with_runtime(runtime);
-    let result = compiled_function.execute(context, vec![]).await;
-    assert!(result.is_ok());
-
-    let (context, _) = result.unwrap();
+    let compiled_function = BytecodeCompiler::new()
+        .compile_function(functions[0])
+        .unwrap();
+    let (context, _) = compiled_function
+        .execute(make_context(), vec![])
+        .await
+        .unwrap();
 
     assert_eq!(
         context.events_count(),
         2,
         "Expected 2 events from variable injections"
     );
-
     assert!(context.get_variable("greeting").is_some());
     assert!(context.get_variable("name").is_some());
 }
@@ -184,37 +98,7 @@ fn test_return(): () {
 }
 "#;
 
-    let stream = position::Stream::with_positioner(code, position::IndexPositioner::default());
-    let (module, _) = parser::parse_program(TEST_FILE_ID).parse(stream).unwrap();
-
-    let parsed = ParsedModule {
-        name: NonEmpty::new("test".to_string()),
-        module,
-        is_entry: true,
-        file_id: TEST_FILE_ID,
-    };
-    let (typed_metadata, _) = TypeChecker::new()
-        .check_modules(&[parsed], &HashMap::new())
-        .unwrap();
-    let definitions = typed_metadata
-        .functions
-        .values()
-        .filter_map(|f| {
-            if f.name.module.to_string() != "test" {
-                return None;
-            }
-            if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
-                Some(typed_ast::Definition::Function((**func).clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let typed_module = typed_ast::Module {
-        definitions,
-        span: Span::dummy(),
-        file_id: TEST_FILE_ID,
-    };
+    let typed_module = parse_and_type_check(code);
 
     let functions: Vec<_> = typed_module
         .definitions
@@ -233,19 +117,23 @@ fn test_return(): () {
         })
         .collect();
     assert_eq!(external_functions.len(), 0);
-    let function = &functions[0];
-    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
 
-    let runtime =
-        Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
-    let context = Context::with_runtime(runtime);
-    let result = compiled_function.execute(context, vec![]).await;
-    assert!(result.is_ok());
-
-    let (context, expr_result) = result.unwrap();
+    let compiled_function = BytecodeCompiler::new()
+        .compile_function(functions[0])
+        .unwrap();
+    let (context, expr_result) = compiled_function
+        .execute(make_context(), vec![])
+        .await
+        .unwrap();
 
     assert_eq!(expr_result.value.type_name(), "Unit");
-
-    let stored_value = context.get_variable("result").unwrap();
-    assert_eq!(stored_value.value.as_string().unwrap(), "test value");
+    assert_eq!(
+        context
+            .get_variable("result")
+            .unwrap()
+            .value
+            .as_string()
+            .unwrap(),
+        "test value"
+    );
 }

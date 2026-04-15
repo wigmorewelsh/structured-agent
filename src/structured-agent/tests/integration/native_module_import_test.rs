@@ -1,7 +1,4 @@
-use std::sync::Arc;
-use structured_agent::cli::config::ProgramSource;
-use structured_agent::runtime::Runtime;
-use structured_agent_stdlib::unstable::UnstableModule;
+use super::helpers::run_program_with_unstable;
 
 #[tokio::test]
 async fn test_head_via_use_without_extern_fn() {
@@ -15,10 +12,7 @@ fn main(): String {
     return some_value(h)
 }
 "#;
-    let runtime = Runtime::builder(ProgramSource::Inline(source.to_string()))
-        .with_module(Arc::new(UnstableModule))
-        .build();
-    let result = runtime.run().await.unwrap();
+    let result = run_program_with_unstable(source).await;
     assert_eq!(result.as_string().unwrap(), "first");
 }
 
@@ -37,10 +31,7 @@ fn main(): String {
     return some_value(h)
 }
 "#;
-    let runtime = Runtime::builder(ProgramSource::Inline(source.to_string()))
-        .with_module(Arc::new(UnstableModule))
-        .build();
-    let result = runtime.run().await.unwrap();
+    let result = run_program_with_unstable(source).await;
     assert_eq!(result.as_string().unwrap(), "second");
 }
 
@@ -56,10 +47,7 @@ fn main(): Boolean {
     return is_some(h)
 }
 "#;
-    let runtime = Runtime::builder(ProgramSource::Inline(source.to_string()))
-        .with_module(Arc::new(UnstableModule))
-        .build();
-    let result = runtime.run().await.unwrap();
+    let result = run_program_with_unstable(source).await;
     assert!(result.as_boolean().unwrap());
 }
 
@@ -75,9 +63,6 @@ fn main(): String {
     return some_value(h)
 }
 "#;
-    let runtime = Runtime::builder(ProgramSource::Inline(source.to_string()))
-        .with_module(Arc::new(UnstableModule))
-        .build();
-    let result = runtime.run().await.unwrap();
+    let result = run_program_with_unstable(source).await;
     assert_eq!(result.as_string().unwrap(), "extracted");
 }

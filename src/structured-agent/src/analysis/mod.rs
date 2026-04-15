@@ -13,6 +13,9 @@ mod unused_variables;
 mod variable_shadowing;
 
 #[cfg(test)]
+mod test_helpers;
+
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
