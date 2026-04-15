@@ -49,9 +49,9 @@ impl GeminiEngine {
 
     fn build_value_schema(value_type: &Type, context: &Context) -> Result<SchemaObject, String> {
         match value_type {
-            Type::String => Ok(JsonSchemaBuilder::string()),
-            Type::Boolean => Ok(JsonSchemaBuilder::boolean()),
-            Type::Int => Ok(JsonSchemaBuilder::integer()),
+            _ if value_type.is_string() => Ok(JsonSchemaBuilder::string()),
+            _ if value_type.is_boolean() => Ok(JsonSchemaBuilder::boolean()),
+            _ if value_type.is_int() => Ok(JsonSchemaBuilder::integer()),
             Type::Parameterized(n, _) if n.name == "List" => {
                 Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string()))
             }
@@ -72,7 +72,9 @@ impl GeminiEngine {
                 }
                 Ok(obj)
             }
-            Type::Unit => Err("Unit type cannot be used in schema".to_string()),
+            Type::Struct(tn) if tn.name == "Unit" => {
+                Err("Unit type cannot be used in schema".to_string())
+            }
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
             Type::Struct(type_name) => {
                 let fields = context
@@ -108,21 +110,21 @@ impl GeminiEngine {
         context: &Context,
     ) -> Result<ExpressionValue, String> {
         match value_type {
-            Type::String => {
+            _ if value_type.is_string() => {
                 if let Some(s) = json_value.as_str() {
                     Ok(ExpressionValue::string(s))
                 } else {
                     Err("Expected string value".to_string())
                 }
             }
-            Type::Boolean => {
+            _ if value_type.is_boolean() => {
                 if let Some(b) = json_value.as_bool() {
                     Ok(ExpressionValue::boolean(b))
                 } else {
                     Err("Expected boolean value".to_string())
                 }
             }
-            Type::Int => {
+            _ if value_type.is_int() => {
                 if let Some(n) = json_value.as_i64() {
                     Ok(ExpressionValue::integer(n))
                 } else {
@@ -214,23 +216,30 @@ impl GeminiEngine {
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
         match return_type {
-            Type::Struct(_) => Self::parse_json_value(response_json, return_type, context),
+            Type::Struct(_) if !return_type.is_unit() => {
+                Self::parse_json_value(response_json, return_type, context)
+            }
             _ => {
                 let value_field = response_json
                     .get("value")
                     .ok_or_else(|| "Missing 'value' field in response".to_string())?;
                 match return_type {
-                    Type::String | Type::Boolean | Type::Int => {
+                    _ if return_type.is_string()
+                        || return_type.is_boolean()
+                        || return_type.is_int() =>
+                    {
                         Self::parse_json_value(value_field.clone(), return_type, context)
                     }
                     Type::Parameterized(_, _) => {
                         Self::parse_json_value(value_field.clone(), return_type, context)
                     }
-                    Type::Unit => Err("Unit type cannot be used as return type".to_string()),
+                    _ if return_type.is_unit() => {
+                        Err("Unit type cannot be used as return type".to_string())
+                    }
                     Type::Generic(_) => {
                         Err("Generic type cannot be used as return type".to_string())
                     }
-                    Type::Struct(_) => unreachable!(),
+                    _ => unreachable!(),
                 }
             }
         }
@@ -265,17 +274,13 @@ impl LanguageEngine for GeminiEngine {
         context: &Context,
         return_type: &Type,
     ) -> Result<ExpressionValue, String> {
-        if matches!(return_type, Type::Unit) {
+        if return_type.is_unit() {
             return Ok(ExpressionValue::unit());
         }
 
         let value_schema = Self::build_value_schema(return_type, context)?;
         let is_required = !return_type.is_option();
-        let temperature = if matches!(return_type, Type::Boolean) {
-            0.0
-        } else {
-            0.7
-        };
+        let temperature = if return_type.is_boolean() { 0.0 } else { 0.7 };
 
         let schema = JsonSchemaBuilder::with_property(
             JsonSchemaBuilder::object(),
@@ -390,17 +395,13 @@ impl LanguageEngine for GeminiEngine {
         param_name: &str,
         param_type: &Type,
     ) -> Result<ExpressionValue, String> {
-        if matches!(param_type, Type::Unit) {
+        if param_type.is_unit() {
             return Ok(ExpressionValue::unit());
         }
 
         let value_schema = Self::build_value_schema(param_type, context)?;
         let is_required = !param_type.is_option();
-        let temperature = if matches!(param_type, Type::Boolean) {
-            0.0
-        } else {
-            0.7
-        };
+        let temperature = if param_type.is_boolean() { 0.0 } else { 0.7 };
 
         let schema = JsonSchemaBuilder::with_property(
             JsonSchemaBuilder::object(),

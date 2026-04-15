@@ -18,13 +18,6 @@ fn resolve_simple_name(
     span: Span,
     file_id: FileId,
 ) -> Result<RT, TypeError> {
-    match name {
-        "Unit" => return Ok(RT::Unit),
-        "Boolean" => return Ok(RT::Boolean),
-        "String" => return Ok(RT::String),
-        "Int" => return Ok(RT::Int),
-        _ => {}
-    }
     if name == "Self" || type_params.iter().any(|tp| tp.name == name) {
         return Ok(RT::Generic(name.to_string()));
     }
@@ -37,7 +30,9 @@ fn resolve_simple_name(
         });
     match tables.types(db).get().get(&type_name) {
         Some(td) => match &td.kind {
-            TypeDefinitionKind::Struct { .. } => Ok(RT::Struct(type_name)),
+            TypeDefinitionKind::Struct { .. } | TypeDefinitionKind::Primitive => {
+                Ok(RT::Struct(type_name))
+            }
             _ => Err(TypeError::UnboundTypeParameter {
                 name: name.to_string(),
                 span,

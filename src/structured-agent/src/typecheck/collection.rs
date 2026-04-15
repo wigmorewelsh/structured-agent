@@ -29,7 +29,7 @@ impl SymbolTableBuilder {
 
     fn seed_builtin_types(&mut self) {
         let primitives = [
-            ("()", "prelude"),
+            ("Unit", "prelude"),
             ("Boolean", "prelude"),
             ("String", "prelude"),
             ("Int", "prelude"),
@@ -168,10 +168,6 @@ impl SymbolTableBuilder {
     fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
         use structured_agent_runtime::types::Type as RT;
         match ty {
-            RT::String => AstType::Generic("String".to_string()),
-            RT::Boolean => AstType::Generic("Boolean".to_string()),
-            RT::Int => AstType::Generic("Int".to_string()),
-            RT::Unit => AstType::Generic("Unit".to_string()),
             RT::Parameterized(type_name, args) => AstType::Named(
                 type_name.name.clone(),
                 args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),

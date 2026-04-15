@@ -7,10 +7,6 @@ use crate::symbols::{ModuleName, TypeName};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    String,
-    Boolean,
-    Int,
-    Unit,
     Struct(TypeName),
     Parameterized(TypeName, Vec<Type>),
     Generic(std::string::String),
@@ -31,20 +27,43 @@ pub struct ExternalFunctionDefinition {
 }
 
 impl Type {
+    fn prelude(name: &str) -> TypeName {
+        TypeName {
+            name: name.to_string(),
+            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+        }
+    }
+
     pub fn string() -> Self {
-        Self::String
+        Self::Struct(Self::prelude("String"))
     }
 
     pub fn unit() -> Self {
-        Self::Unit
+        Self::Struct(Self::prelude("Unit"))
     }
 
     pub fn boolean() -> Self {
-        Self::Boolean
+        Self::Struct(Self::prelude("Boolean"))
     }
 
     pub fn int() -> Self {
-        Self::Int
+        Self::Struct(Self::prelude("Int"))
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, Type::Struct(tn) if tn.name == "String")
+    }
+
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Type::Struct(tn) if tn.name == "Boolean")
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, Type::Struct(tn) if tn.name == "Int")
+    }
+
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Type::Struct(tn) if tn.name == "Unit")
     }
 
     pub fn list(inner: Type) -> Self {
@@ -81,10 +100,6 @@ impl Type {
 
     pub fn name(&self) -> String {
         match self {
-            Type::String => "String".to_string(),
-            Type::Boolean => "Boolean".to_string(),
-            Type::Int => "Int".to_string(),
-            Type::Unit => "()".to_string(),
             Type::Struct(tn) => tn.name.clone(),
             Type::Parameterized(type_name, args) => {
                 let arg_names: Vec<String> = args.iter().map(|a| a.name()).collect();
@@ -98,10 +113,6 @@ impl Type {
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::String => write!(f, "String"),
-            Type::Boolean => write!(f, "Boolean"),
-            Type::Int => write!(f, "Int"),
-            Type::Unit => write!(f, "Unit"),
             Type::Struct(tn) => write!(f, "{}", tn.name),
             Type::Parameterized(type_name, args) => {
                 let arg_strs: Vec<String> = args.iter().map(|a| a.to_string()).collect();

@@ -72,7 +72,7 @@ impl BytecodeCompiler {
             builder.emit(Instruction::Decl {
                 name: return_temp.clone(),
             });
-            if typed_func.return_type == structured_agent_runtime::Type::Unit {
+            if typed_func.return_type == structured_agent_runtime::Type::unit() {
                 builder.emit(Instruction::LdcUnit {
                     dest: return_temp.clone(),
                 });

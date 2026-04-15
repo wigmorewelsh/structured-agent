@@ -8,7 +8,7 @@ pub(super) fn make_function(instructions: Vec<Instruction>) -> BytecodeRef {
         instructions,
         labels: HashMap::new(),
         parameters: vec![],
-        return_type: Type::Unit,
+        return_type: Type::unit(),
         documentation: None,
     }
 }

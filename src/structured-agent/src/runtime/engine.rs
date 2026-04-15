@@ -474,7 +474,7 @@ impl Runtime {
                 let expected_params = definition
                     .parameters
                     .iter()
-                    .map(|p| format!("{}: {:?}", p.name, p.param_type))
+                    .map(|p| format!("{}: {}", p.name, p.param_type))
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -484,16 +484,16 @@ impl Runtime {
                         let params = provider_def
                             .parameters
                             .iter()
-                            .map(|p| format!("{}: {:?}", p.name, p.param_type))
+                            .map(|p| format!("{}: {}", p.name, p.param_type))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        format!("  - fn {}({}) -> {:?}", name, params, provider_def.return_type)
+                        format!("  - fn {}({}) -> {}", name, params, provider_def.return_type)
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
 
                 RuntimeError::ExecutionError(format!(
-                    "No matching provider found for extern function '{}'.\n\nExpected signature:\n  fn {}({}) -> {:?}\n\nAvailable signatures from providers:\n{}",
+                    "No matching provider found for extern function '{}'.\n\nExpected signature:\n  fn {}({}) -> {}\n\nAvailable signatures from providers:\n{}",
                     name, name, expected_params, definition.return_type, available_sigs
                 ))
             })
@@ -553,13 +553,7 @@ impl Clone for Runtime {
 fn field_type_name_to_type(
     type_name: &structured_agent_runtime::symbols::TypeName,
 ) -> crate::types::Type {
-    match type_name.name.as_str() {
-        "Int" => crate::types::Type::int(),
-        "String" => crate::types::Type::string(),
-        "Boolean" => crate::types::Type::boolean(),
-        "Unit" => crate::types::Type::unit(),
-        _ => crate::types::Type::Struct(type_name.clone()),
-    }
+    crate::types::Type::Struct(type_name.clone())
 }
 
 fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, String> {

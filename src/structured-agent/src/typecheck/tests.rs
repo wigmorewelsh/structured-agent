@@ -1163,7 +1163,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TypeError::TypeMismatch { .. }
+            TypeError::UnsupportedType { .. }
         ));
     }
 
@@ -1843,7 +1843,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::String);
+        assert_eq!(expr.ty(), &RT::string());
     }
 
     #[test]
@@ -1861,7 +1861,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Boolean);
+        assert_eq!(expr.ty(), &RT::boolean());
     }
 
     #[test]
@@ -1879,7 +1879,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Int);
+        assert_eq!(expr.ty(), &RT::int());
     }
 
     #[test]
@@ -1896,7 +1896,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Unit);
+        assert_eq!(expr.ty(), &RT::unit());
     }
 
     #[test]
@@ -1914,7 +1914,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Int);
+        assert_eq!(expr.ty(), &RT::int());
         assert!(matches!(expr, typed_ast::Expression::Variable { name, .. } if name == "x"));
     }
 
@@ -1955,7 +1955,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::String);
+        assert_eq!(expr.ty(), &RT::string());
         assert!(matches!(
             expr,
             typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
@@ -2005,7 +2005,7 @@ mod typed_ast_tests {
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
         if let typed_ast::Expression::Call { arguments, .. } = expr {
-            assert_eq!(arguments[0].ty(), &RT::String);
+            assert_eq!(arguments[0].ty(), &RT::string());
             assert!(matches!(
                 arguments[0],
                 typed_ast::Expression::Placeholder { .. }
@@ -2040,7 +2040,7 @@ mod typed_ast_tests {
         ))]));
         let stmt = first_function(&module).body.statements.first().unwrap();
         if let typed_ast::Statement::Assignment { expression, .. } = stmt {
-            assert_eq!(expression.ty(), &RT::Int);
+            assert_eq!(expression.ty(), &RT::int());
         } else {
             panic!("expected Assignment");
         }
@@ -2073,7 +2073,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::list(RT::Int));
+        assert_eq!(expr.ty(), &RT::list(RT::int()));
     }
 
     #[test]
@@ -2105,7 +2105,7 @@ mod typed_ast_tests {
             func,
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Int);
+        assert_eq!(expr.ty(), &RT::int());
         assert!(matches!(expr, typed_ast::Expression::IfElse { .. }));
     }
 
@@ -2143,7 +2143,7 @@ mod typed_ast_tests {
             condition, body, ..
         } = stmt
         {
-            assert_eq!(condition.ty(), &RT::Boolean);
+            assert_eq!(condition.ty(), &RT::boolean());
             assert!(!body.is_empty());
         } else {
             panic!("expected If");
@@ -2250,7 +2250,7 @@ mod typed_ast_tests {
             Definition::Function(Arc::new(func)),
         ]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::Int);
+        assert_eq!(expr.ty(), &RT::int());
     }
 
     #[test]
@@ -2301,7 +2301,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::String);
+        assert_eq!(expr.ty(), &RT::string());
         assert!(matches!(expr, typed_ast::Expression::Select(_, _)));
     }
 
@@ -2358,7 +2358,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::option(RT::String));
+        assert_eq!(expr.ty(), &RT::option(RT::string()));
     }
 
     #[test]
@@ -2414,7 +2414,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::option(RT::Int));
+        assert_eq!(expr.ty(), &RT::option(RT::int()));
     }
 
     #[test]
@@ -2488,7 +2488,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::list(RT::String));
+        assert_eq!(expr.ty(), &RT::list(RT::string()));
     }
 
     #[test]
@@ -2654,7 +2654,7 @@ mod typed_ast_tests {
                     name: "Box".to_string(),
                     module: mn,
                 },
-                vec![RT::String],
+                vec![RT::string()],
             )
         );
     }
@@ -2831,7 +2831,7 @@ mod metadata_query_tests {
         assert!(
             metadata
                 .type_def(&TypeName {
-                    name: "()".to_string(),
+                    name: "Unit".to_string(),
                     module: ModuleName::new(NonEmpty::new("prelude".to_string())),
                 })
                 .is_some()

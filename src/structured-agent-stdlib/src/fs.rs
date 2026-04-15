@@ -34,7 +34,7 @@ pub mod fs {
             assert_eq!(f.name(), "set_working_dir");
             assert_eq!(f.parameters().len(), 1);
             assert_eq!(f.parameters()[0].name, "path");
-            assert_eq!(f.return_type().name(), "()");
+            assert_eq!(f.return_type().name(), "Unit");
         }
 
         #[tokio::test]

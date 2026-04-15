@@ -293,10 +293,6 @@ where
     R: References<TypeAnnotation = TypeName>,
 {
     match ty {
-        Type::String => DataType::Utf8,
-        Type::Boolean => DataType::Boolean,
-        Type::Int => DataType::Int64,
-        Type::Unit => DataType::Null,
         Type::Parameterized(type_name, args) if type_name.name == "List" && args.len() == 1 => {
             let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
@@ -343,7 +339,7 @@ where
         "Int" => DataType::Int64,
         "String" => DataType::Utf8,
         "Boolean" => DataType::Boolean,
-        "Unit" | "()" => DataType::Null,
+        "Unit" => DataType::Null,
         _ => match metadata.type_def(type_name) {
             Some(td) => match &td.kind {
                 TypeDefinitionKind::Struct { fields, .. } => {
@@ -688,7 +684,7 @@ mod tests {
                 ast_ref: NoAst,
             }),
         );
-        let ty = Type::Parameterized(struct_type_name, vec![Type::String]);
+        let ty = Type::Parameterized(struct_type_name, vec![Type::string()]);
         assert_eq!(
             super::type_to_arrow_datatype(&ty, &metadata),
             DataType::Struct(Fields::from(vec![Field::new(
@@ -728,7 +724,7 @@ mod tests {
                 ast_ref: NoAst,
             }),
         );
-        let ty = Type::Parameterized(wrapper_type_name, vec![Type::String]);
+        let ty = Type::Parameterized(wrapper_type_name, vec![Type::string()]);
         assert_eq!(
             super::type_to_arrow_datatype(&ty, &metadata),
             DataType::Struct(Fields::from(vec![Field::new(
@@ -743,15 +739,15 @@ mod tests {
     fn rt_type_to_arrow_datatype_maps_primitives() {
         let metadata = MetaData::<TestRefs>::default();
         assert_eq!(
-            super::type_to_arrow_datatype(&Type::String, &metadata),
+            super::type_to_arrow_datatype(&Type::string(), &metadata),
             arrow::datatypes::DataType::Utf8
         );
         assert_eq!(
-            super::type_to_arrow_datatype(&Type::Boolean, &metadata),
+            super::type_to_arrow_datatype(&Type::boolean(), &metadata),
             arrow::datatypes::DataType::Boolean
         );
         assert_eq!(
-            super::type_to_arrow_datatype(&Type::Int, &metadata),
+            super::type_to_arrow_datatype(&Type::int(), &metadata),
             arrow::datatypes::DataType::Int64
         );
     }

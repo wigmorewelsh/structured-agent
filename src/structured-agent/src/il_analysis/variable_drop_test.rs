@@ -11,7 +11,7 @@ mod tests {
             instructions,
             labels: HashMap::new(),
             parameters,
-            return_type: Type::Unit,
+            return_type: Type::unit(),
             documentation: None,
         }
     }

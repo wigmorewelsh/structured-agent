@@ -270,7 +270,7 @@ fn main(): String {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
       0: decl $tmp0
       1: ldc.str $tmp0, "test"
       2: decl x
@@ -294,7 +294,7 @@ fn main(): String {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
       0: decl $tmp0
       1: ldc.str $tmp0, "event"
       2: ctx.event $tmp0
@@ -345,7 +345,7 @@ fn main(): String {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
   if_start_$tmp0:
       0: decl $tmp1
       1: ldc.bool $tmp1, true
@@ -386,7 +386,7 @@ fn main(): String {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
   loop_start_$tmp0:
       0: decl $tmp2
       1: ldc.bool $tmp2, true
@@ -443,7 +443,7 @@ fn greet(name: String): () {
 
         let expected = r#"fn greet(
     name: String
-): () {
+): Unit {
       0: decl $tmp0
       1: ldc.str $tmp0, "Hello"
       2: decl message
@@ -802,7 +802,7 @@ fn test(): Int {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
       0: decl $tmp0
       1: ldc.unit $tmp0
       2: ret $tmp0
@@ -822,7 +822,7 @@ fn test(): Int {
 
         let expected = r#"fn test(
 
-): () {
+): Unit {
       0: decl $tmp0
       1: ldc.unit $tmp0
       2: decl x
@@ -943,10 +943,10 @@ mod vm_execution_tests {
                 )
             }
             AT::Generic(n) => match n.as_str() {
-                "Boolean" => RT::Boolean,
-                "String" => RT::String,
-                "Int" => RT::Int,
-                "Unit" => RT::Unit,
+                "Boolean" => RT::boolean(),
+                "String" => RT::string(),
+                "Int" => RT::int(),
+                "Unit" => RT::unit(),
                 _ => RT::Generic(n.clone()),
             },
         }
@@ -959,30 +959,30 @@ mod vm_execution_tests {
         match expr {
             AE::StringLiteral { value, span } => typed_ast::Expression::StringLiteral {
                 value: value.clone(),
-                ty: Type::String,
+                ty: Type::string(),
                 span: *span,
             },
             AE::BooleanLiteral { value, span } => typed_ast::Expression::BooleanLiteral {
                 value: *value,
-                ty: Type::Boolean,
+                ty: Type::boolean(),
                 span: *span,
             },
             AE::IntLiteral { value, span } => typed_ast::Expression::IntLiteral {
                 value: *value,
-                ty: Type::Int,
+                ty: Type::int(),
                 span: *span,
             },
             AE::Variable { name, span } => typed_ast::Expression::Variable {
                 name: name.clone(),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::UnitLiteral { span } => typed_ast::Expression::UnitLiteral {
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::Placeholder { span } => typed_ast::Expression::Placeholder {
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::Call {
@@ -998,12 +998,12 @@ mod vm_execution_tests {
                 },
                 kind: crate::typecheck::FunctionKind::External,
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::ListLiteral { elements, span } => typed_ast::Expression::ListLiteral {
                 elements: elements.iter().map(ast_expr_to_typed).collect(),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::StructLiteral {
@@ -1016,13 +1016,13 @@ mod vm_execution_tests {
                     .iter()
                     .map(|(n, e)| (n.clone(), ast_expr_to_typed(e)))
                     .collect(),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::FieldAccess { base, field, span } => typed_ast::Expression::FieldAccess {
                 base: Box::new(ast_expr_to_typed(base)),
                 field: field.clone(),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::IfElse {
@@ -1034,7 +1034,7 @@ mod vm_execution_tests {
                 condition: Box::new(ast_expr_to_typed(condition)),
                 then_expr: Box::new(ast_expr_to_typed(then_expr)),
                 else_expr: Box::new(ast_expr_to_typed(else_expr)),
-                ty: Type::Unit,
+                ty: Type::unit(),
                 span: *span,
             },
             AE::Select(select) => typed_ast::Expression::Select(
@@ -1051,7 +1051,7 @@ mod vm_execution_tests {
                         .collect(),
                     span: select.span,
                 },
-                structured_agent_runtime::Type::Unit,
+                structured_agent_runtime::Type::unit(),
             ),
         }
     }

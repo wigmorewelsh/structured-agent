@@ -145,13 +145,13 @@ impl LanguageEngine for PrintEngine {
         return_type: &Type,
     ) -> Result<crate::runtime::ExpressionValue, String> {
         match return_type {
-            Type::String => {
+            _ if return_type.is_string() => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
-            Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
-            Type::Unit => Ok(crate::runtime::ExpressionValue::unit()),
+            _ if return_type.is_boolean() => Ok(crate::runtime::ExpressionValue::boolean(true)),
+            _ if return_type.is_int() => Ok(crate::runtime::ExpressionValue::integer(0)),
+            _ if return_type.is_unit() => Ok(crate::runtime::ExpressionValue::unit()),
             Type::Parameterized(n, args) => {
                 if n.name == "Option" {
                     Ok(crate::runtime::ExpressionValue::option_none_with_type(
@@ -182,12 +182,12 @@ impl LanguageEngine for PrintEngine {
         param_type: &Type,
     ) -> Result<crate::runtime::ExpressionValue, String> {
         match param_type {
-            Type::String => {
+            _ if param_type.is_string() => {
                 let value = self.untyped(context).await;
                 Ok(crate::runtime::ExpressionValue::string(value))
             }
-            Type::Boolean => Ok(crate::runtime::ExpressionValue::boolean(true)),
-            Type::Int => Ok(crate::runtime::ExpressionValue::integer(0)),
+            _ if param_type.is_boolean() => Ok(crate::runtime::ExpressionValue::boolean(true)),
+            _ if param_type.is_int() => Ok(crate::runtime::ExpressionValue::integer(0)),
             Type::Parameterized(n, args) => {
                 if n.name == "Option" {
                     Ok(crate::runtime::ExpressionValue::option_none_with_type(
@@ -198,9 +198,7 @@ impl LanguageEngine for PrintEngine {
                     Ok(crate::runtime::ExpressionValue::string(value))
                 }
             }
-            Type::Unit | Type::Struct(_) | Type::Generic(_) => {
-                Ok(crate::runtime::ExpressionValue::unit())
-            }
+            Type::Struct(_) | Type::Generic(_) => Ok(crate::runtime::ExpressionValue::unit()),
         }
     }
 }

@@ -187,9 +187,6 @@ pub(super) fn resolve_impl_call(
     let first_arg =
         super::elaboration::check_expression(db, tables, &arguments[0], env, ctx).ok()?;
     let type_name = match first_arg.ty() {
-        structured_agent_runtime::Type::Int => "Int".to_string(),
-        structured_agent_runtime::Type::String => "String".to_string(),
-        structured_agent_runtime::Type::Boolean => "Boolean".to_string(),
         structured_agent_runtime::Type::Struct(tn) => tn.name.clone(),
         _ => return None,
     };

@@ -85,7 +85,7 @@ async fn test_wrong_parameter_type_error_message() {
     impl WrongTypeFunction {
         fn new() -> Self {
             Self {
-                parameters: vec![Parameter::new("message".to_string(), Type::Boolean)],
+                parameters: vec![Parameter::new("message".to_string(), Type::boolean())],
                 return_type: Type::unit(),
             }
         }

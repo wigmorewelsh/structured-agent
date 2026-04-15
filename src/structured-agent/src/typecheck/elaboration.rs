@@ -358,7 +358,7 @@ fn check_boolean_condition(
     ctx: &CheckContext,
 ) -> Result<typed_ast::Expression, TypeError> {
     let typed_cond = check_expression(db, tables, condition, env, ctx)?;
-    if matches!(typed_cond.ty(), RT::Boolean) {
+    if typed_cond.ty() == &RT::boolean() {
         Ok(typed_cond)
     } else {
         Err(TypeError::TypeMismatch {
@@ -418,21 +418,21 @@ pub(super) fn check_expression(
         }
         Expression::StringLiteral { value, span } => Ok(typed_ast::Expression::StringLiteral {
             value: value.clone(),
-            ty: RT::String,
+            ty: RT::string(),
             span: *span,
         }),
         Expression::BooleanLiteral { value, span } => Ok(typed_ast::Expression::BooleanLiteral {
             value: *value,
-            ty: RT::Boolean,
+            ty: RT::boolean(),
             span: *span,
         }),
         Expression::IntLiteral { value, span } => Ok(typed_ast::Expression::IntLiteral {
             value: *value,
-            ty: RT::Int,
+            ty: RT::int(),
             span: *span,
         }),
         Expression::UnitLiteral { span } => Ok(typed_ast::Expression::UnitLiteral {
-            ty: RT::Unit,
+            ty: RT::unit(),
             span: *span,
         }),
         Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
@@ -566,9 +566,6 @@ fn check_call(
             }
             if let Some(concrete) = subst.get(&tp.name) {
                 let type_name = match concrete {
-                    RT::Int => "Int",
-                    RT::String => "String",
-                    RT::Boolean => "Boolean",
                     RT::Struct(n) => n.name.as_str(),
                     _ => continue,
                 };

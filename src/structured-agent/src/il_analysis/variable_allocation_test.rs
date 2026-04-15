@@ -11,7 +11,7 @@ mod tests {
             instructions,
             labels: HashMap::new(),
             parameters,
-            return_type: Type::Unit,
+            return_type: Type::unit(),
             documentation: None,
         }
     }
@@ -69,7 +69,7 @@ mod tests {
             },
         ];
         let function = make_function(
-            vec![Parameter::new("x".to_string(), Type::Unit)],
+            vec![Parameter::new("x".to_string(), Type::unit())],
             instructions,
         );
         let mut analyzer = VariableAllocationAnalyzer::new();
