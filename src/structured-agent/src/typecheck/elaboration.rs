@@ -1,19 +1,23 @@
 use super::TypeChecker;
 use super::db::{
-    Intern, SymbolTablesInput, TypeCheckDatabase, resolve_function_call, resolve_type_alias,
+    Intern, InternedTraitName, InternedTypeName, SymbolTablesInput, TypeCheckDatabase,
+    find_trait_for_impl_call, get_function_sig, get_struct_fields, get_trait_functions,
+    lookup_function_def, lookup_impl_exists, resolve_function_call, resolve_type_alias,
 };
-
-use super::{CheckContext, TypeEnvironment};
+use super::{CheckContext, FunctionSignature, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
 };
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
-use salsa::Accumulator;
+use nonempty::NonEmpty;
+
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::TypeName;
+use structured_agent_runtime::symbols::{
+    FunctionName, FunctionNameKind, ModuleName, TypeName, Visibility,
+};
 
 fn push_err<T>(db: &dyn TypeCheckDatabase, result: Result<T, TypeError>) -> Option<T> {
     match result {
@@ -30,11 +34,9 @@ pub(super) fn check_definition(
     tables: SymbolTablesInput,
     definition: &Definition,
     ctx: &CheckContext,
-) -> Option<typed_ast::Definition> {
+) -> Option<()> {
     match definition {
-        Definition::Function(func) => Some(typed_ast::Definition::Function(check_function(
-            db, tables, func, ctx,
-        )?)),
+        Definition::Function(func) => check_function(db, tables, func, ctx),
         Definition::ExternalFunction(f) => {
             let module = ctx.module_name.clone();
             super::constraints::resolve(
@@ -57,7 +59,7 @@ pub(super) fn check_definition(
                     ctx.file_id,
                 )?;
             }
-            Some(typed_ast::Definition::ExternalFunction((**f).clone()))
+            Some(())
         }
         Definition::Struct(s) => {
             for f in &s.fields {
@@ -71,8 +73,818 @@ pub(super) fn check_definition(
                     ctx.file_id,
                 )?;
             }
-            Some(typed_ast::Definition::Struct((**s).clone()))
+            Some(())
         }
+        Definition::Use { .. }
+        | Definition::ModuleBinding { .. }
+        | Definition::WiringSite { .. }
+        | Definition::Trait(_) => Some(()),
+        Definition::TraitImpl(t) => {
+            let trait_fns = get_trait_functions(db, tables, &t.trait_name, ctx.module_name);
+            if let Some(trait_fns) = trait_fns {
+                for trait_fn in &trait_fns {
+                    if !t.functions.iter().any(|f| f.name == trait_fn.name) {
+                        TypeError::TraitImplMissingFunction {
+                            type_name: t.type_name.clone(),
+                            trait_name: t.trait_name.clone(),
+                            function_name: trait_fn.name.clone(),
+                            span: t.span,
+                            file_id: ctx.file_id,
+                        }
+                        .accumulate(db);
+                        return None;
+                    }
+                }
+            } else {
+                TypeError::UnknownTrait {
+                    name: t.trait_name.clone(),
+                    span: t.span,
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+                return None;
+            }
+            for func in &t.functions {
+                let concrete = TypeChecker::substitute_self_in_fn(func, &t.type_name);
+                check_function(db, tables, &concrete, ctx)?;
+            }
+            Some(())
+        }
+        Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
+    }
+}
+
+fn check_function(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    func: &Function,
+    ctx: &CheckContext,
+) -> Option<()> {
+    let mut env = TypeEnvironment::new();
+    let module = ctx.module_name.clone();
+    for param in &func.parameters {
+        let runtime_type = super::constraints::resolve(
+            db,
+            tables,
+            &param.param_type,
+            &module,
+            &func.type_params,
+            param.span,
+            ctx.file_id,
+        )?;
+        env.declare_variable(param.name.clone(), runtime_type, param.span);
+    }
+    let runtime_return_type = super::constraints::resolve(
+        db,
+        tables,
+        &func.return_type,
+        &module,
+        &func.type_params,
+        func.span,
+        ctx.file_id,
+    )?;
+    check_block(
+        db,
+        tables,
+        &func.body.statements,
+        env,
+        &func.name,
+        &runtime_return_type,
+        ctx,
+    )
+}
+
+fn check_statement(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    statement: &Statement,
+    mut env: TypeEnvironment,
+    function_name: &str,
+    return_type: &RT,
+    ctx: &CheckContext,
+) -> Option<TypeEnvironment> {
+    match statement {
+        Statement::Injection(expr) => {
+            synthesize_expression(db, tables, expr, &env, ctx)?;
+            Some(env)
+        }
+        Statement::Assignment {
+            variable,
+            expression,
+            span: _,
+        } => {
+            let ty = synthesize_expression(db, tables, expression, &env, ctx)?;
+            env.declare_variable(variable.clone(), ty, expression.span());
+            Some(env)
+        }
+        Statement::VariableAssignment {
+            variable,
+            expression,
+            span,
+        } => {
+            let ty = synthesize_expression(db, tables, expression, &env, ctx)?;
+            let (existing_type, declaration_span) = push_err(
+                db,
+                env.lookup_variable_with_span(variable)
+                    .ok_or_else(|| TypeError::UnknownVariable {
+                        name: variable.clone(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            if ty != existing_type {
+                TypeError::VariableTypeMismatch {
+                    variable: variable.clone(),
+                    expected: existing_type.name(),
+                    found: ty.name(),
+                    span: expression.span(),
+                    declaration_span,
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+                return None;
+            }
+            Some(env)
+        }
+        Statement::ExpressionStatement(expr) => {
+            synthesize_expression(db, tables, expr, &env, ctx)?;
+            Some(env)
+        }
+        Statement::If {
+            condition,
+            body,
+            else_body,
+            span: _,
+        } => {
+            check_boolean_condition(db, tables, condition, &env, ctx)?;
+            check_block(
+                db,
+                tables,
+                body,
+                env.create_child(),
+                function_name,
+                return_type,
+                ctx,
+            )?;
+            if let Some(else_stmts) = else_body {
+                check_block(
+                    db,
+                    tables,
+                    else_stmts,
+                    env.create_child(),
+                    function_name,
+                    return_type,
+                    ctx,
+                )?;
+            }
+            Some(env)
+        }
+        Statement::While {
+            condition,
+            body,
+            span: _,
+        } => {
+            check_boolean_condition(db, tables, condition, &env, ctx)?;
+            check_block(
+                db,
+                tables,
+                body,
+                env.create_child(),
+                function_name,
+                return_type,
+                ctx,
+            )?;
+            Some(env)
+        }
+        Statement::Return(expr) => {
+            let ty = synthesize_expression(db, tables, expr, &env, ctx)?;
+            if ty != *return_type {
+                TypeError::ReturnTypeMismatch {
+                    function: function_name.to_string(),
+                    expected: return_type.name(),
+                    found: ty.name(),
+                    span: expr.span(),
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+                return None;
+            }
+            Some(env)
+        }
+    }
+}
+
+fn check_boolean_condition(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    condition: &Expression,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<()> {
+    let ty = synthesize_expression(db, tables, condition, env, ctx)?;
+    if ty == RT::boolean() {
+        Some(())
+    } else {
+        TypeError::TypeMismatch {
+            expected: "Boolean".to_string(),
+            found: ty.name(),
+            span: condition.span(),
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        None
+    }
+}
+
+fn check_block(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    stmts: &[Statement],
+    mut env: TypeEnvironment,
+    function_name: &str,
+    return_type: &RT,
+    ctx: &CheckContext,
+) -> Option<()> {
+    for stmt in stmts {
+        env = check_statement(db, tables, stmt, env, function_name, return_type, ctx)?;
+    }
+    Some(())
+}
+
+pub(super) fn synthesize_expression(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    expression: &Expression,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    match expression {
+        Expression::Call {
+            function,
+            arguments,
+            span,
+        } => synthesize_call(db, tables, function, arguments, *span, env, ctx),
+        Expression::Variable { name, span } => push_err(
+            db,
+            env.lookup_variable(name)
+                .ok_or_else(|| TypeError::UnknownVariable {
+                    name: name.clone(),
+                    span: *span,
+                    file_id: ctx.file_id,
+                }),
+        ),
+        Expression::StringLiteral { .. } => Some(RT::string()),
+        Expression::BooleanLiteral { .. } => Some(RT::boolean()),
+        Expression::IntLiteral { .. } => Some(RT::int()),
+        Expression::UnitLiteral { .. } => Some(RT::unit()),
+        Expression::Placeholder { span } => {
+            TypeError::TypeMismatch {
+                expected: "concrete type".to_string(),
+                found: "placeholder".to_string(),
+                span: *span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            None
+        }
+        Expression::ListLiteral { elements, span } => {
+            synthesize_list_literal(db, tables, elements, *span, env, ctx)
+        }
+        Expression::Select(select_expr) => {
+            synthesize_select(db, tables, &select_expr.clauses, select_expr.span, env, ctx)
+        }
+        Expression::IfElse {
+            condition,
+            then_expr,
+            else_expr,
+            span,
+        } => synthesize_if_else(db, tables, condition, then_expr, else_expr, *span, env, ctx),
+        Expression::StructLiteral {
+            struct_name,
+            fields,
+            span,
+        } => synthesize_struct_literal(db, tables, struct_name, fields, *span, env, ctx),
+        Expression::FieldAccess { base, field, span } => {
+            synthesize_field_access(db, tables, base, field, *span, env, ctx)
+        }
+    }
+}
+
+fn synthesize_call(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    function: &str,
+    arguments: &[Expression],
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    let interned_current = ctx.module_name.intern(db);
+    let interned_fn = function.intern(db);
+
+    let (resolved_fn_name, sig) = push_err(
+        db,
+        resolve_function_call(db, tables, interned_current, interned_fn)
+            .and_then(|fn_name| {
+                let interned = fn_name.clone().intern(db);
+                get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
+            })
+            .or_else(|| resolve_impl_call_synth(db, tables, function, arguments, env, ctx))
+            .ok_or_else(|| TypeError::UnknownFunction {
+                name: function.to_string(),
+                span,
+                file_id: ctx.file_id,
+            }),
+    )?;
+
+    check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
+
+    let (return_type, parameters, type_params) = (sig.return_type, sig.parameters, sig.type_params);
+
+    if arguments.len() != parameters.len() {
+        TypeError::ArgumentCountMismatch {
+            function: function.to_string(),
+            expected: parameters.len(),
+            found: arguments.len(),
+            span,
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        return None;
+    }
+
+    if type_params.is_empty() {
+        for (arg, param) in arguments.iter().zip(&parameters) {
+            if matches!(arg, Expression::Placeholder { .. }) {
+                continue;
+            }
+            let arg_ty = synthesize_expression(db, tables, arg, env, ctx)?;
+            if arg_ty != param.param_type {
+                TypeError::ArgumentTypeMismatch {
+                    function: function.to_string(),
+                    parameter: param.name.clone(),
+                    expected: param.param_type.name(),
+                    found: arg_ty.name(),
+                    span: arg.span(),
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+                return None;
+            }
+        }
+        Some(return_type)
+    } else {
+        let mut subst: HashMap<String, RT> = HashMap::new();
+        for (arg, param) in arguments.iter().zip(&parameters) {
+            if matches!(arg, Expression::Placeholder { .. }) {
+                continue;
+            }
+            let arg_ty = synthesize_expression(db, tables, arg, env, ctx)?;
+            if !TypeChecker::unify_type(&param.param_type, &arg_ty, &mut subst) {
+                let expected = TypeChecker::apply_subst(&param.param_type, &subst);
+                TypeError::ArgumentTypeMismatch {
+                    function: function.to_string(),
+                    parameter: param.name.clone(),
+                    expected: expected.name(),
+                    found: arg_ty.name(),
+                    span: arg.span(),
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+                return None;
+            }
+        }
+        for tp in &type_params {
+            if tp.bounds.is_empty() {
+                continue;
+            }
+            if let Some(concrete) = subst.get(&tp.name) {
+                let type_name = match concrete {
+                    RT::Struct(n) => n.name.as_str(),
+                    _ => continue,
+                };
+                for bound in &tp.bounds {
+                    let trait_name = bound.name.as_str();
+                    let tn = TypeName {
+                        name: type_name.to_string(),
+                        module: ModuleName::new(NonEmpty::new(String::new())),
+                    };
+                    let trn = TypeName {
+                        name: trait_name.to_string(),
+                        module: ModuleName::new(NonEmpty::new(String::new())),
+                    };
+                    let type_key = InternedTypeName::new(db, tn);
+                    let trait_key = InternedTraitName::new(db, trn);
+                    if !lookup_impl_exists(db, tables, type_key, trait_key) {
+                        TypeError::TraitBoundNotSatisfied {
+                            type_name: type_name.to_string(),
+                            trait_name: trait_name.to_string(),
+                            param_name: tp.name.clone(),
+                            span,
+                            file_id: ctx.file_id,
+                        }
+                        .accumulate(db);
+                        return None;
+                    }
+                }
+            }
+        }
+        Some(TypeChecker::apply_subst(&return_type, &subst))
+    }
+}
+
+fn synthesize_list_literal(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    elements: &[Expression],
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    if elements.is_empty() {
+        TypeError::TypeMismatch {
+            expected: "non-empty list or type annotation".to_string(),
+            found: "empty list".to_string(),
+            span,
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        return None;
+    }
+    let first_type = synthesize_expression(db, tables, &elements[0], env, ctx)?;
+    for elem in elements.iter().skip(1) {
+        let elem_type = synthesize_expression(db, tables, elem, env, ctx)?;
+        if elem_type != first_type {
+            TypeError::TypeMismatch {
+                expected: first_type.name(),
+                found: elem_type.name(),
+                span: elem.span(),
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            return None;
+        }
+    }
+    Some(RT::list(first_type))
+}
+
+fn synthesize_select(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    clauses: &[SelectClause],
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    if clauses.is_empty() {
+        TypeError::TypeMismatch {
+            expected: "non-empty select".to_string(),
+            found: "empty select".to_string(),
+            span,
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        return None;
+    }
+    let first = &clauses[0];
+    let first_result_type = synthesize_expression(db, tables, &first.expression_to_run, env, ctx)?;
+    let mut first_env = env.create_child();
+    first_env.declare_variable(
+        first.result_variable.clone(),
+        first_result_type,
+        first.expression_to_run.span(),
+    );
+    let first_type = synthesize_expression(db, tables, &first.expression_next, &first_env, ctx)?;
+    for (i, clause) in clauses.iter().enumerate().skip(1) {
+        let result_type = synthesize_expression(db, tables, &clause.expression_to_run, env, ctx)?;
+        let mut clause_env = env.create_child();
+        clause_env.declare_variable(
+            clause.result_variable.clone(),
+            result_type,
+            clause.expression_to_run.span(),
+        );
+        let clause_type =
+            synthesize_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
+        if first_type != clause_type {
+            TypeError::SelectBranchTypeMismatch {
+                expected: first_type.name(),
+                found: clause_type.name(),
+                branch_index: i,
+                span: clause.expression_next.span(),
+                first_branch_span: first.expression_next.span(),
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            return None;
+        }
+    }
+    Some(first_type)
+}
+
+fn synthesize_if_else(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    condition: &Expression,
+    then_expr: &Expression,
+    else_expr: &Expression,
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    let _ = span;
+    check_boolean_condition(db, tables, condition, env, ctx)?;
+    let then_type = synthesize_expression(db, tables, then_expr, env, ctx)?;
+    let else_type = synthesize_expression(db, tables, else_expr, env, ctx)?;
+    if then_type != else_type {
+        TypeError::TypeMismatch {
+            expected: then_type.name(),
+            found: else_type.name(),
+            span: else_expr.span(),
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        return None;
+    }
+    Some(then_type)
+}
+
+fn synthesize_struct_literal(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    struct_name: &str,
+    fields: &[(String, Expression)],
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    let (definition, type_params) = push_err(
+        db,
+        get_struct_fields(db, tables, struct_name, ctx.module_name).ok_or_else(|| {
+            TypeError::UnsupportedType {
+                type_name: struct_name.to_string(),
+                span,
+                file_id: ctx.file_id,
+            }
+        }),
+    )?;
+    let mut seen = std::collections::HashSet::new();
+    let mut subst: HashMap<String, RT> = HashMap::new();
+    for (field_name, value_expr) in fields {
+        if !seen.insert(field_name.clone()) {
+            TypeError::DuplicateField {
+                struct_name: struct_name.to_string(),
+                field_name: field_name.clone(),
+                span: value_expr.span(),
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            return None;
+        }
+        let declared_ast_type = push_err(
+            db,
+            definition
+                .iter()
+                .find(|(n, _)| n == field_name)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| TypeError::UnknownField {
+                    struct_name: struct_name.to_string(),
+                    field_name: field_name.clone(),
+                    span: value_expr.span(),
+                    file_id: ctx.file_id,
+                }),
+        )?;
+        let declared_type = super::constraints::resolve(
+            db,
+            tables,
+            &declared_ast_type,
+            ctx.module_name,
+            &type_params,
+            value_expr.span(),
+            ctx.file_id,
+        )?;
+        let value_type = synthesize_expression(db, tables, value_expr, env, ctx)?;
+        if !TypeChecker::unify_type(&declared_type, &value_type, &mut subst) {
+            let expected = TypeChecker::apply_subst(&declared_type, &subst);
+            TypeError::StructFieldTypeMismatch {
+                struct_name: struct_name.to_string(),
+                field_name: field_name.clone(),
+                expected: expected.name(),
+                found: value_type.name(),
+                span: value_expr.span(),
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            return None;
+        }
+    }
+    for (required_field, _) in &definition {
+        if !fields.iter().any(|(n, _)| n == required_field) {
+            TypeError::MissingField {
+                struct_name: struct_name.to_string(),
+                field_name: required_field.clone(),
+                span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            return None;
+        }
+    }
+    let resolved_type_name = {
+        let interned_mod = ctx.module_name.intern(db);
+        let interned_name = struct_name.intern(db);
+        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+            name: struct_name.to_string(),
+            module: ctx.module_name.clone(),
+        })
+    };
+    if type_params.is_empty() {
+        Some(RT::Struct(resolved_type_name))
+    } else {
+        let args: Vec<RT> = type_params
+            .iter()
+            .map(|tp| {
+                subst
+                    .get(&tp.name)
+                    .cloned()
+                    .unwrap_or_else(|| RT::Generic(tp.name.clone()))
+            })
+            .collect();
+        Some(RT::Parameterized(resolved_type_name, args))
+    }
+}
+
+fn synthesize_field_access(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    base: &Expression,
+    field: &str,
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<RT> {
+    let base_type = synthesize_expression(db, tables, base, env, ctx)?;
+    match base_type {
+        RT::Struct(type_name) => {
+            let (definition, _) = push_err(
+                db,
+                get_struct_fields(db, tables, &type_name.name, ctx.module_name).ok_or_else(|| {
+                    TypeError::UnsupportedType {
+                        type_name: type_name.name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    }
+                }),
+            )?;
+            let field_ast_type = push_err(
+                db,
+                definition
+                    .iter()
+                    .find(|(n, _)| n == field)
+                    .map(|(_, t)| t.clone())
+                    .ok_or_else(|| TypeError::UnknownField {
+                        struct_name: type_name.name.clone(),
+                        field_name: field.to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            super::constraints::resolve(
+                db,
+                tables,
+                &field_ast_type,
+                ctx.module_name,
+                &[],
+                span,
+                ctx.file_id,
+            )
+        }
+        RT::Generic(name) => {
+            let (definition, _) = push_err(
+                db,
+                get_struct_fields(db, tables, &name, ctx.module_name).ok_or_else(|| {
+                    TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    }
+                }),
+            )?;
+            let field_ast_type = push_err(
+                db,
+                definition
+                    .iter()
+                    .find(|(n, _)| n == field)
+                    .map(|(_, t)| t.clone())
+                    .ok_or_else(|| TypeError::UnknownField {
+                        struct_name: name.clone(),
+                        field_name: field.to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            super::constraints::resolve(
+                db,
+                tables,
+                &field_ast_type,
+                ctx.module_name,
+                &[],
+                span,
+                ctx.file_id,
+            )
+        }
+        other => {
+            TypeError::TypeMismatch {
+                expected: "struct".to_string(),
+                found: other.name(),
+                span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            None
+        }
+    }
+}
+
+fn resolve_impl_call_synth(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    fn_name: &str,
+    arguments: &[Expression],
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+) -> Option<(FunctionName, FunctionSignature)> {
+    if arguments.is_empty() {
+        return None;
+    }
+    let first_type = synthesize_expression(db, tables, &arguments[0], env, ctx)?;
+    let type_name = match first_type {
+        RT::Struct(tn) => tn.name.clone(),
+        _ => return None,
+    };
+    let interned_fn = fn_name.intern(db);
+    let interned_type = InternedTypeName::new(
+        db,
+        TypeName {
+            name: type_name.clone(),
+            module: ModuleName::new(NonEmpty::new(String::new())),
+        },
+    );
+    let interned_trait = find_trait_for_impl_call(db, tables, interned_fn, interned_type)?;
+    let trait_key_name = interned_trait.name(db);
+    let impl_fn_name = FunctionName {
+        name: fn_name.to_string(),
+        module: ctx.module_name.clone(),
+        kind: FunctionNameKind::Impl {
+            type_name,
+            trait_name: trait_key_name.name,
+        },
+    };
+    let interned = impl_fn_name.clone().intern(db);
+    let sig_arc = get_function_sig(db, tables, interned)?;
+    Some((impl_fn_name, sig_arc.get().clone()))
+}
+
+fn check_visibility(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    fn_name: &FunctionName,
+    span: Span,
+    ctx: &CheckContext,
+) -> Option<()> {
+    if &fn_name.module == ctx.module_name {
+        return Some(());
+    }
+    let interned = fn_name.intern(db);
+    let is_visible = lookup_function_def(db, tables, interned)
+        .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
+        .unwrap_or(true);
+    if is_visible {
+        Some(())
+    } else {
+        TypeError::PrivateFunction {
+            name: format!("{}::{}", fn_name.module, fn_name.name),
+            span,
+            file_id: ctx.file_id,
+        }
+        .accumulate(db);
+        None
+    }
+}
+
+pub(super) fn elaborate_definition(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    definition: &Definition,
+    ctx: &CheckContext,
+) -> Option<typed_ast::Definition> {
+    match definition {
+        Definition::Function(func) => Some(typed_ast::Definition::Function(elaborate_function(
+            db, tables, func, ctx,
+        )?)),
+        Definition::ExternalFunction(f) => {
+            Some(typed_ast::Definition::ExternalFunction((**f).clone()))
+        }
+        Definition::Struct(s) => Some(typed_ast::Definition::Struct((**s).clone())),
         Definition::Use {
             path,
             name,
@@ -110,52 +922,26 @@ pub(super) fn check_definition(
             span: s.span,
         }),
         Definition::TraitImpl(t) => {
-            let (type_name, trait_name, functions, span) =
-                (&t.type_name, &t.trait_name, &t.functions, &t.span);
-            let trait_fns =
-                super::query::get_trait_functions(db, tables, trait_name, ctx.module_name);
-            if let Some(trait_fns) = trait_fns {
-                for trait_fn in &trait_fns {
-                    if !functions.iter().any(|f| f.name == trait_fn.name) {
-                        TypeError::TraitImplMissingFunction {
-                            type_name: type_name.clone(),
-                            trait_name: trait_name.clone(),
-                            function_name: trait_fn.name.clone(),
-                            span: *span,
-                            file_id: ctx.file_id,
-                        }
-                        .accumulate(db);
-                        return None;
-                    }
-                }
-            } else {
-                TypeError::UnknownTrait {
-                    name: trait_name.clone(),
-                    span: *span,
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
-            let typed_functions = functions
+            let typed_functions = t
+                .functions
                 .iter()
                 .map(|func| {
-                    let concrete = TypeChecker::substitute_self_in_fn(func, type_name);
-                    check_function(db, tables, &concrete, ctx)
+                    let concrete = TypeChecker::substitute_self_in_fn(func, &t.type_name);
+                    elaborate_function(db, tables, &concrete, ctx)
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(typed_ast::Definition::TraitImpl {
-                type_name: type_name.clone(),
-                trait_name: trait_name.clone(),
+                type_name: t.type_name.clone(),
+                trait_name: t.trait_name.clone(),
                 functions: typed_functions,
-                span: *span,
+                span: t.span,
             })
         }
         Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
     }
 }
 
-pub(super) fn check_function(
+fn elaborate_function(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     func: &Function,
@@ -190,20 +976,7 @@ pub(super) fn check_function(
         func.span,
         ctx.file_id,
     )?;
-    let mut typed_stmts = Vec::new();
-    for statement in &func.body.statements {
-        let (typed_stmt, new_env) = check_statement(
-            db,
-            tables,
-            statement,
-            env,
-            &func.name,
-            &runtime_return_type,
-            ctx,
-        )?;
-        typed_stmts.push(typed_stmt);
-        env = new_env;
-    }
+    let typed_stmts = elaborate_block(db, tables, &func.body.statements, env, ctx)?;
     Some(typed_ast::Function {
         name: func.name.clone(),
         parameters: typed_parameters,
@@ -218,18 +991,16 @@ pub(super) fn check_function(
     })
 }
 
-fn check_statement(
+fn elaborate_statement(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     statement: &Statement,
     mut env: TypeEnvironment,
-    function_name: &str,
-    return_type: &RT,
     ctx: &CheckContext,
 ) -> Option<(typed_ast::Statement, TypeEnvironment)> {
     match statement {
         Statement::Injection(expr) => {
-            let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
             Some((typed_ast::Statement::Injection(typed_expr), env))
         }
         Statement::Assignment {
@@ -237,7 +1008,7 @@ fn check_statement(
             expression,
             span,
         } => {
-            let typed_expr = check_expression(db, tables, expression, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
             let expr_type = typed_expr.ty().clone();
             env.declare_variable(variable.clone(), expr_type, expression.span());
             Some((
@@ -254,29 +1025,7 @@ fn check_statement(
             expression,
             span,
         } => {
-            let typed_expr = check_expression(db, tables, expression, &env, ctx)?;
-            let expr_type = typed_expr.ty().clone();
-            let (existing_type, declaration_span) = push_err(
-                db,
-                env.lookup_variable_with_span(variable)
-                    .ok_or_else(|| TypeError::UnknownVariable {
-                        name: variable.clone(),
-                        span: *span,
-                        file_id: ctx.file_id,
-                    }),
-            )?;
-            if expr_type != existing_type {
-                TypeError::VariableTypeMismatch {
-                    variable: variable.clone(),
-                    expected: existing_type.name(),
-                    found: expr_type.name(),
-                    span: expression.span(),
-                    declaration_span,
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
+            let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
             Some((
                 typed_ast::Statement::VariableAssignment {
                     variable: variable.clone(),
@@ -287,7 +1036,7 @@ fn check_statement(
             ))
         }
         Statement::ExpressionStatement(expr) => {
-            let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
             Some((typed_ast::Statement::ExpressionStatement(typed_expr), env))
         }
         Statement::If {
@@ -296,24 +1045,14 @@ fn check_statement(
             else_body,
             span,
         } => {
-            let typed_condition = check_boolean_condition(db, tables, condition, &env, ctx)?;
-            let typed_body = check_block(
-                db,
-                tables,
-                body,
-                env.create_child(),
-                function_name,
-                return_type,
-                ctx,
-            )?;
+            let typed_condition = elaborate_expression(db, tables, condition, &env, ctx)?;
+            let typed_body = elaborate_block(db, tables, body, env.create_child(), ctx)?;
             let typed_else = if let Some(else_stmts) = else_body {
-                Some(check_block(
+                Some(elaborate_block(
                     db,
                     tables,
                     else_stmts,
                     env.create_child(),
-                    function_name,
-                    return_type,
                     ctx,
                 )?)
             } else {
@@ -334,16 +1073,8 @@ fn check_statement(
             body,
             span,
         } => {
-            let typed_condition = check_boolean_condition(db, tables, condition, &env, ctx)?;
-            let typed_body = check_block(
-                db,
-                tables,
-                body,
-                env.create_child(),
-                function_name,
-                return_type,
-                ctx,
-            )?;
+            let typed_condition = elaborate_expression(db, tables, condition, &env, ctx)?;
+            let typed_body = elaborate_block(db, tables, body, env.create_child(), ctx)?;
             Some((
                 typed_ast::Statement::While {
                     condition: typed_condition,
@@ -354,65 +1085,29 @@ fn check_statement(
             ))
         }
         Statement::Return(expr) => {
-            let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
-            if *typed_expr.ty() != *return_type {
-                TypeError::ReturnTypeMismatch {
-                    function: function_name.to_string(),
-                    expected: return_type.name(),
-                    found: typed_expr.ty().name(),
-                    span: expr.span(),
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
+            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
             Some((typed_ast::Statement::Return(typed_expr), env))
         }
     }
 }
 
-fn check_boolean_condition(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    condition: &Expression,
-    env: &TypeEnvironment,
-    ctx: &CheckContext,
-) -> Option<typed_ast::Expression> {
-    let typed_cond = check_expression(db, tables, condition, env, ctx)?;
-    if typed_cond.ty() == &RT::boolean() {
-        Some(typed_cond)
-    } else {
-        TypeError::TypeMismatch {
-            expected: "Boolean".to_string(),
-            found: typed_cond.ty().name(),
-            span: condition.span(),
-            file_id: ctx.file_id,
-        }
-        .accumulate(db);
-        None
-    }
-}
-
-fn check_block(
+fn elaborate_block(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     stmts: &[Statement],
     mut env: TypeEnvironment,
-    function_name: &str,
-    return_type: &RT,
     ctx: &CheckContext,
 ) -> Option<Vec<typed_ast::Statement>> {
     let mut typed_stmts = Vec::new();
     for stmt in stmts {
-        let (typed_stmt, new_env) =
-            check_statement(db, tables, stmt, env, function_name, return_type, ctx)?;
+        let (typed_stmt, new_env) = elaborate_statement(db, tables, stmt, env, ctx)?;
         typed_stmts.push(typed_stmt);
         env = new_env;
     }
     Some(typed_stmts)
 }
 
-pub(super) fn check_expression(
+pub(super) fn elaborate_expression(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     expression: &Expression,
@@ -424,17 +1119,9 @@ pub(super) fn check_expression(
             function,
             arguments,
             span,
-        } => check_call(db, tables, function, arguments, *span, env, ctx),
+        } => elaborate_call(db, tables, function, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
-            let ty = push_err(
-                db,
-                env.lookup_variable(name)
-                    .ok_or_else(|| TypeError::UnknownVariable {
-                        name: name.clone(),
-                        span: *span,
-                        file_id: ctx.file_id,
-                    }),
-            )?;
+            let ty = env.lookup_variable(name)?;
             Some(typed_ast::Expression::Variable {
                 name: name.clone(),
                 ty,
@@ -460,40 +1147,31 @@ pub(super) fn check_expression(
             ty: RT::unit(),
             span: *span,
         }),
-        Expression::Placeholder { span } => {
-            TypeError::TypeMismatch {
-                expected: "concrete type".to_string(),
-                found: "placeholder".to_string(),
-                span: *span,
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            None
-        }
+        Expression::Placeholder { .. } => None,
         Expression::ListLiteral { elements, span } => {
-            check_list_literal(db, tables, elements, *span, env, ctx)
+            elaborate_list_literal(db, tables, elements, *span, env, ctx)
         }
         Expression::Select(select_expr) => {
-            check_select(db, tables, &select_expr.clauses, select_expr.span, env, ctx)
+            elaborate_select(db, tables, &select_expr.clauses, select_expr.span, env, ctx)
         }
         Expression::IfElse {
             condition,
             then_expr,
             else_expr,
             span,
-        } => check_if_else_expression(db, tables, condition, then_expr, else_expr, *span, env, ctx),
+        } => elaborate_if_else(db, tables, condition, then_expr, else_expr, *span, env, ctx),
         Expression::StructLiteral {
             struct_name,
             fields,
             span,
-        } => check_struct_literal(db, tables, struct_name, fields, *span, env, ctx),
+        } => elaborate_struct_literal(db, tables, struct_name, fields, *span, env, ctx),
         Expression::FieldAccess { base, field, span } => {
-            check_field_access(db, tables, base, field, *span, env, ctx)
+            elaborate_field_access(db, tables, base, field, *span, env, ctx)
         }
     }
 }
 
-fn check_call(
+fn elaborate_call(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     function: &str,
@@ -505,36 +1183,45 @@ fn check_call(
     let interned_current = ctx.module_name.intern(db);
     let interned_fn = function.intern(db);
 
-    let (resolved_fn_name, sig) = push_err(
-        db,
-        resolve_function_call(db, tables, interned_current, interned_fn)
-            .and_then(|fn_name| {
-                super::query::get_function_sig(db, tables, &fn_name).map(|sig| (fn_name, sig))
-            })
-            .or_else(|| super::query::resolve_impl_call(db, tables, function, arguments, env, ctx))
-            .ok_or_else(|| TypeError::UnknownFunction {
+    let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
+        .and_then(|fn_name| {
+            let interned = fn_name.clone().intern(db);
+            get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
+        })
+        .or_else(|| {
+            if arguments.is_empty() {
+                return None;
+            }
+            let first_typed = elaborate_expression(db, tables, &arguments[0], env, ctx)?;
+            let type_name = match first_typed.ty() {
+                RT::Struct(tn) => tn.name.clone(),
+                _ => return None,
+            };
+            let interned_fn2 = function.intern(db);
+            let interned_type = InternedTypeName::new(
+                db,
+                TypeName {
+                    name: type_name.clone(),
+                    module: ModuleName::new(NonEmpty::new(String::new())),
+                },
+            );
+            let interned_trait = find_trait_for_impl_call(db, tables, interned_fn2, interned_type)?;
+            let trait_key_name = interned_trait.name(db);
+            let impl_fn_name = FunctionName {
                 name: function.to_string(),
-                span,
-                file_id: ctx.file_id,
-            }),
-    )?;
-
-    super::query::check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
+                module: ctx.module_name.clone(),
+                kind: FunctionNameKind::Impl {
+                    type_name,
+                    trait_name: trait_key_name.name,
+                },
+            };
+            let interned = impl_fn_name.clone().intern(db);
+            let sig_arc = get_function_sig(db, tables, interned)?;
+            Some((impl_fn_name, sig_arc.get().clone()))
+        })?;
 
     let (kind, return_type, parameters, type_params) =
         (sig.kind, sig.return_type, sig.parameters, sig.type_params);
-
-    if arguments.len() != parameters.len() {
-        TypeError::ArgumentCountMismatch {
-            function: function.to_string(),
-            expected: parameters.len(),
-            found: arguments.len(),
-            span,
-            file_id: ctx.file_id,
-        }
-        .accumulate(db);
-        return None;
-    }
 
     let mut typed_args = Vec::new();
 
@@ -547,22 +1234,9 @@ fn check_call(
                 });
                 continue;
             }
-            let typed_arg = check_expression(db, tables, arg, env, ctx)?;
-            if typed_arg.ty() != &param.param_type {
-                TypeError::ArgumentTypeMismatch {
-                    function: function.to_string(),
-                    parameter: param.name.clone(),
-                    expected: param.param_type.name(),
-                    found: typed_arg.ty().name(),
-                    span: arg.span(),
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
+            let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
             typed_args.push(typed_arg);
         }
-
         Some(typed_ast::Expression::Call {
             function: function.to_string(),
             resolved: resolved_fn_name,
@@ -581,51 +1255,10 @@ fn check_call(
                 });
                 continue;
             }
-            let typed_arg = check_expression(db, tables, arg, env, ctx)?;
-            if !TypeChecker::unify_type(&param.param_type, typed_arg.ty(), &mut subst) {
-                let expected = TypeChecker::apply_subst(&param.param_type, &subst);
-                TypeError::ArgumentTypeMismatch {
-                    function: function.to_string(),
-                    parameter: param.name.clone(),
-                    expected: expected.name(),
-                    found: typed_arg.ty().name(),
-                    span: arg.span(),
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
+            let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
+            TypeChecker::unify_type(&param.param_type, typed_arg.ty(), &mut subst);
             typed_args.push(typed_arg);
         }
-
-        for tp in &type_params {
-            if tp.bounds.is_empty() {
-                continue;
-            }
-            if let Some(concrete) = subst.get(&tp.name) {
-                let type_name = match concrete {
-                    RT::Struct(n) => n.name.as_str(),
-                    _ => continue,
-                };
-                for bound in &tp.bounds {
-                    let trait_name = bound.name.as_str();
-                    let satisfied =
-                        super::query::type_implements_trait(db, tables, type_name, trait_name);
-                    if !satisfied {
-                        TypeError::TraitBoundNotSatisfied {
-                            type_name: type_name.to_string(),
-                            trait_name: trait_name.to_string(),
-                            param_name: tp.name.clone(),
-                            span,
-                            file_id: ctx.file_id,
-                        }
-                        .accumulate(db);
-                        return None;
-                    }
-                }
-            }
-        }
-
         let resolved_return = TypeChecker::apply_subst(&return_type, &subst);
         Some(typed_ast::Expression::Call {
             function: function.to_string(),
@@ -638,7 +1271,7 @@ fn check_call(
     }
 }
 
-fn check_list_literal(
+fn elaborate_list_literal(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     elements: &[Expression],
@@ -647,35 +1280,15 @@ fn check_list_literal(
     ctx: &CheckContext,
 ) -> Option<typed_ast::Expression> {
     if elements.is_empty() {
-        TypeError::TypeMismatch {
-            expected: "non-empty list or type annotation".to_string(),
-            found: "empty list".to_string(),
-            span,
-            file_id: ctx.file_id,
-        }
-        .accumulate(db);
         return None;
     }
-
-    let typed_first = check_expression(db, tables, &elements[0], env, ctx)?;
+    let typed_first = elaborate_expression(db, tables, &elements[0], env, ctx)?;
     let first_type = typed_first.ty().clone();
     let mut typed_elements = vec![typed_first];
-
     for elem in elements.iter().skip(1) {
-        let typed_elem = check_expression(db, tables, elem, env, ctx)?;
-        if *typed_elem.ty() != first_type {
-            TypeError::TypeMismatch {
-                expected: first_type.name(),
-                found: typed_elem.ty().name(),
-                span: elem.span(),
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            return None;
-        }
+        let typed_elem = elaborate_expression(db, tables, elem, env, ctx)?;
         typed_elements.push(typed_elem);
     }
-
     Some(typed_ast::Expression::ListLiteral {
         elements: typed_elements,
         ty: RT::list(first_type),
@@ -683,7 +1296,7 @@ fn check_list_literal(
     })
 }
 
-fn check_select(
+fn elaborate_select(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     clauses: &[SelectClause],
@@ -692,18 +1305,10 @@ fn check_select(
     ctx: &CheckContext,
 ) -> Option<typed_ast::Expression> {
     if clauses.is_empty() {
-        TypeError::TypeMismatch {
-            expected: "non-empty select".to_string(),
-            found: "empty select".to_string(),
-            span,
-            file_id: ctx.file_id,
-        }
-        .accumulate(db);
         return None;
     }
-
     let first = &clauses[0];
-    let typed_first_run = check_expression(db, tables, &first.expression_to_run, env, ctx)?;
+    let typed_first_run = elaborate_expression(db, tables, &first.expression_to_run, env, ctx)?;
     let first_result_type = typed_first_run.ty().clone();
     let mut first_env = env.create_child();
     first_env.declare_variable(
@@ -711,18 +1316,17 @@ fn check_select(
         first_result_type,
         first.expression_to_run.span(),
     );
-    let typed_first_next = check_expression(db, tables, &first.expression_next, &first_env, ctx)?;
+    let typed_first_next =
+        elaborate_expression(db, tables, &first.expression_next, &first_env, ctx)?;
     let first_type = typed_first_next.ty().clone();
-
     let mut typed_clauses = vec![typed_ast::SelectClause {
         expression_to_run: typed_first_run,
         result_variable: first.result_variable.clone(),
         expression_next: typed_first_next,
         span: first.span,
     }];
-
-    for (i, clause) in clauses.iter().enumerate().skip(1) {
-        let typed_run = check_expression(db, tables, &clause.expression_to_run, env, ctx)?;
+    for clause in clauses.iter().skip(1) {
+        let typed_run = elaborate_expression(db, tables, &clause.expression_to_run, env, ctx)?;
         let result_type = typed_run.ty().clone();
         let mut clause_env = env.create_child();
         clause_env.declare_variable(
@@ -730,19 +1334,8 @@ fn check_select(
             result_type,
             clause.expression_to_run.span(),
         );
-        let typed_next = check_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
-        if first_type != *typed_next.ty() {
-            TypeError::SelectBranchTypeMismatch {
-                expected: first_type.name(),
-                found: typed_next.ty().name(),
-                branch_index: i,
-                span: clause.expression_next.span(),
-                first_branch_span: first.expression_next.span(),
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            return None;
-        }
+        let typed_next =
+            elaborate_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
             result_variable: clause.result_variable.clone(),
@@ -750,7 +1343,6 @@ fn check_select(
             span: clause.span,
         });
     }
-
     Some(typed_ast::Expression::Select(
         typed_ast::SelectExpression {
             clauses: typed_clauses,
@@ -760,7 +1352,7 @@ fn check_select(
     ))
 }
 
-fn check_if_else_expression(
+fn elaborate_if_else(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     condition: &Expression,
@@ -770,21 +1362,9 @@ fn check_if_else_expression(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let typed_condition = check_boolean_condition(db, tables, condition, env, ctx)?;
-    let typed_then = check_expression(db, tables, then_expr, env, ctx)?;
-    let typed_else = check_expression(db, tables, else_expr, env, ctx)?;
-
-    if typed_then.ty() != typed_else.ty() {
-        TypeError::TypeMismatch {
-            expected: typed_then.ty().name(),
-            found: typed_else.ty().name(),
-            span: else_expr.span(),
-            file_id: ctx.file_id,
-        }
-        .accumulate(db);
-        return None;
-    }
-
+    let typed_condition = elaborate_expression(db, tables, condition, env, ctx)?;
+    let typed_then = elaborate_expression(db, tables, then_expr, env, ctx)?;
+    let typed_else = elaborate_expression(db, tables, else_expr, env, ctx)?;
     let ty = typed_then.ty().clone();
     Some(typed_ast::Expression::IfElse {
         condition: Box::new(typed_condition),
@@ -795,7 +1375,7 @@ fn check_if_else_expression(
     })
 }
 
-fn check_struct_literal(
+fn elaborate_struct_literal(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     struct_name: &str,
@@ -804,47 +1384,14 @@ fn check_struct_literal(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let (definition, type_params) = push_err(
-        db,
-        super::query::get_struct_fields(db, tables, struct_name, ctx.module_name).ok_or_else(
-            || TypeError::UnsupportedType {
-                type_name: struct_name.to_string(),
-                span,
-                file_id: ctx.file_id,
-            },
-        ),
-    )?;
-
-    let mut seen = std::collections::HashSet::new();
+    let (definition, type_params) = get_struct_fields(db, tables, struct_name, ctx.module_name)?;
     let mut typed_fields = Vec::new();
     let mut subst: HashMap<String, RT> = HashMap::new();
-
     for (field_name, value_expr) in fields {
-        if !seen.insert(field_name.clone()) {
-            TypeError::DuplicateField {
-                struct_name: struct_name.to_string(),
-                field_name: field_name.clone(),
-                span: value_expr.span(),
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            return None;
-        }
-
-        let declared_ast_type = push_err(
-            db,
-            definition
-                .iter()
-                .find(|(n, _)| n == field_name)
-                .map(|(_, t)| t.clone())
-                .ok_or_else(|| TypeError::UnknownField {
-                    struct_name: struct_name.to_string(),
-                    field_name: field_name.clone(),
-                    span: value_expr.span(),
-                    file_id: ctx.file_id,
-                }),
-        )?;
-
+        let declared_ast_type = definition
+            .iter()
+            .find(|(n, _)| n == field_name)
+            .map(|(_, t)| t.clone())?;
         let declared_type = super::constraints::resolve(
             db,
             tables,
@@ -854,36 +1401,10 @@ fn check_struct_literal(
             value_expr.span(),
             ctx.file_id,
         )?;
-        let typed_value = check_expression(db, tables, value_expr, env, ctx)?;
-        if !TypeChecker::unify_type(&declared_type, typed_value.ty(), &mut subst) {
-            let expected = TypeChecker::apply_subst(&declared_type, &subst);
-            TypeError::StructFieldTypeMismatch {
-                struct_name: struct_name.to_string(),
-                field_name: field_name.clone(),
-                expected: expected.name(),
-                found: typed_value.ty().name(),
-                span: value_expr.span(),
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            return None;
-        }
+        let typed_value = elaborate_expression(db, tables, value_expr, env, ctx)?;
+        TypeChecker::unify_type(&declared_type, typed_value.ty(), &mut subst);
         typed_fields.push((field_name.clone(), typed_value));
     }
-
-    for (required_field, _) in &definition {
-        if !fields.iter().any(|(n, _)| n == required_field) {
-            TypeError::MissingField {
-                struct_name: struct_name.to_string(),
-                field_name: required_field.clone(),
-                span,
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            return None;
-        }
-    }
-
     let resolved_type_name = {
         let interned_mod = ctx.module_name.intern(db);
         let interned_name = struct_name.intern(db);
@@ -892,7 +1413,6 @@ fn check_struct_literal(
             module: ctx.module_name.clone(),
         })
     };
-
     let ty = if type_params.is_empty() {
         RT::Struct(resolved_type_name)
     } else {
@@ -907,7 +1427,6 @@ fn check_struct_literal(
             .collect();
         RT::Parameterized(resolved_type_name, args)
     };
-
     Some(typed_ast::Expression::StructLiteral {
         struct_name: struct_name.to_string(),
         fields: typed_fields,
@@ -916,7 +1435,7 @@ fn check_struct_literal(
     })
 }
 
-fn check_field_access(
+fn elaborate_field_access(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     base: &Expression,
@@ -925,97 +1444,33 @@ fn check_field_access(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let typed_base = check_expression(db, tables, base, env, ctx)?;
+    let typed_base = elaborate_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
-    match base_type {
-        RT::Struct(type_name) => {
-            let (definition, _) = push_err(
-                db,
-                super::query::get_struct_fields(db, tables, &type_name.name, ctx.module_name)
-                    .ok_or_else(|| TypeError::UnsupportedType {
-                        type_name: type_name.name.clone(),
-                        span,
-                        file_id: ctx.file_id,
-                    }),
-            )?;
-            let field_ast_type = push_err(
-                db,
-                definition
-                    .iter()
-                    .find(|(n, _)| n == field)
-                    .map(|(_, t)| t.clone())
-                    .ok_or_else(|| TypeError::UnknownField {
-                        struct_name: type_name.name.clone(),
-                        field_name: field.to_string(),
-                        span,
-                        file_id: ctx.file_id,
-                    }),
-            )?;
-            Some(typed_ast::Expression::FieldAccess {
-                base: Box::new(typed_base),
-                field: field.to_string(),
-                ty: super::constraints::resolve(
-                    db,
-                    tables,
-                    &field_ast_type,
-                    ctx.module_name,
-                    &[],
-                    span,
-                    ctx.file_id,
-                )?,
-                span,
-            })
-        }
-        RT::Generic(name) => {
-            let (definition, _) = push_err(
-                db,
-                super::query::get_struct_fields(db, tables, &name, ctx.module_name).ok_or_else(
-                    || TypeError::UnsupportedType {
-                        type_name: name.clone(),
-                        span,
-                        file_id: ctx.file_id,
-                    },
-                ),
-            )?;
-            let field_ast_type = push_err(
-                db,
-                definition
-                    .iter()
-                    .find(|(n, _)| n == field)
-                    .map(|(_, t)| t.clone())
-                    .ok_or_else(|| TypeError::UnknownField {
-                        struct_name: name.clone(),
-                        field_name: field.to_string(),
-                        span,
-                        file_id: ctx.file_id,
-                    }),
-            )?;
-            Some(typed_ast::Expression::FieldAccess {
-                base: Box::new(typed_base),
-                field: field.to_string(),
-                ty: super::constraints::resolve(
-                    db,
-                    tables,
-                    &field_ast_type,
-                    ctx.module_name,
-                    &[],
-                    span,
-                    ctx.file_id,
-                )?,
-                span,
-            })
-        }
-        other => {
-            TypeError::TypeMismatch {
-                expected: "struct".to_string(),
-                found: other.name(),
-                span,
-                file_id: ctx.file_id,
-            }
-            .accumulate(db);
-            None
-        }
-    }
+    let struct_type_name = match &base_type {
+        RT::Struct(tn) => tn.name.clone(),
+        RT::Generic(name) => name.clone(),
+        _ => return None,
+    };
+    let (definition, _) = get_struct_fields(db, tables, &struct_type_name, ctx.module_name)?;
+    let field_ast_type = definition
+        .iter()
+        .find(|(n, _)| n == field)
+        .map(|(_, t)| t.clone())?;
+    let field_ty = super::constraints::resolve(
+        db,
+        tables,
+        &field_ast_type,
+        ctx.module_name,
+        &[],
+        span,
+        ctx.file_id,
+    )?;
+    Some(typed_ast::Expression::FieldAccess {
+        base: Box::new(typed_base),
+        field: field.to_string(),
+        ty: field_ty,
+        span,
+    })
 }
 
 impl TypeChecker {

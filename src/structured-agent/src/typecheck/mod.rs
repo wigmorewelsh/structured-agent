@@ -3,7 +3,6 @@ mod constraints;
 mod db;
 mod elaboration;
 mod error;
-mod query;
 mod refs;
 
 #[cfg(test)]
@@ -202,8 +201,9 @@ impl TypeChecker {
         modules: &[ParsedModule],
     ) -> Result<HashMap<NonEmpty<String>, typed_ast::Module>, Vec<TypeError>> {
         let tables = self.symbol_tables.expect("symbol tables not populated");
-        let mut typed_modules = HashMap::new();
+        let mut parsed_inputs = Vec::new();
         let mut all_errors: Vec<TypeError> = Vec::new();
+
         for parsed in modules {
             let parsed_input = ParsedModuleInput::new(
                 &self.db,
@@ -212,22 +212,26 @@ impl TypeChecker {
                 parsed.file_id,
                 parsed.module.clone(),
             );
-            let maybe_module = db::check_module(&self.db, parsed_input, tables);
+            parsed_inputs.push(parsed_input);
+            db::check_module(&self.db, parsed_input, tables);
             let errors = db::check_module::accumulated::<TypeErrorAccumulator>(
                 &self.db,
                 parsed_input,
                 tables,
             );
-            if let Some(arc_module) = maybe_module {
-                typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
-            }
             all_errors.extend(errors.into_iter().map(|e| e.0.clone()));
         }
-        if all_errors.is_empty() {
-            Ok(typed_modules)
-        } else {
-            Err(all_errors)
+
+        if !all_errors.is_empty() {
+            return Err(all_errors);
         }
+
+        let mut typed_modules = HashMap::new();
+        for (parsed, parsed_input) in modules.iter().zip(parsed_inputs) {
+            let arc_module = db::elaborate_module(&self.db, parsed_input, tables);
+            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
+        }
+        Ok(typed_modules)
     }
 
     fn materialize_metadata(

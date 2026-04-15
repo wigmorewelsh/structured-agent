@@ -1,7 +1,7 @@
-use super::refs::{CheckerAstRef, CheckerRefs};
-use crate::ast::{Definition, Module as AstModule};
+use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind};
+use crate::ast::{Definition, Module as AstModule, SigFunction, Type as AstType, TypeParam};
 use crate::typed_ast;
-use crate::types::FileId;
+use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::fmt;
@@ -260,18 +260,171 @@ pub(super) fn lookup_impl_def<'db>(
 }
 
 #[salsa::tracked]
+pub(super) fn get_function_sig<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    name: InternedFunctionName<'db>,
+) -> Option<ArcPtr<super::FunctionSignature>> {
+    let fn_name = name.name(db);
+    let fn_def = lookup_function_def(db, tables, name)?;
+    let kind = match &fn_def.get().ast_ref {
+        CheckerAstRef::ExternalFn { .. } => FunctionKind::External,
+        _ => FunctionKind::Bytecode,
+    };
+    let concrete_type = match &fn_name.kind {
+        FunctionNameKind::Impl { type_name, .. } => Some(type_name.clone()),
+        _ => None,
+    };
+    let type_key = InternedTypeName::new(db, fn_def.get().type_name.clone());
+    let type_def = lookup_type_def(db, tables, type_key)?;
+    let TypeDefinitionKind::Function {
+        parameters,
+        generic_parameters,
+        return_type,
+    } = &type_def.get().kind
+    else {
+        return None;
+    };
+    let type_params_vec: Vec<TypeParam> = generic_parameters
+        .iter()
+        .map(|gp| TypeParam {
+            name: gp.name.clone(),
+            bounds: gp.constraints.clone(),
+        })
+        .collect();
+    let mut resolved_params = Vec::with_capacity(parameters.len());
+    for p in parameters {
+        let substituted = match &concrete_type {
+            Some(ct) => super::TypeChecker::substitute_self(&p.type_name, ct),
+            None => p.type_name.clone(),
+        };
+        let param_type = super::constraints::resolve(
+            db,
+            tables,
+            &substituted,
+            &fn_name.module,
+            &type_params_vec,
+            Span::dummy(),
+            0,
+        )?;
+        resolved_params.push(crate::typed_ast::Parameter {
+            name: p.name.clone(),
+            param_type,
+            span: Span::dummy(),
+        });
+    }
+    let subst_return = match &concrete_type {
+        Some(ct) => super::TypeChecker::substitute_self(return_type, ct),
+        None => return_type.clone(),
+    };
+    let resolved_return = super::constraints::resolve(
+        db,
+        tables,
+        &subst_return,
+        &fn_name.module,
+        &type_params_vec,
+        Span::dummy(),
+        0,
+    )?;
+    Some(ArcPtr::new(super::FunctionSignature {
+        parameters: resolved_params,
+        return_type: resolved_return,
+        type_params: type_params_vec,
+        kind,
+    }))
+}
+
+pub(super) fn get_struct_fields(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    name: &str,
+    current_module: &ModuleName,
+) -> Option<(Vec<(String, AstType)>, Vec<TypeParam>)> {
+    let interned_mod = current_module.intern(db);
+    let interned_name = name.intern(db);
+    let resolved =
+        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+            name: name.to_string(),
+            module: current_module.clone(),
+        });
+    let key = InternedTypeName::new(db, resolved);
+    lookup_type_def(db, tables, key).and_then(|arc_ptr| {
+        if let CheckerAstRef::Struct(s) = &arc_ptr.get().ast_ref {
+            let fields = s
+                .fields
+                .iter()
+                .map(|f| (f.name.clone(), f.field_type.clone()))
+                .collect();
+            let type_params = s.type_params.clone();
+            Some((fields, type_params))
+        } else {
+            None
+        }
+    })
+}
+
+pub(super) fn get_trait_functions(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    name: &str,
+    current_module: &ModuleName,
+) -> Option<Vec<SigFunction>> {
+    let interned_mod = current_module.intern(db);
+    let interned_name = name.intern(db);
+    let resolved =
+        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+            name: name.to_string(),
+            module: current_module.clone(),
+        });
+    let trait_type_name = TypeName {
+        name: resolved.name,
+        module: resolved.module,
+    };
+    let key = InternedTraitName::new(db, trait_type_name);
+    lookup_trait_def(db, tables, key).and_then(|arc_ptr| {
+        if let CheckerAstRef::Trait(t) = &arc_ptr.get().ast_ref {
+            Some(t.functions.clone())
+        } else {
+            None
+        }
+    })
+}
+
+#[salsa::tracked]
 pub(super) fn check_module(
     db: &dyn TypeCheckDatabase,
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
-) -> Option<ArcPtr<typed_ast::Module>> {
+) {
     let module_name = ModuleName::new(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
         file_id: parsed.file_id(db),
         module_name: &module_name,
     };
-    let typed_definitions = module
+    for def in module.definitions.iter().filter(|def| {
+        !matches!(
+            def,
+            Definition::ModuleHeader { .. } | Definition::Signature(_)
+        )
+    }) {
+        super::elaboration::check_definition(db, tables, def, &ctx);
+    }
+}
+
+#[salsa::tracked]
+pub(super) fn elaborate_module(
+    db: &dyn TypeCheckDatabase,
+    parsed: ParsedModuleInput,
+    tables: SymbolTablesInput,
+) -> ArcPtr<typed_ast::Module> {
+    let module_name = ModuleName::new(parsed.name(db));
+    let module = parsed.module(db);
+    let ctx = super::CheckContext {
+        file_id: parsed.file_id(db),
+        module_name: &module_name,
+    };
+    let definitions = module
         .definitions
         .iter()
         .filter(|def| {
@@ -280,13 +433,13 @@ pub(super) fn check_module(
                 Definition::ModuleHeader { .. } | Definition::Signature(_)
             )
         })
-        .filter_map(|def| super::elaboration::check_definition(db, tables, def, &ctx))
-        .collect::<Vec<_>>();
-    Some(ArcPtr::new(typed_ast::Module {
-        definitions: typed_definitions,
+        .filter_map(|def| super::elaboration::elaborate_definition(db, tables, def, &ctx))
+        .collect();
+    ArcPtr::new(typed_ast::Module {
+        definitions,
         span: module.span,
         file_id: parsed.file_id(db),
-    }))
+    })
 }
 
 #[salsa::tracked]
