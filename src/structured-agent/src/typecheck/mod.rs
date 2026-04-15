@@ -22,7 +22,7 @@ use crate::ast::{ParsedModule, Type as AstType, TypeParam};
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use collection::SymbolTableBuilder;
-use db::{ParsedModuleInput, SymbolTablesInput, TypeCheckDb};
+use db::{Intern, ParsedModuleInput, SymbolTablesInput, TypeCheckDatabase, TypeCheckDb};
 use nonempty::NonEmpty;
 
 use std::collections::HashMap;
@@ -58,17 +58,18 @@ pub(super) struct CheckContext<'a> {
     pub(super) module_name: &'a ModuleName,
 }
 
-pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {
-    match ty {
-        AstType::Named(name, _) => TypeName {
-            name: name.clone(),
-            module: module_name.clone(),
-        },
-        other => TypeName {
-            name: other.to_string(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-        },
-    }
+pub(super) fn ast_type_to_type_name(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    ty: &AstType,
+    module_name: &ModuleName,
+) -> TypeName {
+    let interned_mod = module_name.intern(db);
+    let interned_name = ty.name.clone().intern(db);
+    db::resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+        name: ty.name.clone(),
+        module: module_name.clone(),
+    })
 }
 
 impl Default for TypeChecker {
@@ -78,6 +79,8 @@ impl Default for TypeChecker {
 }
 
 fn convert_generic_params(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
     generic_parameters: &[GenericParameterDefinition<refs::CheckerRefs>],
     module: &ModuleName,
 ) -> Vec<GenericParameterDefinition<refs::TypedRefs>> {
@@ -88,13 +91,15 @@ fn convert_generic_params(
             constraints: gp
                 .constraints
                 .iter()
-                .map(|c| ast_type_to_type_name(c, module))
+                .map(|c| ast_type_to_type_name(db, tables, c, module))
                 .collect(),
         })
         .collect()
 }
 
 fn convert_type_kind(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
     kind: &TypeDefinitionKind<refs::CheckerRefs>,
     module: &ModuleName,
 ) -> TypeDefinitionKind<refs::TypedRefs> {
@@ -107,10 +112,10 @@ fn convert_type_kind(
                 .iter()
                 .map(|f| FieldDefinition {
                     name: f.name.clone(),
-                    type_name: ast_type_to_type_name(&f.type_name, module),
+                    type_name: ast_type_to_type_name(db, tables, &f.type_name, module),
                 })
                 .collect(),
-            generic_parameters: convert_generic_params(generic_parameters, module),
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
         },
         TypeDefinitionKind::Function {
             parameters,
@@ -121,18 +126,18 @@ fn convert_type_kind(
                 .iter()
                 .map(|p| ParameterDefinition {
                     name: p.name.clone(),
-                    type_name: ast_type_to_type_name(&p.type_name, module),
+                    type_name: ast_type_to_type_name(db, tables, &p.type_name, module),
                 })
                 .collect(),
-            generic_parameters: convert_generic_params(generic_parameters, module),
-            return_type: ast_type_to_type_name(return_type, module),
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+            return_type: ast_type_to_type_name(db, tables, return_type, module),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
             entries: entries
                 .iter()
                 .map(|e| SignatureEntry {
                     name: e.name.clone(),
-                    type_name: ast_type_to_type_name(&e.type_name, module),
+                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
                 })
                 .collect(),
         },
@@ -141,7 +146,7 @@ fn convert_type_kind(
                 .iter()
                 .map(|e| SignatureEntry {
                     name: e.name.clone(),
-                    type_name: ast_type_to_type_name(&e.type_name, module),
+                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
                 })
                 .collect(),
             witness_ref: NoWitness,
@@ -151,7 +156,7 @@ fn convert_type_kind(
             generic_parameters,
             factory,
         } => TypeDefinitionKind::Native {
-            generic_parameters: convert_generic_params(generic_parameters, module),
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
             factory: factory.clone(),
         },
     }
@@ -285,7 +290,7 @@ impl TypeChecker {
                 .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
         }
         for type_def in tables.types(&self.db).get().values() {
-            let kind = convert_type_kind(&type_def.kind, &type_def.name.module);
+            let kind = convert_type_kind(&self.db, tables, &type_def.kind, &type_def.name.module);
             let new_def = TypeDefinition {
                 name: type_def.name.clone(),
                 kind,

@@ -57,13 +57,10 @@ pub(super) fn resolve(
     file_id: FileId,
 ) -> Result<RT, TypeError> {
     match t {
-        AstType::Generic(name) => {
+        AstType { name, args } if args.is_empty() => {
             resolve_simple_name(db, tables, name, module, type_params, span, file_id)
         }
-        AstType::Named(name, args) if args.is_empty() => {
-            resolve_simple_name(db, tables, name, module, type_params, span, file_id)
-        }
-        AstType::Named(name, args) => {
+        AstType { name, args } => {
             let interned_mod = module.intern(db);
             let interned_name = name.intern(db);
             let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)

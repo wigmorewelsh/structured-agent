@@ -269,28 +269,29 @@ pub fn compile_external_function(
 }
 
 fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
-    match ast_type {
-        crate::ast::Type::Named(name, args) if args.is_empty() => Type::Struct(TypeName {
-            name: name.clone(),
-            module: module.clone(),
-        }),
-        crate::ast::Type::Named(name, args) => Type::Parameterized(
-            TypeName {
-                name: name.clone(),
-                module: module.clone(),
-            },
-            args.iter().map(|a| ast_type_to_type(a, module)).collect(),
-        ),
-        crate::ast::Type::Generic(name) => match name.as_str() {
+    if ast_type.args.is_empty() {
+        match ast_type.name.as_str() {
             "Boolean" => Type::boolean(),
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
             _ => Type::Struct(TypeName {
-                name: name.clone(),
+                name: ast_type.name.clone(),
                 module: module.clone(),
             }),
-        },
+        }
+    } else {
+        Type::Parameterized(
+            TypeName {
+                name: ast_type.name.clone(),
+                module: module.clone(),
+            },
+            ast_type
+                .args
+                .iter()
+                .map(|a| ast_type_to_type(a, module))
+                .collect(),
+        )
     }
 }
 

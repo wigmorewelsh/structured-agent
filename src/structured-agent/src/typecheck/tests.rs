@@ -87,11 +87,8 @@ mod tests {
     fn test_valid_function_with_string_parameter() {
         let func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("String".to_string()),
+            vec![create_parameter("name", AstType::simple("String"))],
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -108,7 +105,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::Return(Expression::Variable {
                 name: "unknown".to_string(),
                 span: crate::types::Span::dummy(),
@@ -129,11 +126,8 @@ mod tests {
     fn test_function_call_with_correct_arguments() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("String".to_string()),
+            vec![create_parameter("name", AstType::simple("String"))],
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -143,7 +137,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![Expression::StringLiteral {
@@ -166,11 +160,8 @@ mod tests {
     fn test_function_call_with_wrong_argument_type() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("String".to_string()),
+            vec![create_parameter("name", AstType::simple("String"))],
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -180,7 +171,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![Expression::BooleanLiteral {
@@ -208,11 +199,8 @@ mod tests {
     fn test_function_call_with_wrong_argument_count() {
         let greet_func = create_test_function(
             "greet",
-            vec![create_parameter(
-                "name",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("String".to_string()),
+            vec![create_parameter("name", AstType::simple("String"))],
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Variable {
                 name: "name".to_string(),
                 span: crate::types::Span::dummy(),
@@ -222,7 +210,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
                 arguments: vec![],
@@ -247,18 +235,15 @@ mod tests {
     fn test_placeholder_arguments_are_allowed() {
         let test_func = create_test_function(
             "test",
-            vec![create_parameter(
-                "data",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("Unit".to_string()),
+            vec![create_parameter("data", AstType::simple("String"))],
+            AstType::simple("Unit"),
             vec![],
         );
 
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "test".to_string(),
                 arguments: vec![Expression::Placeholder {
@@ -285,7 +270,7 @@ mod tests {
         let get_name_func = create_test_function(
             "get_name",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "Alice".to_string(),
                 span: crate::types::Span::dummy(),
@@ -295,7 +280,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "name".to_string(),
@@ -330,7 +315,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "flag".to_string(),
@@ -366,7 +351,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::If {
                 condition: Expression::StringLiteral {
                     value: "hello".to_string(),
@@ -393,7 +378,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::While {
                 condition: Expression::StringLiteral {
                     value: "hello".to_string(),
@@ -419,7 +404,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::BooleanLiteral {
                 value: true,
                 span: crate::types::Span::dummy(),
@@ -441,10 +426,10 @@ mod tests {
         let add_func = create_test_function(
             "add",
             vec![
-                create_parameter("a", AstType::Generic("String".to_string())),
-                create_parameter("b", AstType::Generic("String".to_string())),
+                create_parameter("a", AstType::simple("String")),
+                create_parameter("b", AstType::simple("String")),
             ],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "result".to_string(),
                 span: crate::types::Span::dummy(),
@@ -454,10 +439,10 @@ mod tests {
         let concat_func = create_test_function(
             "concat",
             vec![
-                create_parameter("value2", AstType::Generic("String".to_string())),
-                create_parameter("value1", AstType::Generic("String".to_string())),
+                create_parameter("value2", AstType::simple("String")),
+                create_parameter("value1", AstType::simple("String")),
             ],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "concatenated".to_string(),
                 span: crate::types::Span::dummy(),
@@ -467,7 +452,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Select(SelectExpression {
                 clauses: vec![
                     SelectClause {
@@ -529,7 +514,7 @@ mod tests {
         let get_string_func = create_test_function(
             "get_string",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "text".to_string(),
                 span: crate::types::Span::dummy(),
@@ -539,7 +524,7 @@ mod tests {
         let get_bool_func = create_test_function(
             "get_bool",
             vec![],
-            AstType::Generic("Boolean".to_string()),
+            AstType::simple("Boolean"),
             vec![Statement::Return(Expression::BooleanLiteral {
                 value: true,
                 span: crate::types::Span::dummy(),
@@ -549,7 +534,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Select(SelectExpression {
                 clauses: vec![
                     SelectClause {
@@ -605,10 +590,10 @@ mod tests {
             name: "concat".to_string(),
             type_params: vec![],
             parameters: vec![
-                create_parameter("value1", AstType::Generic("String".to_string())),
-                create_parameter("id", AstType::Generic("String".to_string())),
+                create_parameter("value1", AstType::simple("String")),
+                create_parameter("id", AstType::simple("String")),
             ],
-            return_type: AstType::Generic("String".to_string()),
+            return_type: AstType::simple("String"),
             is_pub: false,
             span: crate::types::Span::dummy(),
         };
@@ -616,7 +601,7 @@ mod tests {
         let main_func = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "concat".to_string(),
                 arguments: vec![
@@ -646,7 +631,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![
                 Statement::If {
                     condition: Expression::BooleanLiteral {
@@ -686,7 +671,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![
                 Statement::Assignment {
                     variable: "shared".to_string(),
@@ -736,7 +721,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::If {
                 condition: Expression::BooleanLiteral {
                     value: true,
@@ -837,15 +822,12 @@ mod tests {
         let module = create_test_module(vec![
             create_struct_definition(
                 "Point",
-                vec![
-                    ("x", AstType::Generic("Int".to_string())),
-                    ("y", AstType::Generic("Int".to_string())),
-                ],
+                vec![("x", AstType::simple("Int")), ("y", AstType::simple("Int"))],
             ),
             Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -857,17 +839,11 @@ mod tests {
     #[test]
     fn test_struct_type_in_function_parameter_is_valid() {
         let module = create_test_module(vec![
-            create_struct_definition(
-                "Task",
-                vec![("title", AstType::Generic("String".to_string()))],
-            ),
+            create_struct_definition("Task", vec![("title", AstType::simple("String"))]),
             Definition::Function(Arc::new(create_test_function(
                 "get_title",
-                vec![create_parameter(
-                    "t",
-                    AstType::Named("Task".to_string(), vec![]),
-                )],
-                AstType::Generic("String".to_string()),
+                vec![create_parameter("t", AstType::simple("Task"))],
+                AstType::simple("String"),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
                         name: "t".to_string(),
@@ -886,11 +862,8 @@ mod tests {
         let module =
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "foo",
-                vec![create_parameter(
-                    "x",
-                    AstType::Named("Unknown".to_string(), vec![]),
-                )],
-                AstType::Generic("Unit".to_string()),
+                vec![create_parameter("x", AstType::simple("Unknown"))],
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -908,15 +881,12 @@ mod tests {
         let module = create_test_module(vec![
             create_struct_definition(
                 "Point",
-                vec![
-                    ("x", AstType::Generic("Int".to_string())),
-                    ("y", AstType::Generic("Int".to_string())),
-                ],
+                vec![("x", AstType::simple("Int")), ("y", AstType::simple("Int"))],
             ),
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Named("Point".to_string(), vec![]),
+                AstType::simple("Point"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![
@@ -948,7 +918,7 @@ mod tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Ghost".to_string(),
                     fields: vec![],
@@ -966,11 +936,11 @@ mod tests {
     #[test]
     fn test_struct_literal_unknown_field_is_error() {
         let module = create_test_module(vec![
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -995,11 +965,11 @@ mod tests {
     #[test]
     fn test_struct_literal_field_type_mismatch_is_error() {
         let module = create_test_module(vec![
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1051,15 +1021,12 @@ mod tests {
         let module = create_test_module(vec![
             create_struct_definition(
                 "Point",
-                vec![
-                    ("x", AstType::Generic("Int".to_string())),
-                    ("y", AstType::Generic("Int".to_string())),
-                ],
+                vec![("x", AstType::simple("Int")), ("y", AstType::simple("Int"))],
             ),
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Named("Point".to_string(), vec![]),
+                AstType::simple("Point"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1086,18 +1053,12 @@ mod tests {
         let module = create_test_module(vec![
             create_struct_definition(
                 "Point",
-                vec![
-                    ("x", AstType::Generic("Int".to_string())),
-                    ("y", AstType::Generic("Int".to_string())),
-                ],
+                vec![("x", AstType::simple("Int")), ("y", AstType::simple("Int"))],
             ),
             Definition::Function(Arc::new(create_test_function(
                 "get_x",
-                vec![create_parameter(
-                    "p",
-                    AstType::Named("Point".to_string(), vec![]),
-                )],
-                AstType::Generic("Int".to_string()),
+                vec![create_parameter("p", AstType::simple("Point"))],
+                AstType::simple("Int"),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
                         name: "p".to_string(),
@@ -1114,14 +1075,11 @@ mod tests {
     #[test]
     fn test_field_access_unknown_field_is_error() {
         let module = create_test_module(vec![
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
             Definition::Function(Arc::new(create_test_function(
                 "get_z",
-                vec![create_parameter(
-                    "p",
-                    AstType::Named("Point".to_string(), vec![]),
-                )],
-                AstType::Generic("Int".to_string()),
+                vec![create_parameter("p", AstType::simple("Point"))],
+                AstType::simple("Int"),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
                         name: "p".to_string(),
@@ -1145,11 +1103,8 @@ mod tests {
         let module =
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "bad",
-                vec![create_parameter(
-                    "s",
-                    AstType::Generic("String".to_string()),
-                )],
-                AstType::Generic("Int".to_string()),
+                vec![create_parameter("s", AstType::simple("String"))],
+                AstType::simple("Int"),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
                         name: "s".to_string(),
@@ -1173,7 +1128,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Named("Point".to_string(), vec![]),
+                AstType::simple("Point"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1186,7 +1141,7 @@ mod tests {
                     span: crate::types::Span::dummy(),
                 })],
             ))),
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
         ]);
         assert!(check(module).is_ok());
     }
@@ -1194,14 +1149,11 @@ mod tests {
     #[test]
     fn test_struct_literal_as_call_argument_is_valid() {
         let module = create_test_module(vec![
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
             Definition::Function(Arc::new(create_test_function(
                 "consume",
-                vec![create_parameter(
-                    "p",
-                    AstType::Named("Point".to_string(), vec![]),
-                )],
-                AstType::Generic("Unit".to_string()),
+                vec![create_parameter("p", AstType::simple("Point"))],
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -1209,7 +1161,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make_and_pass",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::Call {
                     function: "consume".to_string(),
                     arguments: vec![Expression::StructLiteral {
@@ -1233,19 +1185,19 @@ mod tests {
     #[test]
     fn test_extern_fn_with_struct_return_type_is_valid() {
         let module = create_test_module(vec![
-            create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
+            create_struct_definition("Point", vec![("x", AstType::simple("Int"))]),
             Definition::ExternalFunction(Arc::new(crate::ast::ExternalFunction {
                 name: "get_point".to_string(),
                 type_params: vec![],
                 parameters: vec![],
-                return_type: AstType::Named("Point".to_string(), vec![]),
+                return_type: AstType::simple("Point"),
                 is_pub: false,
                 span: crate::types::Span::dummy(),
             })),
             Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -1259,15 +1211,12 @@ mod tests {
         let module = create_test_module(vec![
             create_struct_definition(
                 "Point",
-                vec![
-                    ("x", AstType::Generic("Int".to_string())),
-                    ("y", AstType::Generic("Int".to_string())),
-                ],
+                vec![("x", AstType::simple("Int")), ("y", AstType::simple("Int"))],
             ),
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Named("Point".to_string(), vec![]),
+                AstType::simple("Point"),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![
@@ -1312,7 +1261,7 @@ mod tests {
                 name: "get_ghost".to_string(),
                 type_params: vec![],
                 parameters: vec![],
-                return_type: AstType::Named("Ghost".to_string(), vec![]),
+                return_type: AstType::simple("Ghost"),
                 is_pub: false,
                 span: crate::types::Span::dummy(),
             },
@@ -1384,24 +1333,24 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("T")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             vec![],
         );
         let caller = create_test_function(
             "caller",
-            vec![create_parameter(
-                "s",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("String".to_string())],
-            ),
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("String")],
+            },
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1429,24 +1378,21 @@ mod tests {
         let ext_func = crate::ast::ExternalFunction {
             name: "wrap".to_string(),
             type_params: vec!["T".into()],
-            parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
-            return_type: AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            parameters: vec![create_parameter("value", AstType::simple("T"))],
+            return_type: AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             is_pub: false,
             span: crate::types::Span::dummy(),
         };
         let caller = create_test_function(
             "main",
-            vec![create_parameter(
-                "s",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("String".to_string())],
-            ),
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("String")],
+            },
             vec![Statement::Return(Expression::Call {
                 function: "wrap".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1469,16 +1415,16 @@ mod tests {
             "make_none",
             vec!["T".into()],
             vec![],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             vec![],
         );
         let caller = create_test_function(
             "main",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "make_none".to_string(),
                 arguments: vec![],
@@ -1502,36 +1448,39 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("T")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             vec![],
         );
         let consume = create_test_function(
             "consume",
             vec![create_parameter(
                 "item",
-                AstType::Named(
-                    "Option".to_string(),
-                    vec![AstType::Generic("String".to_string())],
-                ),
+                AstType {
+                    name: "Option".to_string(),
+                    args: vec![AstType::simple("String")],
+                },
             )],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![],
         );
         let caller = create_test_function(
             "main",
             vec![create_parameter(
                 "xs",
-                AstType::Named(
-                    "List".to_string(),
-                    vec![AstType::Generic("String".to_string())],
-                ),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("String")],
+                },
             )],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "result".to_string(),
@@ -1568,8 +1517,8 @@ mod tests {
         let bad = create_generic_test_function(
             "bad",
             vec![],
-            vec![create_parameter("x", AstType::Generic("T".to_string()))],
-            AstType::Generic("T".to_string()),
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("T"),
             vec![],
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(bad))]);
@@ -1589,8 +1538,8 @@ mod tests {
                 name: "T".to_string(),
                 bounds: vec![],
             }],
-            vec![create_parameter("x", AstType::Generic("T".to_string()))],
-            AstType::Generic("T".to_string()),
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("T"),
             vec![],
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
@@ -1602,8 +1551,8 @@ mod tests {
         let func = create_generic_test_function(
             "bad",
             vec![],
-            vec![create_parameter("x", AstType::Generic("T".to_string()))],
-            AstType::Generic("Unit".to_string()),
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("Unit"),
             vec![],
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
@@ -1619,7 +1568,7 @@ mod tests {
     fn test_generic_in_struct_field_is_error() {
         let module = create_test_module(vec![create_struct_definition(
             "Wrapper",
-            vec![("value", AstType::Generic("T".to_string()))],
+            vec![("value", AstType::simple("T"))],
         )]);
         let result = check(module);
         assert!(
@@ -1641,21 +1590,21 @@ mod tests {
             fields: vec![
                 StructField {
                     name: "first".to_string(),
-                    field_type: AstType::Generic("T".to_string()),
+                    field_type: AstType::simple("T"),
                     span: crate::types::Span::dummy(),
                 },
                 StructField {
                     name: "second".to_string(),
-                    field_type: AstType::Generic("T".to_string()),
+                    field_type: AstType::simple("T"),
                     span: crate::types::Span::dummy(),
                 },
             ],
             span: crate::types::Span::dummy(),
         }));
-        let pair_string = AstType::Named(
-            "Pair".to_string(),
-            vec![AstType::Generic("String".to_string())],
-        );
+        let pair_string = AstType {
+            name: "Pair".to_string(),
+            args: vec![AstType::simple("String")],
+        };
         let func = create_test_function(
             "identity",
             vec![create_parameter("x", pair_string.clone())],
@@ -1833,7 +1782,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "hello".to_string(),
                 span: crate::types::Span::dummy(),
@@ -1851,7 +1800,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Boolean".to_string()),
+            AstType::simple("Boolean"),
             vec![Statement::Return(Expression::BooleanLiteral {
                 value: true,
                 span: crate::types::Span::dummy(),
@@ -1869,7 +1818,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Int".to_string()),
+            AstType::simple("Int"),
             vec![Statement::Return(Expression::IntLiteral {
                 value: 42,
                 span: crate::types::Span::dummy(),
@@ -1887,7 +1836,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::Return(Expression::UnitLiteral {
                 span: crate::types::Span::dummy(),
             })],
@@ -1903,8 +1852,8 @@ mod typed_ast_tests {
     fn variable_expression_carries_declared_type() {
         let func = create_test_function(
             "f",
-            vec![create_parameter("x", AstType::Generic("Int".to_string()))],
-            AstType::Generic("Int".to_string()),
+            vec![create_parameter("x", AstType::simple("Int"))],
+            AstType::simple("Int"),
             vec![Statement::Return(Expression::Variable {
                 name: "x".to_string(),
                 span: crate::types::Span::dummy(),
@@ -1923,7 +1872,7 @@ mod typed_ast_tests {
         let callee = create_test_function(
             "get_value",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "v".to_string(),
                 span: crate::types::Span::dummy(),
@@ -1932,7 +1881,7 @@ mod typed_ast_tests {
         let caller = create_test_function(
             "f",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Call {
                 function: "get_value".to_string(),
                 arguments: vec![],
@@ -1967,11 +1916,8 @@ mod typed_ast_tests {
     fn placeholder_in_call_carries_parameter_type() {
         let callee = create_test_function(
             "process",
-            vec![create_parameter(
-                "s",
-                AstType::Generic("String".to_string()),
-            )],
-            AstType::Generic("Unit".to_string()),
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("Unit"),
             vec![Statement::Return(Expression::UnitLiteral {
                 span: crate::types::Span::dummy(),
             })],
@@ -1979,7 +1925,7 @@ mod typed_ast_tests {
         let caller = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![Statement::Return(Expression::Call {
                 function: "process".to_string(),
                 arguments: vec![Expression::Placeholder {
@@ -2020,7 +1966,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Unit".to_string()),
+            AstType::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "x".to_string(),
@@ -2051,10 +1997,10 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Named(
-                "List".to_string(),
-                vec![AstType::Generic("Int".to_string())],
-            ),
+            AstType {
+                name: "List".to_string(),
+                args: vec![AstType::simple("Int")],
+            },
             vec![Statement::Return(Expression::ListLiteral {
                 elements: vec![
                     Expression::IntLiteral {
@@ -2080,11 +2026,8 @@ mod typed_ast_tests {
     fn if_else_expression_has_branch_type() {
         let func = create_test_function(
             "f",
-            vec![create_parameter(
-                "flag",
-                AstType::Generic("Boolean".to_string()),
-            )],
-            AstType::Generic("Int".to_string()),
+            vec![create_parameter("flag", AstType::simple("Boolean"))],
+            AstType::simple("Int"),
             vec![Statement::Return(Expression::IfElse {
                 condition: Box::new(Expression::Variable {
                     name: "flag".to_string(),
@@ -2113,11 +2056,8 @@ mod typed_ast_tests {
     fn if_statement_wraps_typed_condition_and_body() {
         let func = create_test_function(
             "f",
-            vec![create_parameter(
-                "flag",
-                AstType::Generic("Boolean".to_string()),
-            )],
-            AstType::Generic("Unit".to_string()),
+            vec![create_parameter("flag", AstType::simple("Boolean"))],
+            AstType::simple("Unit"),
             vec![
                 Statement::If {
                     condition: Expression::Variable {
@@ -2158,12 +2098,12 @@ mod typed_ast_tests {
             fields: vec![
                 crate::ast::StructField {
                     name: "x".to_string(),
-                    field_type: AstType::Generic("Int".to_string()),
+                    field_type: AstType::simple("Int"),
                     span: crate::types::Span::dummy(),
                 },
                 crate::ast::StructField {
                     name: "y".to_string(),
-                    field_type: AstType::Generic("Int".to_string()),
+                    field_type: AstType::simple("Int"),
                     span: crate::types::Span::dummy(),
                 },
             ],
@@ -2172,7 +2112,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Named("Point".to_string(), vec![]),
+            AstType::simple("Point"),
             vec![Statement::Return(Expression::StructLiteral {
                 struct_name: "Point".to_string(),
                 fields: vec![
@@ -2218,12 +2158,12 @@ mod typed_ast_tests {
             fields: vec![
                 crate::ast::StructField {
                     name: "x".to_string(),
-                    field_type: AstType::Generic("Int".to_string()),
+                    field_type: AstType::simple("Int"),
                     span: crate::types::Span::dummy(),
                 },
                 crate::ast::StructField {
                     name: "y".to_string(),
-                    field_type: AstType::Generic("Int".to_string()),
+                    field_type: AstType::simple("Int"),
                     span: crate::types::Span::dummy(),
                 },
             ],
@@ -2231,11 +2171,8 @@ mod typed_ast_tests {
         };
         let func = create_test_function(
             "f",
-            vec![create_parameter(
-                "p",
-                AstType::Named("Point".to_string(), vec![]),
-            )],
-            AstType::Generic("Int".to_string()),
+            vec![create_parameter("p", AstType::simple("Point"))],
+            AstType::simple("Int"),
             vec![Statement::Return(Expression::FieldAccess {
                 base: Box::new(Expression::Variable {
                     name: "p".to_string(),
@@ -2258,7 +2195,7 @@ mod typed_ast_tests {
         let callee = create_test_function(
             "get_str",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::StringLiteral {
                 value: "v".to_string(),
                 span: crate::types::Span::dummy(),
@@ -2267,7 +2204,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Generic("String".to_string()),
+            AstType::simple("String"),
             vec![Statement::Return(Expression::Select(SelectExpression {
                 clauses: vec![SelectClause {
                     expression_to_run: Expression::Call {
@@ -2312,27 +2249,30 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("T")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::Named(
-                    "List".to_string(),
-                    vec![AstType::Generic("String".to_string())],
-                ),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("String")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("String".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("String")],
+            },
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2368,27 +2308,30 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("T")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("T".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("T")],
+            },
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::Named(
-                    "List".to_string(),
-                    vec![AstType::Generic("Int".to_string())],
-                ),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("Int")],
+                },
             )],
-            AstType::Named(
-                "Option".to_string(),
-                vec![AstType::Generic("Int".to_string())],
-            ),
+            AstType {
+                name: "Option".to_string(),
+                args: vec![AstType::simple("Int")],
+            },
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2425,14 +2368,23 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "a",
-                    AstType::Named("List".to_string(), vec![AstType::Generic("A".to_string())]),
+                    AstType {
+                        name: "List".to_string(),
+                        args: vec![AstType::simple("A")],
+                    },
                 ),
                 create_parameter(
                     "b",
-                    AstType::Named("List".to_string(), vec![AstType::Generic("B".to_string())]),
+                    AstType {
+                        name: "List".to_string(),
+                        args: vec![AstType::simple("B")],
+                    },
                 ),
             ],
-            AstType::Named("List".to_string(), vec![AstType::Generic("A".to_string())]),
+            AstType {
+                name: "List".to_string(),
+                args: vec![AstType::simple("A")],
+            },
             vec![],
         );
         let caller = create_test_function(
@@ -2440,23 +2392,23 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "strs",
-                    AstType::Named(
-                        "List".to_string(),
-                        vec![AstType::Generic("String".to_string())],
-                    ),
+                    AstType {
+                        name: "List".to_string(),
+                        args: vec![AstType::simple("String")],
+                    },
                 ),
                 create_parameter(
                     "ints",
-                    AstType::Named(
-                        "List".to_string(),
-                        vec![AstType::Generic("Int".to_string())],
-                    ),
+                    AstType {
+                        name: "List".to_string(),
+                        args: vec![AstType::simple("Int")],
+                    },
                 ),
             ],
-            AstType::Named(
-                "List".to_string(),
-                vec![AstType::Generic("String".to_string())],
-            ),
+            AstType {
+                name: "List".to_string(),
+                args: vec![AstType::simple("String")],
+            },
             vec![Statement::Return(Expression::Call {
                 function: "zip".to_string(),
                 arguments: vec![
@@ -2497,14 +2449,14 @@ mod typed_ast_tests {
             name: "native_fn".to_string(),
             type_params: vec![],
             parameters: vec![],
-            return_type: AstType::Generic("Int".to_string()),
+            return_type: AstType::simple("Int"),
             is_pub: false,
             span: crate::types::Span::dummy(),
         };
         let caller = create_test_function(
             "f",
             vec![],
-            AstType::Generic("Int".to_string()),
+            AstType::simple("Int"),
             vec![Statement::Return(Expression::Call {
                 function: "native_fn".to_string(),
                 arguments: vec![],
@@ -2690,7 +2642,7 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "main",
                 vec![],
-                AstType::Generic("Unit".to_string()),
+                AstType::simple("Unit"),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
                 })],
@@ -2708,11 +2660,8 @@ mod metadata_query_tests {
         let module =
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "greet",
-                vec![create_parameter(
-                    "name",
-                    AstType::Generic("String".to_string()),
-                )],
-                AstType::Generic("String".to_string()),
+                vec![create_parameter("name", AstType::simple("String"))],
+                AstType::simple("String"),
                 vec![Statement::Return(Expression::Variable {
                     name: "name".to_string(),
                     span: crate::types::Span::dummy(),
@@ -2737,7 +2686,7 @@ mod metadata_query_tests {
             type_params: vec![],
             fields: vec![StructField {
                 name: "x".to_string(),
-                field_type: AstType::Generic("Int".to_string()),
+                field_type: AstType::simple("Int"),
                 span: crate::types::Span::dummy(),
             }],
             span: crate::types::Span::dummy(),
@@ -2761,7 +2710,7 @@ mod metadata_query_tests {
                 name: "greet".to_string(),
                 type_params: vec![],
                 parameters: vec![],
-                return_type: AstType::Generic("String".to_string()),
+                return_type: AstType::simple("String"),
                 span: crate::types::Span::dummy(),
             }],
             span: crate::types::Span::dummy(),
@@ -2872,10 +2821,10 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "get_items",
                 vec![],
-                AstType::Named(
-                    "List".to_string(),
-                    vec![AstType::Generic("Int".to_string())],
-                ),
+                AstType {
+                    name: "List".to_string(),
+                    args: vec![AstType::simple("Int")],
+                },
                 vec![Statement::Return(Expression::ListLiteral {
                     elements: vec![Expression::IntLiteral {
                         value: 1,
@@ -2905,7 +2854,7 @@ mod metadata_query_tests {
                 return_type,
                 &TypeName {
                     name: "List".to_string(),
-                    module: ModuleName::new(NonEmpty::new("main".to_string())),
+                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
                 }
             );
         } else {
@@ -2918,11 +2867,8 @@ mod metadata_query_tests {
         let module =
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "greet",
-                vec![create_parameter(
-                    "name",
-                    AstType::Generic("String".to_string()),
-                )],
-                AstType::Generic("String".to_string()),
+                vec![create_parameter("name", AstType::simple("String"))],
+                AstType::simple("String"),
                 vec![Statement::Return(Expression::Variable {
                     name: "name".to_string(),
                     span: crate::types::Span::dummy(),
@@ -2970,10 +2916,10 @@ mod metadata_query_tests {
             name: "math::add".to_string(),
             type_params: vec![],
             parameters: vec![
-                create_parameter("a", AstType::Generic("Int".to_string())),
-                create_parameter("b", AstType::Generic("Int".to_string())),
+                create_parameter("a", AstType::simple("Int")),
+                create_parameter("b", AstType::simple("Int")),
             ],
-            return_type: AstType::Generic("Int".to_string()),
+            return_type: AstType::simple("Int"),
             is_pub: true,
             span: crate::types::Span::dummy(),
         };

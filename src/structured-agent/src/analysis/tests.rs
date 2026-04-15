@@ -43,7 +43,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::Assignment {
                 variable: "unused".to_string(),
                 expression: Expression::StringLiteral {
@@ -72,7 +72,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "used".to_string(),
@@ -102,10 +102,10 @@ mod tests {
             "test",
             vec![Parameter {
                 name: "param".to_string(),
-                param_type: Type::Generic("String".to_string()),
+                param_type: Type::simple("String"),
                 span: Span::new(10, 15),
             }],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::Injection(Expression::StringLiteral {
                 value: "hello".to_string(),
                 span: Span::dummy(),
@@ -131,10 +131,10 @@ mod tests {
             "test",
             vec![Parameter {
                 name: "param".to_string(),
-                param_type: Type::Generic("String".to_string()),
+                param_type: Type::simple("String"),
                 span: Span::dummy(),
             }],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::Injection(Expression::Variable {
                 name: "param".to_string(),
                 span: Span::dummy(),
@@ -153,7 +153,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "used".to_string(),
@@ -192,7 +192,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "unused".to_string(),
@@ -250,7 +250,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Return(Expression::StringLiteral {
                     value: "early".to_string(),
@@ -282,7 +282,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Injection(Expression::StringLiteral {
                     value: "hello".to_string(),
@@ -307,7 +307,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::While {
                     condition: Expression::BooleanLiteral {
@@ -346,7 +346,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::While {
                 condition: Expression::BooleanLiteral {
                     value: true,
@@ -379,7 +379,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::While {
                 condition: Expression::BooleanLiteral {
                     value: true,
@@ -405,7 +405,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![Statement::While {
                 condition: Expression::Variable {
                     name: "condition".to_string(),
@@ -431,7 +431,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "continue_loop".to_string(),
@@ -474,7 +474,7 @@ mod tests {
         let func = create_test_function(
             "test",
             vec![],
-            Type::Generic("Unit".to_string()),
+            Type::simple("Unit"),
             vec![
                 Statement::Assignment {
                     variable: "active".to_string(),

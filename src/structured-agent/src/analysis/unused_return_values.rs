@@ -22,13 +22,12 @@ impl UnusedReturnValueAnalyzer {
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
-                    let returns_value =
-                        !matches!(&func.return_type, crate::ast::Type::Generic(s) if s == "Unit");
+                    let returns_value = func.return_type != crate::ast::Type::simple("Unit");
                     self.function_return_types
                         .insert(func.name.clone(), returns_value);
                 }
                 Definition::ExternalFunction(ext_func) => {
-                    let returns_value = !matches!(&ext_func.return_type, crate::ast::Type::Generic(s) if s == "Unit");
+                    let returns_value = ext_func.return_type != crate::ast::Type::simple("Unit");
                     self.function_return_types
                         .insert(ext_func.name.clone(), returns_value);
                 }

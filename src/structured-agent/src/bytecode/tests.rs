@@ -924,31 +924,29 @@ mod vm_execution_tests {
         use nonempty::NonEmpty;
         use structured_agent_runtime::Type as RT;
         use structured_agent_runtime::symbols::{ModuleName, TypeName};
-        match t {
-            AT::Named(name, args) if args.is_empty() => RT::Struct(TypeName {
-                name: name.clone(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-            }),
-            AT::Named(name, args) => {
-                let module_str = match name.as_str() {
-                    "List" | "Option" => "prelude",
-                    _ => "main",
-                };
-                RT::Parameterized(
-                    TypeName {
-                        name: name.clone(),
-                        module: ModuleName::new(NonEmpty::new(module_str.to_string())),
-                    },
-                    args.iter().map(ast_type_to_rt).collect(),
-                )
-            }
-            AT::Generic(n) => match n.as_str() {
+        if t.args.is_empty() {
+            match t.name.as_str() {
                 "Boolean" => RT::boolean(),
                 "String" => RT::string(),
                 "Int" => RT::int(),
                 "Unit" => RT::unit(),
-                _ => RT::Generic(n.clone()),
-            },
+                _ => RT::Struct(TypeName {
+                    name: t.name.clone(),
+                    module: ModuleName::new(NonEmpty::new("main".to_string())),
+                }),
+            }
+        } else {
+            let module_str = match t.name.as_str() {
+                "List" | "Option" => "prelude",
+                _ => "main",
+            };
+            RT::Parameterized(
+                TypeName {
+                    name: t.name.clone(),
+                    module: ModuleName::new(NonEmpty::new(module_str.to_string())),
+                },
+                t.args.iter().map(ast_type_to_rt).collect(),
+            )
         }
     }
 

@@ -168,12 +168,12 @@ impl SymbolTableBuilder {
     fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
         use structured_agent_runtime::types::Type as RT;
         match ty {
-            RT::Parameterized(type_name, args) => AstType::Named(
-                type_name.name.clone(),
-                args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
-            ),
-            RT::Struct(tn) => AstType::Named(tn.name.clone(), vec![]),
-            RT::Generic(name) => AstType::Generic(name.clone()),
+            RT::Parameterized(type_name, args) => AstType {
+                name: type_name.name.clone(),
+                args: args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
+            },
+            RT::Struct(tn) => AstType::simple(tn.name.clone()),
+            RT::Generic(name) => AstType::simple(name.clone()),
         }
     }
 
@@ -423,7 +423,10 @@ impl SymbolTableBuilder {
                         let entry = FunctionDefinition {
                             name: impl_fn_key.clone(),
                             visibility: Visibility::Private,
-                            type_name: super::ast_type_to_type_name(&resolved_return, module_name),
+                            type_name: TypeName {
+                                name: resolved_return.name.clone(),
+                                module: module_name.clone(),
+                            },
                             source_ref: SourceLocation(file_id, func.span),
                             ast_ref: CheckerAstRef::ImplFunction(
                                 Arc::clone(func),

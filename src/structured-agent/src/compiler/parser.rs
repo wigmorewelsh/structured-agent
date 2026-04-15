@@ -604,10 +604,10 @@ combine::parser! {
                 )
                     .map(|(first, rest, _, args, _)| {
                         let name: String = std::iter::once(first).chain(rest).collect();
-                        Type::Named(name, args)
+                        Type { name, args }
                     }),
             ),
-            attempt(lex_string("()").map(|_| Type::Generic("Unit".to_string()))),
+            attempt(lex_string("()").map(|_| Type::simple("Unit"))),
 
             attempt(
                 (
@@ -616,7 +616,7 @@ combine::parser! {
                 )
                     .skip(skip_spaces())
                     .map(|(first, rest): (char, Vec<char>)| {
-                        Type::Generic(std::iter::once(first).chain(rest).collect())
+                        Type { name: std::iter::once(first).chain(rest).collect(), args: vec![] }
                     }),
             ),
         ))
@@ -2392,14 +2392,11 @@ fn test_if_else_stmt(): () {
         if let Definition::ExternalFunction(func) = &module.definitions[0] {
             assert_eq!(func.name, "get_first");
             assert_eq!(func.parameters.len(), 1);
-            assert!(matches!(
-                func.parameters[0].param_type,
-                Type::Named(ref name, ref args) if name == "List" && matches!(args[0], Type::Generic(ref s) if s == "String")
-            ));
-            assert!(matches!(
-                func.return_type,
-                Type::Named(ref name, ref args) if name == "Option" && matches!(args[0], Type::Generic(ref s) if s == "String")
-            ));
+            let param_type = &func.parameters[0].param_type;
+            assert_eq!(param_type.name, "List");
+            assert_eq!(param_type.args[0], Type::simple("String"));
+            assert_eq!(func.return_type.name, "Option");
+            assert_eq!(func.return_type.args[0], Type::simple("String"));
         } else {
             panic!("Expected external function definition");
         }
@@ -2539,7 +2536,7 @@ extern fn count(): Int
         assert!(result.is_ok());
         let (module, _) = result.unwrap();
         if let Definition::ExternalFunction(func) = &module.definitions[0] {
-            assert!(matches!(func.return_type, Type::Generic(ref s) if s == "Int"));
+            assert_eq!(func.return_type, Type::simple("Int"));
         } else {
             panic!("Expected external function");
         }
@@ -2555,8 +2552,8 @@ extern fn add(n: Int): Int
         assert!(result.is_ok());
         let (module, _) = result.unwrap();
         if let Definition::ExternalFunction(func) = &module.definitions[0] {
-            assert!(matches!(func.parameters[0].param_type, Type::Generic(ref s) if s == "Int"));
-            assert!(matches!(func.return_type, Type::Generic(ref s) if s == "Int"));
+            assert_eq!(func.parameters[0].param_type, Type::simple("Int"));
+            assert_eq!(func.return_type, Type::simple("Int"));
         } else {
             panic!("Expected external function");
         }
@@ -2574,10 +2571,9 @@ extern fn add(n: Int): Int
             assert_eq!(s.name, "Point");
             assert_eq!(s.fields.len(), 2);
             assert_eq!(s.fields[0].name, "x");
-            assert!(matches!(s.fields[0].field_type, Type::Named(_, _)) == false);
-            assert!(matches!(s.fields[0].field_type, Type::Generic(ref s) if s == "Int"));
+            assert_eq!(s.fields[0].field_type, Type::simple("Int"));
             assert_eq!(s.fields[1].name, "y");
-            assert!(matches!(s.fields[1].field_type, Type::Generic(ref s) if s == "Int"));
+            assert_eq!(s.fields[1].field_type, Type::simple("Int"));
         } else {
             panic!("Expected struct definition");
         }
@@ -2592,8 +2588,8 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert_eq!(s.name, "Task");
-            assert!(matches!(s.fields[0].field_type, Type::Generic(ref s) if s == "String"));
-            assert!(matches!(s.fields[1].field_type, Type::Generic(ref s) if s == "Boolean"));
+            assert_eq!(s.fields[0].field_type, Type::simple("String"));
+            assert_eq!(s.fields[1].field_type, Type::simple("Boolean"));
         } else {
             panic!("Expected struct definition");
         }
@@ -2608,7 +2604,7 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 2);
         if let Definition::ExternalFunction(f) = &module.definitions[1] {
-            assert!(matches!(&f.return_type, Type::Generic(n) if n == "Point"));
+            assert_eq!(f.return_type, Type::simple("Point"));
         } else {
             panic!("Expected external function");
         }
@@ -2622,7 +2618,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[1] {
-            assert!(matches!(&f.parameters[0].param_type, Type::Generic(n) if n == "Point"));
+            assert_eq!(f.parameters[0].param_type, Type::simple("Point"));
         } else {
             panic!("Expected function");
         }
@@ -2702,7 +2698,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[1] {
-            assert!(matches!(&f.return_type, Type::Generic(n) if n == "Point"));
+            assert_eq!(f.return_type, Type::simple("Point"));
         } else {
             panic!("Expected function");
         }
@@ -2731,9 +2727,8 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
-            assert!(
-                matches!(&s.fields[0].field_type, Type::Named(name, args) if name == "List" && matches!(&args[0], Type::Generic(s) if s == "String"))
-            );
+            assert_eq!(s.fields[0].field_type.name, "List");
+            assert_eq!(s.fields[0].field_type.args[0], Type::simple("String"));
         } else {
             panic!("Expected struct definition");
         }
@@ -3028,9 +3023,8 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
-            assert!(
-                matches!(&s.fields[0].field_type, Type::Named(name, args) if name == "Option" && matches!(&args[0], Type::Generic(s) if s == "Int"))
-            );
+            assert_eq!(s.fields[0].field_type.name, "Option");
+            assert_eq!(s.fields[0].field_type.args[0], Type::simple("Int"));
         } else {
             panic!("Expected struct definition");
         }
@@ -3095,9 +3089,7 @@ fn main(): String {
                 assert_eq!(s.functions[0].name, "greet");
                 assert_eq!(s.functions[0].parameters.len(), 1);
                 assert_eq!(s.functions[0].parameters[0].name, "name");
-                assert!(
-                    matches!(s.functions[0].return_type, Type::Generic(ref s) if s == "String")
-                );
+                assert_eq!(s.functions[0].return_type, Type::simple("String"));
             }
             other => panic!("Expected Signature, got {:?}", other),
         }
@@ -3117,9 +3109,7 @@ fn main(): String {
                 assert_eq!(s.functions.len(), 2);
                 assert_eq!(s.functions[0].name, "process");
                 assert_eq!(s.functions[1].name, "validate");
-                assert!(
-                    matches!(s.functions[1].return_type, Type::Generic(ref s) if s == "Boolean")
-                );
+                assert_eq!(s.functions[1].return_type, Type::simple("Boolean"));
             }
             other => panic!("Expected Signature, got {:?}", other),
         }
@@ -3289,10 +3279,7 @@ fn main(): String {
         if let Definition::Function(f) = &module.definitions[0] {
             assert_eq!(f.type_params.len(), 1);
             assert_eq!(f.type_params[0].name, "T");
-            assert_eq!(
-                f.type_params[0].bounds,
-                vec![Type::Generic("Add".to_string())]
-            );
+            assert_eq!(f.type_params[0].bounds, vec![Type::simple("Add")]);
         } else {
             panic!("expected function");
         }
@@ -3308,10 +3295,7 @@ fn main(): String {
         if let Definition::Function(f) = &module.definitions[0] {
             assert_eq!(
                 f.type_params[0].bounds,
-                vec![
-                    Type::Generic("Add".to_string()),
-                    Type::Generic("Sub".to_string())
-                ]
+                vec![Type::simple("Add"), Type::simple("Sub")]
             );
         } else {
             panic!("expected function");

@@ -209,9 +209,18 @@ pub struct ExternalFunction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
-    Named(std::string::String, Vec<Type>),
-    Generic(std::string::String),
+pub struct Type {
+    pub name: std::string::String,
+    pub args: Vec<Type>,
+}
+
+impl Type {
+    pub fn simple(name: impl Into<std::string::String>) -> Self {
+        Self {
+            name: name.into(),
+            args: vec![],
+        }
+    }
 }
 
 impl Spanned for Type {
@@ -367,18 +376,19 @@ impl Spanned for SelectClause {
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Type::Named(name, args) if args.is_empty() => write!(f, "{}", name),
-            Type::Named(name, args) => write!(
+        if self.args.is_empty() {
+            write!(f, "{}", self.name)
+        } else {
+            write!(
                 f,
                 "{}<{}>",
-                name,
-                args.iter()
+                self.name,
+                self.args
+                    .iter()
                     .map(|a| a.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
-            ),
-            Type::Generic(name) => write!(f, "{}", name),
+            )
         }
     }
 }
