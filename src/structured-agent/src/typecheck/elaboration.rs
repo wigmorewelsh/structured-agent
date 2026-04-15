@@ -574,9 +574,7 @@ fn check_call(
                 };
                 for bound in &tp.bounds {
                     let trait_name = match bound {
-                        AstType::Struct(n) => n.as_str(),
-                        AstType::Generic(n) => n.as_str(),
-                        _ => continue,
+                        AstType::Named(n, _) | AstType::Generic(n) => n.as_str(),
                     };
                     let satisfied =
                         super::query::type_implements_trait(db, tables, type_name, trait_name);
@@ -953,8 +951,10 @@ fn check_field_access(
 impl TypeChecker {
     pub(super) fn substitute_self(ty: &AstType, concrete: &str) -> AstType {
         match ty {
-            AstType::Generic(name) if name == "Self" => AstType::Struct(concrete.to_string()),
-            AstType::Parameterized(name, args) => AstType::Parameterized(
+            AstType::Generic(name) if name == "Self" => {
+                AstType::Named(concrete.to_string(), vec![])
+            }
+            AstType::Named(name, args) => AstType::Named(
                 name.clone(),
                 args.iter()
                     .map(|a| Self::substitute_self(a, concrete))

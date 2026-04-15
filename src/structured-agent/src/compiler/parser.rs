@@ -604,7 +604,7 @@ combine::parser! {
                 )
                     .map(|(first, rest, _, args, _)| {
                         let name: String = std::iter::once(first).chain(rest).collect();
-                        Type::Parameterized(name, args)
+                        Type::Named(name, args)
                     }),
             ),
             attempt(lex_string("()").map(|_| Type::Generic("Unit".to_string()))),
@@ -2394,11 +2394,11 @@ fn test_if_else_stmt(): () {
             assert_eq!(func.parameters.len(), 1);
             assert!(matches!(
                 func.parameters[0].param_type,
-                Type::Parameterized(ref name, ref args) if name == "List" && matches!(args[0], Type::Generic(ref s) if s == "String")
+                Type::Named(ref name, ref args) if name == "List" && matches!(args[0], Type::Generic(ref s) if s == "String")
             ));
             assert!(matches!(
                 func.return_type,
-                Type::Parameterized(ref name, ref args) if name == "Option" && matches!(args[0], Type::Generic(ref s) if s == "String")
+                Type::Named(ref name, ref args) if name == "Option" && matches!(args[0], Type::Generic(ref s) if s == "String")
             ));
         } else {
             panic!("Expected external function definition");
@@ -2574,7 +2574,7 @@ extern fn add(n: Int): Int
             assert_eq!(s.name, "Point");
             assert_eq!(s.fields.len(), 2);
             assert_eq!(s.fields[0].name, "x");
-            assert!(matches!(s.fields[0].field_type, Type::Struct(_)) == false);
+            assert!(matches!(s.fields[0].field_type, Type::Named(_, _)) == false);
             assert!(matches!(s.fields[0].field_type, Type::Generic(ref s) if s == "Int"));
             assert_eq!(s.fields[1].name, "y");
             assert!(matches!(s.fields[1].field_type, Type::Generic(ref s) if s == "Int"));
@@ -2732,7 +2732,7 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert!(
-                matches!(&s.fields[0].field_type, Type::Parameterized(name, args) if name == "List" && matches!(&args[0], Type::Generic(s) if s == "String"))
+                matches!(&s.fields[0].field_type, Type::Named(name, args) if name == "List" && matches!(&args[0], Type::Generic(s) if s == "String"))
             );
         } else {
             panic!("Expected struct definition");
@@ -3029,7 +3029,7 @@ fn main(): String {
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert!(
-                matches!(&s.fields[0].field_type, Type::Parameterized(name, args) if name == "Option" && matches!(&args[0], Type::Generic(s) if s == "Int"))
+                matches!(&s.fields[0].field_type, Type::Named(name, args) if name == "Option" && matches!(&args[0], Type::Generic(s) if s == "Int"))
             );
         } else {
             panic!("Expected struct definition");

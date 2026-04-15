@@ -925,11 +925,11 @@ mod vm_execution_tests {
         use structured_agent_runtime::Type as RT;
         use structured_agent_runtime::symbols::{ModuleName, TypeName};
         match t {
-            AT::Struct(n) => RT::Struct(TypeName {
-                name: n.clone(),
+            AT::Named(name, args) if args.is_empty() => RT::Struct(TypeName {
+                name: name.clone(),
                 module: ModuleName::new(NonEmpty::new("main".to_string())),
             }),
-            AT::Parameterized(name, args) => {
+            AT::Named(name, args) => {
                 let module_str = match name.as_str() {
                     "List" | "Option" => "prelude",
                     _ => "main",

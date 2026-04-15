@@ -9,6 +9,49 @@ use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{ModuleName, TypeDefinitionKind, TypeName};
 
+fn resolve_simple_name(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    name: &str,
+    module: &ModuleName,
+    type_params: &[TypeParam],
+    span: Span,
+    file_id: FileId,
+) -> Result<RT, TypeError> {
+    match name {
+        "Unit" => return Ok(RT::Unit),
+        "Boolean" => return Ok(RT::Boolean),
+        "String" => return Ok(RT::String),
+        "Int" => return Ok(RT::Int),
+        _ => {}
+    }
+    if name == "Self" || type_params.iter().any(|tp| tp.name == name) {
+        return Ok(RT::Generic(name.to_string()));
+    }
+    let interned_mod = module.intern(db);
+    let interned_name = name.intern(db);
+    let type_name =
+        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+            name: name.to_string(),
+            module: module.clone(),
+        });
+    match tables.types(db).get().get(&type_name) {
+        Some(td) => match &td.kind {
+            TypeDefinitionKind::Struct { .. } => Ok(RT::Struct(type_name)),
+            _ => Err(TypeError::UnboundTypeParameter {
+                name: name.to_string(),
+                span,
+                file_id,
+            }),
+        },
+        None => Err(TypeError::UnboundTypeParameter {
+            name: name.to_string(),
+            span,
+            file_id,
+        }),
+    }
+}
+
 pub(super) fn resolve(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -19,41 +62,13 @@ pub(super) fn resolve(
     file_id: FileId,
 ) -> Result<RT, TypeError> {
     match t {
-        AstType::Generic(name) | AstType::Struct(name) => {
-            match name.as_str() {
-                "Unit" => return Ok(RT::Unit),
-                "Boolean" => return Ok(RT::Boolean),
-                "String" => return Ok(RT::String),
-                "Int" => return Ok(RT::Int),
-                _ => {}
-            }
-            if name == "Self" || type_params.iter().any(|tp| tp.name == *name) {
-                return Ok(RT::Generic(name.clone()));
-            }
-            let interned_mod = module.intern(db);
-            let interned_name = name.intern(db);
-            let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)
-                .unwrap_or_else(|| TypeName {
-                    name: name.clone(),
-                    module: module.clone(),
-                });
-            match tables.types(db).get().get(&type_name) {
-                Some(td) => match &td.kind {
-                    TypeDefinitionKind::Struct { .. } => Ok(RT::Struct(type_name)),
-                    _ => Err(TypeError::UnboundTypeParameter {
-                        name: name.clone(),
-                        span,
-                        file_id,
-                    }),
-                },
-                None => Err(TypeError::UnboundTypeParameter {
-                    name: name.clone(),
-                    span,
-                    file_id,
-                }),
-            }
+        AstType::Generic(name) => {
+            resolve_simple_name(db, tables, name, module, type_params, span, file_id)
         }
-        AstType::Parameterized(name, args) => {
+        AstType::Named(name, args) if args.is_empty() => {
+            resolve_simple_name(db, tables, name, module, type_params, span, file_id)
+        }
+        AstType::Named(name, args) => {
             let interned_mod = module.intern(db);
             let interned_name = name.intern(db);
             let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)

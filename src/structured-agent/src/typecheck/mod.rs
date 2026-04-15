@@ -60,11 +60,7 @@ pub(super) struct CheckContext<'a> {
 
 pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> TypeName {
     match ty {
-        AstType::Struct(name) => TypeName {
-            name: name.clone(),
-            module: module_name.clone(),
-        },
-        AstType::Parameterized(name, _) => TypeName {
+        AstType::Named(name, _) => TypeName {
             name: name.clone(),
             module: module_name.clone(),
         },

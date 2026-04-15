@@ -863,7 +863,10 @@ mod tests {
             ),
             Definition::Function(Arc::new(create_test_function(
                 "get_title",
-                vec![create_parameter("t", AstType::Struct("Task".to_string()))],
+                vec![create_parameter(
+                    "t",
+                    AstType::Named("Task".to_string(), vec![]),
+                )],
                 AstType::Generic("String".to_string()),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
@@ -885,7 +888,7 @@ mod tests {
                 "foo",
                 vec![create_parameter(
                     "x",
-                    AstType::Struct("Unknown".to_string()),
+                    AstType::Named("Unknown".to_string(), vec![]),
                 )],
                 AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
@@ -913,7 +916,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Struct("Point".to_string()),
+                AstType::Named("Point".to_string(), vec![]),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![
@@ -1056,7 +1059,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Struct("Point".to_string()),
+                AstType::Named("Point".to_string(), vec![]),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1090,7 +1093,10 @@ mod tests {
             ),
             Definition::Function(Arc::new(create_test_function(
                 "get_x",
-                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                vec![create_parameter(
+                    "p",
+                    AstType::Named("Point".to_string(), vec![]),
+                )],
                 AstType::Generic("Int".to_string()),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
@@ -1111,7 +1117,10 @@ mod tests {
             create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
             Definition::Function(Arc::new(create_test_function(
                 "get_z",
-                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                vec![create_parameter(
+                    "p",
+                    AstType::Named("Point".to_string(), vec![]),
+                )],
                 AstType::Generic("Int".to_string()),
                 vec![Statement::Return(Expression::FieldAccess {
                     base: Box::new(Expression::Variable {
@@ -1164,7 +1173,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Struct("Point".to_string()),
+                AstType::Named("Point".to_string(), vec![]),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![(
@@ -1188,7 +1197,10 @@ mod tests {
             create_struct_definition("Point", vec![("x", AstType::Generic("Int".to_string()))]),
             Definition::Function(Arc::new(create_test_function(
                 "consume",
-                vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+                vec![create_parameter(
+                    "p",
+                    AstType::Named("Point".to_string(), vec![]),
+                )],
                 AstType::Generic("Unit".to_string()),
                 vec![Statement::Return(Expression::UnitLiteral {
                     span: crate::types::Span::dummy(),
@@ -1226,7 +1238,7 @@ mod tests {
                 name: "get_point".to_string(),
                 type_params: vec![],
                 parameters: vec![],
-                return_type: AstType::Struct("Point".to_string()),
+                return_type: AstType::Named("Point".to_string(), vec![]),
                 is_pub: false,
                 span: crate::types::Span::dummy(),
             })),
@@ -1255,7 +1267,7 @@ mod tests {
             Definition::Function(Arc::new(create_test_function(
                 "make",
                 vec![],
-                AstType::Struct("Point".to_string()),
+                AstType::Named("Point".to_string(), vec![]),
                 vec![Statement::Return(Expression::StructLiteral {
                     struct_name: "Point".to_string(),
                     fields: vec![
@@ -1300,7 +1312,7 @@ mod tests {
                 name: "get_ghost".to_string(),
                 type_params: vec![],
                 parameters: vec![],
-                return_type: AstType::Struct("Ghost".to_string()),
+                return_type: AstType::Named("Ghost".to_string(), vec![]),
                 is_pub: false,
                 span: crate::types::Span::dummy(),
             },
@@ -1372,9 +1384,9 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -1386,7 +1398,7 @@ mod tests {
                 "s",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("String".to_string())],
             ),
@@ -1418,7 +1430,7 @@ mod tests {
             name: "wrap".to_string(),
             type_params: vec!["T".into()],
             parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
-            return_type: AstType::Parameterized(
+            return_type: AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -1431,7 +1443,7 @@ mod tests {
                 "s",
                 AstType::Generic("String".to_string()),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("String".to_string())],
             ),
@@ -1457,7 +1469,7 @@ mod tests {
             "make_none",
             vec!["T".into()],
             vec![],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -1490,9 +1502,9 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -1502,7 +1514,7 @@ mod tests {
             "consume",
             vec![create_parameter(
                 "item",
-                AstType::Parameterized(
+                AstType::Named(
                     "Option".to_string(),
                     vec![AstType::Generic("String".to_string())],
                 ),
@@ -1514,7 +1526,7 @@ mod tests {
             "main",
             vec![create_parameter(
                 "xs",
-                AstType::Parameterized(
+                AstType::Named(
                     "List".to_string(),
                     vec![AstType::Generic("String".to_string())],
                 ),
@@ -1640,7 +1652,7 @@ mod tests {
             ],
             span: crate::types::Span::dummy(),
         }));
-        let pair_string = AstType::Parameterized(
+        let pair_string = AstType::Named(
             "Pair".to_string(),
             vec![AstType::Generic("String".to_string())],
         );
@@ -2039,7 +2051,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Parameterized(
+            AstType::Named(
                 "List".to_string(),
                 vec![AstType::Generic("Int".to_string())],
             ),
@@ -2160,7 +2172,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType::Struct("Point".to_string()),
+            AstType::Named("Point".to_string(), vec![]),
             vec![Statement::Return(Expression::StructLiteral {
                 struct_name: "Point".to_string(),
                 fields: vec![
@@ -2219,7 +2231,10 @@ mod typed_ast_tests {
         };
         let func = create_test_function(
             "f",
-            vec![create_parameter("p", AstType::Struct("Point".to_string()))],
+            vec![create_parameter(
+                "p",
+                AstType::Named("Point".to_string(), vec![]),
+            )],
             AstType::Generic("Int".to_string()),
             vec![Statement::Return(Expression::FieldAccess {
                 base: Box::new(Expression::Variable {
@@ -2297,9 +2312,9 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -2309,12 +2324,12 @@ mod typed_ast_tests {
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::Parameterized(
+                AstType::Named(
                     "List".to_string(),
                     vec![AstType::Generic("String".to_string())],
                 ),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("String".to_string())],
             ),
@@ -2353,9 +2368,9 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
+                AstType::Named("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("T".to_string())],
             ),
@@ -2365,12 +2380,12 @@ mod typed_ast_tests {
             "f",
             vec![create_parameter(
                 "xs",
-                AstType::Parameterized(
+                AstType::Named(
                     "List".to_string(),
                     vec![AstType::Generic("Int".to_string())],
                 ),
             )],
-            AstType::Parameterized(
+            AstType::Named(
                 "Option".to_string(),
                 vec![AstType::Generic("Int".to_string())],
             ),
@@ -2410,20 +2425,14 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "a",
-                    AstType::Parameterized(
-                        "List".to_string(),
-                        vec![AstType::Generic("A".to_string())],
-                    ),
+                    AstType::Named("List".to_string(), vec![AstType::Generic("A".to_string())]),
                 ),
                 create_parameter(
                     "b",
-                    AstType::Parameterized(
-                        "List".to_string(),
-                        vec![AstType::Generic("B".to_string())],
-                    ),
+                    AstType::Named("List".to_string(), vec![AstType::Generic("B".to_string())]),
                 ),
             ],
-            AstType::Parameterized("List".to_string(), vec![AstType::Generic("A".to_string())]),
+            AstType::Named("List".to_string(), vec![AstType::Generic("A".to_string())]),
             vec![],
         );
         let caller = create_test_function(
@@ -2431,20 +2440,20 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "strs",
-                    AstType::Parameterized(
+                    AstType::Named(
                         "List".to_string(),
                         vec![AstType::Generic("String".to_string())],
                     ),
                 ),
                 create_parameter(
                     "ints",
-                    AstType::Parameterized(
+                    AstType::Named(
                         "List".to_string(),
                         vec![AstType::Generic("Int".to_string())],
                     ),
                 ),
             ],
-            AstType::Parameterized(
+            AstType::Named(
                 "List".to_string(),
                 vec![AstType::Generic("String".to_string())],
             ),
@@ -2863,7 +2872,7 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "get_items",
                 vec![],
-                AstType::Parameterized(
+                AstType::Named(
                     "List".to_string(),
                     vec![AstType::Generic("Int".to_string())],
                 ),

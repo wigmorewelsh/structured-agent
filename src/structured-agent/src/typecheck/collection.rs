@@ -172,14 +172,11 @@ impl SymbolTableBuilder {
             RT::Boolean => AstType::Generic("Boolean".to_string()),
             RT::Int => AstType::Generic("Int".to_string()),
             RT::Unit => AstType::Generic("Unit".to_string()),
-            RT::Parameterized(type_name, args) => match args.as_slice() {
-                [] => AstType::Struct(type_name.name.clone()),
-                _ => AstType::Parameterized(
-                    type_name.name.clone(),
-                    args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
-                ),
-            },
-            RT::Struct(tn) => AstType::Struct(tn.name.clone()),
+            RT::Parameterized(type_name, args) => AstType::Named(
+                type_name.name.clone(),
+                args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
+            ),
+            RT::Struct(tn) => AstType::Named(tn.name.clone(), vec![]),
             RT::Generic(name) => AstType::Generic(name.clone()),
         }
     }

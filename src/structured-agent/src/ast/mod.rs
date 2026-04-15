@@ -210,8 +210,7 @@ pub struct ExternalFunction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Struct(std::string::String),
-    Parameterized(std::string::String, Vec<Type>),
+    Named(std::string::String, Vec<Type>),
     Generic(std::string::String),
 }
 
@@ -369,8 +368,8 @@ impl Spanned for SelectClause {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Struct(name) => write!(f, "{}", name),
-            Type::Parameterized(name, args) => write!(
+            Type::Named(name, args) if args.is_empty() => write!(f, "{}", name),
+            Type::Named(name, args) => write!(
                 f,
                 "{}<{}>",
                 name,
