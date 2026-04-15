@@ -1,11 +1,11 @@
-use arrow::array::{
-    Array, BooleanArray, Int64Array, ListArray, NullArray, StringArray, StructArray, UnionArray,
-};
+use arrow::array::{Array, ListArray};
 use arrow::datatypes::{DataType, Field, Fields};
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::runtime_value::{ListValue, OptionValue, RuntimeValue, UnitValue};
+use crate::runtime_value::{
+    BooleanValue, IntValue, ListValue, MetadataValue, OptionValue, RuntimeValue, StringValue,
+    StructValue, UnitValue, arrow_col_to_expression,
+};
 use crate::symbols::{
     FunctionName, MetaData, References, SymbolQuery, TypeDefinitionKind, TypeName,
 };
@@ -32,7 +32,6 @@ impl ExpressionParameter {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionValue {
-    Arrow(Arc<dyn Array>),
     Module(FunctionName),
     Dynamic(Arc<dyn RuntimeValue>),
 }
@@ -40,7 +39,6 @@ pub enum ExpressionValue {
 impl PartialEq for ExpressionValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ExpressionValue::Arrow(a), ExpressionValue::Arrow(b)) => a.as_ref() == b.as_ref(),
             (ExpressionValue::Module(a), ExpressionValue::Module(b)) => a == b,
             (ExpressionValue::Dynamic(a), ExpressionValue::Dynamic(b)) => a.eq(b.as_any()),
             _ => false,
@@ -92,15 +90,15 @@ impl ExpressionValue {
     }
 
     pub fn string(s: impl Into<String>) -> Self {
-        Self::Arrow(Arc::new(StringArray::from(vec![s.into()])))
+        Self::Dynamic(Arc::new(StringValue(s.into())))
     }
 
     pub fn boolean(b: bool) -> Self {
-        Self::Arrow(Arc::new(BooleanArray::from(vec![b])))
+        Self::Dynamic(Arc::new(BooleanValue(b)))
     }
 
     pub fn integer(n: i64) -> Self {
-        Self::Arrow(Arc::new(Int64Array::from(vec![n])))
+        Self::Dynamic(Arc::new(IntValue(n)))
     }
 
     pub fn list(arr: Arc<ListArray>) -> Self {
@@ -115,39 +113,21 @@ impl ExpressionValue {
         Ok(Self::Dynamic(Arc::new(ListValue::from_elements(elements)?)))
     }
 
-    pub fn from_array(data: Arc<dyn Array>) -> Self {
-        Self::Arrow(data)
-    }
-
     pub fn struct_value(fields: Vec<(&str, ExpressionValue)>) -> Self {
-        let arrow_fields: Vec<Field> = fields
-            .iter()
-            .map(|(field_name, val)| {
-                Field::new(*field_name, val.arrow_data().data_type().clone(), true)
-            })
-            .collect();
-        let arrays: Vec<Arc<dyn Array>> = fields
-            .iter()
-            .map(|(_, val)| val.arrow_data().clone())
-            .collect();
-        let struct_array = StructArray::new(Fields::from(arrow_fields), arrays, None);
-        Self::Arrow(Arc::new(struct_array))
+        Self::Dynamic(Arc::new(StructValue::from_fields(fields)))
     }
 
     pub fn get_struct_field(&self, field: &str) -> Result<ExpressionValue, String> {
-        let data = self.arrow_data();
-        let struct_array = data
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
-        let (index, _) = struct_array
-            .fields()
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.name() == field)
-            .ok_or_else(|| format!("No field '{}' in struct", field))?;
-        let col = struct_array.column(index);
-        Ok(ExpressionValue::Arrow(col.clone()))
+        match self {
+            ExpressionValue::Dynamic(v) => {
+                let sv = v
+                    .as_any()
+                    .downcast_ref::<StructValue>()
+                    .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+                sv.get_field(field)
+            }
+            _ => Err(format!("Expected struct value, got {}", self.type_name())),
+        }
     }
 
     pub fn option_none() -> Self {
@@ -171,70 +151,58 @@ impl ExpressionValue {
     }
 
     pub fn option_some(inner: ExpressionValue) -> Self {
-        Self::Dynamic(Arc::new(OptionValue::some(inner.arrow_data())))
+        Self::Dynamic(Arc::new(OptionValue::some(inner.to_arrow())))
     }
 
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
-        let name_str = name.into();
-        let marker: HashMap<String, String> = [("kind".to_string(), "metadata".to_string())].into();
-        let fields = Fields::from(vec![
-            Field::new("name", DataType::Utf8, false).with_metadata(marker),
-            Field::new("documentation", DataType::Utf8, true),
-        ]);
-
-        let name_array = Arc::new(StringArray::from(vec![name_str]));
-        let doc_array = Arc::new(StringArray::from(vec![documentation]));
-
-        let struct_array = StructArray::new(
-            fields,
-            vec![name_array as Arc<dyn Array>, doc_array as Arc<dyn Array>],
-            None,
-        );
-
-        Self::Arrow(Arc::new(struct_array))
+        Self::Dynamic(Arc::new(MetadataValue {
+            name: name.into(),
+            documentation,
+        }))
     }
 
-    pub(crate) fn arrow_data(&self) -> Arc<dyn Array> {
+    pub(crate) fn to_arrow(&self) -> Arc<dyn Array> {
         match self {
-            ExpressionValue::Arrow(data) => data.clone(),
-            ExpressionValue::Module(_) => panic!("expected Arrow value, got Module"),
+            ExpressionValue::Module(_) => panic!("expected value, got Module"),
             ExpressionValue::Dynamic(v) => v.to_arrow(),
         }
     }
 
     pub fn as_string(&self) -> Result<String, String> {
-        let data = self.arrow_data();
-        data.as_any()
-            .downcast_ref::<StringArray>()
-            .filter(|arr| arr.len() == 1 && !arr.is_null(0))
-            .map(|arr| arr.value(0).to_string())
-            .ok_or_else(|| format!("expected String, got {}", self.type_name()))
+        match self {
+            ExpressionValue::Dynamic(v) => v
+                .as_any()
+                .downcast_ref::<StringValue>()
+                .map(|sv| sv.0.clone())
+                .ok_or_else(|| format!("expected String, got {}", self.type_name())),
+            _ => Err(format!("expected String, got {}", self.type_name())),
+        }
     }
 
     pub fn as_boolean(&self) -> Result<bool, String> {
-        let data = self.arrow_data();
-        data.as_any()
-            .downcast_ref::<BooleanArray>()
-            .filter(|arr| arr.len() == 1 && !arr.is_null(0))
-            .map(|arr| arr.value(0))
-            .ok_or_else(|| format!("expected Boolean, got {}", self.type_name()))
+        match self {
+            ExpressionValue::Dynamic(v) => v
+                .as_any()
+                .downcast_ref::<BooleanValue>()
+                .map(|bv| bv.0)
+                .ok_or_else(|| format!("expected Boolean, got {}", self.type_name())),
+            _ => Err(format!("expected Boolean, got {}", self.type_name())),
+        }
     }
 
     pub fn as_integer(&self) -> Result<i64, String> {
-        let data = self.arrow_data();
-        data.as_any()
-            .downcast_ref::<Int64Array>()
-            .filter(|arr| arr.len() == 1)
-            .map(|arr| arr.value(0))
-            .ok_or_else(|| format!("expected Int, got {}", self.type_name()))
+        match self {
+            ExpressionValue::Dynamic(v) => v
+                .as_any()
+                .downcast_ref::<IntValue>()
+                .map(|iv| iv.0)
+                .ok_or_else(|| format!("expected Int, got {}", self.type_name())),
+            _ => Err(format!("expected Int, got {}", self.type_name())),
+        }
     }
 
     pub fn as_list(&self) -> Result<&ListArray, String> {
         match self {
-            ExpressionValue::Arrow(data) => data
-                .as_any()
-                .downcast_ref::<ListArray>()
-                .ok_or_else(|| "Expected list".to_string()),
             ExpressionValue::Dynamic(v) => v
                 .as_any()
                 .downcast_ref::<ListValue>()
@@ -251,37 +219,27 @@ impl ExpressionValue {
         }
         let values = list.value(0);
         Ok((0..values.len())
-            .map(|i| ExpressionValue::Arrow(values.slice(i, 1)))
+            .map(|i| arrow_col_to_expression(values.slice(i, 1)))
             .collect())
     }
 
     pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {
-        let data = self.arrow_data();
-        let union_array = data
-            .as_any()
-            .downcast_ref::<UnionArray>()
-            .ok_or_else(|| "Expected option (union) type".to_string())?;
-
-        if union_array.len() != 1 {
-            return Err("Expected scalar option value".to_string());
-        }
-
-        let type_id = union_array.type_id(0);
-        match type_id {
-            0 => Ok(None),
-            1 => {
-                let inner = union_array.value(0);
-                Ok(Some(ExpressionValue::Arrow(inner)))
+        match self {
+            ExpressionValue::Dynamic(v) => {
+                let opt = v
+                    .as_any()
+                    .downcast_ref::<OptionValue>()
+                    .ok_or_else(|| "Expected option (union) type".to_string())?;
+                Ok(opt.inner())
             }
-            _ => Err(format!("Unexpected union type_id: {}", type_id)),
+            _ => Err("Expected option (union) type".to_string()),
         }
     }
 
     pub fn is_option(&self) -> bool {
         match self {
-            ExpressionValue::Arrow(data) => matches!(data.data_type(), DataType::Union(_, _)),
             ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<OptionValue>().is_some(),
-            ExpressionValue::Module(_) => false,
+            _ => false,
         }
     }
 
@@ -296,219 +254,36 @@ impl ExpressionValue {
         match self {
             ExpressionValue::Module(_) => "Module",
             ExpressionValue::Dynamic(v) => v.type_name(),
-            ExpressionValue::Arrow(data) => match data.data_type() {
-                DataType::Null => "Unit",
-                DataType::Utf8 => "String",
-                DataType::Boolean => "Boolean",
-                DataType::Int64 => "Int",
-                DataType::List(_) => "List",
-                DataType::Struct(_) => {
-                    if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>()
-                        && Self::is_metadata_struct(struct_array)
-                    {
-                        return "Metadata";
-                    }
-                    "Struct"
-                }
-                DataType::Union(_, _) => "Option",
-                _ => "Unknown",
-            },
         }
     }
 
     pub fn as_metadata(&self) -> Result<(String, Option<String>), String> {
-        let data = self.arrow_data();
-        if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>() {
-            if !Self::is_metadata_struct(struct_array) {
-                return Err("Not a metadata struct".to_string());
+        match self {
+            ExpressionValue::Dynamic(v) => {
+                let mv = v
+                    .as_any()
+                    .downcast_ref::<MetadataValue>()
+                    .ok_or_else(|| "Expected metadata struct".to_string())?;
+                Ok((
+                    mv.name().to_string(),
+                    mv.documentation().map(str::to_string),
+                ))
             }
-            if struct_array.len() != 1 {
-                return Err("Expected single metadata value".to_string());
-            }
-
-            let name_array = struct_array
-                .column(0)
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or("Expected name field to be string")?;
-
-            let doc_array = struct_array
-                .column(1)
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or("Expected documentation field to be string")?;
-
-            let name = name_array.value(0).to_string();
-            let documentation = if doc_array.is_null(0) {
-                None
-            } else {
-                Some(doc_array.value(0).to_string())
-            };
-
-            Ok((name, documentation))
-        } else {
-            Err("Expected metadata struct".to_string())
+            _ => Err("Expected metadata struct".to_string()),
         }
     }
 
     pub fn value_string(&self) -> String {
-        if let ExpressionValue::Module(name) = self {
-            return format!("Module({})", name);
+        match self {
+            ExpressionValue::Module(name) => format!("Module({})", name),
+            ExpressionValue::Dynamic(v) => v.format_for_llm(),
         }
-        if let ExpressionValue::Dynamic(v) = self {
-            return v.format_for_llm();
-        }
-        let data = self.arrow_data();
-        if data.as_any().is::<NullArray>() {
-            "()".to_string()
-        } else if let Ok(s) = self.as_string() {
-            s.to_string()
-        } else if let Ok(b) = self.as_boolean() {
-            b.to_string()
-        } else if let Ok(n) = self.as_integer() {
-            n.to_string()
-        } else if let Ok(list) = self.as_list() {
-            format!("{:?}", list)
-        } else if let Ok((name, documentation)) = self.as_metadata() {
-            if let Some(doc) = documentation {
-                format!("Metadata({}, \"{}\")", name, doc)
-            } else {
-                format!("Metadata({})", name)
-            }
-        } else if let Ok(opt) = self.as_option() {
-            match opt {
-                None => "None".to_string(),
-                Some(inner) => format!("Some({})", inner.value_string()),
-            }
-        } else {
-            format!("{:?}", data)
-        }
-    }
-
-    fn is_metadata_struct(struct_array: &StructArray) -> bool {
-        struct_array
-            .fields()
-            .first()
-            .map(|f| {
-                f.metadata()
-                    .get("kind")
-                    .map(|v| v == "metadata")
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false)
     }
 
     pub fn format_for_llm(&self) -> String {
-        if let ExpressionValue::Module(name) = self {
-            return format!("Module({})", name);
-        }
-        if let ExpressionValue::Dynamic(v) = self {
-            return v.format_for_llm();
-        }
-        let data = self.arrow_data();
-        if let Some(struct_array) = data.as_any().downcast_ref::<StructArray>()
-            && !Self::is_metadata_struct(struct_array)
-        {
-            let mut obj = serde_json::Map::new();
-            for (i, field) in struct_array.fields().iter().enumerate() {
-                let col = struct_array.column(i);
-                let val = ExpressionValue::Arrow(col.clone());
-                let json_val = if let Ok(s) = val.as_string() {
-                    serde_json::Value::String(s.to_string())
-                } else if let Ok(b) = val.as_boolean() {
-                    serde_json::Value::Bool(b)
-                } else if let Ok(n) = val.as_integer() {
-                    serde_json::Value::Number(n.into())
-                } else {
-                    serde_json::Value::String(val.format_for_llm())
-                };
-                obj.insert(field.name().clone(), json_val);
-            }
-            return serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string());
-        }
-        if data.as_any().is::<NullArray>() {
-            "()".to_string()
-        } else if let Ok(s) = self.as_string() {
-            s.to_string()
-        } else if let Ok(b) = self.as_boolean() {
-            b.to_string()
-        } else if let Ok(n) = self.as_integer() {
-            n.to_string()
-        } else if let Ok(list) = self.as_list() {
-            if list.len() == 0 {
-                "[]".to_string()
-            } else {
-                let values = list.value(0);
-                if let Some(string_array) = values.as_any().downcast_ref::<StringArray>() {
-                    let items: Vec<String> = (0..string_array.len())
-                        .map(|i| format!("\"{}\"", string_array.value(i)))
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else if let Some(int_array) = values.as_any().downcast_ref::<Int64Array>() {
-                    let items: Vec<String> = (0..int_array.len())
-                        .map(|i| int_array.value(i).to_string())
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else if let Some(bool_array) = values.as_any().downcast_ref::<BooleanArray>() {
-                    let items: Vec<String> = (0..bool_array.len())
-                        .map(|i| bool_array.value(i).to_string())
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else if let Some(struct_array) = values.as_any().downcast_ref::<StructArray>() {
-                    let items: Vec<String> = (0..struct_array.len())
-                        .map(|i| {
-                            let mut obj = serde_json::Map::new();
-                            for (j, field) in struct_array.fields().iter().enumerate() {
-                                let col = struct_array.column(j);
-                                let val = ExpressionValue::Arrow(col.slice(i, 1));
-                                let json_val = if let Ok(s) = val.as_string() {
-                                    serde_json::Value::String(s.to_string())
-                                } else if let Ok(b) = val.as_boolean() {
-                                    serde_json::Value::Bool(b)
-                                } else if let Ok(n) = val.as_integer() {
-                                    serde_json::Value::Number(n.into())
-                                } else {
-                                    serde_json::Value::String(val.format_for_llm())
-                                };
-                                obj.insert(field.name().clone(), json_val);
-                            }
-                            serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
-                        })
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else if let Some(union_array) = values.as_any().downcast_ref::<UnionArray>() {
-                    let items: Vec<String> = (0..union_array.len())
-                        .map(|i| {
-                            let sliced = ExpressionValue::Arrow(
-                                Arc::new(union_array.slice(i, 1)) as Arc<dyn Array>
-                            );
-                            match sliced.as_option() {
-                                Ok(None) => "None".to_string(),
-                                Ok(Some(inner)) => format!("Some({})", inner.format_for_llm()),
-                                Err(_) => {
-                                    ExpressionValue::Arrow(union_array.value(i)).format_for_llm()
-                                }
-                            }
-                        })
-                        .collect();
-                    format!("[{}]", items.join(", "))
-                } else {
-                    "[]".to_string()
-                }
-            }
-        } else if let Ok((name, documentation)) = self.as_metadata() {
-            if let Some(doc) = documentation {
-                format!("{}: {}", name, doc)
-            } else {
-                name
-            }
-        } else if let Ok(opt) = self.as_option() {
-            match opt {
-                None => "None".to_string(),
-                Some(inner) => inner.format_for_llm(),
-            }
-        } else {
-            self.value_string()
+        match self {
+            ExpressionValue::Module(name) => format!("Module({})", name),
+            ExpressionValue::Dynamic(v) => v.format_for_llm(),
         }
     }
 }
@@ -870,7 +645,7 @@ mod tests {
     #[test]
     fn option_none_utf8_has_utf8_some_schema() {
         let opt = ExpressionValue::option_none_utf8();
-        let data = opt.arrow_data();
+        let data = opt.to_arrow();
         let ua = data.as_any().downcast_ref::<UnionArray>().unwrap();
         let (_, some_field): (i8, &arrow::datatypes::FieldRef) = ua.fields().iter().nth(1).unwrap();
         assert_eq!(some_field.data_type(), &arrow::datatypes::DataType::Utf8);
