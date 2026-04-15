@@ -830,19 +830,34 @@ fn check_struct_literal(
         }
     }
 
+    let resolved_type_name = {
+        let interned_mod = ctx.module_name.intern(db);
+        let interned_name = struct_name.intern(db);
+        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+            name: struct_name.to_string(),
+            module: ctx.module_name.clone(),
+        })
+    };
+
+    let ty = if type_params.is_empty() {
+        RT::Struct(resolved_type_name)
+    } else {
+        let args: Vec<RT> = type_params
+            .iter()
+            .map(|tp| {
+                subst
+                    .get(&tp.name)
+                    .cloned()
+                    .unwrap_or_else(|| RT::Generic(tp.name.clone()))
+            })
+            .collect();
+        RT::Parameterized(resolved_type_name, args)
+    };
+
     Ok(typed_ast::Expression::StructLiteral {
         struct_name: struct_name.to_string(),
         fields: typed_fields,
-        ty: RT::Struct({
-            let interned_mod = ctx.module_name.intern(db);
-            let interned_name = struct_name.intern(db);
-            resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| {
-                TypeName {
-                    name: struct_name.to_string(),
-                    module: ctx.module_name.clone(),
-                }
-            })
-        }),
+        ty,
         span,
     })
 }
@@ -939,9 +954,11 @@ impl TypeChecker {
     pub(super) fn substitute_self(ty: &AstType, concrete: &str) -> AstType {
         match ty {
             AstType::Generic(name) if name == "Self" => AstType::Struct(concrete.to_string()),
-            AstType::Parameterized(name, inner) => AstType::Parameterized(
+            AstType::Parameterized(name, args) => AstType::Parameterized(
                 name.clone(),
-                Box::new(Self::substitute_self(inner, concrete)),
+                args.iter()
+                    .map(|a| Self::substitute_self(a, concrete))
+                    .collect(),
             ),
             other => other.clone(),
         }

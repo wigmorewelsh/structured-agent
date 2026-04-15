@@ -493,6 +493,15 @@ pub(super) fn resolve_type_alias<'db>(
             }
         }
     }
+    for import in &module_def.use_imports {
+        if import.local == alias_str {
+            let import_module = (&import.module).intern(db);
+            let import_name = (&import.name).intern(db);
+            if let Some(found) = module_exports_type(db, tables, import_module, import_name) {
+                return Some(found);
+            }
+        }
+    }
     None
 }
 

@@ -59,10 +59,17 @@ impl GeminiEngine {
             Type::Parameterized(n, args) if n.name == "Option" => {
                 Self::build_value_schema(&args[0], context)
             }
-            Type::Parameterized(n, _) => Err(format!(
-                "Parameterized type {} cannot be used in schema",
-                n.name
-            )),
+            Type::Parameterized(n, _) => {
+                let fields = context.runtime().get_struct(n).ok_or_else(|| {
+                    format!("Parameterized type {} cannot be used in schema", n.name)
+                })?;
+                let mut obj = JsonSchemaBuilder::object();
+                for (field_name, field_type) in &fields {
+                    let field_schema = Self::build_value_schema(field_type, context)?;
+                    obj = JsonSchemaBuilder::with_property(obj, field_name, field_schema, true);
+                }
+                Ok(obj)
+            }
             Type::Unit => Err("Unit type cannot be used in schema".to_string()),
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
             Type::Struct(type_name) => {
@@ -187,21 +194,40 @@ impl GeminiEngine {
                     .get_struct(type_name)
                     .ok_or_else(|| format!("Unknown struct: {}", type_name.name))?
                     .clone();
-                let field_values: Vec<(&str, ExpressionValue)> = fields
-                    .iter()
-                    .map(|(field_name, field_type)| {
-                        let json_field = obj
-                            .get(field_name)
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-                        let val = Self::parse_json_value(json_field, field_type, context)?;
-                        Ok((field_name.as_str(), val))
-                    })
-                    .collect::<Result<Vec<_>, String>>()?;
-                Ok(ExpressionValue::struct_value(field_values))
+                Self::parse_struct_fields(obj, &fields, context)
+            }
+            Type::Parameterized(n, _) => {
+                let obj = json_value
+                    .as_object()
+                    .ok_or_else(|| format!("Expected JSON object for struct {}", n.name))?;
+                let fields = context
+                    .runtime()
+                    .get_struct(n)
+                    .ok_or_else(|| format!("Unknown struct: {}", n.name))?
+                    .clone();
+                Self::parse_struct_fields(obj, &fields, context)
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }
+    }
+
+    fn parse_struct_fields(
+        obj: &serde_json::Map<String, serde_json::Value>,
+        fields: &[(String, Type)],
+        context: &Context,
+    ) -> Result<ExpressionValue, String> {
+        let field_values: Vec<(&str, ExpressionValue)> = fields
+            .iter()
+            .map(|(field_name, field_type)| {
+                let json_field = obj
+                    .get(field_name)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let val = Self::parse_json_value(json_field, field_type, context)?;
+                Ok((field_name.as_str(), val))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(ExpressionValue::struct_value(field_values))
     }
 
     fn parse_typed_response(
@@ -513,6 +539,85 @@ fn main(): () { return () }
         assert_eq!(
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             20
+        );
+    }
+
+    #[test]
+    fn test_build_value_schema_parameterized_known_struct() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
+        let code = r#"
+struct Task {
+    title: String,
+    steps: Int,
+}
+fn main(): () { return () }
+"#;
+        let context = make_context_with_struct(code);
+        let task_type = Type::Parameterized(
+            TypeName {
+                name: "Task".to_string(),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
+            },
+            vec![],
+        );
+        let result = GeminiEngine::build_value_schema(&task_type, &context);
+        assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_build_value_schema_parameterized_unknown_returns_error() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
+        let code = "fn main(): () { return () }";
+        let runtime = crate::runtime::Runtime::builder(crate::cli::config::ProgramSource::Inline(
+            code.to_string(),
+        ))
+        .build();
+        runtime.check().unwrap();
+        let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
+        let ghost_type = Type::Parameterized(
+            TypeName {
+                name: "Ghost".to_string(),
+                module: ModuleName::new(NonEmpty::new("test".to_string())),
+            },
+            vec![],
+        );
+        let result = GeminiEngine::build_value_schema(&ghost_type, &context);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Ghost"));
+    }
+
+    #[test]
+    fn test_parse_json_value_parameterized_struct() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::{ModuleName, TypeName};
+        let code = r#"
+struct Point {
+    x: Int,
+    y: Int,
+}
+fn main(): () { return () }
+"#;
+        let context = make_context_with_struct(code);
+        let json = serde_json::json!({"x": 3, "y": 7});
+        let point_type = Type::Parameterized(
+            TypeName {
+                name: "Point".to_string(),
+                module: ModuleName::new(NonEmpty::new("main".to_string())),
+            },
+            vec![],
+        );
+        let result = GeminiEngine::parse_json_value(json, &point_type, &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        let value = result.unwrap();
+        assert_eq!(
+            value.get_struct_field("x").unwrap().as_integer().unwrap(),
+            3
+        );
+        assert_eq!(
+            value.get_struct_field("y").unwrap().as_integer().unwrap(),
+            7
         );
     }
 }

@@ -88,6 +88,21 @@ impl SymbolTableBuilder {
         );
     }
 
+    fn prelude_imports(&self) -> Vec<UseImport> {
+        let prelude_module = ModuleName::new(NonEmpty::new("prelude".to_string()));
+        self.metadata
+            .types
+            .keys()
+            .filter(|tn| tn.module == prelude_module)
+            .map(|type_name| UseImport {
+                local: type_name.name.clone(),
+                module: prelude_module.clone(),
+                name: type_name.name.clone(),
+                is_pub: false,
+            })
+            .collect()
+    }
+
     fn register_native_modules(
         &mut self,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
@@ -142,7 +157,7 @@ impl SymbolTableBuilder {
                     span: Span::dummy(),
                     file_id: 0,
                 })),
-                use_imports: vec![],
+                use_imports: self.prelude_imports(),
             };
             self.metadata
                 .modules
@@ -158,11 +173,11 @@ impl SymbolTableBuilder {
             RT::Int => AstType::Generic("Int".to_string()),
             RT::Unit => AstType::Generic("Unit".to_string()),
             RT::Parameterized(type_name, args) => match args.as_slice() {
-                [inner] => AstType::Parameterized(
+                [] => AstType::Struct(type_name.name.clone()),
+                _ => AstType::Parameterized(
                     type_name.name.clone(),
-                    Box::new(Self::runtime_type_to_ast(inner)),
+                    args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
                 ),
-                _ => AstType::Struct(type_name.name.clone()),
             },
             RT::Struct(tn) => AstType::Struct(tn.name.clone()),
             RT::Generic(name) => AstType::Generic(name.clone()),
@@ -461,7 +476,12 @@ impl SymbolTableBuilder {
         effective_module_name: ModuleName,
     ) {
         let exports = self.collect_module_exports(&effective_module_name);
-        let use_imports = extract_use_imports(&parsed.module, &parsed.name);
+        let mut use_imports = extract_use_imports(&parsed.module, &parsed.name);
+        for prelude_import in self.prelude_imports() {
+            if !use_imports.iter().any(|u| u.local == prelude_import.local) {
+                use_imports.push(prelude_import);
+            }
+        }
         let module_def = ModuleDefinition {
             name: effective_module_name.clone(),
             visibility: if parsed.is_entry {

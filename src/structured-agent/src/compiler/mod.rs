@@ -270,8 +270,8 @@ pub fn compile_external_function(
 
 fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
     match ast_type {
-        crate::ast::Type::Parameterized(name, inner) => {
-            let inner_rt = ast_type_to_type(inner, module);
+        crate::ast::Type::Parameterized(name, args) => {
+            let inner_rt = ast_type_to_type(&args[0], module);
             match name.as_str() {
                 "List" => Type::list(inner_rt),
                 "Option" => Type::option(inner_rt),
@@ -280,7 +280,7 @@ fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
                         name: name.clone(),
                         module: module.clone(),
                     },
-                    vec![inner_rt],
+                    args.iter().map(|a| ast_type_to_type(a, module)).collect(),
                 ),
             }
         }

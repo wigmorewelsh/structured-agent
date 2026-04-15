@@ -599,12 +599,12 @@ combine::parser! {
                     satisfy(|c: char| c.is_uppercase()),
                     many::<Vec<char>, _, _>(combine::parser::char::alpha_num()),
                     lex_char('<'),
-                    parse_type(),
+                    sep_by1(parse_type(), lex_char(',')),
                     lex_char('>'),
                 )
-                    .map(|(first, rest, _, inner, _)| {
+                    .map(|(first, rest, _, args, _)| {
                         let name: String = std::iter::once(first).chain(rest).collect();
-                        Type::Parameterized(name, Box::new(inner))
+                        Type::Parameterized(name, args)
                     }),
             ),
             attempt(lex_string("()").map(|_| Type::Generic("Unit".to_string()))),
@@ -2394,11 +2394,11 @@ fn test_if_else_stmt(): () {
             assert_eq!(func.parameters.len(), 1);
             assert!(matches!(
                 func.parameters[0].param_type,
-                Type::Parameterized(ref name, ref inner) if name == "List" && matches!(**inner, Type::Generic(ref s) if s == "String")
+                Type::Parameterized(ref name, ref args) if name == "List" && matches!(args[0], Type::Generic(ref s) if s == "String")
             ));
             assert!(matches!(
                 func.return_type,
-                Type::Parameterized(ref name, ref inner) if name == "Option" && matches!(**inner, Type::Generic(ref s) if s == "String")
+                Type::Parameterized(ref name, ref args) if name == "Option" && matches!(args[0], Type::Generic(ref s) if s == "String")
             ));
         } else {
             panic!("Expected external function definition");
@@ -2732,7 +2732,7 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert!(
-                matches!(&s.fields[0].field_type, Type::Parameterized(name, inner) if name == "List" && matches!(inner.as_ref(), Type::Generic(s) if s == "String"))
+                matches!(&s.fields[0].field_type, Type::Parameterized(name, args) if name == "List" && matches!(&args[0], Type::Generic(s) if s == "String"))
             );
         } else {
             panic!("Expected struct definition");
@@ -3029,7 +3029,7 @@ fn main(): String {
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert!(
-                matches!(&s.fields[0].field_type, Type::Parameterized(name, inner) if name == "Option" && matches!(inner.as_ref(), Type::Generic(s) if s == "Int"))
+                matches!(&s.fields[0].field_type, Type::Parameterized(name, args) if name == "Option" && matches!(&args[0], Type::Generic(s) if s == "Int"))
             );
         } else {
             panic!("Expected struct definition");

@@ -211,7 +211,7 @@ pub struct ExternalFunction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Struct(std::string::String),
-    Parameterized(std::string::String, Box<Type>),
+    Parameterized(std::string::String, Vec<Type>),
     Generic(std::string::String),
 }
 
@@ -370,7 +370,15 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Struct(name) => write!(f, "{}", name),
-            Type::Parameterized(name, inner) => write!(f, "{}<{}>", name, inner),
+            Type::Parameterized(name, args) => write!(
+                f,
+                "{}<{}>",
+                name,
+                args.iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Type::Generic(name) => write!(f, "{}", name),
         }
     }

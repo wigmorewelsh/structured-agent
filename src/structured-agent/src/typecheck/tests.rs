@@ -1372,14 +1372,11 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized(
-                    "List".to_string(),
-                    Box::new(AstType::Generic("T".to_string())),
-                ),
+                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             vec![],
         );
@@ -1391,7 +1388,7 @@ mod tests {
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("String".to_string())),
+                vec![AstType::Generic("String".to_string())],
             ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
@@ -1423,7 +1420,7 @@ mod tests {
             parameters: vec![create_parameter("value", AstType::Generic("T".to_string()))],
             return_type: AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             is_pub: false,
             span: crate::types::Span::dummy(),
@@ -1436,7 +1433,7 @@ mod tests {
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("String".to_string())),
+                vec![AstType::Generic("String".to_string())],
             ),
             vec![Statement::Return(Expression::Call {
                 function: "wrap".to_string(),
@@ -1462,7 +1459,7 @@ mod tests {
             vec![],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             vec![],
         );
@@ -1493,14 +1490,11 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized(
-                    "List".to_string(),
-                    Box::new(AstType::Generic("T".to_string())),
-                ),
+                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             vec![],
         );
@@ -1510,7 +1504,7 @@ mod tests {
                 "item",
                 AstType::Parameterized(
                     "Option".to_string(),
-                    Box::new(AstType::Generic("String".to_string())),
+                    vec![AstType::Generic("String".to_string())],
                 ),
             )],
             AstType::Generic("Unit".to_string()),
@@ -1522,7 +1516,7 @@ mod tests {
                 "xs",
                 AstType::Parameterized(
                     "List".to_string(),
-                    Box::new(AstType::Generic("String".to_string())),
+                    vec![AstType::Generic("String".to_string())],
                 ),
             )],
             AstType::Generic("Unit".to_string()),
@@ -1621,6 +1615,47 @@ mod tests {
             "expected UnboundTypeParameter for generic struct field, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_user_defined_generic_struct_as_function_parameter_is_valid() {
+        use crate::ast::{StructDefinition, StructField};
+        let pair_struct = Definition::Struct(Arc::new(StructDefinition {
+            name: "Pair".to_string(),
+            type_params: vec![crate::ast::TypeParam {
+                name: "T".to_string(),
+                bounds: vec![],
+            }],
+            fields: vec![
+                StructField {
+                    name: "first".to_string(),
+                    field_type: AstType::Generic("T".to_string()),
+                    span: crate::types::Span::dummy(),
+                },
+                StructField {
+                    name: "second".to_string(),
+                    field_type: AstType::Generic("T".to_string()),
+                    span: crate::types::Span::dummy(),
+                },
+            ],
+            span: crate::types::Span::dummy(),
+        }));
+        let pair_string = AstType::Parameterized(
+            "Pair".to_string(),
+            vec![AstType::Generic("String".to_string())],
+        );
+        let func = create_test_function(
+            "identity",
+            vec![create_parameter("x", pair_string.clone())],
+            pair_string,
+            vec![Statement::Return(Expression::Variable {
+                name: "x".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![pair_struct, Definition::Function(Arc::new(func))]);
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
 
     #[test]
@@ -2006,7 +2041,7 @@ mod typed_ast_tests {
             vec![],
             AstType::Parameterized(
                 "List".to_string(),
-                Box::new(AstType::Generic("Int".to_string())),
+                vec![AstType::Generic("Int".to_string())],
             ),
             vec![Statement::Return(Expression::ListLiteral {
                 elements: vec![
@@ -2262,14 +2297,11 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized(
-                    "List".to_string(),
-                    Box::new(AstType::Generic("T".to_string())),
-                ),
+                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             vec![],
         );
@@ -2279,12 +2311,12 @@ mod typed_ast_tests {
                 "xs",
                 AstType::Parameterized(
                     "List".to_string(),
-                    Box::new(AstType::Generic("String".to_string())),
+                    vec![AstType::Generic("String".to_string())],
                 ),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("String".to_string())),
+                vec![AstType::Generic("String".to_string())],
             ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
@@ -2321,14 +2353,11 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType::Parameterized(
-                    "List".to_string(),
-                    Box::new(AstType::Generic("T".to_string())),
-                ),
+                AstType::Parameterized("List".to_string(), vec![AstType::Generic("T".to_string())]),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("T".to_string())),
+                vec![AstType::Generic("T".to_string())],
             ),
             vec![],
         );
@@ -2338,12 +2367,12 @@ mod typed_ast_tests {
                 "xs",
                 AstType::Parameterized(
                     "List".to_string(),
-                    Box::new(AstType::Generic("Int".to_string())),
+                    vec![AstType::Generic("Int".to_string())],
                 ),
             )],
             AstType::Parameterized(
                 "Option".to_string(),
-                Box::new(AstType::Generic("Int".to_string())),
+                vec![AstType::Generic("Int".to_string())],
             ),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
@@ -2383,21 +2412,18 @@ mod typed_ast_tests {
                     "a",
                     AstType::Parameterized(
                         "List".to_string(),
-                        Box::new(AstType::Generic("A".to_string())),
+                        vec![AstType::Generic("A".to_string())],
                     ),
                 ),
                 create_parameter(
                     "b",
                     AstType::Parameterized(
                         "List".to_string(),
-                        Box::new(AstType::Generic("B".to_string())),
+                        vec![AstType::Generic("B".to_string())],
                     ),
                 ),
             ],
-            AstType::Parameterized(
-                "List".to_string(),
-                Box::new(AstType::Generic("A".to_string())),
-            ),
+            AstType::Parameterized("List".to_string(), vec![AstType::Generic("A".to_string())]),
             vec![],
         );
         let caller = create_test_function(
@@ -2407,20 +2433,20 @@ mod typed_ast_tests {
                     "strs",
                     AstType::Parameterized(
                         "List".to_string(),
-                        Box::new(AstType::Generic("String".to_string())),
+                        vec![AstType::Generic("String".to_string())],
                     ),
                 ),
                 create_parameter(
                     "ints",
                     AstType::Parameterized(
                         "List".to_string(),
-                        Box::new(AstType::Generic("Int".to_string())),
+                        vec![AstType::Generic("Int".to_string())],
                     ),
                 ),
             ],
             AstType::Parameterized(
                 "List".to_string(),
-                Box::new(AstType::Generic("String".to_string())),
+                vec![AstType::Generic("String".to_string())],
             ),
             vec![Statement::Return(Expression::Call {
                 function: "zip".to_string(),
@@ -2568,6 +2594,60 @@ mod typed_ast_tests {
                 },
             }
         });
+    }
+
+    #[test]
+    fn generic_struct_literal_has_parameterized_type() {
+        let input = concat!(
+            "struct Box<T> {\n",
+            "    value: T,\n",
+            "}\n",
+            "fn make_box(): Box<String> {\n",
+            "    return Box { value: \"hello\" }\n",
+            "}\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let make_box_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "make_box" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = make_box_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let mn = ModuleName::new(NonEmpty::new("main".to_string()));
+        assert_eq!(
+            expr.ty(),
+            &RT::Parameterized(
+                structured_agent_runtime::symbols::TypeName {
+                    name: "Box".to_string(),
+                    module: mn,
+                },
+                vec![RT::String],
+            )
+        );
     }
 }
 
@@ -2785,7 +2865,7 @@ mod metadata_query_tests {
                 vec![],
                 AstType::Parameterized(
                     "List".to_string(),
-                    Box::new(AstType::Generic("Int".to_string())),
+                    vec![AstType::Generic("Int".to_string())],
                 ),
                 vec![Statement::Return(Expression::ListLiteral {
                     elements: vec![Expression::IntLiteral {
@@ -2816,7 +2896,7 @@ mod metadata_query_tests {
                 return_type,
                 &TypeName {
                     name: "List".to_string(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    module: ModuleName::new(NonEmpty::new("main".to_string())),
                 }
             );
         } else {

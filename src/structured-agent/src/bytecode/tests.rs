@@ -929,9 +929,9 @@ mod vm_execution_tests {
                 name: n.clone(),
                 module: ModuleName::new(NonEmpty::new("main".to_string())),
             }),
-            AT::Parameterized(name, inner) => match name.as_str() {
-                "List" => RT::list(ast_type_to_rt(inner)),
-                "Option" => RT::option(ast_type_to_rt(inner)),
+            AT::Parameterized(name, args) => match name.as_str() {
+                "List" => RT::list(ast_type_to_rt(&args[0])),
+                "Option" => RT::option(ast_type_to_rt(&args[0])),
                 _ => RT::Generic(name.clone()),
             },
             AT::Generic(n) => match n.as_str() {

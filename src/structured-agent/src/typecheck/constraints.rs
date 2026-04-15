@@ -4,7 +4,7 @@ use super::db::{Intern, SymbolTablesInput, TypeCheckDatabase, resolve_type_alias
 use crate::ast::{Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::{FileId, Span};
-use nonempty::NonEmpty;
+
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{ModuleName, TypeDefinitionKind, TypeName};
@@ -53,20 +53,36 @@ pub(super) fn resolve(
                 }),
             }
         }
-        AstType::Parameterized(name, inner) => {
-            let interned_mod = ModuleName::new(NonEmpty::new("prelude".to_string())).intern(db);
+        AstType::Parameterized(name, args) => {
+            let interned_mod = module.intern(db);
             let interned_name = name.intern(db);
             let type_name = resolve_type_alias(db, tables, interned_mod, interned_name)
                 .unwrap_or_else(|| TypeName {
                     name: name.clone(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    module: module.clone(),
                 });
             match tables.types(db).get().get(&type_name) {
                 Some(td) => match &td.kind {
                     TypeDefinitionKind::Native { .. } => {
                         let inner_rt =
-                            resolve(db, tables, inner, module, type_params, span, file_id)?;
+                            resolve(db, tables, &args[0], module, type_params, span, file_id)?;
                         Ok(RT::Parameterized(type_name, vec![inner_rt]))
+                    }
+                    TypeDefinitionKind::Struct {
+                        generic_parameters, ..
+                    } => {
+                        let resolved_args: Vec<RT> = args
+                            .iter()
+                            .map(|a| resolve(db, tables, a, module, type_params, span, file_id))
+                            .collect::<Result<_, _>>()?;
+                        if resolved_args.len() != generic_parameters.len() {
+                            return Err(TypeError::UnboundTypeParameter {
+                                name: name.clone(),
+                                span,
+                                file_id,
+                            });
+                        }
+                        Ok(RT::Parameterized(type_name, resolved_args))
                     }
                     _ => Err(TypeError::UnboundTypeParameter {
                         name: name.clone(),

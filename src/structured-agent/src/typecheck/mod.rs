@@ -66,7 +66,7 @@ pub(super) fn ast_type_to_type_name(ty: &AstType, module_name: &ModuleName) -> T
         },
         AstType::Parameterized(name, _) => TypeName {
             name: name.clone(),
-            module: ModuleName::new(NonEmpty::new("prelude".to_string())),
+            module: module_name.clone(),
         },
         other => TypeName {
             name: other.to_string(),

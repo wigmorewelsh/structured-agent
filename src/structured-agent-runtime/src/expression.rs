@@ -527,7 +527,8 @@ where
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
         Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, metadata),
-        Type::Parameterized(..) | Type::Generic(_) => DataType::Null,
+        Type::Parameterized(type_name, _) => type_name_to_arrow_datatype(type_name, metadata),
+        Type::Generic(_) => DataType::Null,
     }
 }
 
@@ -597,11 +598,14 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{NullArray, UnionArray};
+    use arrow::datatypes::{DataType, Field, Fields};
 
     use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
     use crate::symbols::{
-        GenericParameterDefinition, ModuleName, NoAst, TypeDefinition, TypeDefinitionKind, TypeName,
+        FieldDefinition, GenericParameterDefinition, MetaData, ModuleName, NoAst, TypeDefinition,
+        TypeDefinitionKind, TypeName,
     };
+    use crate::types::Type;
 
     use super::ExpressionValue;
 
@@ -856,9 +860,45 @@ mod tests {
     }
 
     #[test]
+    fn parameterized_type_to_arrow_datatype_delegates_to_struct() {
+        let struct_type_name = TypeName {
+            name: "MyGeneric".to_string(),
+            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        };
+        let string_type_name = TypeName {
+            name: "String".to_string(),
+            module: ModuleName::new(nonempty::nonempty!["prelude".to_string()]),
+        };
+        let mut metadata = MetaData::<TestRefs>::default();
+        metadata.register_type(
+            struct_type_name.clone(),
+            Arc::new(TypeDefinition {
+                name: struct_type_name.clone(),
+                kind: TypeDefinitionKind::Struct {
+                    fields: vec![FieldDefinition {
+                        name: "value".to_string(),
+                        type_name: string_type_name,
+                    }],
+                    generic_parameters: vec![],
+                },
+                source_ref: NoSource,
+                ast_ref: NoAst,
+            }),
+        );
+        let ty = Type::Parameterized(struct_type_name, vec![Type::String]);
+        assert_eq!(
+            super::type_to_arrow_datatype(&ty, &metadata),
+            DataType::Struct(Fields::from(vec![Field::new(
+                "value",
+                DataType::Utf8,
+                true
+            )]))
+        );
+    }
+
+    #[test]
     fn rt_type_to_arrow_datatype_maps_primitives() {
-        use crate::types::Type;
-        let metadata = crate::symbols::MetaData::<TestRefs>::default();
+        let metadata = MetaData::<TestRefs>::default();
         assert_eq!(
             super::type_to_arrow_datatype(&Type::String, &metadata),
             arrow::datatypes::DataType::Utf8
