@@ -217,6 +217,107 @@ fn main(): () {
     }
 
     #[test]
+    fn test_generic_struct_instantiation_typechecks() {
+        let code = r#"
+struct Wrapper<T> {
+    value: T,
+}
+
+fn main(): () {
+    let w = Wrapper { value: "hello" }
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_source(&unit);
+
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Generic struct instantiation should compile"
+        );
+    }
+
+    #[test]
+    fn test_generic_struct_multiple_fields_same_type_param() {
+        let code = r#"
+struct Pair<T> {
+    first: T,
+    second: T,
+}
+
+fn main(): () {
+    let p = Pair { first: "hello", second: "world" }
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_source(&unit);
+
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Generic struct with same type param on multiple fields should compile"
+        );
+    }
+
+    #[test]
+    fn test_generic_struct_field_type_mismatch_caught() {
+        let code = r#"
+struct Pair<T> {
+    first: T,
+    second: T,
+}
+
+fn main(): () {
+    let p = Pair { first: "hello", second: 42 }
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_source(&unit);
+
+        assert!(
+            result.is_err(),
+            "Mismatched types on same type param should fail"
+        );
+        assert!(result.unwrap_err().contains("Type error"));
+    }
+
+    #[test]
+    fn test_generic_struct_with_two_type_params() {
+        let code = r#"
+struct Either<A, B> {
+    left: A,
+    right: B,
+}
+
+fn main(): () {
+    let e = Either { left: "hello", right: 42 }
+}
+"#;
+
+        let unit = CompilationUnit::from_string(code.to_string());
+        let compiler = Compiler::new();
+        let result = compiler.compile_source(&unit);
+
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Generic struct with two type params should compile"
+        );
+    }
+
+    #[test]
     fn test_generic_function_call_typechecks_end_to_end() {
         let code = r#"
 fn head<T>(list: List<T>): Option<T> {

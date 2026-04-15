@@ -929,11 +929,19 @@ mod vm_execution_tests {
                 name: n.clone(),
                 module: ModuleName::new(NonEmpty::new("main".to_string())),
             }),
-            AT::Parameterized(name, args) => match name.as_str() {
-                "List" => RT::list(ast_type_to_rt(&args[0])),
-                "Option" => RT::option(ast_type_to_rt(&args[0])),
-                _ => RT::Generic(name.clone()),
-            },
+            AT::Parameterized(name, args) => {
+                let module_str = match name.as_str() {
+                    "List" | "Option" => "prelude",
+                    _ => "main",
+                };
+                RT::Parameterized(
+                    TypeName {
+                        name: name.clone(),
+                        module: ModuleName::new(NonEmpty::new(module_str.to_string())),
+                    },
+                    args.iter().map(ast_type_to_rt).collect(),
+                )
+            }
             AT::Generic(n) => match n.as_str() {
                 "Boolean" => RT::Boolean,
                 "String" => RT::String,

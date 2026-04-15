@@ -59,10 +59,13 @@ impl GeminiEngine {
             Type::Parameterized(n, args) if n.name == "Option" => {
                 Self::build_value_schema(&args[0], context)
             }
-            Type::Parameterized(n, _) => {
-                let fields = context.runtime().get_struct(n).ok_or_else(|| {
-                    format!("Parameterized type {} cannot be used in schema", n.name)
-                })?;
+            Type::Parameterized(n, args) => {
+                let fields = context
+                    .runtime()
+                    .get_struct_with_args(n, args)
+                    .ok_or_else(|| {
+                        format!("Parameterized type {} cannot be used in schema", n.name)
+                    })?;
                 let mut obj = JsonSchemaBuilder::object();
                 for (field_name, field_type) in &fields {
                     let field_schema = Self::build_value_schema(field_type, context)?;
@@ -196,13 +199,13 @@ impl GeminiEngine {
                     .clone();
                 Self::parse_struct_fields(obj, &fields, context)
             }
-            Type::Parameterized(n, _) => {
+            Type::Parameterized(n, args) => {
                 let obj = json_value
                     .as_object()
                     .ok_or_else(|| format!("Expected JSON object for struct {}", n.name))?;
                 let fields = context
                     .runtime()
-                    .get_struct(n)
+                    .get_struct_with_args(n, args)
                     .ok_or_else(|| format!("Unknown struct: {}", n.name))?
                     .clone();
                 Self::parse_struct_fields(obj, &fields, context)

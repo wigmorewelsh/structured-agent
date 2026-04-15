@@ -526,16 +526,44 @@ where
             let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
-        Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, metadata),
-        Type::Parameterized(type_name, _) => type_name_to_arrow_datatype(type_name, metadata),
+        Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, &[], metadata),
+        Type::Parameterized(type_name, args) => {
+            let subst: Vec<(String, &Type)> = metadata
+                .type_def(type_name)
+                .and_then(|td| {
+                    if let TypeDefinitionKind::Struct {
+                        generic_parameters, ..
+                    } = &td.kind
+                    {
+                        Some(
+                            generic_parameters
+                                .iter()
+                                .map(|gp| gp.name.clone())
+                                .zip(args.iter())
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            type_name_to_arrow_datatype(type_name, &subst, metadata)
+        }
         Type::Generic(_) => DataType::Null,
     }
 }
 
-fn type_name_to_arrow_datatype<R>(type_name: &TypeName, metadata: &MetaData<R>) -> DataType
+fn type_name_to_arrow_datatype<R>(
+    type_name: &TypeName,
+    subst: &[(String, &Type)],
+    metadata: &MetaData<R>,
+) -> DataType
 where
     R: References<TypeAnnotation = TypeName>,
 {
+    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.name) {
+        return type_to_arrow_datatype(ty, metadata);
+    }
     match type_name.name.as_str() {
         "Int" => DataType::Int64,
         "String" => DataType::Utf8,
@@ -549,7 +577,7 @@ where
                         .map(|f| {
                             Field::new(
                                 &f.name,
-                                type_name_to_arrow_datatype(&f.type_name, metadata),
+                                type_name_to_arrow_datatype(&f.type_name, subst, metadata),
                                 true,
                             )
                         })
@@ -886,6 +914,46 @@ mod tests {
             }),
         );
         let ty = Type::Parameterized(struct_type_name, vec![Type::String]);
+        assert_eq!(
+            super::type_to_arrow_datatype(&ty, &metadata),
+            DataType::Struct(Fields::from(vec![Field::new(
+                "value",
+                DataType::Utf8,
+                true
+            )]))
+        );
+    }
+
+    #[test]
+    fn parameterized_type_with_generic_field_substitutes_type_arg() {
+        let wrapper_type_name = TypeName {
+            name: "Wrapper".to_string(),
+            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        };
+        let t_type_name = TypeName {
+            name: "T".to_string(),
+            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        };
+        let mut metadata = MetaData::<TestRefs>::default();
+        metadata.register_type(
+            wrapper_type_name.clone(),
+            Arc::new(TypeDefinition {
+                name: wrapper_type_name.clone(),
+                kind: TypeDefinitionKind::Struct {
+                    fields: vec![FieldDefinition {
+                        name: "value".to_string(),
+                        type_name: t_type_name,
+                    }],
+                    generic_parameters: vec![GenericParameterDefinition {
+                        name: "T".to_string(),
+                        constraints: vec![],
+                    }],
+                },
+                source_ref: NoSource,
+                ast_ref: NoAst,
+            }),
+        );
+        let ty = Type::Parameterized(wrapper_type_name, vec![Type::String]);
         assert_eq!(
             super::type_to_arrow_datatype(&ty, &metadata),
             DataType::Struct(Fields::from(vec![Field::new(

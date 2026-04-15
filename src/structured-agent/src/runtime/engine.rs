@@ -360,6 +360,42 @@ impl Runtime {
         }
     }
 
+    pub fn get_struct_with_args(
+        &self,
+        type_name: &structured_agent_runtime::symbols::TypeName,
+        args: &[crate::types::Type],
+    ) -> Option<Vec<(String, crate::types::Type)>> {
+        let cached = self.compiled.get()?.as_ref().ok()?;
+        let td = cached.metadata.types.get(type_name)?;
+        if let TypeDefinitionKind::Struct {
+            fields,
+            generic_parameters,
+            ..
+        } = &td.kind
+        {
+            let substitution: Vec<(&str, &crate::types::Type)> = generic_parameters
+                .iter()
+                .zip(args.iter())
+                .map(|(gp, ty)| (gp.name.as_str(), ty))
+                .collect();
+            Some(
+                fields
+                    .iter()
+                    .map(|f| {
+                        let ty = substitution
+                            .iter()
+                            .find(|(k, _)| *k == f.type_name.name)
+                            .map(|(_, t)| (*t).clone())
+                            .unwrap_or_else(|| field_type_name_to_type(&f.type_name));
+                        (f.name.clone(), ty)
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
     pub fn type_to_arrow_datatype(&self, ty: &crate::types::Type) -> arrow::datatypes::DataType {
         self.compiled
             .get()
