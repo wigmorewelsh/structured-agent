@@ -13,6 +13,7 @@ mod tests;
 mod integration_test;
 
 pub use error::TypeError;
+pub use error::TypeErrorAccumulator;
 pub use refs::{
     AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind, ModuleVisibility, NoBody,
     NoWitness, PrimitiveRefs, SourceLocation, TypedCheckerAstRef, TypedRefs,
@@ -179,9 +180,9 @@ impl TypeChecker {
             MetaData<TypedRefs>,
             HashMap<NonEmpty<String>, typed_ast::Module>,
         ),
-        TypeError,
+        Vec<TypeError>,
     > {
-        self.populate_symbol_tables(modules, native_modules)?;
+        self.populate_symbol_tables(modules, native_modules);
         let typed_modules = self.typecheck_modules(modules)?;
         let typed_metadata = self.materialize_metadata(&typed_modules);
         Ok((typed_metadata, typed_modules))
@@ -191,18 +192,18 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<(), TypeError> {
+    ) {
         self.symbol_tables =
             Some(SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules));
-        Ok(())
     }
 
     fn typecheck_modules(
         &mut self,
         modules: &[ParsedModule],
-    ) -> Result<HashMap<NonEmpty<String>, typed_ast::Module>, TypeError> {
+    ) -> Result<HashMap<NonEmpty<String>, typed_ast::Module>, Vec<TypeError>> {
         let tables = self.symbol_tables.expect("symbol tables not populated");
         let mut typed_modules = HashMap::new();
+        let mut all_errors: Vec<TypeError> = Vec::new();
         for parsed in modules {
             let parsed_input = ParsedModuleInput::new(
                 &self.db,
@@ -211,10 +212,22 @@ impl TypeChecker {
                 parsed.file_id,
                 parsed.module.clone(),
             );
-            let arc_module = db::check_module(&self.db, parsed_input, tables)?;
-            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
+            let maybe_module = db::check_module(&self.db, parsed_input, tables);
+            let errors = db::check_module::accumulated::<TypeErrorAccumulator>(
+                &self.db,
+                parsed_input,
+                tables,
+            );
+            if let Some(arc_module) = maybe_module {
+                typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
+            }
+            all_errors.extend(errors.into_iter().map(|e| e.0.clone()));
         }
-        Ok(typed_modules)
+        if all_errors.is_empty() {
+            Ok(typed_modules)
+        } else {
+            Err(all_errors)
+        }
     }
 
     fn materialize_metadata(

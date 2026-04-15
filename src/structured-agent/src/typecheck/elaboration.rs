@@ -2,6 +2,7 @@ use super::TypeChecker;
 use super::db::{
     Intern, SymbolTablesInput, TypeCheckDatabase, resolve_function_call, resolve_type_alias,
 };
+
 use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
@@ -9,18 +10,29 @@ use crate::ast::{
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
+use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::TypeName;
+
+fn push_err<T>(db: &dyn TypeCheckDatabase, result: Result<T, TypeError>) -> Option<T> {
+    match result {
+        Ok(v) => Some(v),
+        Err(e) => {
+            e.accumulate(db);
+            None
+        }
+    }
+}
 
 pub(super) fn check_definition(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     definition: &Definition,
     ctx: &CheckContext,
-) -> Result<typed_ast::Definition, TypeError> {
+) -> Option<typed_ast::Definition> {
     match definition {
-        Definition::Function(func) => Ok(typed_ast::Definition::Function(check_function(
+        Definition::Function(func) => Some(typed_ast::Definition::Function(check_function(
             db, tables, func, ctx,
         )?)),
         Definition::ExternalFunction(f) => {
@@ -45,7 +57,7 @@ pub(super) fn check_definition(
                     ctx.file_id,
                 )?;
             }
-            Ok(typed_ast::Definition::ExternalFunction((**f).clone()))
+            Some(typed_ast::Definition::ExternalFunction((**f).clone()))
         }
         Definition::Struct(s) => {
             for f in &s.fields {
@@ -59,7 +71,7 @@ pub(super) fn check_definition(
                     ctx.file_id,
                 )?;
             }
-            Ok(typed_ast::Definition::Struct((**s).clone()))
+            Some(typed_ast::Definition::Struct((**s).clone()))
         }
         Definition::Use {
             path,
@@ -67,7 +79,7 @@ pub(super) fn check_definition(
             alias,
             is_pub,
             span,
-        } => Ok(typed_ast::Definition::Use {
+        } => Some(typed_ast::Definition::Use {
             path: path.clone(),
             name: name.clone(),
             alias: alias.clone(),
@@ -80,19 +92,19 @@ pub(super) fn check_definition(
             sig_name,
             impl_path,
             span,
-        } => Ok(typed_ast::Definition::ModuleBinding {
+        } => Some(typed_ast::Definition::ModuleBinding {
             name: name.clone(),
             sig_path: sig_path.clone(),
             sig_name: sig_name.clone(),
             impl_path: impl_path.clone(),
             span: *span,
         }),
-        Definition::WiringSite { name, args, span } => Ok(typed_ast::Definition::WiringSite {
+        Definition::WiringSite { name, args, span } => Some(typed_ast::Definition::WiringSite {
             name: name.clone(),
             args: args.clone(),
             span: *span,
         }),
-        Definition::Trait(s) => Ok(typed_ast::Definition::Trait {
+        Definition::Trait(s) => Some(typed_ast::Definition::Trait {
             name: s.name.clone(),
             functions: s.functions.clone(),
             span: s.span,
@@ -105,33 +117,37 @@ pub(super) fn check_definition(
             if let Some(trait_fns) = trait_fns {
                 for trait_fn in &trait_fns {
                     if !functions.iter().any(|f| f.name == trait_fn.name) {
-                        return Err(TypeError::TraitImplMissingFunction {
+                        TypeError::TraitImplMissingFunction {
                             type_name: type_name.clone(),
                             trait_name: trait_name.clone(),
                             function_name: trait_fn.name.clone(),
                             span: *span,
                             file_id: ctx.file_id,
-                        });
+                        }
+                        .accumulate(db);
+                        return None;
                     }
                 }
             } else {
-                return Err(TypeError::UnknownTrait {
+                TypeError::UnknownTrait {
                     name: trait_name.clone(),
                     span: *span,
                     file_id: ctx.file_id,
-                });
+                }
+                .accumulate(db);
+                return None;
             }
-            let typed_functions: Result<Vec<typed_ast::Function>, TypeError> = functions
+            let typed_functions = functions
                 .iter()
                 .map(|func| {
                     let concrete = TypeChecker::substitute_self_in_fn(func, type_name);
                     check_function(db, tables, &concrete, ctx)
                 })
-                .collect();
-            Ok(typed_ast::Definition::TraitImpl {
+                .collect::<Option<Vec<_>>>()?;
+            Some(typed_ast::Definition::TraitImpl {
                 type_name: type_name.clone(),
                 trait_name: trait_name.clone(),
-                functions: typed_functions?,
+                functions: typed_functions,
                 span: *span,
             })
         }
@@ -144,7 +160,7 @@ pub(super) fn check_function(
     tables: SymbolTablesInput,
     func: &Function,
     ctx: &CheckContext,
-) -> Result<typed_ast::Function, TypeError> {
+) -> Option<typed_ast::Function> {
     let mut env = TypeEnvironment::new();
     let module = ctx.module_name.clone();
     let mut typed_parameters = Vec::new();
@@ -188,7 +204,7 @@ pub(super) fn check_function(
         typed_stmts.push(typed_stmt);
         env = new_env;
     }
-    Ok(typed_ast::Function {
+    Some(typed_ast::Function {
         name: func.name.clone(),
         parameters: typed_parameters,
         return_type: runtime_return_type,
@@ -210,11 +226,11 @@ fn check_statement(
     function_name: &str,
     return_type: &RT,
     ctx: &CheckContext,
-) -> Result<(typed_ast::Statement, TypeEnvironment), TypeError> {
+) -> Option<(typed_ast::Statement, TypeEnvironment)> {
     match statement {
         Statement::Injection(expr) => {
             let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
-            Ok((typed_ast::Statement::Injection(typed_expr), env))
+            Some((typed_ast::Statement::Injection(typed_expr), env))
         }
         Statement::Assignment {
             variable,
@@ -224,7 +240,7 @@ fn check_statement(
             let typed_expr = check_expression(db, tables, expression, &env, ctx)?;
             let expr_type = typed_expr.ty().clone();
             env.declare_variable(variable.clone(), expr_type, expression.span());
-            Ok((
+            Some((
                 typed_ast::Statement::Assignment {
                     variable: variable.clone(),
                     expression: typed_expr,
@@ -240,25 +256,28 @@ fn check_statement(
         } => {
             let typed_expr = check_expression(db, tables, expression, &env, ctx)?;
             let expr_type = typed_expr.ty().clone();
-            let (existing_type, declaration_span) = env
-                .lookup_variable_with_span(variable)
-                .ok_or_else(|| TypeError::UnknownVariable {
-                    name: variable.clone(),
-                    span: *span,
-                    file_id: ctx.file_id,
-                })?;
-
+            let (existing_type, declaration_span) = push_err(
+                db,
+                env.lookup_variable_with_span(variable)
+                    .ok_or_else(|| TypeError::UnknownVariable {
+                        name: variable.clone(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
             if expr_type != existing_type {
-                return Err(TypeError::VariableTypeMismatch {
+                TypeError::VariableTypeMismatch {
                     variable: variable.clone(),
                     expected: existing_type.name(),
                     found: expr_type.name(),
                     span: expression.span(),
                     declaration_span,
                     file_id: ctx.file_id,
-                });
+                }
+                .accumulate(db);
+                return None;
             }
-            Ok((
+            Some((
                 typed_ast::Statement::VariableAssignment {
                     variable: variable.clone(),
                     expression: typed_expr,
@@ -269,7 +288,7 @@ fn check_statement(
         }
         Statement::ExpressionStatement(expr) => {
             let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
-            Ok((typed_ast::Statement::ExpressionStatement(typed_expr), env))
+            Some((typed_ast::Statement::ExpressionStatement(typed_expr), env))
         }
         Statement::If {
             condition,
@@ -300,7 +319,7 @@ fn check_statement(
             } else {
                 None
             };
-            Ok((
+            Some((
                 typed_ast::Statement::If {
                     condition: typed_condition,
                     body: typed_body,
@@ -325,7 +344,7 @@ fn check_statement(
                 return_type,
                 ctx,
             )?;
-            Ok((
+            Some((
                 typed_ast::Statement::While {
                     condition: typed_condition,
                     body: typed_body,
@@ -337,15 +356,17 @@ fn check_statement(
         Statement::Return(expr) => {
             let typed_expr = check_expression(db, tables, expr, &env, ctx)?;
             if *typed_expr.ty() != *return_type {
-                return Err(TypeError::ReturnTypeMismatch {
+                TypeError::ReturnTypeMismatch {
                     function: function_name.to_string(),
                     expected: return_type.name(),
                     found: typed_expr.ty().name(),
                     span: expr.span(),
                     file_id: ctx.file_id,
-                });
+                }
+                .accumulate(db);
+                return None;
             }
-            Ok((typed_ast::Statement::Return(typed_expr), env))
+            Some((typed_ast::Statement::Return(typed_expr), env))
         }
     }
 }
@@ -356,17 +377,19 @@ fn check_boolean_condition(
     condition: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     let typed_cond = check_expression(db, tables, condition, env, ctx)?;
     if typed_cond.ty() == &RT::boolean() {
-        Ok(typed_cond)
+        Some(typed_cond)
     } else {
-        Err(TypeError::TypeMismatch {
+        TypeError::TypeMismatch {
             expected: "Boolean".to_string(),
             found: typed_cond.ty().name(),
             span: condition.span(),
             file_id: ctx.file_id,
-        })
+        }
+        .accumulate(db);
+        None
     }
 }
 
@@ -378,7 +401,7 @@ fn check_block(
     function_name: &str,
     return_type: &RT,
     ctx: &CheckContext,
-) -> Result<Vec<typed_ast::Statement>, TypeError> {
+) -> Option<Vec<typed_ast::Statement>> {
     let mut typed_stmts = Vec::new();
     for stmt in stmts {
         let (typed_stmt, new_env) =
@@ -386,7 +409,7 @@ fn check_block(
         typed_stmts.push(typed_stmt);
         env = new_env;
     }
-    Ok(typed_stmts)
+    Some(typed_stmts)
 }
 
 pub(super) fn check_expression(
@@ -395,7 +418,7 @@ pub(super) fn check_expression(
     expression: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     match expression {
         Expression::Call {
             function,
@@ -403,44 +426,50 @@ pub(super) fn check_expression(
             span,
         } => check_call(db, tables, function, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
-            let ty = env
-                .lookup_variable(name)
-                .ok_or_else(|| TypeError::UnknownVariable {
-                    name: name.clone(),
-                    span: *span,
-                    file_id: ctx.file_id,
-                })?;
-            Ok(typed_ast::Expression::Variable {
+            let ty = push_err(
+                db,
+                env.lookup_variable(name)
+                    .ok_or_else(|| TypeError::UnknownVariable {
+                        name: name.clone(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            Some(typed_ast::Expression::Variable {
                 name: name.clone(),
                 ty,
                 span: *span,
             })
         }
-        Expression::StringLiteral { value, span } => Ok(typed_ast::Expression::StringLiteral {
+        Expression::StringLiteral { value, span } => Some(typed_ast::Expression::StringLiteral {
             value: value.clone(),
             ty: RT::string(),
             span: *span,
         }),
-        Expression::BooleanLiteral { value, span } => Ok(typed_ast::Expression::BooleanLiteral {
+        Expression::BooleanLiteral { value, span } => Some(typed_ast::Expression::BooleanLiteral {
             value: *value,
             ty: RT::boolean(),
             span: *span,
         }),
-        Expression::IntLiteral { value, span } => Ok(typed_ast::Expression::IntLiteral {
+        Expression::IntLiteral { value, span } => Some(typed_ast::Expression::IntLiteral {
             value: *value,
             ty: RT::int(),
             span: *span,
         }),
-        Expression::UnitLiteral { span } => Ok(typed_ast::Expression::UnitLiteral {
+        Expression::UnitLiteral { span } => Some(typed_ast::Expression::UnitLiteral {
             ty: RT::unit(),
             span: *span,
         }),
-        Expression::Placeholder { span } => Err(TypeError::TypeMismatch {
-            expected: "concrete type".to_string(),
-            found: "placeholder".to_string(),
-            span: *span,
-            file_id: ctx.file_id,
-        }),
+        Expression::Placeholder { span } => {
+            TypeError::TypeMismatch {
+                expected: "concrete type".to_string(),
+                found: "placeholder".to_string(),
+                span: *span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            None
+        }
         Expression::ListLiteral { elements, span } => {
             check_list_literal(db, tables, elements, *span, env, ctx)
         }
@@ -472,20 +501,23 @@ fn check_call(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     let interned_current = ctx.module_name.intern(db);
     let interned_fn = function.intern(db);
 
-    let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
-        .and_then(|fn_name| {
-            super::query::get_function_sig(db, tables, &fn_name).map(|sig| (fn_name, sig))
-        })
-        .or_else(|| super::query::resolve_impl_call(db, tables, function, arguments, env, ctx))
-        .ok_or_else(|| TypeError::UnknownFunction {
-            name: function.to_string(),
-            span,
-            file_id: ctx.file_id,
-        })?;
+    let (resolved_fn_name, sig) = push_err(
+        db,
+        resolve_function_call(db, tables, interned_current, interned_fn)
+            .and_then(|fn_name| {
+                super::query::get_function_sig(db, tables, &fn_name).map(|sig| (fn_name, sig))
+            })
+            .or_else(|| super::query::resolve_impl_call(db, tables, function, arguments, env, ctx))
+            .ok_or_else(|| TypeError::UnknownFunction {
+                name: function.to_string(),
+                span,
+                file_id: ctx.file_id,
+            }),
+    )?;
 
     super::query::check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
 
@@ -493,13 +525,15 @@ fn check_call(
         (sig.kind, sig.return_type, sig.parameters, sig.type_params);
 
     if arguments.len() != parameters.len() {
-        return Err(TypeError::ArgumentCountMismatch {
+        TypeError::ArgumentCountMismatch {
             function: function.to_string(),
             expected: parameters.len(),
             found: arguments.len(),
             span,
             file_id: ctx.file_id,
-        });
+        }
+        .accumulate(db);
+        return None;
     }
 
     let mut typed_args = Vec::new();
@@ -515,19 +549,21 @@ fn check_call(
             }
             let typed_arg = check_expression(db, tables, arg, env, ctx)?;
             if typed_arg.ty() != &param.param_type {
-                return Err(TypeError::ArgumentTypeMismatch {
+                TypeError::ArgumentTypeMismatch {
                     function: function.to_string(),
                     parameter: param.name.clone(),
                     expected: param.param_type.name(),
                     found: typed_arg.ty().name(),
                     span: arg.span(),
                     file_id: ctx.file_id,
-                });
+                }
+                .accumulate(db);
+                return None;
             }
             typed_args.push(typed_arg);
         }
 
-        Ok(typed_ast::Expression::Call {
+        Some(typed_ast::Expression::Call {
             function: function.to_string(),
             resolved: resolved_fn_name,
             kind,
@@ -548,14 +584,16 @@ fn check_call(
             let typed_arg = check_expression(db, tables, arg, env, ctx)?;
             if !TypeChecker::unify_type(&param.param_type, typed_arg.ty(), &mut subst) {
                 let expected = TypeChecker::apply_subst(&param.param_type, &subst);
-                return Err(TypeError::ArgumentTypeMismatch {
+                TypeError::ArgumentTypeMismatch {
                     function: function.to_string(),
                     parameter: param.name.clone(),
                     expected: expected.name(),
                     found: typed_arg.ty().name(),
                     span: arg.span(),
                     file_id: ctx.file_id,
-                });
+                }
+                .accumulate(db);
+                return None;
             }
             typed_args.push(typed_arg);
         }
@@ -574,20 +612,22 @@ fn check_call(
                     let satisfied =
                         super::query::type_implements_trait(db, tables, type_name, trait_name);
                     if !satisfied {
-                        return Err(TypeError::TraitBoundNotSatisfied {
+                        TypeError::TraitBoundNotSatisfied {
                             type_name: type_name.to_string(),
                             trait_name: trait_name.to_string(),
                             param_name: tp.name.clone(),
                             span,
                             file_id: ctx.file_id,
-                        });
+                        }
+                        .accumulate(db);
+                        return None;
                     }
                 }
             }
         }
 
         let resolved_return = TypeChecker::apply_subst(&return_type, &subst);
-        Ok(typed_ast::Expression::Call {
+        Some(typed_ast::Expression::Call {
             function: function.to_string(),
             resolved: resolved_fn_name,
             kind,
@@ -605,14 +645,16 @@ fn check_list_literal(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     if elements.is_empty() {
-        return Err(TypeError::TypeMismatch {
+        TypeError::TypeMismatch {
             expected: "non-empty list or type annotation".to_string(),
             found: "empty list".to_string(),
             span,
             file_id: ctx.file_id,
-        });
+        }
+        .accumulate(db);
+        return None;
     }
 
     let typed_first = check_expression(db, tables, &elements[0], env, ctx)?;
@@ -622,17 +664,19 @@ fn check_list_literal(
     for elem in elements.iter().skip(1) {
         let typed_elem = check_expression(db, tables, elem, env, ctx)?;
         if *typed_elem.ty() != first_type {
-            return Err(TypeError::TypeMismatch {
+            TypeError::TypeMismatch {
                 expected: first_type.name(),
                 found: typed_elem.ty().name(),
                 span: elem.span(),
                 file_id: ctx.file_id,
-            });
+            }
+            .accumulate(db);
+            return None;
         }
         typed_elements.push(typed_elem);
     }
 
-    Ok(typed_ast::Expression::ListLiteral {
+    Some(typed_ast::Expression::ListLiteral {
         elements: typed_elements,
         ty: RT::list(first_type),
         span,
@@ -646,14 +690,16 @@ fn check_select(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     if clauses.is_empty() {
-        return Err(TypeError::TypeMismatch {
+        TypeError::TypeMismatch {
             expected: "non-empty select".to_string(),
             found: "empty select".to_string(),
             span,
             file_id: ctx.file_id,
-        });
+        }
+        .accumulate(db);
+        return None;
     }
 
     let first = &clauses[0];
@@ -686,14 +732,16 @@ fn check_select(
         );
         let typed_next = check_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
         if first_type != *typed_next.ty() {
-            return Err(TypeError::SelectBranchTypeMismatch {
+            TypeError::SelectBranchTypeMismatch {
                 expected: first_type.name(),
                 found: typed_next.ty().name(),
                 branch_index: i,
                 span: clause.expression_next.span(),
                 first_branch_span: first.expression_next.span(),
                 file_id: ctx.file_id,
-            });
+            }
+            .accumulate(db);
+            return None;
         }
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
@@ -703,7 +751,7 @@ fn check_select(
         });
     }
 
-    Ok(typed_ast::Expression::Select(
+    Some(typed_ast::Expression::Select(
         typed_ast::SelectExpression {
             clauses: typed_clauses,
             span,
@@ -721,22 +769,24 @@ fn check_if_else_expression(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     let typed_condition = check_boolean_condition(db, tables, condition, env, ctx)?;
     let typed_then = check_expression(db, tables, then_expr, env, ctx)?;
     let typed_else = check_expression(db, tables, else_expr, env, ctx)?;
 
     if typed_then.ty() != typed_else.ty() {
-        return Err(TypeError::TypeMismatch {
+        TypeError::TypeMismatch {
             expected: typed_then.ty().name(),
             found: typed_else.ty().name(),
             span: else_expr.span(),
             file_id: ctx.file_id,
-        });
+        }
+        .accumulate(db);
+        return None;
     }
 
     let ty = typed_then.ty().clone();
-    Ok(typed_ast::Expression::IfElse {
+    Some(typed_ast::Expression::IfElse {
         condition: Box::new(typed_condition),
         then_expr: Box::new(typed_then),
         else_expr: Box::new(typed_else),
@@ -753,15 +803,17 @@ fn check_struct_literal(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
-    let (definition, type_params) =
+) -> Option<typed_ast::Expression> {
+    let (definition, type_params) = push_err(
+        db,
         super::query::get_struct_fields(db, tables, struct_name, ctx.module_name).ok_or_else(
             || TypeError::UnsupportedType {
                 type_name: struct_name.to_string(),
                 span,
                 file_id: ctx.file_id,
             },
-        )?;
+        ),
+    )?;
 
     let mut seen = std::collections::HashSet::new();
     let mut typed_fields = Vec::new();
@@ -769,24 +821,29 @@ fn check_struct_literal(
 
     for (field_name, value_expr) in fields {
         if !seen.insert(field_name.clone()) {
-            return Err(TypeError::DuplicateField {
+            TypeError::DuplicateField {
                 struct_name: struct_name.to_string(),
                 field_name: field_name.clone(),
                 span: value_expr.span(),
                 file_id: ctx.file_id,
-            });
+            }
+            .accumulate(db);
+            return None;
         }
 
-        let declared_ast_type = definition
-            .iter()
-            .find(|(n, _)| n == field_name)
-            .map(|(_, t)| t.clone())
-            .ok_or_else(|| TypeError::UnknownField {
-                struct_name: struct_name.to_string(),
-                field_name: field_name.clone(),
-                span: value_expr.span(),
-                file_id: ctx.file_id,
-            })?;
+        let declared_ast_type = push_err(
+            db,
+            definition
+                .iter()
+                .find(|(n, _)| n == field_name)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| TypeError::UnknownField {
+                    struct_name: struct_name.to_string(),
+                    field_name: field_name.clone(),
+                    span: value_expr.span(),
+                    file_id: ctx.file_id,
+                }),
+        )?;
 
         let declared_type = super::constraints::resolve(
             db,
@@ -800,26 +857,30 @@ fn check_struct_literal(
         let typed_value = check_expression(db, tables, value_expr, env, ctx)?;
         if !TypeChecker::unify_type(&declared_type, typed_value.ty(), &mut subst) {
             let expected = TypeChecker::apply_subst(&declared_type, &subst);
-            return Err(TypeError::StructFieldTypeMismatch {
+            TypeError::StructFieldTypeMismatch {
                 struct_name: struct_name.to_string(),
                 field_name: field_name.clone(),
                 expected: expected.name(),
                 found: typed_value.ty().name(),
                 span: value_expr.span(),
                 file_id: ctx.file_id,
-            });
+            }
+            .accumulate(db);
+            return None;
         }
         typed_fields.push((field_name.clone(), typed_value));
     }
 
     for (required_field, _) in &definition {
         if !fields.iter().any(|(n, _)| n == required_field) {
-            return Err(TypeError::MissingField {
+            TypeError::MissingField {
                 struct_name: struct_name.to_string(),
                 field_name: required_field.clone(),
                 span,
                 file_id: ctx.file_id,
-            });
+            }
+            .accumulate(db);
+            return None;
         }
     }
 
@@ -847,7 +908,7 @@ fn check_struct_literal(
         RT::Parameterized(resolved_type_name, args)
     };
 
-    Ok(typed_ast::Expression::StructLiteral {
+    Some(typed_ast::Expression::StructLiteral {
         struct_name: struct_name.to_string(),
         fields: typed_fields,
         ty,
@@ -863,29 +924,34 @@ fn check_field_access(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
-) -> Result<typed_ast::Expression, TypeError> {
+) -> Option<typed_ast::Expression> {
     let typed_base = check_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     match base_type {
         RT::Struct(type_name) => {
-            let (definition, _) =
+            let (definition, _) = push_err(
+                db,
                 super::query::get_struct_fields(db, tables, &type_name.name, ctx.module_name)
                     .ok_or_else(|| TypeError::UnsupportedType {
                         type_name: type_name.name.clone(),
                         span,
                         file_id: ctx.file_id,
-                    })?;
-            let field_ast_type = definition
-                .iter()
-                .find(|(n, _)| n == field)
-                .map(|(_, t)| t.clone())
-                .ok_or_else(|| TypeError::UnknownField {
-                    struct_name: type_name.name.clone(),
-                    field_name: field.to_string(),
-                    span,
-                    file_id: ctx.file_id,
-                })?;
-            Ok(typed_ast::Expression::FieldAccess {
+                    }),
+            )?;
+            let field_ast_type = push_err(
+                db,
+                definition
+                    .iter()
+                    .find(|(n, _)| n == field)
+                    .map(|(_, t)| t.clone())
+                    .ok_or_else(|| TypeError::UnknownField {
+                        struct_name: type_name.name.clone(),
+                        field_name: field.to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            Some(typed_ast::Expression::FieldAccess {
                 base: Box::new(typed_base),
                 field: field.to_string(),
                 ty: super::constraints::resolve(
@@ -901,25 +967,30 @@ fn check_field_access(
             })
         }
         RT::Generic(name) => {
-            let (definition, _) =
+            let (definition, _) = push_err(
+                db,
                 super::query::get_struct_fields(db, tables, &name, ctx.module_name).ok_or_else(
                     || TypeError::UnsupportedType {
                         type_name: name.clone(),
                         span,
                         file_id: ctx.file_id,
                     },
-                )?;
-            let field_ast_type = definition
-                .iter()
-                .find(|(n, _)| n == field)
-                .map(|(_, t)| t.clone())
-                .ok_or_else(|| TypeError::UnknownField {
-                    struct_name: name.clone(),
-                    field_name: field.to_string(),
-                    span,
-                    file_id: ctx.file_id,
-                })?;
-            Ok(typed_ast::Expression::FieldAccess {
+                ),
+            )?;
+            let field_ast_type = push_err(
+                db,
+                definition
+                    .iter()
+                    .find(|(n, _)| n == field)
+                    .map(|(_, t)| t.clone())
+                    .ok_or_else(|| TypeError::UnknownField {
+                        struct_name: name.clone(),
+                        field_name: field.to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    }),
+            )?;
+            Some(typed_ast::Expression::FieldAccess {
                 base: Box::new(typed_base),
                 field: field.to_string(),
                 ty: super::constraints::resolve(
@@ -934,12 +1005,16 @@ fn check_field_access(
                 span,
             })
         }
-        other => Err(TypeError::TypeMismatch {
-            expected: "struct".to_string(),
-            found: other.name(),
-            span,
-            file_id: ctx.file_id,
-        }),
+        other => {
+            TypeError::TypeMismatch {
+                expected: "struct".to_string(),
+                found: other.name(),
+                span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+            None
+        }
     }
 }
 

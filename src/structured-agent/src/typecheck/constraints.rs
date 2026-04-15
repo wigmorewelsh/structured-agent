@@ -17,9 +17,9 @@ fn resolve_simple_name(
     type_params: &[TypeParam],
     span: Span,
     file_id: FileId,
-) -> Result<RT, TypeError> {
+) -> Option<RT> {
     if name == "Self" || type_params.iter().any(|tp| tp.name == name) {
-        return Ok(RT::Generic(name.to_string()));
+        return Some(RT::Generic(name.to_string()));
     }
     let interned_mod = module.intern(db);
     let interned_name = name.intern(db);
@@ -31,19 +31,27 @@ fn resolve_simple_name(
     match tables.types(db).get().get(&type_name) {
         Some(td) => match &td.kind {
             TypeDefinitionKind::Struct { .. } | TypeDefinitionKind::Primitive => {
-                Ok(RT::Struct(type_name))
+                Some(RT::Struct(type_name))
             }
-            _ => Err(TypeError::UnboundTypeParameter {
+            _ => {
+                TypeError::UnboundTypeParameter {
+                    name: name.to_string(),
+                    span,
+                    file_id,
+                }
+                .accumulate(db);
+                None
+            }
+        },
+        None => {
+            TypeError::UnboundTypeParameter {
                 name: name.to_string(),
                 span,
                 file_id,
-            }),
-        },
-        None => Err(TypeError::UnboundTypeParameter {
-            name: name.to_string(),
-            span,
-            file_id,
-        }),
+            }
+            .accumulate(db);
+            None
+        }
     }
 }
 
@@ -55,7 +63,7 @@ pub(super) fn resolve(
     type_params: &[TypeParam],
     span: Span,
     file_id: FileId,
-) -> Result<RT, TypeError> {
+) -> Option<RT> {
     match t {
         AstType { name, args } if args.is_empty() => {
             resolve_simple_name(db, tables, name, module, type_params, span, file_id)
@@ -73,7 +81,7 @@ pub(super) fn resolve(
                     TypeDefinitionKind::Native { .. } => {
                         let inner_rt =
                             resolve(db, tables, &args[0], module, type_params, span, file_id)?;
-                        Ok(RT::Parameterized(type_name, vec![inner_rt]))
+                        Some(RT::Parameterized(type_name, vec![inner_rt]))
                     }
                     TypeDefinitionKind::Struct {
                         generic_parameters, ..
@@ -81,27 +89,37 @@ pub(super) fn resolve(
                         let resolved_args: Vec<RT> = args
                             .iter()
                             .map(|a| resolve(db, tables, a, module, type_params, span, file_id))
-                            .collect::<Result<_, _>>()?;
+                            .collect::<Option<Vec<_>>>()?;
                         if resolved_args.len() != generic_parameters.len() {
-                            return Err(TypeError::UnboundTypeParameter {
+                            TypeError::UnboundTypeParameter {
                                 name: name.clone(),
                                 span,
                                 file_id,
-                            });
+                            }
+                            .accumulate(db);
+                            return None;
                         }
-                        Ok(RT::Parameterized(type_name, resolved_args))
+                        Some(RT::Parameterized(type_name, resolved_args))
                     }
-                    _ => Err(TypeError::UnboundTypeParameter {
+                    _ => {
+                        TypeError::UnboundTypeParameter {
+                            name: name.clone(),
+                            span,
+                            file_id,
+                        }
+                        .accumulate(db);
+                        None
+                    }
+                },
+                None => {
+                    TypeError::UnboundTypeParameter {
                         name: name.clone(),
                         span,
                         file_id,
-                    }),
-                },
-                None => Err(TypeError::UnboundTypeParameter {
-                    name: name.clone(),
-                    span,
-                    file_id,
-                }),
+                    }
+                    .accumulate(db);
+                    None
+                }
             }
         }
     }

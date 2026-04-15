@@ -71,7 +71,7 @@ mod tests {
     use nonempty::NonEmpty;
     use std::sync::Arc;
 
-    fn check(module: crate::ast::Module) -> Result<(), crate::typecheck::TypeError> {
+    fn check(module: crate::ast::Module) -> Result<(), Vec<crate::typecheck::TypeError>> {
         let parsed = crate::ast::ParsedModule {
             name: NonEmpty::new("test".to_string()),
             module,
@@ -116,10 +116,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnknownVariable { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnknownVariable { .. }));
     }
 
     #[test]
@@ -189,10 +187,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::ArgumentTypeMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::ArgumentTypeMismatch { .. }));
     }
 
     #[test]
@@ -225,10 +221,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::ArgumentCountMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::ArgumentCountMismatch { .. }));
     }
 
     #[test]
@@ -260,7 +254,7 @@ mod tests {
 
         let result = check(module);
         if let Err(ref e) = result {
-            println!("Error: {}", e);
+            println!("Error: {:?}", e);
         }
         assert!(result.is_ok());
     }
@@ -305,7 +299,7 @@ mod tests {
 
         let result = check(module);
         if let Err(ref e) = result {
-            println!("Error: {}", e);
+            println!("Error: {:?}", e);
         }
         assert!(result.is_ok());
     }
@@ -340,10 +334,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::VariableTypeMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::VariableTypeMismatch { .. }));
     }
 
     #[test]
@@ -367,10 +359,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::TypeMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::TypeMismatch { .. }));
     }
 
     #[test]
@@ -393,10 +383,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::TypeMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::TypeMismatch { .. }));
     }
 
     #[test]
@@ -415,10 +403,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::ReturnTypeMismatch { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::ReturnTypeMismatch { .. }));
     }
 
     #[test]
@@ -576,8 +562,9 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
+        let errors = result.unwrap_err();
         assert!(matches!(
-            result.unwrap_err(),
+            errors[0],
             TypeError::SelectBranchTypeMismatch { .. }
         ));
     }
@@ -660,10 +647,8 @@ mod tests {
 
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnknownVariable { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnknownVariable { .. }));
     }
 
     #[test]
@@ -710,7 +695,7 @@ mod tests {
         let result = check(module);
         // This should pass - the Boolean assignment in the if block should not affect outer scope
         if let Err(ref e) = result {
-            println!("Error: {}", e);
+            println!("Error: {:?}", e);
         }
         assert!(result.is_ok());
     }
@@ -795,7 +780,7 @@ mod tests {
 
         let result = check(module);
         if let Err(ref e) = result {
-            println!("Error: {}", e);
+            println!("Error: {:?}", e);
         }
         assert!(result.is_ok());
     }
@@ -870,10 +855,8 @@ mod tests {
             )))]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnboundTypeParameter { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnboundTypeParameter { .. }));
     }
 
     #[test]
@@ -927,10 +910,8 @@ mod tests {
             )))]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnsupportedType { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnsupportedType { .. }));
     }
 
     #[test]
@@ -956,10 +937,8 @@ mod tests {
         ]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnknownField { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnknownField { .. }));
     }
 
     #[test]
@@ -985,8 +964,9 @@ mod tests {
         ]);
         let result = check(module);
         assert!(result.is_err());
+        let errors = result.unwrap_err();
         assert!(matches!(
-            result.unwrap_err(),
+            errors[0],
             TypeError::StructFieldTypeMismatch { .. }
         ));
     }
@@ -997,9 +977,9 @@ mod tests {
         let stream =
             combine::stream::position::Stream::with_positioner(source, IndexPositioner::default());
         let (module, _) = parse_program(0).parse(stream).unwrap();
-        let err = check(module).unwrap_err();
-        let TypeError::MissingField { span, .. } = err else {
-            panic!("Expected MissingField, got {:?}", err);
+        let error = check(module).unwrap_err().into_iter().next().unwrap();
+        let TypeError::MissingField { span, .. } = error else {
+            panic!("Expected MissingField, got {:?}", error);
         };
         let literal = "Point { x: 1 }";
         let literal_start = source.find(literal).unwrap();
@@ -1042,10 +1022,8 @@ mod tests {
         ]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::MissingField { field_name, .. } if field_name == "y"
-        ));
+        let error = result.unwrap_err().into_iter().next().unwrap();
+        assert!(matches!(error, TypeError::MissingField { field_name, .. } if field_name == "y"));
     }
 
     #[test]
@@ -1092,10 +1070,8 @@ mod tests {
         ]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnknownField { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnknownField { .. }));
     }
 
     #[test]
@@ -1116,10 +1092,8 @@ mod tests {
             )))]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnsupportedType { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnsupportedType { .. }));
     }
 
     #[test]
@@ -1248,10 +1222,8 @@ mod tests {
         ]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::DuplicateField { field_name, .. } if field_name == "x"
-        ));
+        let error = result.unwrap_err().into_iter().next().unwrap();
+        assert!(matches!(error, TypeError::DuplicateField { field_name, .. } if field_name == "x"));
     }
 
     #[test]
@@ -1268,10 +1240,8 @@ mod tests {
         ))]);
         let result = check(module);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::UnboundTypeParameter { .. }
-        ));
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], TypeError::UnboundTypeParameter { .. }));
     }
 
     #[test]
@@ -1365,11 +1335,12 @@ mod tests {
             Definition::Function(Arc::new(caller)),
         ]);
         let result = check(module);
+        let errors = result.unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::ArgumentTypeMismatch { ref expected, ref found, .. })
+            matches!(&errors[0], TypeError::ArgumentTypeMismatch { expected, found, .. }
                 if expected == "List<T>" && found == "String"),
             "expected ArgumentTypeMismatch with concrete type names, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1523,10 +1494,11 @@ mod tests {
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(bad))]);
         let result = check(module);
+        let errors = result.unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
             "expected UnboundTypeParameter for unknown type variable, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1557,10 +1529,11 @@ mod tests {
         );
         let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let result = check(module);
+        let errors = result.unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
             "expected UnboundTypeParameter, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1571,10 +1544,11 @@ mod tests {
             vec![("value", AstType::simple("T"))],
         )]);
         let result = check(module);
+        let errors = result.unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::UnboundTypeParameter { ref name, .. }) if name == "T"),
+            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
             "expected UnboundTypeParameter for generic struct field, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1648,11 +1622,12 @@ mod tests {
             .unwrap()
             .0;
         let result = check(module);
+        let errors = result.unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::TraitBoundNotSatisfied { ref type_name, ref trait_name, .. })
+            matches!(&errors[0], TypeError::TraitBoundNotSatisfied { type_name, trait_name, .. }
                 if type_name == "String" && trait_name == "Add"),
             "String does not satisfy Add, expected TraitBoundNotSatisfied, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1684,12 +1659,12 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let result = check(module);
+        let errors = check(module).unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::TraitImplMissingFunction { ref function_name, .. })
+            matches!(&errors[0], TypeError::TraitImplMissingFunction { function_name, .. }
                 if function_name == "add"),
             "impl missing 'add' should be error, got {:?}",
-            result
+            errors
         );
     }
 
@@ -1703,11 +1678,11 @@ mod tests {
             ))
             .unwrap()
             .0;
-        let result = check(module);
+        let errors = check(module).unwrap_err();
         assert!(
-            matches!(result, Err(TypeError::UnknownTrait { ref name, .. }) if name == "NonExistent"),
+            matches!(&errors[0], TypeError::UnknownTrait { name, .. } if name == "NonExistent"),
             "impl for unknown trait should error, got {:?}",
-            result
+            errors
         );
     }
 }

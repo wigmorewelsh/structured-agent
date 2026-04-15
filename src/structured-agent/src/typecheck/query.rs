@@ -9,6 +9,7 @@ use crate::ast::{Expression, SigFunction, Type as AstType, TypeParam};
 use crate::typecheck::error::TypeError;
 use crate::types::Span;
 use nonempty::NonEmpty;
+
 use structured_agent_runtime::symbols::{
     FunctionName, FunctionNameKind, ModuleName, TypeDefinitionKind, TypeName, Visibility,
 };
@@ -65,8 +66,7 @@ pub(super) fn get_function_sig(
             &type_params_vec,
             Span::dummy(),
             0,
-        )
-        .ok()?;
+        )?;
         resolved_params.push(crate::typed_ast::Parameter {
             name: p.name.clone(),
             param_type,
@@ -86,8 +86,7 @@ pub(super) fn get_function_sig(
         &type_params_vec,
         Span::dummy(),
         0,
-    )
-    .ok()?;
+    )?;
 
     Some(FunctionSignature {
         parameters: resolved_params,
@@ -184,8 +183,7 @@ pub(super) fn resolve_impl_call(
     if arguments.is_empty() {
         return None;
     }
-    let first_arg =
-        super::elaboration::check_expression(db, tables, &arguments[0], env, ctx).ok()?;
+    let first_arg = super::elaboration::check_expression(db, tables, &arguments[0], env, ctx)?;
     let type_name = match first_arg.ty() {
         structured_agent_runtime::Type::Struct(tn) => tn.name.clone(),
         _ => return None,
@@ -224,9 +222,9 @@ pub(super) fn check_visibility(
     fn_name: &FunctionName,
     span: Span,
     ctx: &CheckContext,
-) -> Result<(), TypeError> {
+) -> Option<()> {
     if &fn_name.module == ctx.module_name {
-        return Ok(());
+        return Some(());
     }
     let interned = fn_name.intern(db);
     let is_visible = lookup_function_def(db, tables, interned)
@@ -234,12 +232,14 @@ pub(super) fn check_visibility(
         .unwrap_or(true);
 
     if is_visible {
-        Ok(())
+        Some(())
     } else {
-        Err(TypeError::PrivateFunction {
+        TypeError::PrivateFunction {
             name: format!("{}::{}", fn_name.module, fn_name.name),
             span,
             file_id: ctx.file_id,
-        })
+        }
+        .accumulate(db);
+        None
     }
 }

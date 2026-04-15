@@ -264,7 +264,7 @@ pub(super) fn check_module(
     db: &dyn TypeCheckDatabase,
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
-) -> Result<ArcPtr<typed_ast::Module>, super::error::TypeError> {
+) -> Option<ArcPtr<typed_ast::Module>> {
     let module_name = ModuleName::new(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
@@ -280,9 +280,9 @@ pub(super) fn check_module(
                 Definition::ModuleHeader { .. } | Definition::Signature(_)
             )
         })
-        .map(|def| super::elaboration::check_definition(db, tables, def, &ctx))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ArcPtr::new(typed_ast::Module {
+        .filter_map(|def| super::elaboration::check_definition(db, tables, def, &ctx))
+        .collect::<Vec<_>>();
+    Some(ArcPtr::new(typed_ast::Module {
         definitions: typed_definitions,
         span: module.span,
         file_id: parsed.file_id(db),

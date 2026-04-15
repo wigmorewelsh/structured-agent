@@ -195,15 +195,22 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let (typed_metadata, _) = checker
-            .check_modules(&modules, &self.modules)
-            .map_err(|e| {
-                error!("Type checking failed: {}", e);
-                if let Err(io_err) = tc_reporter.emit_type_error(&e) {
-                    eprintln!("Failed to emit type error: {}", io_err);
-                }
-                format!("Type error: {}", e)
-            })?;
+        let (typed_metadata, _) =
+            checker
+                .check_modules(&modules, &self.modules)
+                .map_err(|errors| {
+                    for e in &errors {
+                        error!("Type checking failed: {}", e);
+                        if let Err(io_err) = tc_reporter.emit_type_error(e) {
+                            eprintln!("Failed to emit type error: {}", io_err);
+                        }
+                    }
+                    errors
+                        .iter()
+                        .map(|e| format!("Type error: {}", e))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })?;
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
