@@ -1,4 +1,3 @@
-use super::TypeChecker;
 use super::constraints::Unifier;
 use super::db::{
     Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
@@ -6,9 +5,7 @@ use super::db::{
 };
 use super::error::OrAccumulateError;
 use super::{CheckContext, TypeEnvironment};
-use crate::ast::{
-    Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
-};
+use crate::ast::{Definition, Expression, Function, SelectClause, Statement};
 use crate::ensure_or_accumulate;
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
@@ -739,8 +736,12 @@ pub(super) fn elaborate_function(
     tables: SymbolTablesInput,
     func: &Function,
     ctx: &CheckContext,
+    self_type: Option<structured_agent_runtime::symbols::TypeName>,
 ) -> Option<typed_ast::Function> {
     let mut env = TypeEnvironment::with_type_params(&func.type_params);
+    if let Some(st) = self_type {
+        env.set_self_type(st);
+    }
     let module = ctx.module_name.clone();
     let mut typed_parameters = Vec::new();
     for param in &func.parameters {
@@ -1210,42 +1211,4 @@ fn elaborate_field_access(
         ty: field_ty,
         span,
     })
-}
-
-impl TypeChecker {
-    pub(super) fn substitute_self(ty: &AstType, concrete: &str) -> AstType {
-        if ty.name == "Self" {
-            AstType::simple(concrete)
-        } else {
-            AstType {
-                name: ty.name.clone(),
-                args: ty
-                    .args
-                    .iter()
-                    .map(|a| Self::substitute_self(a, concrete))
-                    .collect(),
-            }
-        }
-    }
-
-    pub(super) fn substitute_self_in_fn(func: &Function, concrete: &str) -> Function {
-        Function {
-            name: func.name.clone(),
-            parameters: func
-                .parameters
-                .iter()
-                .map(|p| Parameter {
-                    name: p.name.clone(),
-                    param_type: Self::substitute_self(&p.param_type, concrete),
-                    span: p.span,
-                })
-                .collect(),
-            return_type: Self::substitute_self(&func.return_type, concrete),
-            body: func.body.clone(),
-            documentation: func.documentation.clone(),
-            is_pub: func.is_pub,
-            span: func.span,
-            type_params: func.type_params.clone(),
-        }
-    }
 }

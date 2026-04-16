@@ -247,17 +247,19 @@ pub(super) fn get_function_sig<'db>(
             bounds: gp.constraints.clone(),
         })
         .collect();
-    let type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
+    let mut type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
+    if let Some(ct) = &concrete_type {
+        type_env.set_self_type(structured_agent_runtime::symbols::TypeName {
+            name: ct.clone(),
+            module: fn_name.module.clone(),
+        });
+    }
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {
-        let substituted = match &concrete_type {
-            Some(ct) => super::TypeChecker::substitute_self(&p.type_name, ct),
-            None => p.type_name.clone(),
-        };
         let param_type = super::constraints::resolve(
             db,
             tables,
-            &substituted,
+            &p.type_name,
             &fn_name.module,
             &type_env,
             Span::dummy(),
@@ -269,14 +271,10 @@ pub(super) fn get_function_sig<'db>(
             span: Span::dummy(),
         });
     }
-    let subst_return = match &concrete_type {
-        Some(ct) => super::TypeChecker::substitute_self(return_type, ct),
-        None => return_type.clone(),
-    };
     let resolved_return = super::constraints::resolve(
         db,
         tables,
-        &subst_return,
+        return_type,
         &fn_name.module,
         &type_env,
         Span::dummy(),
@@ -685,17 +683,24 @@ pub(super) fn elaborate_function_def<'db>(
                 module_name: &fn_def.name.module,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
-                db, tables, arc_fn, &ctx,
+                db, tables, arc_fn, &ctx, None,
             )?))
         }
         CheckerAstRef::ImplFunction(arc_fn, type_name_str, _) => {
-            let concrete = super::TypeChecker::substitute_self_in_fn(arc_fn, type_name_str);
+            let self_type = structured_agent_runtime::symbols::TypeName {
+                name: type_name_str.clone(),
+                module: fn_def.name.module.clone(),
+            };
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
                 module_name: &fn_def.name.module,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
-                db, tables, &concrete, &ctx,
+                db,
+                tables,
+                arc_fn,
+                &ctx,
+                Some(self_type),
             )?))
         }
         _ => None,

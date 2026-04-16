@@ -1,4 +1,3 @@
-use super::TypeChecker;
 use super::db::{ArcPtr, SymbolTablesInput, TypeCheckDb};
 use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation};
 use crate::ast::{Definition, Module, Parameter, ParsedModule, Type as AstType, TypeParam};
@@ -407,26 +406,22 @@ impl SymbolTableBuilder {
                     };
                     self.metadata.impls.insert(key, Arc::new(impl_entry));
                     for func in functions {
-                        let resolved_return =
-                            TypeChecker::substitute_self(&func.return_type, type_name);
-                        let impl_fn_key = {
-                            let mn = module_name.clone();
-                            FunctionName {
-                                name: func.name.to_string(),
-                                module: mn.clone(),
-                                kind: FunctionNameKind::Impl {
-                                    type_name: type_name.to_string(),
-                                    trait_name: trait_name.to_string(),
-                                },
-                            }
+                        let impl_fn_key = FunctionName {
+                            name: func.name.to_string(),
+                            module: module_name.clone(),
+                            kind: FunctionNameKind::Impl {
+                                type_name: type_name.to_string(),
+                                trait_name: trait_name.to_string(),
+                            },
+                        };
+                        let fn_type_name = TypeName {
+                            name: impl_fn_key.name.clone(),
+                            module: impl_fn_key.module.clone(),
                         };
                         let entry = FunctionDefinition {
                             name: impl_fn_key.clone(),
                             visibility: Visibility::Private,
-                            type_name: TypeName {
-                                name: resolved_return.name.clone(),
-                                module: module_name.clone(),
-                            },
+                            type_name: fn_type_name.clone(),
                             source_ref: SourceLocation(file_id, func.span),
                             ast_ref: CheckerAstRef::ImplFunction(
                                 Arc::clone(func),
@@ -437,6 +432,39 @@ impl SymbolTableBuilder {
                         };
                         self.metadata
                             .register_function(impl_fn_key, Arc::new(entry));
+
+                        let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
+                            .parameters
+                            .iter()
+                            .map(|p| ParameterDefinition {
+                                name: p.name.clone(),
+                                type_name: p.param_type.clone(),
+                            })
+                            .collect();
+                        let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> =
+                            func.type_params
+                                .iter()
+                                .map(|tp| GenericParameterDefinition {
+                                    name: tp.name.clone(),
+                                    constraints: tp.bounds.clone(),
+                                })
+                                .collect();
+                        let fn_type_def = TypeDefinition {
+                            name: fn_type_name.clone(),
+                            kind: TypeDefinitionKind::Function {
+                                parameters: fn_parameters,
+                                generic_parameters: fn_generic_parameters,
+                                return_type: func.return_type.clone(),
+                            },
+                            source_ref: SourceLocation(file_id, func.span),
+                            ast_ref: CheckerAstRef::ImplFunction(
+                                Arc::clone(func),
+                                type_name.to_string(),
+                                FunctionKind::Bytecode,
+                            ),
+                        };
+                        self.metadata
+                            .register_type(fn_type_name, Arc::new(fn_type_def));
                     }
                 }
             }

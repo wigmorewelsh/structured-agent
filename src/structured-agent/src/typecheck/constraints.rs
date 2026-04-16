@@ -65,6 +65,12 @@ pub(super) fn resolve(
 ) -> Option<RT> {
     let AstType { name, args } = t;
 
+    if name == "Self" {
+        if let Some(ref self_type) = env.self_type {
+            return Some(RT::Struct(self_type.clone()));
+        }
+    }
+
     if env.lookup_type_param(name) {
         return Some(RT::Generic(name.to_string()));
     }
