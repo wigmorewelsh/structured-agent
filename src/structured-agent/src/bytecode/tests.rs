@@ -920,7 +920,6 @@ mod vm_execution_tests {
     }
 
     fn ast_type_to_rt(t: &crate::ast::Type) -> structured_agent_runtime::Type {
-        use crate::ast::Type as AT;
         use nonempty::NonEmpty;
         use structured_agent_runtime::Type as RT;
         use structured_agent_runtime::symbols::{ModuleName, TypeName};

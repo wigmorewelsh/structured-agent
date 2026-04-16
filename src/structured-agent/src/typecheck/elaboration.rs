@@ -1,23 +1,19 @@
 use super::TypeChecker;
+use super::constraints::Unifier;
 use super::db::{
-    Intern, InternedTraitName, InternedTypeName, SymbolTablesInput, TypeCheckDatabase,
-    find_trait_for_impl_call, get_function_sig, get_struct_fields, get_trait_functions,
-    lookup_function_def, lookup_impl_exists, resolve_function_call, resolve_type_alias,
+    Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
+    lookup_function_def, resolve_function_call, resolve_type_alias,
 };
-use super::{CheckContext, FunctionSignature, TypeEnvironment};
+use super::{CheckContext, TypeEnvironment};
 use crate::ast::{
     Definition, Expression, Function, Parameter, SelectClause, Statement, Type as AstType,
 };
 use crate::typecheck::error::TypeError;
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
-use nonempty::NonEmpty;
 
-use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, ModuleName, TypeName, Visibility,
-};
+use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, TypeName, Visibility};
 
 fn accumulate_err<T>(db: &dyn TypeCheckDatabase, result: Result<T, TypeError>) -> Option<T> {
     match result {
@@ -79,37 +75,7 @@ pub(super) fn check_definition(
         | Definition::ModuleBinding { .. }
         | Definition::WiringSite { .. }
         | Definition::Trait(_) => Some(()),
-        Definition::TraitImpl(t) => {
-            let trait_fns = get_trait_functions(db, tables, &t.trait_name, ctx.module_name);
-            if let Some(trait_fns) = trait_fns {
-                for trait_fn in &trait_fns {
-                    if !t.functions.iter().any(|f| f.name == trait_fn.name) {
-                        TypeError::TraitImplMissingFunction {
-                            type_name: t.type_name.clone(),
-                            trait_name: t.trait_name.clone(),
-                            function_name: trait_fn.name.clone(),
-                            span: t.span,
-                            file_id: ctx.file_id,
-                        }
-                        .accumulate(db);
-                        return None;
-                    }
-                }
-            } else {
-                TypeError::UnknownTrait {
-                    name: t.trait_name.clone(),
-                    span: t.span,
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
-            for func in &t.functions {
-                let concrete = TypeChecker::substitute_self_in_fn(func, &t.type_name);
-                check_function(db, tables, &concrete, ctx)?;
-            }
-            Some(())
-        }
+        Definition::TraitImpl(_t) => Some(()),
         Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
     }
 }
@@ -403,7 +369,6 @@ fn synthesize_call(
                 let interned = fn_name.clone().intern(db);
                 get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
             })
-            .or_else(|| resolve_impl_call_synth(db, tables, function, arguments, env, ctx))
             .ok_or_else(|| TypeError::UnknownFunction {
                 name: function.to_string(),
                 span,
@@ -413,12 +378,10 @@ fn synthesize_call(
 
     check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
 
-    let (return_type, parameters, type_params) = (sig.return_type, sig.parameters, sig.type_params);
-
-    if arguments.len() != parameters.len() {
+    if arguments.len() != sig.parameters.len() {
         TypeError::ArgumentCountMismatch {
             function: function.to_string(),
-            expected: parameters.len(),
+            expected: sig.parameters.len(),
             found: arguments.len(),
             span,
             file_id: ctx.file_id,
@@ -427,72 +390,32 @@ fn synthesize_call(
         return None;
     }
 
-    if type_params.is_empty() {
-        for (arg, param) in arguments.iter().zip(&parameters) {
-            if matches!(arg, Expression::Placeholder { .. }) {
-                continue;
-            }
-            check_expression(db, tables, arg, &param.param_type, env, ctx)?;
+    let mut unifier = Unifier::new();
+    for (arg, param) in arguments.iter().zip(&sig.parameters) {
+        if matches!(arg, Expression::Placeholder { .. }) {
+            continue;
         }
-        Some(return_type)
-    } else {
-        let mut subst: HashMap<String, RT> = HashMap::new();
-        for (arg, param) in arguments.iter().zip(&parameters) {
-            if matches!(arg, Expression::Placeholder { .. }) {
-                continue;
+        let arg_ty = synthesize_expression(db, tables, arg, env, ctx)?;
+        if let Err(expected) = unifier.unify_type(&param.param_type, &arg_ty) {
+            TypeError::ArgumentTypeMismatch {
+                function: function.to_string(),
+                parameter: param.name.clone(),
+                expected: expected.name(),
+                found: arg_ty.name(),
+                span: arg.span(),
+                file_id: ctx.file_id,
             }
-            let arg_ty = synthesize_expression(db, tables, arg, env, ctx)?;
-            if !TypeChecker::unify_type(&param.param_type, &arg_ty, &mut subst) {
-                let expected = TypeChecker::apply_subst(&param.param_type, &subst);
-                TypeError::ArgumentTypeMismatch {
-                    function: function.to_string(),
-                    parameter: param.name.clone(),
-                    expected: expected.name(),
-                    found: arg_ty.name(),
-                    span: arg.span(),
-                    file_id: ctx.file_id,
-                }
-                .accumulate(db);
-                return None;
-            }
+            .accumulate(db);
+            return None;
         }
-        for tp in &type_params {
-            if tp.bounds.is_empty() {
-                continue;
-            }
-            if let Some(concrete) = subst.get(&tp.name) {
-                let type_name = match concrete {
-                    RT::Struct(n) => n.name.as_str(),
-                    _ => continue,
-                };
-                for bound in &tp.bounds {
-                    let trait_name = bound.name.as_str();
-                    let tn = TypeName {
-                        name: type_name.to_string(),
-                        module: ModuleName::new(NonEmpty::new(String::new())),
-                    };
-                    let trn = TypeName {
-                        name: trait_name.to_string(),
-                        module: ModuleName::new(NonEmpty::new(String::new())),
-                    };
-                    let type_key = InternedTypeName::new(db, tn);
-                    let trait_key = InternedTraitName::new(db, trn);
-                    if !lookup_impl_exists(db, tables, type_key, trait_key) {
-                        TypeError::TraitBoundNotSatisfied {
-                            type_name: type_name.to_string(),
-                            trait_name: trait_name.to_string(),
-                            param_name: tp.name.clone(),
-                            span,
-                            file_id: ctx.file_id,
-                        }
-                        .accumulate(db);
-                        return None;
-                    }
-                }
-            }
-        }
-        Some(TypeChecker::apply_subst(&return_type, &subst))
     }
+    for tp in &sig.type_params {
+        if tp.bounds.is_empty() {
+            continue;
+        }
+        unimplemented!("Removed a old impl was hacky as hell");
+    }
+    Some(unifier.apply_subst(&sig.return_type))
 }
 
 fn synthesize_list_literal(
@@ -619,7 +542,7 @@ fn synthesize_struct_literal(
         }),
     )?;
     let mut seen = std::collections::HashSet::new();
-    let mut subst: HashMap<String, RT> = HashMap::new();
+    let mut unifier = Unifier::new();
     for (field_name, value_expr) in fields {
         if !seen.insert(field_name.clone()) {
             TypeError::DuplicateField {
@@ -654,8 +577,7 @@ fn synthesize_struct_literal(
             ctx.file_id,
         )?;
         let value_type = synthesize_expression(db, tables, value_expr, env, ctx)?;
-        if !TypeChecker::unify_type(&declared_type, &value_type, &mut subst) {
-            let expected = TypeChecker::apply_subst(&declared_type, &subst);
+        if let Err(expected) = unifier.unify_type(&declared_type, &value_type) {
             TypeError::StructFieldTypeMismatch {
                 struct_name: struct_name.to_string(),
                 field_name: field_name.clone(),
@@ -694,7 +616,7 @@ fn synthesize_struct_literal(
         let args: Vec<RT> = type_params
             .iter()
             .map(|tp| {
-                subst
+                unifier
                     .get(&tp.name)
                     .cloned()
                     .unwrap_or_else(|| RT::Generic(tp.name.clone()))
@@ -795,46 +717,6 @@ fn synthesize_field_access(
         }
     }
 }
-
-fn resolve_impl_call_synth(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    fn_name: &str,
-    arguments: &[Expression],
-    env: &TypeEnvironment,
-    ctx: &CheckContext,
-) -> Option<(FunctionName, FunctionSignature)> {
-    if arguments.is_empty() {
-        return None;
-    }
-    let first_type = synthesize_expression(db, tables, &arguments[0], env, ctx)?;
-    let type_name = match first_type {
-        RT::Struct(tn) => tn.name.clone(),
-        _ => return None,
-    };
-    let interned_fn = fn_name.intern(db);
-    let interned_type = InternedTypeName::new(
-        db,
-        TypeName {
-            name: type_name.clone(),
-            module: ModuleName::new(NonEmpty::new(String::new())),
-        },
-    );
-    let interned_trait = find_trait_for_impl_call(db, tables, interned_fn, interned_type)?;
-    let trait_key_name = interned_trait.name(db);
-    let impl_fn_name = FunctionName {
-        name: fn_name.to_string(),
-        module: ctx.module_name.clone(),
-        kind: FunctionNameKind::Impl {
-            type_name,
-            trait_name: trait_key_name.name,
-        },
-    };
-    let interned = impl_fn_name.clone().intern(db);
-    let sig_arc = get_function_sig(db, tables, interned)?;
-    Some((impl_fn_name, sig_arc.get().clone()))
-}
-
 fn check_visibility(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -1108,88 +990,32 @@ fn elaborate_call(
         .and_then(|fn_name| {
             let interned = fn_name.clone().intern(db);
             get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
-        })
-        .or_else(|| {
-            if arguments.is_empty() {
-                return None;
-            }
-            let first_typed = elaborate_expression(db, tables, &arguments[0], env, ctx)?;
-            let type_name = match first_typed.ty() {
-                RT::Struct(tn) => tn.name.clone(),
-                _ => return None,
-            };
-            let interned_fn2 = function.intern(db);
-            let interned_type = InternedTypeName::new(
-                db,
-                TypeName {
-                    name: type_name.clone(),
-                    module: ModuleName::new(NonEmpty::new(String::new())),
-                },
-            );
-            let interned_trait = find_trait_for_impl_call(db, tables, interned_fn2, interned_type)?;
-            let trait_key_name = interned_trait.name(db);
-            let impl_fn_name = FunctionName {
-                name: function.to_string(),
-                module: ctx.module_name.clone(),
-                kind: FunctionNameKind::Impl {
-                    type_name,
-                    trait_name: trait_key_name.name,
-                },
-            };
-            let interned = impl_fn_name.clone().intern(db);
-            let sig_arc = get_function_sig(db, tables, interned)?;
-            Some((impl_fn_name, sig_arc.get().clone()))
         })?;
-
-    let (kind, return_type, parameters, type_params) =
-        (sig.kind, sig.return_type, sig.parameters, sig.type_params);
 
     let mut typed_args = Vec::new();
 
-    if type_params.is_empty() {
-        for (arg, param) in arguments.iter().zip(&parameters) {
-            if matches!(arg, Expression::Placeholder { .. }) {
-                typed_args.push(typed_ast::Expression::Placeholder {
-                    ty: param.param_type.clone(),
-                    span: arg.span(),
-                });
-                continue;
-            }
-            let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
-            typed_args.push(typed_arg);
+    let mut unifier = Unifier::new();
+    for (arg, param) in arguments.iter().zip(&sig.parameters) {
+        if matches!(arg, Expression::Placeholder { .. }) {
+            typed_args.push(typed_ast::Expression::Placeholder {
+                ty: param.param_type.clone(),
+                span: arg.span(),
+            });
+            continue;
         }
-        Some(typed_ast::Expression::Call {
-            function: function.to_string(),
-            resolved: resolved_fn_name,
-            kind,
-            arguments: typed_args,
-            ty: return_type,
-            span,
-        })
-    } else {
-        let mut subst: HashMap<String, RT> = HashMap::new();
-        for (arg, param) in arguments.iter().zip(&parameters) {
-            if matches!(arg, Expression::Placeholder { .. }) {
-                typed_args.push(typed_ast::Expression::Placeholder {
-                    ty: param.param_type.clone(),
-                    span: arg.span(),
-                });
-                continue;
-            }
-            let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
-            TypeChecker::unify_type(&param.param_type, typed_arg.ty(), &mut subst);
-            typed_args.push(typed_arg);
-        }
-        let resolved_return = TypeChecker::apply_subst(&return_type, &subst);
-        Some(typed_ast::Expression::Call {
-            function: function.to_string(),
-            resolved: resolved_fn_name,
-            kind,
-            arguments: typed_args,
-            ty: resolved_return,
-            span,
-        })
+        let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
+        let _ = unifier.unify_type(&param.param_type, typed_arg.ty());
+        typed_args.push(typed_arg);
     }
+    let resolved_return = unifier.apply_subst(&sig.return_type);
+    Some(typed_ast::Expression::Call {
+        function: function.to_string(),
+        resolved: resolved_fn_name,
+        kind: sig.kind,
+        arguments: typed_args,
+        ty: resolved_return,
+        span,
+    })
 }
 
 fn elaborate_list_literal(
@@ -1307,7 +1133,7 @@ fn elaborate_struct_literal(
 ) -> Option<typed_ast::Expression> {
     let (definition, type_params) = get_struct_fields(db, tables, struct_name, ctx.module_name)?;
     let mut typed_fields = Vec::new();
-    let mut subst: HashMap<String, RT> = HashMap::new();
+    let mut unifier = Unifier::new();
     for (field_name, value_expr) in fields {
         let declared_ast_type = definition
             .iter()
@@ -1323,7 +1149,7 @@ fn elaborate_struct_literal(
             ctx.file_id,
         )?;
         let typed_value = elaborate_expression(db, tables, value_expr, env, ctx)?;
-        TypeChecker::unify_type(&declared_type, typed_value.ty(), &mut subst);
+        let _ = unifier.unify_type(&declared_type, typed_value.ty());
         typed_fields.push((field_name.clone(), typed_value));
     }
     let resolved_type_name = {
@@ -1340,7 +1166,7 @@ fn elaborate_struct_literal(
         let args: Vec<RT> = type_params
             .iter()
             .map(|tp| {
-                subst
+                unifier
                     .get(&tp.name)
                     .cloned()
                     .unwrap_or_else(|| RT::Generic(tp.name.clone()))

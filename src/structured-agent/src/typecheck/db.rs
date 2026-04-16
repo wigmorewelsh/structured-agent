@@ -2,7 +2,7 @@ use super::refs::{
     CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef,
     TypedRefs,
 };
-use crate::ast::{Definition, Module as AstModule, SigFunction, Type as AstType, TypeParam};
+use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam};
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -215,55 +215,6 @@ pub(super) fn lookup_type_def<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn lookup_trait_def<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    key: InternedTraitName<'db>,
-) -> Option<ArcPtr<TypeDefinition<CheckerRefs>>> {
-    let name = key.name(db);
-    let type_name = TypeName {
-        name: name.name,
-        module: name.module,
-    };
-    tables
-        .types(db)
-        .get()
-        .get(&type_name)
-        .filter(|td| matches!(td.kind, TypeDefinitionKind::Trait { .. }))
-        .map(|arc| ArcPtr::from_arc(arc.clone()))
-}
-
-#[salsa::tracked]
-pub(super) fn lookup_impl_exists<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    type_name: InternedTypeName<'db>,
-    trait_name: InternedTraitName<'db>,
-) -> bool {
-    let tn = type_name.name(db);
-    let trn = trait_name.name(db);
-    tables
-        .impls(db)
-        .get()
-        .keys()
-        .any(|k| k.type_name == tn.name && k.trait_name == trn.name)
-}
-
-#[salsa::tracked]
-pub(super) fn lookup_impl_def<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    key: InternedImplKey<'db>,
-) -> Option<ModuleName> {
-    let impl_key = key.key(db);
-    tables
-        .impls(db)
-        .get()
-        .get(&impl_key)
-        .map(|d| d.module.clone())
-}
-
-#[salsa::tracked]
 pub(super) fn get_function_sig<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -367,33 +318,6 @@ pub(super) fn get_struct_fields(
     })
 }
 
-pub(super) fn get_trait_functions(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    name: &str,
-    current_module: &ModuleName,
-) -> Option<Vec<SigFunction>> {
-    let interned_mod = current_module.intern(db);
-    let interned_name = name.intern(db);
-    let resolved =
-        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-            name: name.to_string(),
-            module: current_module.clone(),
-        });
-    let trait_type_name = TypeName {
-        name: resolved.name,
-        module: resolved.module,
-    };
-    let key = InternedTraitName::new(db, trait_type_name);
-    lookup_trait_def(db, tables, key).and_then(|arc_ptr| {
-        if let CheckerAstRef::Trait(t) = &arc_ptr.get().ast_ref {
-            Some(t.functions.clone())
-        } else {
-            None
-        }
-    })
-}
-
 #[salsa::tracked]
 pub(super) fn check_module(
     db: &dyn TypeCheckDatabase,
@@ -414,39 +338,6 @@ pub(super) fn check_module(
     }) {
         super::elaboration::check_definition(db, tables, def, &ctx);
     }
-}
-
-#[salsa::tracked]
-pub(super) fn find_trait_for_impl_call<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    fn_name: InternedString<'db>,
-    type_name: InternedTypeName<'db>,
-) -> Option<InternedTraitName<'db>> {
-    for (type_key, type_def) in tables.types(db).get() {
-        let TypeDefinitionKind::Trait { .. } = &type_def.kind else {
-            continue;
-        };
-        let CheckerAstRef::Trait(ast_trait) = &type_def.ast_ref else {
-            continue;
-        };
-        if ast_trait
-            .functions
-            .iter()
-            .any(|f| f.name == fn_name.value(db))
-        {
-            let trait_name = TypeName {
-                name: type_key.name.clone(),
-                module: type_key.module.clone(),
-            };
-            let interned_type = InternedTypeName::new(db, type_name.name(db).clone());
-            let interned_trait = InternedTraitName::new(db, trait_name.clone());
-            if lookup_impl_exists(db, tables, interned_type, interned_trait) {
-                return Some(InternedTraitName::new(db, trait_name));
-            }
-        }
-    }
-    None
 }
 
 #[salsa::tracked]
