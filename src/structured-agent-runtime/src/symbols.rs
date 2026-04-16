@@ -42,6 +42,7 @@ pub trait SymbolQuery {
     fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
 }
 
+#[derive(Clone)]
 pub struct MetaData<R: References> {
     pub modules: HashMap<ModuleName, Arc<ModuleDefinition<R>>>,
     pub functions: HashMap<FunctionName, Arc<FunctionDefinition<R>>>,

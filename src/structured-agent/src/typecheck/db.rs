@@ -1,4 +1,7 @@
-use super::refs::{CheckerAstRef, CheckerRefs, FunctionKind};
+use super::refs::{
+    CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef,
+    TypedRefs,
+};
 use crate::ast::{Definition, Module as AstModule, SigFunction, Type as AstType, TypeParam};
 use crate::typed_ast;
 use crate::types::{FileId, Span};
@@ -8,8 +11,9 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    FunctionDefinition, FunctionName, FunctionNameKind, ImplDefinition, ImplKey, ModuleDefinition,
-    ModuleName, TypeDefinition, TypeDefinitionKind, TypeName,
+    FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
+    GenericParameterDefinition, ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName,
+    ParameterDefinition, SignatureEntry, TypeDefinition, TypeDefinitionKind, TypeName,
 };
 
 #[salsa::db]
@@ -413,36 +417,6 @@ pub(super) fn check_module(
 }
 
 #[salsa::tracked]
-pub(super) fn elaborate_module(
-    db: &dyn TypeCheckDatabase,
-    parsed: ParsedModuleInput,
-    tables: SymbolTablesInput,
-) -> ArcPtr<typed_ast::Module> {
-    let module_name = ModuleName::new(parsed.name(db));
-    let module = parsed.module(db);
-    let ctx = super::CheckContext {
-        file_id: parsed.file_id(db),
-        module_name: &module_name,
-    };
-    let definitions = module
-        .definitions
-        .iter()
-        .filter(|def| {
-            !matches!(
-                def,
-                Definition::ModuleHeader { .. } | Definition::Signature(_)
-            )
-        })
-        .filter_map(|def| super::elaboration::elaborate_definition(db, tables, def, &ctx))
-        .collect();
-    ArcPtr::new(typed_ast::Module {
-        definitions,
-        span: module.span,
-        file_id: parsed.file_id(db),
-    })
-}
-
-#[salsa::tracked]
 pub(super) fn find_trait_for_impl_call<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -704,4 +678,218 @@ pub(super) fn resolve_function_call<'db>(
 ) -> Option<FunctionName> {
     resolve_function_alias(db, tables, current_module, symbol)
         .or_else(|| resolve_function_in_module(db, tables, current_module, symbol))
+}
+
+pub(super) fn ast_type_to_type_name(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    ty: &AstType,
+    module_name: &ModuleName,
+) -> TypeName {
+    let interned_mod = module_name.intern(db);
+    let interned_name = ty.name.clone().intern(db);
+    resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
+        name: ty.name.clone(),
+        module: module_name.clone(),
+    })
+}
+
+fn convert_generic_params(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    generic_parameters: &[GenericParameterDefinition<super::refs::CheckerRefs>],
+    module: &ModuleName,
+) -> Vec<GenericParameterDefinition<TypedRefs>> {
+    generic_parameters
+        .iter()
+        .map(|gp| GenericParameterDefinition {
+            name: gp.name.clone(),
+            constraints: gp
+                .constraints
+                .iter()
+                .map(|c| ast_type_to_type_name(db, tables, c, module))
+                .collect(),
+        })
+        .collect()
+}
+
+fn convert_type_kind(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    kind: &TypeDefinitionKind<super::refs::CheckerRefs>,
+    module: &ModuleName,
+) -> TypeDefinitionKind<TypedRefs> {
+    match kind {
+        TypeDefinitionKind::Struct {
+            fields,
+            generic_parameters,
+        } => TypeDefinitionKind::Struct {
+            fields: fields
+                .iter()
+                .map(|f| FieldDefinition {
+                    name: f.name.clone(),
+                    type_name: ast_type_to_type_name(db, tables, &f.type_name, module),
+                })
+                .collect(),
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+        },
+        TypeDefinitionKind::Function {
+            parameters,
+            generic_parameters,
+            return_type,
+        } => TypeDefinitionKind::Function {
+            parameters: parameters
+                .iter()
+                .map(|p| ParameterDefinition {
+                    name: p.name.clone(),
+                    type_name: ast_type_to_type_name(db, tables, &p.type_name, module),
+                })
+                .collect(),
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+            return_type: ast_type_to_type_name(db, tables, return_type, module),
+        },
+        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
+            entries: entries
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
+                })
+                .collect(),
+        },
+        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
+            functions: functions
+                .iter()
+                .map(|e| SignatureEntry {
+                    name: e.name.clone(),
+                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
+                })
+                .collect(),
+            witness_ref: NoWitness,
+        },
+        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+        TypeDefinitionKind::Native {
+            generic_parameters,
+            factory,
+        } => TypeDefinitionKind::Native {
+            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+            factory: factory.clone(),
+        },
+    }
+}
+
+#[salsa::tracked]
+pub(super) fn elaborate_function_def<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    name: InternedFunctionName<'db>,
+) -> Option<ArcPtr<typed_ast::Function>> {
+    let fn_def_ptr = lookup_function_def(db, tables, name)?;
+    let fn_def = fn_def_ptr.get();
+    match &fn_def.ast_ref {
+        CheckerAstRef::Function(arc_fn, _) => {
+            let ctx = super::CheckContext {
+                file_id: fn_def.source_ref.0,
+                module_name: &fn_def.name.module,
+            };
+            Some(ArcPtr::new(super::elaboration::elaborate_function(
+                db, tables, arc_fn, &ctx,
+            )?))
+        }
+        CheckerAstRef::ImplFunction(arc_fn, type_name_str, _) => {
+            let concrete = super::TypeChecker::substitute_self_in_fn(arc_fn, type_name_str);
+            let ctx = super::CheckContext {
+                file_id: fn_def.source_ref.0,
+                module_name: &fn_def.name.module,
+            };
+            Some(ArcPtr::new(super::elaboration::elaborate_function(
+                db, tables, &concrete, &ctx,
+            )?))
+        }
+        _ => None,
+    }
+}
+
+#[salsa::tracked]
+pub(super) fn elaborate_metadata(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+) -> ArcPtr<MetaData<TypedRefs>> {
+    let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
+
+    for fn_def in tables.functions(db).get().values() {
+        let interned_name = (&fn_def.name).intern(db);
+        let typed_ast_ref = match &fn_def.ast_ref {
+            CheckerAstRef::Function(_, kind) => {
+                match elaborate_function_def(db, tables, interned_name) {
+                    Some(ptr) => TypedCheckerAstRef::Function(Arc::clone(&ptr.0), kind.clone()),
+                    None => TypedCheckerAstRef::Other(fn_def.ast_ref.clone()),
+                }
+            }
+            CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
+                match elaborate_function_def(db, tables, interned_name) {
+                    Some(ptr) => TypedCheckerAstRef::ImplFunction(
+                        Arc::clone(&ptr.0),
+                        type_name_str.clone(),
+                        kind.clone(),
+                    ),
+                    None => TypedCheckerAstRef::Other(fn_def.ast_ref.clone()),
+                }
+            }
+            other => TypedCheckerAstRef::Other(other.clone()),
+        };
+        let typed_fn_def = FunctionDefinition {
+            name: fn_def.name.clone(),
+            visibility: fn_def.visibility.clone(),
+            type_name: fn_def.type_name.clone(),
+            source_ref: SourceLocation(fn_def.source_ref.0, fn_def.source_ref.1),
+            ast_ref: typed_ast_ref,
+            body_ref: None,
+        };
+        typed_metadata
+            .functions
+            .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
+    }
+
+    for type_def in tables.types(db).get().values() {
+        let kind = convert_type_kind(db, tables, &type_def.kind, &type_def.name.module);
+        let new_def = TypeDefinition {
+            name: type_def.name.clone(),
+            kind,
+            source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
+            ast_ref: TypedCheckerAstRef::Other(type_def.ast_ref.clone()),
+        };
+        typed_metadata
+            .types
+            .insert(type_def.name.clone(), Arc::new(new_def));
+    }
+
+    for (impl_key, impl_def) in tables.impls(db).get() {
+        let new_def = ImplDefinition {
+            key: impl_def.key.clone(),
+            module: impl_def.module.clone(),
+            source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
+            ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
+        };
+        typed_metadata
+            .impls
+            .insert(impl_key.clone(), Arc::new(new_def));
+    }
+
+    for (module_key, module_def) in tables.modules(db).get() {
+        let new_def = ModuleDefinition {
+            name: module_def.name.clone(),
+            visibility: module_def.visibility.clone(),
+            is_entry: module_def.is_entry,
+            exports: module_def.exports.clone(),
+            source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
+            ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
+            use_imports: module_def.use_imports.clone(),
+        };
+        typed_metadata
+            .modules
+            .insert(module_key.clone(), Arc::new(new_def));
+    }
+
+    ArcPtr::new(typed_metadata)
 }

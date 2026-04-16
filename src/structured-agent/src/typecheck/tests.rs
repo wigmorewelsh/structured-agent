@@ -188,7 +188,7 @@ mod tests {
         let result = check(module);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(errors[0], TypeError::ArgumentTypeMismatch { .. }));
+        assert!(matches!(errors[0], TypeError::TypeMismatch { .. }));
     }
 
     #[test]
@@ -563,10 +563,7 @@ mod tests {
         let result = check(module);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(
-            errors[0],
-            TypeError::SelectBranchTypeMismatch { .. }
-        ));
+        assert!(matches!(errors[0], TypeError::TypeMismatch { .. }));
     }
 
     #[test]
@@ -1705,7 +1702,7 @@ mod typed_ast_tests {
             is_entry: false,
             file_id: 0,
         };
-        let (typed_metadata, _) = TypeChecker::new()
+        let typed_metadata = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let definitions = typed_metadata
@@ -2605,7 +2602,7 @@ mod metadata_query_tests {
             is_entry: true,
             file_id: 0,
         };
-        let (metadata, _) = TypeChecker::new()
+        let metadata = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         metadata
@@ -2729,7 +2726,7 @@ mod metadata_query_tests {
             is_entry: true,
             file_id: 0,
         };
-        let (metadata, _) = TypeChecker::new()
+        let metadata = TypeChecker::new()
             .check_modules(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let type_name = TypeName {

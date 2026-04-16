@@ -18,20 +18,14 @@ pub use refs::{
     NoWitness, PrimitiveRefs, SourceLocation, TypedCheckerAstRef, TypedRefs,
 };
 
-use crate::ast::{ParsedModule, Type as AstType, TypeParam};
-use crate::typed_ast;
+use crate::ast::{ParsedModule, TypeParam};
 use crate::types::{FileId, Span};
 use collection::SymbolTableBuilder;
-use db::{Intern, ParsedModuleInput, SymbolTablesInput, TypeCheckDatabase, TypeCheckDb};
-use nonempty::NonEmpty;
+use db::{ParsedModuleInput, SymbolTablesInput, TypeCheckDb};
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{
-    FieldDefinition, FunctionDefinition, GenericParameterDefinition, ImplDefinition, MetaData,
-    ModuleDefinition, ModuleName, ParameterDefinition, SignatureEntry, TypeDefinition,
-    TypeDefinitionKind, TypeName,
-};
+use structured_agent_runtime::symbols::{MetaData, ModuleName};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
@@ -58,107 +52,9 @@ pub(super) struct CheckContext<'a> {
     pub(super) module_name: &'a ModuleName,
 }
 
-pub(super) fn ast_type_to_type_name(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    ty: &AstType,
-    module_name: &ModuleName,
-) -> TypeName {
-    let interned_mod = module_name.intern(db);
-    let interned_name = ty.name.clone().intern(db);
-    db::resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-        name: ty.name.clone(),
-        module: module_name.clone(),
-    })
-}
-
 impl Default for TypeChecker {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn convert_generic_params(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    generic_parameters: &[GenericParameterDefinition<refs::CheckerRefs>],
-    module: &ModuleName,
-) -> Vec<GenericParameterDefinition<refs::TypedRefs>> {
-    generic_parameters
-        .iter()
-        .map(|gp| GenericParameterDefinition {
-            name: gp.name.clone(),
-            constraints: gp
-                .constraints
-                .iter()
-                .map(|c| ast_type_to_type_name(db, tables, c, module))
-                .collect(),
-        })
-        .collect()
-}
-
-fn convert_type_kind(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    kind: &TypeDefinitionKind<refs::CheckerRefs>,
-    module: &ModuleName,
-) -> TypeDefinitionKind<refs::TypedRefs> {
-    match kind {
-        TypeDefinitionKind::Struct {
-            fields,
-            generic_parameters,
-        } => TypeDefinitionKind::Struct {
-            fields: fields
-                .iter()
-                .map(|f| FieldDefinition {
-                    name: f.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &f.type_name, module),
-                })
-                .collect(),
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
-        },
-        TypeDefinitionKind::Function {
-            parameters,
-            generic_parameters,
-            return_type,
-        } => TypeDefinitionKind::Function {
-            parameters: parameters
-                .iter()
-                .map(|p| ParameterDefinition {
-                    name: p.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &p.type_name, module),
-                })
-                .collect(),
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
-            return_type: ast_type_to_type_name(db, tables, return_type, module),
-        },
-        TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
-                })
-                .collect(),
-        },
-        TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
-            functions: functions
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
-                })
-                .collect(),
-            witness_ref: NoWitness,
-        },
-        TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
-        TypeDefinitionKind::Native {
-            generic_parameters,
-            factory,
-        } => TypeDefinitionKind::Native {
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
-            factory: factory.clone(),
-        },
     }
 }
 
@@ -174,17 +70,15 @@ impl TypeChecker {
         &mut self,
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
-    ) -> Result<
-        (
-            MetaData<TypedRefs>,
-            HashMap<NonEmpty<String>, typed_ast::Module>,
-        ),
-        Vec<TypeError>,
-    > {
+    ) -> Result<MetaData<TypedRefs>, Vec<TypeError>> {
         self.populate_symbol_tables(modules, native_modules);
-        let typed_modules = self.typecheck_modules(modules)?;
-        let typed_metadata = self.materialize_metadata(&typed_modules);
-        Ok((typed_metadata, typed_modules))
+        let parsed_inputs = self.make_parsed_inputs(modules);
+        let errors = self.run_check_pass(&parsed_inputs);
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        Ok(db::elaborate_metadata(&self.db, tables).get().clone())
     }
 
     fn populate_symbol_tables(
@@ -196,23 +90,25 @@ impl TypeChecker {
             Some(SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules));
     }
 
-    fn typecheck_modules(
-        &mut self,
-        modules: &[ParsedModule],
-    ) -> Result<HashMap<NonEmpty<String>, typed_ast::Module>, Vec<TypeError>> {
-        let tables = self.symbol_tables.expect("symbol tables not populated");
-        let mut parsed_inputs = Vec::new();
-        let mut all_errors: Vec<TypeError> = Vec::new();
+    fn make_parsed_inputs(&mut self, modules: &[ParsedModule]) -> Vec<ParsedModuleInput> {
+        modules
+            .iter()
+            .map(|parsed| {
+                ParsedModuleInput::new(
+                    &self.db,
+                    parsed.name.clone(),
+                    parsed.is_entry,
+                    parsed.file_id,
+                    parsed.module.clone(),
+                )
+            })
+            .collect()
+    }
 
-        for parsed in modules {
-            let parsed_input = ParsedModuleInput::new(
-                &self.db,
-                parsed.name.clone(),
-                parsed.is_entry,
-                parsed.file_id,
-                parsed.module.clone(),
-            );
-            parsed_inputs.push(parsed_input);
+    fn run_check_pass(&self, parsed_inputs: &[ParsedModuleInput]) -> Vec<TypeError> {
+        let tables = self.symbol_tables.expect("symbol tables not populated");
+        let mut all_errors: Vec<TypeError> = Vec::new();
+        for &parsed_input in parsed_inputs {
             db::check_module(&self.db, parsed_input, tables);
             let errors = db::check_module::accumulated::<TypeErrorAccumulator>(
                 &self.db,
@@ -221,131 +117,7 @@ impl TypeChecker {
             );
             all_errors.extend(errors.into_iter().map(|e| e.0.clone()));
         }
-
-        if !all_errors.is_empty() {
-            return Err(all_errors);
-        }
-
-        let mut typed_modules = HashMap::new();
-        for (parsed, parsed_input) in modules.iter().zip(parsed_inputs) {
-            let arc_module = db::elaborate_module(&self.db, parsed_input, tables);
-            typed_modules.insert(parsed.name.clone(), arc_module.get().clone());
-        }
-        Ok(typed_modules)
-    }
-
-    fn materialize_metadata(
-        &self,
-        typed_modules: &HashMap<NonEmpty<String>, typed_ast::Module>,
-    ) -> MetaData<TypedRefs> {
-        let tables = self.symbol_tables.expect("symbol tables not populated");
-        let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
-        for fn_def in tables.functions(&self.db).get().values() {
-            let typed_ast_ref = match &fn_def.ast_ref {
-                CheckerAstRef::Function(_, kind) => {
-                    let typed_module = typed_modules.get(&fn_def.name.module.segments).unwrap();
-                    let typed_fn = typed_module
-                        .definitions
-                        .iter()
-                        .find_map(|d| {
-                            if let typed_ast::Definition::Function(f) = d {
-                                if f.name == fn_def.name.name {
-                                    Some(f.clone())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .expect("typed function not found");
-                    TypedCheckerAstRef::Function(Arc::new(typed_fn), kind.clone())
-                }
-                CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
-                    let typed_module = typed_modules.get(&fn_def.name.module.segments).unwrap();
-                    let typed_fn = typed_module
-                        .definitions
-                        .iter()
-                        .find_map(|d| {
-                            if let typed_ast::Definition::TraitImpl {
-                                type_name,
-                                functions,
-                                ..
-                            } = d
-                            {
-                                if type_name == type_name_str {
-                                    functions
-                                        .iter()
-                                        .find(|f| f.name == fn_def.name.name)
-                                        .cloned()
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .expect("typed impl function not found");
-                    TypedCheckerAstRef::ImplFunction(
-                        Arc::new(typed_fn),
-                        type_name_str.clone(),
-                        kind.clone(),
-                    )
-                }
-                other => TypedCheckerAstRef::Other(other.clone()),
-            };
-            let typed_fn_def = FunctionDefinition {
-                name: fn_def.name.clone(),
-                visibility: fn_def.visibility.clone(),
-                type_name: fn_def.type_name.clone(),
-                source_ref: SourceLocation(fn_def.source_ref.0, fn_def.source_ref.1),
-                ast_ref: typed_ast_ref,
-                body_ref: None,
-            };
-            typed_metadata
-                .functions
-                .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
-        }
-        for type_def in tables.types(&self.db).get().values() {
-            let kind = convert_type_kind(&self.db, tables, &type_def.kind, &type_def.name.module);
-            let new_def = TypeDefinition {
-                name: type_def.name.clone(),
-                kind,
-                source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
-                ast_ref: TypedCheckerAstRef::Other(type_def.ast_ref.clone()),
-            };
-            typed_metadata
-                .types
-                .insert(type_def.name.clone(), Arc::new(new_def));
-        }
-
-        for (impl_key, impl_def) in tables.impls(&self.db).get() {
-            let new_def = ImplDefinition {
-                key: impl_def.key.clone(),
-                module: impl_def.module.clone(),
-                source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
-                ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
-            };
-            typed_metadata
-                .impls
-                .insert(impl_key.clone(), Arc::new(new_def));
-        }
-
-        for (module_key, module_def) in tables.modules(&self.db).get() {
-            let new_def = ModuleDefinition {
-                name: module_def.name.clone(),
-                visibility: module_def.visibility.clone(),
-                is_entry: module_def.is_entry,
-                exports: module_def.exports.clone(),
-                source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
-                ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
-                use_imports: module_def.use_imports.clone(),
-            };
-            typed_metadata
-                .modules
-                .insert(module_key.clone(), Arc::new(new_def));
-        }
-        typed_metadata
+        all_errors
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
