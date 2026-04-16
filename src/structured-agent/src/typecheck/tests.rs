@@ -856,7 +856,7 @@ mod tests {
         let result = check(module);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(errors[0], TypeError::UnboundTypeParameter { .. }));
+        assert!(matches!(errors[0], TypeError::UndefinedType { .. }));
     }
 
     #[test]
@@ -1241,7 +1241,7 @@ mod tests {
         let result = check(module);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(errors[0], TypeError::UnboundTypeParameter { .. }));
+        assert!(matches!(errors[0], TypeError::UndefinedType { .. }));
     }
 
     #[test]
@@ -1496,8 +1496,8 @@ mod tests {
         let result = check(module);
         let errors = result.unwrap_err();
         assert!(
-            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
-            "expected UnboundTypeParameter for unknown type variable, got {:?}",
+            matches!(&errors[0], TypeError::UndefinedType { name, .. } if name == "T"),
+            "expected UndefinedType for unknown type variable, got {:?}",
             errors
         );
     }
@@ -1531,8 +1531,8 @@ mod tests {
         let result = check(module);
         let errors = result.unwrap_err();
         assert!(
-            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
-            "expected UnboundTypeParameter, got {:?}",
+            matches!(&errors[0], TypeError::UndefinedType { name, .. } if name == "T"),
+            "expected UndefinedType, got {:?}",
             errors
         );
     }
@@ -1546,8 +1546,8 @@ mod tests {
         let result = check(module);
         let errors = result.unwrap_err();
         assert!(
-            matches!(&errors[0], TypeError::UnboundTypeParameter { name, .. } if name == "T"),
-            "expected UnboundTypeParameter for generic struct field, got {:?}",
+            matches!(&errors[0], TypeError::UndefinedType { name, .. } if name == "T"),
+            "expected UndefinedType for generic struct field, got {:?}",
             errors
         );
     }

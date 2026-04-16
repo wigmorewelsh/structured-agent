@@ -247,6 +247,7 @@ pub(super) fn get_function_sig<'db>(
             bounds: gp.constraints.clone(),
         })
         .collect();
+    let type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {
         let substituted = match &concrete_type {
@@ -258,7 +259,7 @@ pub(super) fn get_function_sig<'db>(
             tables,
             &substituted,
             &fn_name.module,
-            &type_params_vec,
+            &type_env,
             Span::dummy(),
             0,
         )?;
@@ -277,7 +278,7 @@ pub(super) fn get_function_sig<'db>(
         tables,
         &subst_return,
         &fn_name.module,
-        &type_params_vec,
+        &type_env,
         Span::dummy(),
         0,
     )?;

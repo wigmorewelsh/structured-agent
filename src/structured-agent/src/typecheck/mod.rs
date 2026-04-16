@@ -44,6 +44,8 @@ pub(super) struct FunctionSignature {
 #[derive(Debug, Clone)]
 pub(super) struct TypeEnvironment {
     pub(super) variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
+    pub(super) type_params: HashMap<String, ()>,
+    pub(super) self_type: Option<structured_agent_runtime::symbols::TypeName>,
     pub(super) parent: Option<Box<TypeEnvironment>>,
 }
 
@@ -140,15 +142,49 @@ impl TypeEnvironment {
     fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            type_params: HashMap::new(),
+            self_type: None,
             parent: None,
         }
+    }
+
+    fn with_type_params(type_params: &[TypeParam]) -> Self {
+        let mut env = Self::new();
+        for tp in type_params {
+            env.add_type_param(tp.name.clone());
+        }
+        env
     }
 
     fn create_child(&self) -> Self {
         Self {
             variables: HashMap::new(),
+            type_params: self.type_params.clone(),
+            self_type: self.self_type.clone(),
             parent: Some(Box::new(self.clone())),
         }
+    }
+
+    fn add_type_param(&mut self, name: String) {
+        self.type_params.insert(name, ());
+    }
+
+    fn lookup_type_param(&self, name: &str) -> bool {
+        if name == "Self" && self.self_type.is_some() {
+            return true;
+        }
+        if self.type_params.contains_key(name) {
+            return true;
+        }
+        if let Some(parent) = &self.parent {
+            parent.lookup_type_param(name)
+        } else {
+            false
+        }
+    }
+
+    fn set_self_type(&mut self, self_type: structured_agent_runtime::symbols::TypeName) {
+        self.self_type = Some(self_type);
     }
 
     fn declare_variable(

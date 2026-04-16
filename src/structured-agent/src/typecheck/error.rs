@@ -67,6 +67,11 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    UndefinedType {
+        name: String,
+        span: Span,
+        file_id: FileId,
+    },
     UnknownField {
         struct_name: String,
         field_name: String,
@@ -132,6 +137,7 @@ impl TypeError {
             TypeError::SelectBranchTypeMismatch { span, .. } => *span,
             TypeError::UnsupportedType { span, .. } => *span,
             TypeError::UnboundTypeParameter { span, .. } => *span,
+            TypeError::UndefinedType { span, .. } => *span,
             TypeError::UnknownField { span, .. } => *span,
             TypeError::MissingField { span, .. } => *span,
             TypeError::StructFieldTypeMismatch { span, .. } => *span,
@@ -155,6 +161,7 @@ impl TypeError {
             TypeError::SelectBranchTypeMismatch { file_id, .. } => *file_id,
             TypeError::UnsupportedType { file_id, .. } => *file_id,
             TypeError::UnboundTypeParameter { file_id, .. } => *file_id,
+            TypeError::UndefinedType { file_id, .. } => *file_id,
             TypeError::UnknownField { file_id, .. } => *file_id,
             TypeError::MissingField { file_id, .. } => *file_id,
             TypeError::StructFieldTypeMismatch { file_id, .. } => *file_id,
@@ -299,6 +306,16 @@ impl TypeError {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("not declared in this function's type parameters"),
+                ]),
+            TypeError::UndefinedType {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!("undefined type `{}`", name))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("type not found in this scope"),
                 ]),
             TypeError::UnknownField {
                 struct_name,
@@ -492,6 +509,9 @@ impl fmt::Display for TypeError {
             TypeError::UnboundTypeParameter { name, .. } => {
                 write!(f, "Unbound type parameter: {}", name)
             }
+            TypeError::UndefinedType { name, .. } => {
+                write!(f, "Undefined type: {}", name)
+            }
             TypeError::UnknownField {
                 struct_name,
                 field_name,
@@ -577,3 +597,26 @@ impl TypeError {
 
 #[salsa::accumulator]
 pub struct TypeErrorAccumulator(pub TypeError);
+
+pub trait OrAccumulateError<T> {
+    fn or_accumulate<Db: ?Sized + salsa::Database>(self, db: &Db, error: TypeError) -> Option<T>;
+}
+
+impl<T> OrAccumulateError<T> for Option<T> {
+    fn or_accumulate<Db: ?Sized + salsa::Database>(self, db: &Db, error: TypeError) -> Option<T> {
+        self.or_else(|| {
+            error.accumulate(db);
+            None
+        })
+    }
+}
+
+#[macro_export]
+macro_rules! ensure_or_accumulate {
+    ($condition:expr, $db:expr, $error:expr) => {
+        if !($condition) {
+            $error.accumulate($db);
+            return None;
+        }
+    };
+}
