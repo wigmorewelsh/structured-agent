@@ -277,7 +277,7 @@ pub(super) fn get_function_sig<'db>(
             file_id: p.source_ref.0,
             module_name: &fn_name.module,
         };
-        let param_type = super::constraints::resolve(
+        let param_type = super::synthesize::resolve(
             db,
             tables,
             &p.type_name,
@@ -295,7 +295,7 @@ pub(super) fn get_function_sig<'db>(
         file_id: type_def.get().source_ref.0,
         module_name: &fn_name.module,
     };
-    let resolved_return = super::constraints::resolve(
+    let resolved_return = super::synthesize::resolve(
         db,
         tables,
         return_type,
@@ -358,7 +358,7 @@ pub(super) fn check_module(
             Definition::ModuleHeader { .. } | Definition::Signature(_)
         )
     }) {
-        super::elaboration::check_definition(db, tables, def, &ctx);
+        super::synthesize::check_definition(db, tables, def, &ctx);
     }
 }
 

@@ -1,9 +1,9 @@
 mod collection;
-mod constraints;
 mod db;
 mod elaboration;
 mod error;
 mod refs;
+mod synthesize;
 
 #[cfg(test)]
 mod tests;
@@ -19,13 +19,12 @@ pub use refs::{
 };
 
 use crate::ast::{ParsedModule, TypeParam};
-use crate::types::{FileId, Span};
 use collection::SymbolTableBuilder;
 use db::{ParsedModuleInput, SymbolTablesInput, TypeCheckDb};
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{MetaData, ModuleName};
+use structured_agent_runtime::symbols::MetaData;
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
@@ -41,18 +40,7 @@ pub(super) struct FunctionSignature {
     pub(super) type_params: Vec<TypeParam>,
 }
 
-#[derive(Debug, Clone)]
-pub(super) struct TypeEnvironment {
-    pub(super) variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
-    pub(super) type_params: HashMap<String, ()>,
-    pub(super) self_type: Option<structured_agent_runtime::symbols::TypeName>,
-    pub(super) parent: Option<Box<TypeEnvironment>>,
-}
-
-pub(super) struct CheckContext<'a> {
-    pub(super) file_id: FileId,
-    pub(super) module_name: &'a ModuleName,
-}
+pub(super) use synthesize::{CheckContext, TypeEnvironment};
 
 impl Default for TypeChecker {
     fn default() -> Self {
@@ -135,87 +123,5 @@ impl TypeChecker {
                 _ => None,
             })
             .collect()
-    }
-}
-
-impl TypeEnvironment {
-    fn new() -> Self {
-        Self {
-            variables: HashMap::new(),
-            type_params: HashMap::new(),
-            self_type: None,
-            parent: None,
-        }
-    }
-
-    fn with_type_params(type_params: &[TypeParam]) -> Self {
-        let mut env = Self::new();
-        for tp in type_params {
-            env.add_type_param(tp.name.clone());
-        }
-        env
-    }
-
-    fn create_child(&self) -> Self {
-        Self {
-            variables: HashMap::new(),
-            type_params: self.type_params.clone(),
-            self_type: self.self_type.clone(),
-            parent: Some(Box::new(self.clone())),
-        }
-    }
-
-    fn add_type_param(&mut self, name: String) {
-        self.type_params.insert(name, ());
-    }
-
-    fn lookup_type_param(&self, name: &str) -> bool {
-        if name == "Self" && self.self_type.is_some() {
-            return true;
-        }
-        if self.type_params.contains_key(name) {
-            return true;
-        }
-        if let Some(parent) = &self.parent {
-            parent.lookup_type_param(name)
-        } else {
-            false
-        }
-    }
-
-    fn set_self_type(&mut self, self_type: structured_agent_runtime::symbols::TypeName) {
-        self.self_type = Some(self_type);
-    }
-
-    fn declare_variable(
-        &mut self,
-        name: String,
-        var_type: structured_agent_runtime::Type,
-        span: Span,
-    ) {
-        self.variables.insert(name, (var_type, span));
-    }
-
-    fn lookup_variable(&self, name: &str) -> Option<structured_agent_runtime::Type> {
-        if let Some((ty, _)) = self.variables.get(name) {
-            Some(ty.clone())
-        } else if let Some(parent) = &self.parent {
-            parent.lookup_variable(name)
-        } else {
-            None
-        }
-    }
-
-    fn lookup_variable_with_span(
-        &self,
-        name: &str,
-    ) -> Option<(structured_agent_runtime::Type, Span)> {
-        if let Some((ty, span)) = self.variables.get(name) {
-            Some((ty.clone(), *span))
-        } else if let Some(parent) = &self.parent {
-            parent.lookup_variable_with_span(name)
-        } else {
-            None
-        }
     }
 }

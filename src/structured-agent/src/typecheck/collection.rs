@@ -288,77 +288,10 @@ impl SymbolTableBuilder {
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
-                    let fn_key = FunctionName {
-                        name: func.name.to_string(),
-                        module: module_name.clone(),
-                        kind: FunctionNameKind::Function,
-                    };
-                    let fn_type_name = TypeName {
-                        name: fn_key.name.clone(),
-                        module: fn_key.module.clone(),
-                    };
-                    let entry = FunctionDefinition {
-                        name: fn_key.clone(),
-                        visibility: if func.is_pub {
-                            Visibility::Public
-                        } else {
-                            Visibility::Private
-                        },
-                        type_name: fn_type_name.clone(),
-                        source_ref: SourceLocation(file_id, func.span),
-                        ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
-                        body_ref: None,
-                    };
-                    self.metadata.register_function(fn_key, Arc::new(entry));
-                    let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
-                        .parameters
-                        .iter()
-                        .map(|p| ParameterDefinition {
-                            name: p.name.clone(),
-                            type_name: p.param_type.clone(),
-                            source_ref: SourceLocation(file_id, p.span),
-                        })
-                        .collect();
-                    let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
-                        .type_params
-                        .iter()
-                        .map(|tp| GenericParameterDefinition {
-                            name: tp.name.clone(),
-                            constraints: tp.bounds.clone(),
-                        })
-                        .collect();
-                    let fn_type_def = TypeDefinition {
-                        name: fn_type_name.clone(),
-                        kind: TypeDefinitionKind::Function {
-                            parameters: fn_parameters,
-                            generic_parameters: fn_generic_parameters,
-                            return_type: func.return_type.clone(),
-                        },
-                        source_ref: SourceLocation(file_id, func.span),
-                        ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
-                    };
-                    self.metadata
-                        .register_type(fn_type_name, Arc::new(fn_type_def));
+                    self.register_regular_function(func, file_id, module_name);
                 }
                 Definition::ExternalFunction(ext_func) => {
-                    let fn_key = FunctionName {
-                        name: ext_func.name.to_string(),
-                        module: module_name.clone(),
-                        kind: FunctionNameKind::Function,
-                    };
-                    self.insert_fn(
-                        fn_key,
-                        ext_func.parameters.iter().cloned().collect(),
-                        ext_func.return_type.clone(),
-                        ext_func.type_params.clone(),
-                        FunctionKind::External,
-                        if ext_func.is_pub {
-                            Visibility::Public
-                        } else {
-                            Visibility::Private
-                        },
-                        SourceLocation(file_id, ext_func.span),
-                    );
+                    self.register_external_function(ext_func, file_id, module_name);
                 }
                 Definition::Struct(_)
                 | Definition::Use { .. }
@@ -367,111 +300,226 @@ impl SymbolTableBuilder {
                 | Definition::ModuleHeader { .. }
                 | Definition::Signature(_) => {}
                 Definition::Trait(s) => {
-                    let type_name = TypeName {
-                        name: s.name.clone(),
-                        module: module_name.clone(),
-                    };
-                    let entry = TypeDefinition {
-                        name: type_name.clone(),
-                        kind: TypeDefinitionKind::Trait {
-                            functions: s
-                                .functions
-                                .iter()
-                                .map(|f| SignatureEntry {
-                                    name: f.name.clone(),
-                                    type_name: f.return_type.clone(),
-                                })
-                                .collect(),
-                            witness_ref: NoWitness,
-                        },
-                        source_ref: SourceLocation(file_id, s.span),
-                        ast_ref: CheckerAstRef::Trait(Arc::clone(s)),
-                    };
-                    self.metadata.register_type(type_name, Arc::new(entry));
+                    self.register_trait(s, file_id, module_name);
                 }
                 Definition::TraitImpl(impl_arc) => {
-                    let type_name = &impl_arc.type_name;
-                    let trait_name = &impl_arc.trait_name;
-                    let functions = &impl_arc.functions;
-                    let span = &impl_arc.span;
-
-                    let key = ImplKey {
-                        type_name: type_name.clone(),
-                        trait_name: trait_name.clone(),
-                        impl_module: module_name.clone(),
-                    };
-                    let impl_entry = ImplDefinition {
-                        key: key.clone(),
-                        module: module_name.clone(),
-                        source_ref: SourceLocation(file_id, *span),
-                        ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
-                    };
-                    self.metadata.impls.insert(key, Arc::new(impl_entry));
-                    for func in functions {
-                        let impl_fn_key = FunctionName {
-                            name: func.name.to_string(),
-                            module: module_name.clone(),
-                            kind: FunctionNameKind::Impl {
-                                type_name: type_name.to_string(),
-                                trait_name: trait_name.to_string(),
-                            },
-                        };
-                        let fn_type_name = TypeName {
-                            name: impl_fn_key.name.clone(),
-                            module: impl_fn_key.module.clone(),
-                        };
-                        let entry = FunctionDefinition {
-                            name: impl_fn_key.clone(),
-                            visibility: Visibility::Private,
-                            type_name: fn_type_name.clone(),
-                            source_ref: SourceLocation(file_id, func.span),
-                            ast_ref: CheckerAstRef::ImplFunction(
-                                Arc::clone(func),
-                                type_name.to_string(),
-                                FunctionKind::Bytecode,
-                            ),
-                            body_ref: None,
-                        };
-                        self.metadata
-                            .register_function(impl_fn_key, Arc::new(entry));
-
-                        let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
-                            .parameters
-                            .iter()
-                            .map(|p| ParameterDefinition {
-                                name: p.name.clone(),
-                                type_name: p.param_type.clone(),
-                                source_ref: SourceLocation(file_id, p.span),
-                            })
-                            .collect();
-                        let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> =
-                            func.type_params
-                                .iter()
-                                .map(|tp| GenericParameterDefinition {
-                                    name: tp.name.clone(),
-                                    constraints: tp.bounds.clone(),
-                                })
-                                .collect();
-                        let fn_type_def = TypeDefinition {
-                            name: fn_type_name.clone(),
-                            kind: TypeDefinitionKind::Function {
-                                parameters: fn_parameters,
-                                generic_parameters: fn_generic_parameters,
-                                return_type: func.return_type.clone(),
-                            },
-                            source_ref: SourceLocation(file_id, func.span),
-                            ast_ref: CheckerAstRef::ImplFunction(
-                                Arc::clone(func),
-                                type_name.to_string(),
-                                FunctionKind::Bytecode,
-                            ),
-                        };
-                        self.metadata
-                            .register_type(fn_type_name, Arc::new(fn_type_def));
-                    }
+                    self.register_trait_impl(impl_arc, file_id, module_name);
                 }
             }
         }
+    }
+
+    fn register_regular_function(
+        &mut self,
+        func: &Arc<crate::ast::Function>,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let fn_key = FunctionName {
+            name: func.name.to_string(),
+            module: module_name.clone(),
+            kind: FunctionNameKind::Function,
+        };
+        let fn_type_name = TypeName {
+            name: fn_key.name.clone(),
+            module: fn_key.module.clone(),
+        };
+        let entry = FunctionDefinition {
+            name: fn_key.clone(),
+            visibility: if func.is_pub {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            },
+            type_name: fn_type_name.clone(),
+            source_ref: SourceLocation(file_id, func.span),
+            ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
+            body_ref: None,
+        };
+        self.metadata.register_function(fn_key, Arc::new(entry));
+
+        let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
+            .parameters
+            .iter()
+            .map(|p| ParameterDefinition {
+                name: p.name.clone(),
+                type_name: p.param_type.clone(),
+                source_ref: SourceLocation(file_id, p.span),
+            })
+            .collect();
+        let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
+            .type_params
+            .iter()
+            .map(|tp| GenericParameterDefinition {
+                name: tp.name.clone(),
+                constraints: tp.bounds.clone(),
+            })
+            .collect();
+        let fn_type_def = TypeDefinition {
+            name: fn_type_name.clone(),
+            kind: TypeDefinitionKind::Function {
+                parameters: fn_parameters,
+                generic_parameters: fn_generic_parameters,
+                return_type: func.return_type.clone(),
+            },
+            source_ref: SourceLocation(file_id, func.span),
+            ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
+        };
+        self.metadata
+            .register_type(fn_type_name, Arc::new(fn_type_def));
+    }
+
+    fn register_external_function(
+        &mut self,
+        ext_func: &crate::ast::ExternalFunction,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let fn_key = FunctionName {
+            name: ext_func.name.to_string(),
+            module: module_name.clone(),
+            kind: FunctionNameKind::Function,
+        };
+        self.insert_fn(
+            fn_key,
+            ext_func.parameters.iter().cloned().collect(),
+            ext_func.return_type.clone(),
+            ext_func.type_params.clone(),
+            FunctionKind::External,
+            if ext_func.is_pub {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            },
+            SourceLocation(file_id, ext_func.span),
+        );
+    }
+
+    fn register_trait(
+        &mut self,
+        trait_def: &Arc<crate::ast::AstTrait>,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let type_name = TypeName {
+            name: trait_def.name.clone(),
+            module: module_name.clone(),
+        };
+        let entry = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Trait {
+                functions: trait_def
+                    .functions
+                    .iter()
+                    .map(|f| SignatureEntry {
+                        name: f.name.clone(),
+                        type_name: f.return_type.clone(),
+                    })
+                    .collect(),
+                witness_ref: NoWitness,
+            },
+            source_ref: SourceLocation(file_id, trait_def.span),
+            ast_ref: CheckerAstRef::Trait(Arc::clone(trait_def)),
+        };
+        self.metadata.register_type(type_name, Arc::new(entry));
+    }
+
+    fn register_trait_impl(
+        &mut self,
+        impl_arc: &Arc<crate::ast::AstTraitImpl>,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let type_name = &impl_arc.type_name;
+        let trait_name = &impl_arc.trait_name;
+        let functions = &impl_arc.functions;
+        let span = &impl_arc.span;
+
+        let key = ImplKey {
+            type_name: type_name.clone(),
+            trait_name: trait_name.clone(),
+            impl_module: module_name.clone(),
+        };
+        let impl_entry = ImplDefinition {
+            key: key.clone(),
+            module: module_name.clone(),
+            source_ref: SourceLocation(file_id, *span),
+            ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
+        };
+        self.metadata.impls.insert(key, Arc::new(impl_entry));
+
+        for func in functions {
+            self.register_impl_function(func, file_id, module_name, type_name);
+        }
+    }
+
+    fn register_impl_function(
+        &mut self,
+        func: &Arc<crate::ast::Function>,
+        file_id: FileId,
+        module_name: &ModuleName,
+        type_name: &str,
+    ) {
+        let impl_fn_key = FunctionName {
+            name: func.name.to_string(),
+            module: module_name.clone(),
+            kind: FunctionNameKind::Impl {
+                type_name: type_name.to_string(),
+                trait_name: type_name.to_string(),
+            },
+        };
+        let fn_type_name = TypeName {
+            name: impl_fn_key.name.clone(),
+            module: impl_fn_key.module.clone(),
+        };
+        let entry = FunctionDefinition {
+            name: impl_fn_key.clone(),
+            visibility: Visibility::Private,
+            type_name: fn_type_name.clone(),
+            source_ref: SourceLocation(file_id, func.span),
+            ast_ref: CheckerAstRef::ImplFunction(
+                Arc::clone(func),
+                type_name.to_string(),
+                FunctionKind::Bytecode,
+            ),
+            body_ref: None,
+        };
+        self.metadata
+            .register_function(impl_fn_key, Arc::new(entry));
+
+        let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
+            .parameters
+            .iter()
+            .map(|p| ParameterDefinition {
+                name: p.name.clone(),
+                type_name: p.param_type.clone(),
+                source_ref: SourceLocation(file_id, p.span),
+            })
+            .collect();
+        let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
+            .type_params
+            .iter()
+            .map(|tp| GenericParameterDefinition {
+                name: tp.name.clone(),
+                constraints: tp.bounds.clone(),
+            })
+            .collect();
+        let fn_type_def = TypeDefinition {
+            name: fn_type_name.clone(),
+            kind: TypeDefinitionKind::Function {
+                parameters: fn_parameters,
+                generic_parameters: fn_generic_parameters,
+                return_type: func.return_type.clone(),
+            },
+            source_ref: SourceLocation(file_id, func.span),
+            ast_ref: CheckerAstRef::ImplFunction(
+                Arc::clone(func),
+                type_name.to_string(),
+                FunctionKind::Bytecode,
+            ),
+        };
+        self.metadata
+            .register_type(fn_type_name, Arc::new(fn_type_def));
     }
 
     pub(super) fn build_symbol_tables(
