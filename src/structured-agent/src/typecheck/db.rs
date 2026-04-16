@@ -254,32 +254,22 @@ pub(super) fn get_function_sig<'db>(
             module: fn_name.module.clone(),
         });
     }
+    let ctx = super::CheckContext {
+        file_id: 0,
+        module_name: &fn_name.module,
+    };
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {
-        let param_type = super::constraints::resolve(
-            db,
-            tables,
-            &p.type_name,
-            &fn_name.module,
-            &type_env,
-            Span::dummy(),
-            0,
-        )?;
+        let param_type =
+            super::constraints::resolve(db, tables, &p.type_name, &type_env, Span::dummy(), &ctx)?;
         resolved_params.push(crate::typed_ast::Parameter {
             name: p.name.clone(),
             param_type,
             span: Span::dummy(),
         });
     }
-    let resolved_return = super::constraints::resolve(
-        db,
-        tables,
-        return_type,
-        &fn_name.module,
-        &type_env,
-        Span::dummy(),
-        0,
-    )?;
+    let resolved_return =
+        super::constraints::resolve(db, tables, return_type, &type_env, Span::dummy(), &ctx)?;
     Some(ArcPtr::new(super::FunctionSignature {
         parameters: resolved_params,
         return_type: resolved_return,

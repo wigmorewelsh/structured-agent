@@ -1,8 +1,8 @@
-use super::TypeEnvironment;
 use super::db::{
     Intern, InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase,
     resolve_type_alias,
 };
+use super::{CheckContext, TypeEnvironment};
 
 use crate::ast::Type as AstType;
 use crate::ensure_or_accumulate;
@@ -33,12 +33,11 @@ fn resolve_local_type<'db>(
 fn resolve_type_name(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
-    module: &ModuleName,
     name: &str,
     span: Span,
-    file_id: FileId,
+    ctx: &CheckContext,
 ) -> Option<TypeName> {
-    let interned_mod = module.intern(db);
+    let interned_mod = ctx.module_name.intern(db);
     let interned_name = name.intern(db);
 
     let type_name = resolve_local_type(db, tables, interned_mod, interned_name)
@@ -49,7 +48,7 @@ fn resolve_type_name(
         TypeError::UndefinedType {
             name: name.to_string(),
             span,
-            file_id,
+            file_id: ctx.file_id,
         },
     )
 }
@@ -58,10 +57,9 @@ pub(super) fn resolve(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     t: &AstType,
-    module: &ModuleName,
     env: &TypeEnvironment,
     span: Span,
-    file_id: FileId,
+    ctx: &CheckContext,
 ) -> Option<RT> {
     let AstType { name, args } = t;
 
@@ -75,7 +73,7 @@ pub(super) fn resolve(
         return Some(RT::Generic(name.to_string()));
     }
 
-    let type_name = resolve_type_name(db, tables, module, name.as_str(), span, file_id)?;
+    let type_name = resolve_type_name(db, tables, name.as_str(), span, ctx)?;
 
     let types_table = tables.types(db);
     let td = types_table.get().get(&type_name).or_accumulate(
@@ -83,7 +81,7 @@ pub(super) fn resolve(
         TypeError::UndefinedType {
             name: name.clone(),
             span,
-            file_id,
+            file_id: ctx.file_id,
         },
     )?;
 
@@ -92,7 +90,7 @@ pub(super) fn resolve(
             Some(RT::Struct(type_name))
         }
         TypeDefinitionKind::Native { .. } => {
-            let inner_rt = resolve(db, tables, &args[0], module, env, span, file_id)?;
+            let inner_rt = resolve(db, tables, &args[0], env, span, ctx)?;
             Some(RT::Parameterized(type_name, vec![inner_rt]))
         }
         TypeDefinitionKind::Struct {
@@ -100,7 +98,7 @@ pub(super) fn resolve(
         } => {
             let resolved_args: Vec<RT> = args
                 .iter()
-                .map(|a| resolve(db, tables, a, module, env, span, file_id))
+                .map(|a| resolve(db, tables, a, env, span, ctx))
                 .collect::<Option<Vec<_>>>()?;
             ensure_or_accumulate!(
                 resolved_args.len() == generic_parameters.len(),
@@ -108,7 +106,7 @@ pub(super) fn resolve(
                 TypeError::UnboundTypeParameter {
                     name: name.clone(),
                     span,
-                    file_id,
+                    file_id: ctx.file_id,
                 }
             );
             Some(RT::Parameterized(type_name, resolved_args))
@@ -117,7 +115,7 @@ pub(super) fn resolve(
             TypeError::UnboundTypeParameter {
                 name: name.clone(),
                 span,
-                file_id,
+                file_id: ctx.file_id,
             }
             .accumulate(db);
             None

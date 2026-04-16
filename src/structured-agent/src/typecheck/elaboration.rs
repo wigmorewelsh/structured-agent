@@ -23,42 +23,17 @@ pub(super) fn check_definition(
     match definition {
         Definition::Function(func) => check_function(db, tables, func, ctx),
         Definition::ExternalFunction(f) => {
-            let module = ctx.module_name.clone();
             let env = super::TypeEnvironment::with_type_params(&f.type_params);
-            super::constraints::resolve(
-                db,
-                tables,
-                &f.return_type,
-                &module,
-                &env,
-                f.span,
-                ctx.file_id,
-            )?;
+            super::constraints::resolve(db, tables, &f.return_type, &env, f.span, ctx)?;
             for param in &f.parameters {
-                super::constraints::resolve(
-                    db,
-                    tables,
-                    &param.param_type,
-                    &module,
-                    &env,
-                    param.span,
-                    ctx.file_id,
-                )?;
+                super::constraints::resolve(db, tables, &param.param_type, &env, param.span, ctx)?;
             }
             Some(())
         }
         Definition::Struct(s) => {
             let env = super::TypeEnvironment::with_type_params(&s.type_params);
             for f in &s.fields {
-                super::constraints::resolve(
-                    db,
-                    tables,
-                    &f.field_type,
-                    ctx.module_name,
-                    &env,
-                    f.span,
-                    ctx.file_id,
-                )?;
+                super::constraints::resolve(db, tables, &f.field_type, &env, f.span, ctx)?;
             }
             Some(())
         }
@@ -559,10 +534,9 @@ fn synthesize_struct_literal(
             db,
             tables,
             &declared_ast_type,
-            ctx.module_name,
             &type_env,
             value_expr.span(),
-            ctx.file_id,
+            ctx,
         )?;
         let value_type = synthesize_expression(db, tables, value_expr, env, ctx)?;
         ensure_or_accumulate!(
@@ -649,15 +623,7 @@ fn synthesize_field_access(
                         file_id: ctx.file_id,
                     },
                 )?;
-            super::constraints::resolve(
-                db,
-                tables,
-                &field_ast_type,
-                ctx.module_name,
-                &type_env,
-                span,
-                ctx.file_id,
-            )
+            super::constraints::resolve(db, tables, &field_ast_type, &type_env, span, ctx)
         }
         RT::Generic(name) => {
             let (definition, type_params) = get_struct_fields(db, tables, &name, ctx.module_name)
@@ -683,15 +649,7 @@ fn synthesize_field_access(
                         file_id: ctx.file_id,
                     },
                 )?;
-            super::constraints::resolve(
-                db,
-                tables,
-                &field_ast_type,
-                ctx.module_name,
-                &type_env,
-                span,
-                ctx.file_id,
-            )
+            super::constraints::resolve(db, tables, &field_ast_type, &type_env, span, ctx)
         }
         other => {
             TypeError::TypeMismatch {
@@ -742,18 +700,10 @@ pub(super) fn elaborate_function(
     if let Some(st) = self_type {
         env.set_self_type(st);
     }
-    let module = ctx.module_name.clone();
     let mut typed_parameters = Vec::new();
     for param in &func.parameters {
-        let runtime_type = super::constraints::resolve(
-            db,
-            tables,
-            &param.param_type,
-            &module,
-            &env,
-            param.span,
-            ctx.file_id,
-        )?;
+        let runtime_type =
+            super::constraints::resolve(db, tables, &param.param_type, &env, param.span, ctx)?;
         env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
         typed_parameters.push(typed_ast::Parameter {
             name: param.name.clone(),
@@ -761,15 +711,8 @@ pub(super) fn elaborate_function(
             span: param.span,
         });
     }
-    let runtime_return_type = super::constraints::resolve(
-        db,
-        tables,
-        &func.return_type,
-        &module,
-        &env,
-        func.span,
-        ctx.file_id,
-    )?;
+    let runtime_return_type =
+        super::constraints::resolve(db, tables, &func.return_type, &env, func.span, ctx)?;
     let typed_stmts = elaborate_block(db, tables, &func.body.statements, env, ctx)?;
     Some(typed_ast::Function {
         name: func.name.clone(),
@@ -1135,10 +1078,9 @@ fn elaborate_struct_literal(
             db,
             tables,
             &declared_ast_type,
-            ctx.module_name,
             &type_env,
             value_expr.span(),
-            ctx.file_id,
+            ctx,
         )?;
         let typed_value = elaborate_expression(db, tables, value_expr, env, ctx)?;
         let _ = unifier.unify_type(&declared_type, typed_value.ty());
@@ -1196,15 +1138,7 @@ fn elaborate_field_access(
         .find(|(n, _)| n == field)
         .map(|(_, t)| t.clone())?;
     let empty_env = super::TypeEnvironment::new();
-    let field_ty = super::constraints::resolve(
-        db,
-        tables,
-        &field_ast_type,
-        ctx.module_name,
-        &empty_env,
-        span,
-        ctx.file_id,
-    )?;
+    let field_ty = super::constraints::resolve(db, tables, &field_ast_type, &empty_env, span, ctx)?;
     Some(typed_ast::Expression::FieldAccess {
         base: Box::new(typed_base),
         field: field.to_string(),
