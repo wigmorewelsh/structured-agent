@@ -195,6 +195,7 @@ impl SymbolTableBuilder {
             .map(|p| ParameterDefinition {
                 name: p.name.clone(),
                 type_name: p.param_type.clone(),
+                source_ref: SourceLocation(source_ref.0, p.span),
             })
             .collect();
         let generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = type_params
@@ -315,6 +316,7 @@ impl SymbolTableBuilder {
                         .map(|p| ParameterDefinition {
                             name: p.name.clone(),
                             type_name: p.param_type.clone(),
+                            source_ref: SourceLocation(file_id, p.span),
                         })
                         .collect();
                     let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
@@ -439,6 +441,7 @@ impl SymbolTableBuilder {
                             .map(|p| ParameterDefinition {
                                 name: p.name.clone(),
                                 type_name: p.param_type.clone(),
+                                source_ref: SourceLocation(file_id, p.span),
                             })
                             .collect();
                         let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> =
@@ -575,7 +578,6 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
             }
             Definition::ModuleHeader { params, .. } => params
                 .iter()
-                .filter(|p| !p.path.is_empty())
                 .map(|p| UseImport {
                     local: p.name.clone(),
                     module: ModuleName::new(p.path.clone()),

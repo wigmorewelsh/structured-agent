@@ -7,11 +7,11 @@ use super::{CheckContext, TypeEnvironment};
 use crate::ast::Type as AstType;
 use crate::ensure_or_accumulate;
 use crate::typecheck::error::{OrAccumulateError, TypeError};
-use crate::types::{FileId, Span};
+use crate::types::Span;
 
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::{ModuleName, TypeDefinitionKind, TypeName};
+use structured_agent_runtime::symbols::{TypeDefinitionKind, TypeName};
 
 fn resolve_local_type<'db>(
     db: &dyn TypeCheckDatabase,

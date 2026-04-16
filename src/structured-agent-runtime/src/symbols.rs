@@ -4,7 +4,7 @@ use crate::runtime_value::RuntimeValueFactory;
 
 use nonempty::NonEmpty;
 
-pub trait SourceRef {}
+pub trait SourceRef: fmt::Debug + Clone {}
 pub trait AstRef {}
 pub trait BodyRef {}
 pub trait WitnessRef: fmt::Debug + Clone {}
@@ -251,6 +251,7 @@ pub struct FunctionDefinition<R: References> {
 pub struct ParameterDefinition<R: References> {
     pub name: String,
     pub type_name: R::TypeAnnotation,
+    pub source_ref: R::Source,
 }
 
 #[derive(Debug, Clone)]
@@ -344,7 +345,7 @@ pub struct FieldDefinition<R: References> {
 pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefinitionKind<R2>
 where
     R1: References<TypeAnnotation = TypeName>,
-    R2: References<TypeAnnotation = TypeName>,
+    R2: References<TypeAnnotation = TypeName, Source = R1::Source>,
     R2::Witness: Default,
 {
     match kind {
@@ -377,6 +378,7 @@ where
                 .map(|p| ParameterDefinition {
                     name: p.name.clone(),
                     type_name: p.type_name.clone(),
+                    source_ref: p.source_ref.clone(),
                 })
                 .collect(),
             generic_parameters: generic_parameters

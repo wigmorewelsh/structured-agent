@@ -19,7 +19,7 @@ pub enum FunctionKind {
     External,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SourceLocation(pub FileId, pub Span);
 pub struct NoBody;
 #[derive(Debug, Clone, Default)]

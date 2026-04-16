@@ -3,6 +3,8 @@ use super::refs::{
     TypedRefs,
 };
 use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam};
+use crate::typecheck::TypeError;
+use crate::typecheck::error::OrAccumulateError;
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -221,17 +223,31 @@ pub(super) fn get_function_sig<'db>(
     name: InternedFunctionName<'db>,
 ) -> Option<ArcPtr<super::FunctionSignature>> {
     let fn_name = name.name(db);
-    let fn_def = lookup_function_def(db, tables, name)?;
+    let fn_def = lookup_function_def(db, tables, name).or_accumulate(
+        db,
+        // this should never happen, if it does its an internal bug with collection.rs
+        // its impossible to put span/file_id
+        TypeError::UndefinedType {
+            name: fn_name.to_string(),
+            span: Span::dummy(),
+            file_id: 0,
+        },
+    )?;
     let kind = match &fn_def.get().ast_ref {
         CheckerAstRef::ExternalFn { .. } => FunctionKind::External,
         _ => FunctionKind::Bytecode,
     };
-    let concrete_type = match &fn_name.kind {
-        FunctionNameKind::Impl { type_name, .. } => Some(type_name.clone()),
-        _ => None,
-    };
+
     let type_key = InternedTypeName::new(db, fn_def.get().type_name.clone());
-    let type_def = lookup_type_def(db, tables, type_key)?;
+    let type_def = lookup_type_def(db, tables, type_key).or_accumulate(
+        db,
+        // this should never happen, if it does its an internal bug with collection.rs
+        TypeError::UndefinedType {
+            name: fn_def.get().type_name.name.clone(),
+            span: fn_def.get().source_ref.1,
+            file_id: fn_def.get().source_ref.0,
+        },
+    )?;
     let TypeDefinitionKind::Function {
         parameters,
         generic_parameters,
@@ -248,28 +264,45 @@ pub(super) fn get_function_sig<'db>(
         })
         .collect();
     let mut type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
-    if let Some(ct) = &concrete_type {
+    if let FunctionNameKind::Impl { type_name, .. } = &fn_name.kind {
         type_env.set_self_type(structured_agent_runtime::symbols::TypeName {
-            name: ct.clone(),
+            name: type_name.clone(),
             module: fn_name.module.clone(),
         });
-    }
-    let ctx = super::CheckContext {
-        file_id: 0,
-        module_name: &fn_name.module,
     };
+
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {
-        let param_type =
-            super::constraints::resolve(db, tables, &p.type_name, &type_env, Span::dummy(), &ctx)?;
+        let param_ctx = super::CheckContext {
+            file_id: p.source_ref.0,
+            module_name: &fn_name.module,
+        };
+        let param_type = super::constraints::resolve(
+            db,
+            tables,
+            &p.type_name,
+            &type_env,
+            p.source_ref.1,
+            &param_ctx,
+        )?;
         resolved_params.push(crate::typed_ast::Parameter {
             name: p.name.clone(),
             param_type,
-            span: Span::dummy(),
+            span: p.source_ref.1,
         });
     }
-    let resolved_return =
-        super::constraints::resolve(db, tables, return_type, &type_env, Span::dummy(), &ctx)?;
+    let return_ctx = super::CheckContext {
+        file_id: type_def.get().source_ref.0,
+        module_name: &fn_name.module,
+    };
+    let resolved_return = super::constraints::resolve(
+        db,
+        tables,
+        return_type,
+        &type_env,
+        type_def.get().source_ref.1,
+        &return_ctx,
+    )?;
     Some(ArcPtr::new(super::FunctionSignature {
         parameters: resolved_params,
         return_type: resolved_return,
@@ -623,6 +656,7 @@ fn convert_type_kind(
                 .map(|p| ParameterDefinition {
                     name: p.name.clone(),
                     type_name: ast_type_to_type_name(db, tables, &p.type_name, module),
+                    source_ref: p.source_ref.clone(),
                 })
                 .collect(),
             generic_parameters: convert_generic_params(db, tables, generic_parameters, module),

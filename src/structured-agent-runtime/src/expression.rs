@@ -408,6 +408,7 @@ mod tests {
 
     use super::ExpressionValue;
 
+    #[derive(Debug, Clone)]
     struct NoSource;
     impl crate::symbols::SourceRef for NoSource {}
     struct NoBody;
