@@ -119,25 +119,21 @@ Signatures have no special location requirement. One used across many modules is
 `use` is an alias. It does not change what is in scope — fully qualified names always work — but it reduces repetition at use sites.
 
 ```/dev/null/agent.sa#L1-4
-use storage.Storage
-use storage.disk as disk
+use storage::read as load_raw
 
-fn load(key: String): Option<String> { disk.read(key) }
+fn load(key: String): Option<String> { load_raw(key) }
 ```
 
-`use M.f as g` binds `g` as a local alias for `M.f`. `use M.f` without an alias brings `f` into scope unqualified. The qualified form is preferred where the origin aids readability. `use` paths inside a file body may be shortened — `use analyzer` rather than `use tasks.analyzer` when both files share the `tasks` directory — but this is purely a convenience. The compiler resolves them against the full module tree.
+`use M::f as g` binds `g` as a local alias for `M::f`. `use M::f` without an alias brings `f` into scope unqualified. The qualified form is preferred where the origin aids readability. `use` paths inside a file body may be shortened — `use analyzer::thing` rather than `use tasks::analyzer::thing` when both files share the `tasks` directory — but this is purely a convenience. The compiler resolves them against the full module tree.
 
 Adding `pub` to a `use` declaration re-exports the name as part of the current module's public surface. This is the mechanism for presenting a curated API that hides internal structure — equivalent to Rust's `pub use` or a TypeScript barrel file.
 
-```/dev/null/storage.sa#L1-5
-mod disk: storage.Storage
-mod memory: storage.Storage
-
-pub use disk.read
-pub use disk.write as write_through
+```/dev/null/storage.sa#L1-4
+pub use disk::read
+pub use disk::write as write_through
 ```
 
-Callers of `storage` see only `read` and `write_through`. The `disk` and `memory` submodules are not visible — they are an implementation detail. A caller doing `use storage.read` has no knowledge of which submodule satisfies the call.
+Callers of `storage` see only `read` and `write_through`. The `disk` and `memory` submodules are not visible — they are an implementation detail. A caller doing `use storage::read` has no knowledge of which submodule satisfies the call.
 
 This composes with signatures. If `mod storage: StorageApi`, then `pub use` is the mechanism by which the names named in `StorageApi` are brought to the module's surface from wherever they actually live internally. The signature asserts the shape; `pub use` constructs it from the pieces.
 
@@ -148,69 +144,55 @@ A module can declare dependencies as parameters. This is opt-in and requires a s
 ```/dev/null/db.sa#L1-6
 mod db(io: storage.Storage)
 
-pub fn connect(): Connection { io.read("config") }
-pub fn query(q: String): List<Row> { ... }
+use io::read
+use io::query as io_query
+
+pub fn connect(): Connection { read("config") }
+pub fn query(q: String): List<Row> { io_query(q) }
 ```
 
 The first line is the module header. It declares that `db` receives a value of type `storage.Storage` named `io`. Within the file, `io` is in scope and only its `Storage` interface is visible — the concrete implementation is not known to `db`.
 
-The caller wires the dependency at the declaration site:
+The caller passes the concrete implementation at the `use` site:
 
 ```/dev/null/app.sa#L1-3
-mod io: storage.Storage = storage.disk
-mod db(io)
+use db(storage.disk)::connect
+use db(storage.disk)::query
 ```
 
-`mod io: storage.Storage = storage.disk` binds `io` to the concrete `storage.disk` module and asserts it satisfies the signature. `mod db(io)` passes that binding into `db`. The type checker verifies the signature match at the declaration site, not at every call site.
+The argument is resolved positionally against the module header's parameter list. Named arguments are also accepted, which is useful for clarity or when passing a subset of parameters:
 
-For testing, a different implementation is substituted at the same declaration site. If a sig exists, the inline block satisfies it:
-
-```/dev/null/app_test.sa#L1-6
-mod io: storage.Storage {
-    fn read(key: String): Option<String> { some("test") }
-    fn write(key: String, value: String): () { }
-}
-mod db(io)
+```/dev/null/app.sa#L1-2
+use db(io: storage.disk)::connect
 ```
 
-When no sig exists, a module can declare that it satisfies the same contract as a concrete module. The compiler derives the required surface from that module's public exports:
+The type checker verifies that the supplied module satisfies the declared sig at the `use` site, not at every call site. A different file can import the same module with a different implementation — no separate composition file is required.
 
-```/dev/null/app_test.sa#L1-5
-mod io: storage.disk {
-    fn read(key: String): Option<String> { some("test") }
-    fn write(key: String, value: String): () { }
-}
-mod db(io)
+For testing, a different implementation is passed at the same `use` site:
+
+```/dev/null/app_test.sa#L1-3
+use db(fake_storage)::connect
+use db(fake_storage)::query
 ```
 
-`mod io: storage.disk` means "implements the same public surface as `storage.disk`", without requiring a named sig. This is structural matching against a concrete module rather than a declared interface. The two forms are equivalent when a sig exists and covers the full public surface of the module — the sig form is preferred when the abstraction is named and shared; the module form is the lower-friction path when it is not.
+Where `fake_storage` is a module in the same directory that satisfies `storage.Storage`. Because arguments are resolved against the header's sig, the type checker catches mismatches before runtime.
 
-The composition root is simply a different file with different wiring. No test framework machinery is required.
+When the same parameterised module is imported with two different implementations in the same file, the `as` alias distinguishes them:
 
-An inline module can combine a dependency with a sig assertion in a single block. This is useful at a wiring site that needs to introduce a small adapter:
-
-```/dev/null/app.sa#L1-5
-mod io: storage.Storage = storage.disk
-mod logging.Logger = logging.file_logger
-mod db(io): db.Database {
-    pub fn connect(): Connection { io.read("config") }
-    pub fn query(q: String): List<Row> { ... }
-}
+```/dev/null/app.sa#L1-4
+use db(storage.disk)::query
+use db(storage.memory)::query as query_mem
 ```
 
-The block declares that this inline module receives `io` and satisfies `db.Database`. The sig assertion and the dependency appear together at the declaration site.
+The module header declaration forms are:
 
-The two declaration forms are:
-
-```/dev/null/forms.sa#L1-5
-mod name                  -- file module, no sig required
-mod name: Sig             -- asserts module satisfies a named sig
-mod name: other.module    -- asserts module satisfies a concrete module's public surface
-mod name: Sig = impl      -- substitution; implementation fixed here
-mod name(dep: Sig)        -- parameter requires a sig or module contract on the dependency
+```/dev/null/forms.sa#L1-3
+mod name                  -- file module, no params
+mod name(dep: Sig)        -- module parameter with a sig contract
+mod name(dep: Sig, dep2: other.Sig)  -- multiple parameters
 ```
 
-The first leaves the module abstract. The second makes the implementation transparent to the type checker, which can propagate known facts about the specific implementation.
+Parameters may use either a named sig (`storage.Storage`) or a concrete module path as the contract (`storage.disk`), in which case the compiler derives the required surface from that module's public exports.
 
 ## LLM Context Bounding
 
@@ -265,20 +247,21 @@ Value level:   A  — runtime result
 
 ## Summary of Syntax
 
-```/dev/null/syntax-summary.sa#L1-16
-sig Name { ... }                        -- module interface type (optional)
-mod name                                -- file module, no sig, no params
-mod name: Sig                           -- asserts module satisfies a named sig
-mod name: other.module                  -- asserts module satisfies a concrete module's public surface
-mod name: Sig = impl                    -- binds concrete implementation
-mod name(dep: Sig)                      -- module with injected dependency (sig or module contract)
-mod name(dep: Sig): Sig2 { ... }        -- inline module with a dependency and a sig assertion
-use path.to.Name                        -- unqualified alias
-use path.to.Name as Alias               -- named alias
-pub use path.to.Name                    -- re-export as part of this module's surface
-pub use path.to.Name as Alias           -- re-export under a different name
-fn f(): T in M                          -- generated fn, context bounded to M
-fn f(): deferred T in M                 -- explicitly marks LLM generation stage
+```/dev/null/syntax-summary.sa#L1-15
+sig Name { ... }                            -- module interface type (optional)
+mod name                                    -- file module, no params
+mod name(dep: Sig)                          -- module header declaring a dependency
+mod name(dep: Sig): Sig2 { ... }            -- inline module with a dependency and a sig assertion
+use module::Name                            -- unqualified import
+use module::Name as Alias                   -- named import
+use module(impl)::Name                      -- import from parameterised module, positional arg
+use module(dep: impl)::Name                 -- import from parameterised module, named arg
+use module(impl1, impl2)::Name              -- multiple positional args
+pub use module::Name                        -- re-export as part of this module's surface
+pub use module::Name as Alias               -- re-export under a different name
+pub use module(impl)::Name                  -- re-export from parameterised module
+fn f(): T in M                              -- generated fn, context bounded to M
+fn f(): deferred T in M                     -- explicitly marks LLM generation stage
 ```
 
 ## See Also
