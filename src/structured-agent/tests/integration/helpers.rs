@@ -43,7 +43,7 @@ pub fn parse_and_type_check(code: &str) -> typed_ast::Module {
         file_id: TEST_FILE_ID,
     };
     let typed_metadata = TypeChecker::new()
-        .check_modules(&[parsed], &HashMap::new())
+        .check(&[parsed], &HashMap::new())
         .unwrap();
 
     let definitions = typed_metadata

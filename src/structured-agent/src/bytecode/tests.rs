@@ -118,7 +118,7 @@ mod compilation_tests {
             file_id,
         };
         let typed_metadata = TypeChecker::new()
-            .check_modules(&[parsed], &HashMap::new())
+            .check(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata
             .functions
@@ -871,7 +871,7 @@ mod vm_execution_tests {
             file_id,
         };
         let typed_metadata = TypeChecker::new()
-            .check_modules(&[parsed], &HashMap::new())
+            .check(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata
             .functions
@@ -994,6 +994,7 @@ mod vm_execution_tests {
                     kind: FunctionNameKind::Function,
                 },
                 kind: crate::typecheck::FunctionKind::External,
+                type_arguments: vec![],
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
                 ty: Type::unit(),
                 span: *span,
@@ -1493,7 +1494,7 @@ mod struct_bytecode_tests {
             file_id,
         };
         let typed_metadata = TypeChecker::new()
-            .check_modules(&[parsed], &HashMap::new())
+            .check(&[parsed], &HashMap::new())
             .unwrap();
         let definitions = typed_metadata
             .functions

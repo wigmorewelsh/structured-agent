@@ -196,7 +196,7 @@ impl Compiler {
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
         let typed_metadata = checker
-            .check_modules(&modules, &self.modules)
+            .check(&modules, &self.modules)
             .map_err(|errors| {
                 for e in &errors {
                     error!("Type checking failed: {}", e);

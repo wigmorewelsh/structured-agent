@@ -79,7 +79,7 @@ mod tests {
             file_id: 0,
         };
         TypeChecker::new()
-            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &std::collections::HashMap::new())
             .map(|_| ())
     }
 
@@ -1711,7 +1711,7 @@ mod typed_ast_tests {
             file_id: 0,
         };
         let typed_metadata = TypeChecker::new()
-            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let definitions = typed_metadata
             .functions
@@ -1826,6 +1826,52 @@ mod typed_ast_tests {
         ))]));
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(expr.ty(), &RT::unit());
+    }
+
+    #[test]
+    fn call_carries_solved_type_arguments() {
+        let code = r#"
+            mod test
+            fn test_func<T: Int>(x: T): T { return x }
+            fn main(): () { test_func(42) }
+        "#;
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = crate::compiler::parser::parse_program(0)
+            .parse(stream)
+            .unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: nonempty::NonEmpty::new("test".to_string()),
+            is_entry: false,
+            file_id: 0,
+            module,
+        };
+        let mut checker = super::TypeChecker::new();
+        let metadata = checker
+            .check(&[parsed], &std::collections::HashMap::new())
+            .unwrap();
+
+        let main_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.name == "main")
+            .unwrap();
+        let crate::typecheck::refs::TypedCheckerAstRef::Function(f, _) = &main_fn.ast_ref else {
+            panic!()
+        };
+
+        let stmt = f.body.statements.first().unwrap();
+        let crate::typed_ast::Statement::ExpressionStatement(crate::typed_ast::Expression::Call {
+            type_arguments,
+            ..
+        }) = stmt
+        else {
+            panic!()
+        };
+
+        assert_eq!(type_arguments.len(), 1);
     }
 
     #[test]
@@ -2611,7 +2657,7 @@ mod metadata_query_tests {
             file_id: 0,
         };
         let metadata = TypeChecker::new()
-            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         metadata
     }
@@ -2735,7 +2781,7 @@ mod metadata_query_tests {
             file_id: 0,
         };
         let metadata = TypeChecker::new()
-            .check_modules(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
         let type_name = TypeName {
             name: "Foo".to_string(),

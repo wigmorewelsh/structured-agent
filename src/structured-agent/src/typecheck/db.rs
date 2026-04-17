@@ -41,6 +41,11 @@ pub(super) struct ParsedModuleInput {
     pub(super) module: AstModule,
 }
 
+#[salsa::input]
+pub(super) struct ProgramInput {
+    pub(super) modules: Vec<ParsedModuleInput>,
+}
+
 pub(super) struct ArcPtr<T>(Arc<T>);
 
 impl<T> ArcPtr<T> {
@@ -221,6 +226,7 @@ pub(super) fn get_function_sig<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
+    program: ProgramInput,
 ) -> Option<ArcPtr<super::FunctionSignature>> {
     let fn_name = name.name(db);
     let fn_def = lookup_function_def(db, tables, name).or_accumulate(
@@ -276,6 +282,7 @@ pub(super) fn get_function_sig<'db>(
         let param_ctx = super::CheckContext {
             file_id: p.source_ref.0,
             module_name: &fn_name.module,
+            program,
         };
         let param_type = super::synthesize::resolve(
             db,
@@ -294,6 +301,7 @@ pub(super) fn get_function_sig<'db>(
     let return_ctx = super::CheckContext {
         file_id: type_def.get().source_ref.0,
         module_name: &fn_name.module,
+        program,
     };
     let resolved_return = super::synthesize::resolve(
         db,
@@ -341,16 +349,29 @@ pub(super) fn get_struct_fields(
 }
 
 #[salsa::tracked]
+pub(super) fn check_program(
+    db: &dyn TypeCheckDatabase,
+    program: ProgramInput,
+    tables: SymbolTablesInput,
+) {
+    for parsed in program.modules(db) {
+        check_module(db, parsed, tables, program);
+    }
+}
+
+#[salsa::tracked]
 pub(super) fn check_module(
     db: &dyn TypeCheckDatabase,
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
+    program: ProgramInput,
 ) {
     let module_name = ModuleName::new(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
         file_id: parsed.file_id(db),
         module_name: &module_name,
+        program,
     };
     for def in module.definitions.iter().filter(|def| {
         !matches!(
@@ -697,6 +718,7 @@ pub(super) fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
+    program: ProgramInput,
 ) -> Option<ArcPtr<typed_ast::Function>> {
     let fn_def_ptr = lookup_function_def(db, tables, name)?;
     let fn_def = fn_def_ptr.get();
@@ -705,6 +727,7 @@ pub(super) fn elaborate_function_def<'db>(
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
                 module_name: &fn_def.name.module,
+                program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
                 db, tables, arc_fn, &ctx, None,
@@ -718,6 +741,7 @@ pub(super) fn elaborate_function_def<'db>(
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
                 module_name: &fn_def.name.module,
+                program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
                 db,
@@ -735,6 +759,7 @@ pub(super) fn elaborate_function_def<'db>(
 pub(super) fn elaborate_metadata(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
+    program: ProgramInput,
 ) -> ArcPtr<MetaData<TypedRefs>> {
     let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
 
@@ -742,13 +767,13 @@ pub(super) fn elaborate_metadata(
         let interned_name = (&fn_def.name).intern(db);
         let typed_ast_ref = match &fn_def.ast_ref {
             CheckerAstRef::Function(_, kind) => {
-                match elaborate_function_def(db, tables, interned_name) {
+                match elaborate_function_def(db, tables, interned_name, program) {
                     Some(ptr) => TypedCheckerAstRef::Function(Arc::clone(&ptr.0), kind.clone()),
                     None => TypedCheckerAstRef::Other(fn_def.ast_ref.clone()),
                 }
             }
             CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
-                match elaborate_function_def(db, tables, interned_name) {
+                match elaborate_function_def(db, tables, interned_name, program) {
                     Some(ptr) => TypedCheckerAstRef::ImplFunction(
                         Arc::clone(&ptr.0),
                         type_name_str.clone(),

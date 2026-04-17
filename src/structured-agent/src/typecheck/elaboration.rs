@@ -151,12 +151,12 @@ fn elaborate_statement(
 fn elaborate_block(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
-    stmts: &[Statement],
+    statements: &[Statement],
     mut env: synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Statement>> {
     let mut typed_stmts = Vec::new();
-    for stmt in stmts {
+    for stmt in statements {
         let (typed_stmt, new_env) = elaborate_statement(db, tables, stmt, env, ctx)?;
         typed_stmts.push(typed_stmt);
         env = new_env;
@@ -208,8 +208,8 @@ pub(super) fn elaborate_expression(
         Expression::ListLiteral { elements, span } => {
             elaborate_list_literal(db, tables, elements, *span, env, ctx)
         }
-        Expression::Select(select_expr) => {
-            elaborate_select(db, tables, &select_expr.clauses, select_expr.span, env, ctx)
+        Expression::Select(select) => {
+            elaborate_select(db, tables, &select.clauses, select.span, env, ctx)
         }
         Expression::IfElse {
             condition,
@@ -245,8 +245,17 @@ fn elaborate_call(
     let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {
             let interned = fn_name.clone().intern(db);
-            get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
+            get_function_sig(db, tables, interned, ctx.program)
+                .map(|arc| (fn_name, arc.get().clone()))
         })?;
+
+    let solved_constraints = crate::typecheck::solver::solve_constraints(db, ctx.program, tables);
+    let type_arguments = solved_constraints
+        .resolved
+        .get(&ctx.module_name.to_string())
+        .and_then(|callees| callees.get(function))
+        .cloned()
+        .unwrap_or_default();
 
     let mut typed_args = Vec::new();
 
@@ -268,6 +277,7 @@ fn elaborate_call(
         function: function.to_string(),
         resolved: resolved_fn_name,
         kind: sig.kind,
+        type_arguments,
         arguments: typed_args,
         ty: resolved_return,
         span,
@@ -312,11 +322,10 @@ fn elaborate_select(
     }
     let first = &clauses[0];
     let typed_first_run = elaborate_expression(db, tables, &first.expression_to_run, env, ctx)?;
-    let first_result_type = typed_first_run.ty().clone();
     let mut first_env = env.create_child();
     first_env.declare_variable(
         first.result_variable.clone(),
-        first_result_type,
+        typed_first_run.ty().clone(),
         first.expression_to_run.span(),
     );
     let typed_first_next =
@@ -330,11 +339,10 @@ fn elaborate_select(
     }];
     for clause in clauses.iter().skip(1) {
         let typed_run = elaborate_expression(db, tables, &clause.expression_to_run, env, ctx)?;
-        let result_type = typed_run.ty().clone();
         let mut clause_env = env.create_child();
         clause_env.declare_variable(
             clause.result_variable.clone(),
-            result_type,
+            typed_run.ty().clone(),
             clause.expression_to_run.span(),
         );
         let typed_next =

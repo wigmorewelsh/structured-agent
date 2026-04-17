@@ -125,6 +125,7 @@ pub enum Expression {
         function: String,
         resolved: FunctionName,
         kind: FunctionKind,
+        type_arguments: Vec<Type>,
         arguments: Vec<Expression>,
         ty: Type,
         span: Span,

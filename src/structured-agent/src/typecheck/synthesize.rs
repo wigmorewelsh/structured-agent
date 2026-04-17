@@ -9,8 +9,10 @@ use crate::ast::{
 };
 use crate::ensure_or_accumulate;
 use crate::typecheck::error::TypeError;
+use crate::typecheck::solver::Constraint;
 use crate::types::{FileId, Span, Spanned};
 
+use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{
@@ -28,6 +30,7 @@ pub(crate) struct TypeEnvironment {
 pub(crate) struct CheckContext<'a> {
     pub(super) file_id: FileId,
     pub(super) module_name: &'a ModuleName,
+    pub(super) program: crate::typecheck::db::ProgramInput,
 }
 
 impl TypeEnvironment {
@@ -333,7 +336,7 @@ fn check_function(
         module: ctx.module_name.clone(),
         kind: FunctionNameKind::Function,
     };
-    let sig = get_function_sig(db, tables, fn_name.intern(db))?
+    let sig = get_function_sig(db, tables, fn_name.intern(db), ctx.program)?
         .get()
         .clone();
     let mut env = TypeEnvironment::new();
@@ -605,7 +608,8 @@ fn synthesize_call(
     let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {
             let interned = fn_name.clone().intern(db);
-            get_function_sig(db, tables, interned).map(|arc| (fn_name, arc.get().clone()))
+            get_function_sig(db, tables, interned, ctx.program)
+                .map(|arc| (fn_name, arc.get().clone()))
         })
         .or_accumulate(
             db,
@@ -653,7 +657,25 @@ fn synthesize_call(
         if tp.bounds.is_empty() {
             continue;
         }
-        unimplemented!("Removed a old impl was hacky as hell");
+        if let Some(actual) = unifier.get(&tp.name) {
+            for bound in &tp.bounds {
+                if let Some(bound_type) = resolve(db, tables, bound, env, span, ctx) {
+                    Constraint {
+                        caller: ctx.module_name.to_string(),
+                        callee: function.to_string(),
+                        actual_type: actual.clone(),
+                        bound_type,
+                        context: format!(
+                            "call to '{}': type parameter '{}' bound",
+                            function, tp.name
+                        ),
+                        span,
+                        file_id: ctx.file_id,
+                    }
+                    .accumulate(db);
+                }
+            }
+        }
     }
     Some(unifier.apply_subst(&sig.return_type))
 }

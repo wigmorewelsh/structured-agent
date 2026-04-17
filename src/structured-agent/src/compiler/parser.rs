@@ -3011,7 +3011,7 @@ fn main(): String {
             is_entry: true,
             file_id: TEST_FILE_ID,
         };
-        let result = TypeChecker::new().check_modules(&[parsed], &HashMap::new());
+        let result = TypeChecker::new().check(&[parsed], &HashMap::new());
         assert!(result.is_ok(), "use alias should resolve");
     }
 
