@@ -4,6 +4,13 @@ pub enum Type {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TypeParam {
+    pub name: String,
+    pub bounds: Vec<Type>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum Op {
     Add,
     Sub,
@@ -17,6 +24,7 @@ pub enum Expr {
     Var(String),
     BinOp(Op, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
+    Str(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
