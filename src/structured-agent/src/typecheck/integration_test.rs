@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::cli::config::ProgramSource;
     use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
+    use crate::runtime::Runtime;
 
     fn compile(code: &str) -> Result<CompiledProgram, String> {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -319,5 +321,40 @@ fn main(xs: List<String>): Option<String> {
             result.is_ok(),
             "Generic function call should compile successfully"
         );
+    }
+
+    #[test]
+    fn test_constrained_generic_function_call_typechecks_end_to_end() {
+        let code = r#"
+fn some_fn<T: Int>(param: T): T {
+    return param
+}
+
+fn main(): Int {
+    let thing = some_fn(10)
+    return thing
+}
+"#;
+
+        let result = compile(code);
+
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Constrained generic function call should compile successfully"
+        );
+
+        let runtime_result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(
+                Runtime::builder(ProgramSource::Inline(code.to_string()))
+                    .build()
+                    .run(),
+            )
+            .unwrap();
+
+        assert_eq!(runtime_result.as_integer().unwrap(), 10);
     }
 }
