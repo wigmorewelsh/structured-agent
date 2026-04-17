@@ -114,12 +114,28 @@ pub struct AstTrait {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum UseParam {
+    Positional(NonEmpty<String>),
+    Named {
+        name: String,
+        path: NonEmpty<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UseSegment {
+    pub name: String,
+    pub params: Vec<UseParam>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Function(Arc<Function>),
     ExternalFunction(Arc<ExternalFunction>),
     Struct(Arc<StructDefinition>),
     Use {
-        path: NonEmpty<String>,
+        path: NonEmpty<UseSegment>,
         name: String,
         alias: Option<String>,
         is_pub: bool,
@@ -128,18 +144,6 @@ pub enum Definition {
     ModuleHeader {
         name: String,
         params: Vec<ModuleParam>,
-        span: Span,
-    },
-    ModuleBinding {
-        name: String,
-        sig_path: NonEmpty<String>,
-        sig_name: String,
-        impl_path: NonEmpty<String>,
-        span: Span,
-    },
-    WiringSite {
-        name: String,
-        args: Vec<String>,
         span: Span,
     },
     Signature(Arc<AstSignature>),
@@ -155,8 +159,6 @@ impl Spanned for Definition {
             Definition::Struct(s) => s.span,
             Definition::Use { span, .. } => *span,
             Definition::ModuleHeader { span, .. } => *span,
-            Definition::ModuleBinding { span, .. } => *span,
-            Definition::WiringSite { span, .. } => *span,
             Definition::Signature(s) => s.span,
             Definition::Trait(s) => s.span,
             Definition::TraitImpl(t) => t.span,
@@ -522,12 +524,38 @@ impl fmt::Display for Definition {
                 if *is_pub {
                     write!(f, "pub ")?;
                 }
-                write!(
-                    f,
-                    "use {}::{}",
-                    path.iter().cloned().collect::<Vec<_>>().join("::"),
-                    name
-                )?;
+                write!(f, "use ")?;
+                for seg in path.iter() {
+                    write!(f, "{}", seg.name)?;
+                    if !seg.params.is_empty() {
+                        write!(f, "(")?;
+                        for (i, p) in seg.params.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            match p {
+                                UseParam::Positional(path) => {
+                                    write!(
+                                        f,
+                                        "{}",
+                                        path.iter().cloned().collect::<Vec<_>>().join("::")
+                                    )?;
+                                }
+                                UseParam::Named { name, path } => {
+                                    write!(
+                                        f,
+                                        "{}: {}",
+                                        name,
+                                        path.iter().cloned().collect::<Vec<_>>().join("::")
+                                    )?;
+                                }
+                            }
+                        }
+                        write!(f, ")")?;
+                    }
+                    write!(f, "::")?;
+                }
+                write!(f, "{}", name)?;
                 if let Some(a) = alias {
                     write!(f, " as {}", a)?;
                 }
@@ -555,25 +583,6 @@ impl fmt::Display for Definition {
                     write!(f, ")")?;
                 }
                 Ok(())
-            }
-            Definition::ModuleBinding {
-                name,
-                sig_path,
-                sig_name,
-                impl_path,
-                ..
-            } => {
-                write!(
-                    f,
-                    "mod {}: {}::{} = {}",
-                    name,
-                    sig_path.iter().cloned().collect::<Vec<_>>().join("::"),
-                    sig_name,
-                    impl_path.iter().cloned().collect::<Vec<_>>().join("::")
-                )
-            }
-            Definition::WiringSite { name, args, .. } => {
-                write!(f, "mod {}({})", name, args.join(", "))
             }
             Definition::Signature(s) => {
                 writeln!(f, "sig {} {{", s.name)?;

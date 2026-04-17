@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::ast::{ExternalFunction, StructDefinition};
+use crate::ast::{ExternalFunction, StructDefinition, UseSegment};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -20,23 +20,10 @@ pub enum Definition {
     ExternalFunction(ExternalFunction),
     Struct(StructDefinition),
     Use {
-        path: NonEmpty<String>,
+        path: NonEmpty<UseSegment>,
         name: String,
         alias: Option<String>,
         is_pub: bool,
-        span: Span,
-    },
-
-    ModuleBinding {
-        name: String,
-        sig_path: NonEmpty<String>,
-        sig_name: String,
-        impl_path: NonEmpty<String>,
-        span: Span,
-    },
-    WiringSite {
-        name: String,
-        args: Vec<String>,
         span: Span,
     },
 

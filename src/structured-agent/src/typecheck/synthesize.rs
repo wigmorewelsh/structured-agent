@@ -316,10 +316,7 @@ pub(super) fn check_definition(
             }
             Some(())
         }
-        Definition::Use { .. }
-        | Definition::ModuleBinding { .. }
-        | Definition::WiringSite { .. }
-        | Definition::Trait(_) => Some(()),
+        Definition::Use { .. } | Definition::Trait(_) => Some(()),
         Definition::TraitImpl(_t) => Some(()),
         Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
     }

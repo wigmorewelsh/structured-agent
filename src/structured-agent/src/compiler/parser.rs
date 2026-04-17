@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::ast::{
     AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction, Function,
     FunctionBody, Module, ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction,
-    Statement, StructDefinition, StructField, Type, TypeParam,
+    Statement, StructDefinition, StructField, Type, TypeParam, UseParam, UseSegment,
 };
 use crate::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
@@ -147,14 +147,11 @@ where
         position(),
         skip_spaces_and_comments().with((
             optional(attempt(
-                choice((attempt(parse_module_binding()), parse_module_header()))
-                    .skip(skip_spaces_and_comments()),
+                parse_module_header().skip(skip_spaces_and_comments()),
             )),
             many(
                 choice((
                     attempt(parse_use()),
-                    attempt(parse_module_binding()),
-                    attempt(parse_wiring_site()),
                     attempt(parse_sig_definition()),
                     attempt(parse_trait_impl()),
                     attempt(parse_trait()),
@@ -181,73 +178,6 @@ where
                 file_id,
             }
         })
-}
-
-fn parse_wiring_site<Input>() -> impl Parser<Input, Output = Definition>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        lex_string("mod"),
-        identifier(),
-        between(
-            lex_char('('),
-            lex_char(')'),
-            sep_by1(identifier(), lex_char(',')),
-        ),
-        position(),
-    )
-        .map(|(start, _, name, args, end)| Definition::WiringSite {
-            name,
-            args,
-            span: Span::new(start, end),
-        })
-}
-
-fn parse_module_binding<Input>() -> impl Parser<Input, Output = Definition>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        lex_string("mod"),
-        identifier(),
-        lex_char(':'),
-        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
-        lex_char('='),
-        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
-        position(),
-    )
-        .map(
-            |(start, _, name, _, mut sig_path_vec, _, impl_path_vec, end): (
-                _,
-                _,
-                String,
-                _,
-                Vec<String>,
-                _,
-                Vec<String>,
-                _,
-            )| {
-                let sig_name = sig_path_vec
-                    .pop()
-                    .expect("sig_path requires module::SigName");
-                let sig_path = NonEmpty::from_vec(sig_path_vec)
-                    .expect("sig_path must have at least one module segment");
-                let impl_path =
-                    NonEmpty::from_vec(impl_path_vec).expect("impl_path must be non-empty");
-                Definition::ModuleBinding {
-                    name,
-                    sig_path,
-                    sig_name,
-                    impl_path,
-                    span: Span::new(start, end),
-                }
-            },
-        )
 }
 
 fn parse_module_header<Input>() -> impl Parser<Input, Output = Definition>
@@ -539,6 +469,56 @@ where
         })
 }
 
+fn parse_use_param<Input>() -> impl Parser<Input, Output = UseParam>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        attempt(
+            (
+                identifier_raw().skip(skip_spaces()),
+                lex_char(':'),
+                sep_by1::<Vec<String>, _, _, _>(
+                    identifier_raw().skip(skip_spaces()),
+                    attempt(string("::")).skip(skip_spaces()),
+                ),
+            )
+                .map(|(name, _, path_vec)| UseParam::Named {
+                    name,
+                    path: NonEmpty::from_vec(path_vec).unwrap(),
+                }),
+        ),
+        sep_by1::<Vec<String>, _, _, _>(
+            identifier_raw().skip(skip_spaces()),
+            attempt(string("::")).skip(skip_spaces()),
+        )
+        .map(|path_vec| UseParam::Positional(NonEmpty::from_vec(path_vec).unwrap())),
+    ))
+}
+
+fn parse_use_segment<Input>() -> impl Parser<Input, Output = UseSegment>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        identifier_raw().skip(skip_spaces()),
+        optional(attempt(between(
+            lex_char('('),
+            lex_char(')'),
+            sep_by1(parse_use_param(), lex_char(',')),
+        ))),
+        position(),
+    )
+        .map(|(start, name, params, end)| UseSegment {
+            name,
+            params: params.unwrap_or_default(),
+            span: Span::new(start, end),
+        })
+}
+
 fn parse_use<Input>() -> impl Parser<Input, Output = Definition>
 where
     Input: Stream<Token = char, Position = usize>,
@@ -548,15 +528,18 @@ where
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("use"),
-        identifier_raw(),
-        many1::<Vec<String>, _, _>(attempt((string("::"), identifier_raw()).map(|(_, id)| id))),
+        parse_use_segment(),
+        many1::<Vec<UseSegment>, _, _>(
+            attempt((string("::").skip(skip_spaces()), parse_use_segment())).map(|(_, seg)| seg),
+        ),
         optional(attempt(
             (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
         )),
         position(),
     )
         .map(|(start, pub_kw, _, first_seg, mut rest, alias, end)| {
-            let name = rest.pop().unwrap();
+            let name_seg = rest.pop().unwrap();
+            let name = name_seg.name.clone();
             let mut path_vec = vec![first_seg];
             path_vec.extend(rest);
             let path = NonEmpty::from_vec(path_vec).unwrap();
@@ -2953,7 +2936,11 @@ pub fn greet(name: String): String {
             _ => panic!("Expected Use definition"),
         };
         assert_eq!(
-            use_def.0.iter().cloned().collect::<Vec<_>>(),
+            use_def
+                .0
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["foo", "bar"]
         );
         assert_eq!(use_def.1, "baz");
@@ -2972,7 +2959,14 @@ pub fn greet(name: String): String {
             } => (path.clone(), name.clone(), alias.clone()),
             _ => panic!("Expected Use definition"),
         };
-        assert_eq!(use_def.0.iter().cloned().collect::<Vec<_>>(), vec!["foo"]);
+        assert_eq!(
+            use_def
+                .0
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["foo"]
+        );
         assert_eq!(use_def.1, "bar");
         assert_eq!(use_def.2, Some("fb".to_string()));
     }
@@ -3130,76 +3124,6 @@ fn main(): String {
     }
 
     #[test]
-    fn test_parse_module_binding() {
-        let input = "mod fmt: formatter::Formatter = formatter\n\nfn main(): () {}\n";
-        let stream = Stream::with_positioner(input, IndexPositioner::default());
-        let result = parse_program(TEST_FILE_ID).parse(stream);
-        assert!(result.is_ok(), "parse failed: {:?}", result.err());
-        let (module, _) = result.unwrap();
-        assert_eq!(module.definitions.len(), 2);
-        match &module.definitions[0] {
-            Definition::ModuleBinding {
-                name,
-                sig_path,
-                sig_name,
-                impl_path,
-                ..
-            } => {
-                assert_eq!(name, "fmt");
-                assert_eq!(*sig_path, nonempty::nonempty!["formatter".to_string()]);
-                assert_eq!(sig_name, "Formatter");
-                assert_eq!(*impl_path, nonempty::nonempty!["formatter".to_string()]);
-            }
-            other => panic!("Expected ModuleBinding, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_module_binding_multi_segment_impl() {
-        let input = "mod io: storage::Storage = storage::disk\n\nfn main(): () {}\n";
-        let stream = Stream::with_positioner(input, IndexPositioner::default());
-        let result = parse_program(TEST_FILE_ID).parse(stream);
-        assert!(result.is_ok(), "parse failed: {:?}", result.err());
-        let (module, _) = result.unwrap();
-        match &module.definitions[0] {
-            Definition::ModuleBinding {
-                name,
-                sig_path,
-                sig_name,
-                impl_path,
-                ..
-            } => {
-                assert_eq!(name, "io");
-                assert_eq!(*sig_path, nonempty::nonempty!["storage".to_string()]);
-                assert_eq!(sig_name, "Storage");
-                assert_eq!(
-                    *impl_path,
-                    nonempty::nonempty!["storage".to_string(), "disk".to_string()]
-                );
-            }
-            other => panic!("Expected ModuleBinding, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_wiring_site() {
-        let input =
-            "mod fmt: formatter::Formatter = formatter\nmod reporter(fmt)\n\nfn main(): () {}\n";
-        let stream = Stream::with_positioner(input, IndexPositioner::default());
-        let result = parse_program(TEST_FILE_ID).parse(stream);
-        assert!(result.is_ok(), "parse failed: {:?}", result.err());
-        let (module, _) = result.unwrap();
-        assert_eq!(module.definitions.len(), 3);
-        match &module.definitions[1] {
-            Definition::WiringSite { name, args, .. } => {
-                assert_eq!(name, "reporter");
-                assert_eq!(args, &vec!["fmt"]);
-            }
-            other => panic!("Expected WiringSite, got {:?}", other),
-        }
-    }
-
-    #[test]
     fn test_parse_function_with_single_type_param() {
         let input = "fn identity<T>(x: T): T {\n    return x\n}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
@@ -3315,6 +3239,121 @@ fn main(): String {
             assert_eq!(s.functions[0].name, "add");
         } else {
             panic!("expected trait, got {:?}", module.definitions[0]);
+        }
+    }
+
+    #[test]
+    fn test_parse_use_with_single_positional_param() {
+        let input = "use worker(fakemodule)::run\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use { path, name, .. } => {
+                assert_eq!(path.len(), 1);
+                assert_eq!(path.first().name, "worker");
+                assert_eq!(
+                    path.first().params,
+                    vec![UseParam::Positional(NonEmpty::new(
+                        "fakemodule".to_string()
+                    ))]
+                );
+                assert_eq!(name, "run");
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_with_named_param() {
+        let input = "use db(io: storage::disk)::connect\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use { path, name, .. } => {
+                assert_eq!(path.first().name, "db");
+                assert_eq!(
+                    path.first().params,
+                    vec![UseParam::Named {
+                        name: "io".to_string(),
+                        path: nonempty::nonempty!["storage".to_string(), "disk".to_string()],
+                    }]
+                );
+                assert_eq!(name, "connect");
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_with_two_positional_params() {
+        let input = "use worker(realmodule, logger)::run\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use { path, name, .. } => {
+                assert_eq!(path.first().name, "worker");
+                assert_eq!(path.first().params.len(), 2);
+                assert_eq!(
+                    path.first().params[0],
+                    UseParam::Positional(NonEmpty::new("realmodule".to_string()))
+                );
+                assert_eq!(
+                    path.first().params[1],
+                    UseParam::Positional(NonEmpty::new("logger".to_string()))
+                );
+                assert_eq!(name, "run");
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_two_segments_with_params() {
+        let input = "use foo(x)::bar(y)::thing\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use { path, name, .. } => {
+                assert_eq!(path.len(), 2);
+                assert_eq!(path.first().name, "foo");
+                assert_eq!(
+                    path.first().params,
+                    vec![UseParam::Positional(NonEmpty::new("x".to_string()))]
+                );
+                assert_eq!(path.tail()[0].name, "bar");
+                assert_eq!(
+                    path.tail()[0].params,
+                    vec![UseParam::Positional(NonEmpty::new("y".to_string()))]
+                );
+                assert_eq!(name, "thing");
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_plain_no_params() {
+        let input = "use plain::thing\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use { path, name, .. } => {
+                assert_eq!(path.len(), 1);
+                assert_eq!(path.first().name, "plain");
+                assert!(path.first().params.is_empty());
+                assert_eq!(name, "thing");
+            }
+            other => panic!("Expected Use, got {:?}", other),
         }
     }
 

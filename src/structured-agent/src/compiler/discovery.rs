@@ -132,7 +132,10 @@ fn referenced_module_names(module: &Module) -> Vec<ImportType> {
         .definitions
         .iter()
         .flat_map(|def| match def {
-            Definition::Use { path, .. } => vec![ImportType::Relative(path.clone())],
+            Definition::Use { path, .. } => {
+                let name_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
+                vec![ImportType::Relative(NonEmpty::from_vec(name_path).unwrap())]
+            }
             Definition::ModuleHeader { params, .. } => params
                 .iter()
                 .filter(|p| !p.path.is_empty())
@@ -192,7 +195,11 @@ mod tests {
                 call_count += 1;
                 Module {
                     definitions: vec![Definition::Use {
-                        path: NonEmpty::new("sample".to_string()),
+                        path: NonEmpty::new(crate::ast::UseSegment {
+                            name: "sample".to_string(),
+                            params: vec![],
+                            span: Span::dummy(),
+                        }),
                         name: "Thing".to_string(),
                         alias: None,
                         is_pub: false,
@@ -224,7 +231,18 @@ mod tests {
                 call_count += 1;
                 Module {
                     definitions: vec![Definition::Use {
-                        path: nonempty::nonempty!["submodule".to_string(), "other".to_string()],
+                        path: nonempty::nonempty![
+                            crate::ast::UseSegment {
+                                name: "submodule".to_string(),
+                                params: vec![],
+                                span: Span::dummy(),
+                            },
+                            crate::ast::UseSegment {
+                                name: "other".to_string(),
+                                params: vec![],
+                                span: Span::dummy(),
+                            }
+                        ],
                         name: "Thing".to_string(),
                         alias: None,
                         is_pub: false,
@@ -237,7 +255,11 @@ mod tests {
                 call_count += 1;
                 Module {
                     definitions: vec![Definition::Use {
-                        path: NonEmpty::new("yetanother".to_string()),
+                        path: NonEmpty::new(crate::ast::UseSegment {
+                            name: "yetanother".to_string(),
+                            params: vec![],
+                            span: Span::dummy(),
+                        }),
                         name: "Thing".to_string(),
                         alias: None,
                         is_pub: false,
@@ -314,7 +336,11 @@ mod tests {
                 0,
                 Module {
                     definitions: vec![Definition::Use {
-                        path: NonEmpty::new("io".to_string()),
+                        path: NonEmpty::new(crate::ast::UseSegment {
+                            name: "io".to_string(),
+                            params: vec![],
+                            span: Span::dummy(),
+                        }),
                         name: "print".to_string(),
                         alias: None,
                         is_pub: false,
@@ -339,7 +365,11 @@ mod tests {
                 call_count += 1;
                 Module {
                     definitions: vec![Definition::Use {
-                        path: NonEmpty::new("sample".to_string()),
+                        path: NonEmpty::new(crate::ast::UseSegment {
+                            name: "sample".to_string(),
+                            params: vec![],
+                            span: Span::dummy(),
+                        }),
                         name: "Thing".to_string(),
                         alias: None,
                         is_pub: false,

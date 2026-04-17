@@ -34,8 +34,6 @@ impl UnusedReturnValueAnalyzer {
                 Definition::Struct(_)
                 | Definition::Use { .. }
                 | Definition::ModuleHeader { .. }
-                | Definition::ModuleBinding { .. }
-                | Definition::WiringSite { .. }
                 | Definition::Signature(_)
                 | Definition::Trait(_)
                 | Definition::TraitImpl(_) => {}

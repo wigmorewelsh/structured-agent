@@ -295,8 +295,6 @@ impl SymbolTableBuilder {
                 }
                 Definition::Struct(_)
                 | Definition::Use { .. }
-                | Definition::ModuleBinding { .. }
-                | Definition::WiringSite { .. }
                 | Definition::ModuleHeader { .. }
                 | Definition::Signature(_) => {}
                 Definition::Trait(s) => {
@@ -614,7 +612,7 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
                 ..
             } => {
                 let mut segs = parent.clone();
-                segs.extend(path.iter().cloned());
+                segs.extend(path.iter().map(|s| s.name.clone()));
                 let resolved = NonEmpty::from_vec(segs).unwrap();
                 let local = alias.clone().unwrap_or_else(|| name.clone());
                 vec![UseImport {

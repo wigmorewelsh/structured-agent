@@ -546,7 +546,9 @@ pub(super) fn resolve_type_alias<'db>(
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective == alias_str.as_str() {
-                let use_path = ModuleName::new(path.clone()).intern(db);
+                let name_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
+                let use_path =
+                    ModuleName::new(nonempty::NonEmpty::from_vec(name_path).unwrap()).intern(db);
                 let resolved = resolve_module_path(db, tables, current_module, use_path);
                 let resolved_module = resolved.intern(db);
                 let resolved_name = name.intern(db);
@@ -592,7 +594,9 @@ pub(super) fn resolve_function_alias<'db>(
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective == alias_str.as_str() {
-                let use_path = ModuleName::new(path.clone()).intern(db);
+                let name_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
+                let use_path =
+                    ModuleName::new(nonempty::NonEmpty::from_vec(name_path).unwrap()).intern(db);
                 let resolved = resolve_module_path(db, tables, current_module, use_path);
                 let resolved_module = resolved.intern(db);
                 let resolved_name = name.intern(db);
