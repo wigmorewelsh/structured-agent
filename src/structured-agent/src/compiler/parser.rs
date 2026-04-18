@@ -146,20 +146,15 @@ where
     (
         position(),
         skip_spaces_and_comments().with((
-            optional(attempt(
-                parse_module_header().skip(skip_spaces_and_comments()),
-            )),
+            optional(parse_module_header().skip(skip_spaces_and_comments())),
             many(
                 choice((
-                    attempt(parse_use()),
-                    attempt(parse_sig_definition()),
-                    attempt(parse_trait_impl()),
-                    attempt(parse_trait()),
-                    attempt(parse_function_with_docs().map(|f| Definition::Function(Arc::new(f)))),
-                    attempt(
-                        parse_external_function()
-                            .map(|f| Definition::ExternalFunction(Arc::new(f))),
-                    ),
+                    parse_use(),
+                    parse_sig_definition(),
+                    parse_trait_impl(),
+                    parse_trait(),
+                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                    parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
                     parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
                 ))
                 .skip(skip_spaces_and_comments()),
@@ -185,22 +180,22 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("mod"),
-        identifier(),
-        optional(attempt(between(
-            lex_char('('),
-            lex_char(')'),
-            sep_by(parse_module_param(), lex_char(',')),
-        ))),
-        position(),
-    )
-        .map(|(start, _, name, params, end)| Definition::ModuleHeader {
-            name,
-            params: params.unwrap_or_default(),
-            span: Span::new(start, end),
-        })
+    (position(), attempt(lex_string("mod"))).then(|(start, _)| {
+        (
+            identifier(),
+            optional(attempt(between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by(parse_module_param(), lex_char(',')),
+            ))),
+            position(),
+        )
+            .map(move |(name, params, end)| Definition::ModuleHeader {
+                name,
+                params: params.unwrap_or_default(),
+                span: Span::new(start, end),
+            })
+    })
 }
 
 fn parse_module_param<Input>() -> impl Parser<Input, Output = ModuleParam>
@@ -227,28 +222,28 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("sig"),
-        identifier(),
-        between(
-            lex_char('{'),
-            lex_char('}'),
-            many(
-                skip_spaces_and_comments()
-                    .with(parse_sig_function())
-                    .skip(skip_spaces_and_comments()),
+    attempt((position(), lex_string("sig"))).then(|(start, _)| {
+        (
+            identifier(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(
+                    skip_spaces_and_comments()
+                        .with(parse_sig_function())
+                        .skip(skip_spaces_and_comments()),
+                ),
             ),
-        ),
-        position(),
-    )
-        .map(|(start, _, name, functions, end)| {
-            Definition::Signature(Arc::new(AstSignature {
-                name,
-                functions,
-                span: Span::new(start, end),
-            }))
-        })
+            position(),
+        )
+            .map(move |(name, functions, end)| {
+                Definition::Signature(Arc::new(AstSignature {
+                    name,
+                    functions,
+                    span: Span::new(start, end),
+                }))
+            })
+    })
 }
 
 fn parse_sig_function<Input>() -> impl Parser<Input, Output = SigFunction>
@@ -299,49 +294,50 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
+    attempt((
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("extern"),
-        lex_string("fn"),
-        identifier(),
-        optional(attempt(between(
-            lex_char('<'),
-            lex_char('>'),
-            sep_by1(parse_type_param(), lex_char(',')),
-        ))),
-        between(
-            lex_char('('),
-            lex_char(')'),
-            sep_by(parse_parameter(), lex_char(',')),
-        ),
-        lex_char(':'),
-        parse_type(),
-        position(),
-    )
-        .map(
-            |(start, pub_kw, _, _, name, type_params_opt, params, _, return_type, end): (
-                _,
-                _,
-                _,
-                _,
-                _,
-                Option<Vec<TypeParam>>,
-                _,
-                _,
-                _,
-                _,
-            )| {
-                ExternalFunction {
-                    name,
-                    type_params: type_params_opt.unwrap_or_default(),
-                    parameters: params,
-                    return_type,
-                    is_pub: pub_kw.is_some(),
-                    span: Span::new(start, end),
-                }
-            },
+    ))
+    .then(|(start, pub_kw, _)| {
+        (
+            lex_string("fn"),
+            identifier(),
+            optional(attempt(between(
+                lex_char('<'),
+                lex_char('>'),
+                sep_by1(parse_type_param(), lex_char(',')),
+            ))),
+            between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by(parse_parameter(), lex_char(',')),
+            ),
+            lex_char(':'),
+            parse_type(),
+            position(),
         )
+            .map(
+                move |(_, name, type_params_opt, params, _, return_type, end): (
+                    _,
+                    _,
+                    Option<Vec<TypeParam>>,
+                    _,
+                    _,
+                    _,
+                    _,
+                )| {
+                    ExternalFunction {
+                        name,
+                        type_params: type_params_opt.unwrap_or_default(),
+                        parameters: params,
+                        return_type,
+                        is_pub: pub_kw.is_some(),
+                        span: Span::new(start, end),
+                    }
+                },
+            )
+    })
 }
 
 fn parse_function_with_docs<Input>() -> impl Parser<Input, Output = Function>
@@ -360,51 +356,52 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
+    attempt((
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("fn"),
-        identifier(),
-        optional(attempt(between(
-            lex_char('<'),
-            lex_char('>'),
-            sep_by1(parse_type_param(), lex_char(',')),
-        ))),
-        between(
-            lex_char('('),
-            lex_char(')'),
-            sep_by(parse_parameter(), lex_char(',')),
-        ),
-        lex_char(':'),
-        parse_type(),
-        between(lex_char('{'), lex_char('}'), parse_function_body()),
-        position(),
-    )
-        .map(
-            |(start, pub_kw, _, name, type_params_opt, params, _, return_type, body, end): (
-                _,
-                _,
-                _,
-                _,
-                Option<Vec<TypeParam>>,
-                _,
-                _,
-                _,
-                _,
-                _,
-            )| {
-                Function {
-                    name,
-                    type_params: type_params_opt.unwrap_or_default(),
-                    parameters: params,
-                    return_type,
-                    body,
-                    documentation: None,
-                    is_pub: pub_kw.is_some(),
-                    span: Span::new(start, end),
-                }
-            },
+    ))
+    .then(|(start, pub_kw, _)| {
+        (
+            identifier(),
+            optional(attempt(between(
+                lex_char('<'),
+                lex_char('>'),
+                sep_by1(parse_type_param(), lex_char(',')),
+            ))),
+            between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by(parse_parameter(), lex_char(',')),
+            ),
+            lex_char(':'),
+            parse_type(),
+            between(lex_char('{'), lex_char('}'), parse_function_body()),
+            position(),
         )
+            .map(
+                move |(name, type_params_opt, params, _, return_type, body, end): (
+                    _,
+                    Option<Vec<TypeParam>>,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                )| {
+                    Function {
+                        name,
+                        type_params: type_params_opt.unwrap_or_default(),
+                        parameters: params,
+                        return_type,
+                        body,
+                        documentation: None,
+                        is_pub: pub_kw.is_some(),
+                        span: Span::new(start, end),
+                    }
+                },
+            )
+    })
 }
 
 fn parse_trait<Input>() -> impl Parser<Input, Output = Definition>
@@ -412,28 +409,28 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("trait"),
-        identifier(),
-        between(
-            lex_char('{'),
-            lex_char('}'),
-            many(
-                skip_spaces_and_comments()
-                    .with(parse_sig_function())
-                    .skip(skip_spaces_and_comments()),
+    attempt((position(), lex_string("trait"))).then(|(start, _)| {
+        (
+            identifier(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(
+                    skip_spaces_and_comments()
+                        .with(parse_sig_function())
+                        .skip(skip_spaces_and_comments()),
+                ),
             ),
-        ),
-        position(),
-    )
-        .map(|(start, _, name, functions, end)| {
-            Definition::Trait(Arc::new(AstTrait {
-                name,
-                functions,
-                span: Span::new(start, end),
-            }))
-        })
+            position(),
+        )
+            .map(move |(name, functions, end)| {
+                Definition::Trait(Arc::new(AstTrait {
+                    name,
+                    functions,
+                    span: Span::new(start, end),
+                }))
+            })
+    })
 }
 
 fn parse_trait_impl<Input>() -> impl Parser<Input, Output = Definition>
@@ -441,32 +438,32 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("impl"),
-        identifier(),
-        lex_char(':'),
-        identifier(),
-        between(
-            lex_char('{'),
-            lex_char('}'),
-            many(
-                skip_spaces_and_comments()
-                    .with(parse_function_with_docs())
-                    .skip(skip_spaces_and_comments()),
+    attempt((position(), lex_string("impl"))).then(|(start, _)| {
+        (
+            identifier(),
+            lex_char(':'),
+            identifier(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(
+                    skip_spaces_and_comments()
+                        .with(parse_function_with_docs())
+                        .skip(skip_spaces_and_comments()),
+                ),
             ),
-        ),
-        position(),
-    )
-        .map(|(start, _, type_name, _, trait_name, functions, end)| {
-            let functions: Vec<Function> = functions;
-            Definition::TraitImpl(Arc::new(AstTraitImpl {
-                type_name,
-                trait_name,
-                functions: functions.into_iter().map(Arc::new).collect(),
-                span: Span::new(start, end),
-            }))
-        })
+            position(),
+        )
+            .map(move |(type_name, _, trait_name, functions, end)| {
+                let functions: Vec<Function> = functions;
+                Definition::TraitImpl(Arc::new(AstTraitImpl {
+                    type_name,
+                    trait_name,
+                    functions: functions.into_iter().map(Arc::new).collect(),
+                    span: Span::new(start, end),
+                }))
+            })
+    })
 }
 
 fn parse_use_param<Input>() -> impl Parser<Input, Output = UseParam>
@@ -524,33 +521,37 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
+    attempt((
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("use"),
-        parse_use_segment(),
-        many1::<Vec<UseSegment>, _, _>(
-            attempt((string("::").skip(skip_spaces()), parse_use_segment())).map(|(_, seg)| seg),
-        ),
-        optional(attempt(
-            (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
-        )),
-        position(),
-    )
-        .map(|(start, pub_kw, _, first_seg, mut rest, alias, end)| {
-            let name_seg = rest.pop().unwrap();
-            let name = name_seg.name.clone();
-            let mut path_vec = vec![first_seg];
-            path_vec.extend(rest);
-            let path = NonEmpty::from_vec(path_vec).unwrap();
-            Definition::Use {
-                path,
-                name,
-                alias,
-                is_pub: pub_kw.is_some(),
-                span: Span::new(start, end),
-            }
-        })
+    ))
+    .then(|(start, pub_kw, _): (usize, Option<&str>, &str)| {
+        (
+            parse_use_segment(),
+            many1::<Vec<UseSegment>, _, _>(
+                (string("::").skip(skip_spaces()), parse_use_segment()).map(|(_, seg)| seg),
+            ),
+            optional(attempt(
+                (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
+            )),
+            position(),
+        )
+            .map(move |(first_seg, mut rest, alias, end)| {
+                let name_seg = rest.pop().unwrap();
+                let name = name_seg.name.clone();
+                let mut path_vec = vec![first_seg];
+                path_vec.extend(rest);
+                let path = NonEmpty::from_vec(path_vec).unwrap();
+                Definition::Use {
+                    path,
+                    name,
+                    alias,
+                    is_pub: pub_kw.is_some(),
+                    span: Span::new(start, end),
+                }
+            })
+    })
 }
 
 fn parse_parameter<Input>() -> impl Parser<Input, Output = Parameter>
