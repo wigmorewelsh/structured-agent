@@ -1,5 +1,5 @@
 use std::fmt;
-use structured_agent_runtime::{FunctionName, Type};
+use structured_agent_runtime::{FunctionName, ModuleName, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -49,7 +49,14 @@ pub enum Instruction {
         dest: String,
     },
     /// Load a module reference into a variable
-    LoadModule { name: FunctionName, dest: String },
+    LoadModule { name: ModuleName, dest: String },
+    /// Call a function through a module parameter variable
+    CallIndirect {
+        module_param: String,
+        fn_name: String,
+        params: Vec<String>,
+        dest: String,
+    },
 
     /// Inject variable's value into context events (adds Event to context)
     CtxEvent { var: String },
@@ -195,7 +202,27 @@ impl fmt::Display for Instruction {
             }
 
             Instruction::LoadModule { name, dest } => {
-                write!(f, "load.module {}, {}", name, dest)
+                write!(
+                    f,
+                    "load.module {}, {}",
+                    name.segments.iter().cloned().collect::<Vec<_>>().join("::"),
+                    dest
+                )
+            }
+            Instruction::CallIndirect {
+                module_param,
+                fn_name,
+                params,
+                dest,
+            } => {
+                write!(f, "call.indirect {}.{}, [", module_param, fn_name)?;
+                for (i, var) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
             }
 
             Instruction::ListCreate { dest, elements } => {

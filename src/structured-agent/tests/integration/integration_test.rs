@@ -1,6 +1,8 @@
 use super::helpers::run_program;
 use nonempty::NonEmpty;
+use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
+use structured_agent::runtime::Runtime;
 use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
 
 #[tokio::test]
@@ -123,4 +125,18 @@ fn main(): String {
 
     let value = run_program(code).await;
     assert_eq!(value.as_string().unwrap(), "helper");
+}
+
+#[tokio::test]
+async fn test_file_based_module_binding_tracer_bullet() {
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/integration/fixtures/module-binding-tracer/main.sa"
+    );
+    let value = Runtime::builder(ProgramSource::File(fixture_path.to_string()))
+        .build()
+        .run()
+        .await
+        .expect("Program execution failed");
+    assert_eq!(value.as_string().unwrap(), "fake module called");
 }

@@ -112,6 +112,15 @@ impl VM {
                 Instruction::StructGet { dest, src, field } => {
                     self.execute_struct_get(state, dest, src, field)?
                 }
+                Instruction::CallIndirect {
+                    module_param,
+                    fn_name,
+                    params,
+                    dest,
+                } => {
+                    self.execute_indirect_call(state, module_param, fn_name, params, dest)
+                        .await?
+                }
             };
         }
     }
@@ -238,15 +247,25 @@ impl VM {
             args.push(value.clone());
         }
 
+        let leading_count = args.len().saturating_sub(function_params.len());
+
         let evaluated_parameters: Vec<ExpressionParameter> = args
             .iter()
             .enumerate()
+            .skip(leading_count)
             .map(|(i, arg)| {
-                ExpressionParameter::new(function_params[i].name.clone(), arg.value.clone())
+                ExpressionParameter::new(
+                    function_params[i - leading_count].name.clone(),
+                    arg.value.clone(),
+                )
             })
             .collect();
 
         let mut child_context = state.context.create_child(true);
+
+        for (i, var_name) in params.iter().enumerate().take(leading_count) {
+            child_context.declare_variable(var_name.clone(), args[i].clone());
+        }
 
         child_context.add_event(
             ExpressionValue::string(format!("## {}", display_name)),
@@ -372,13 +391,18 @@ impl VM {
     fn execute_load_module(
         &self,
         mut state: VMState,
-        name: &structured_agent_runtime::FunctionName,
+        name: &structured_agent_runtime::ModuleName,
         dest: &str,
     ) -> VMState {
+        let function_name = structured_agent_runtime::FunctionName {
+            name: name.segments.last().clone(),
+            module: name.clone(),
+            kind: structured_agent_runtime::FunctionNameKind::Function,
+        };
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::module(name.clone())),
+            ExpressionResult::new(ExpressionValue::module(function_name)),
         );
         Self::advance_pc(state)
     }
@@ -513,6 +537,29 @@ impl VM {
         } else {
             Ok(Self::advance_pc(state))
         }
+    }
+
+    async fn execute_indirect_call(
+        &self,
+        state: VMState,
+        module_param: &str,
+        fn_name: &str,
+        params: &[String],
+        dest: &str,
+    ) -> Result<VMState, String> {
+        let module_val = Self::read_variable(&state, module_param)?;
+        let mut function_name = module_val
+            .value
+            .as_module()
+            .map_err(|e| format!("CallIndirect: {}", e))?
+            .clone();
+        function_name.name = fn_name.to_string();
+        let func = self
+            .runtime
+            .get_bytecode_function(&function_name)
+            .ok_or_else(|| format!("Function not found: {}", function_name))?;
+        self.invoke_function(state, func, &function_name.to_string(), params, dest)
+            .await
     }
 
     fn execute_struct_new(

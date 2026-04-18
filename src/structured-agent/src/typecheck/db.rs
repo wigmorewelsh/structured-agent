@@ -2,7 +2,7 @@ use super::refs::{
     CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef,
     TypedRefs,
 };
-use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam};
+use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam, UseParam};
 use crate::typecheck::TypeError;
 use crate::typecheck::error::OrAccumulateError;
 use crate::typed_ast;
@@ -616,6 +616,150 @@ pub(super) fn resolve_function_call<'db>(
 ) -> Option<FunctionName> {
     resolve_function_alias(db, tables, current_module, symbol)
         .or_else(|| resolve_function_in_module(db, tables, current_module, symbol))
+}
+
+#[salsa::tracked]
+pub(super) fn resolve_use_param_bindings<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    alias: InternedString<'db>,
+) -> Vec<(String, ModuleName)> {
+    let module_name = current_module.name(db);
+    let module_def = match tables.modules(db).get().get(&module_name).cloned() {
+        Some(m) => m,
+        None => return vec![],
+    };
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return vec![];
+    };
+    let alias_str = alias.value(db);
+    for def in &ast_module.definitions {
+        if let Definition::Use {
+            path,
+            name,
+            alias: use_alias,
+            ..
+        } = def
+        {
+            let effective = use_alias
+                .as_ref()
+                .map(String::as_str)
+                .unwrap_or(name.as_str());
+            if effective != alias_str.as_str() {
+                continue;
+            }
+            let last_seg = path.last();
+            if last_seg.params.is_empty() {
+                return vec![];
+            }
+            let seg_module_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
+            let seg_module_name =
+                ModuleName::new(nonempty::NonEmpty::from_vec(seg_module_path).unwrap());
+            let seg_interned = seg_module_name.clone().intern(db);
+            let resolved_seg = resolve_module_path(db, tables, current_module, seg_interned);
+            let seg_def = match tables.modules(db).get().get(&resolved_seg).cloned() {
+                Some(m) => m,
+                None => return vec![],
+            };
+            let CheckerAstRef::Module(seg_ast) = &seg_def.ast_ref else {
+                return vec![];
+            };
+            let header_params: Vec<crate::ast::ModuleParam> = seg_ast
+                .definitions
+                .iter()
+                .find_map(|d| {
+                    if let Definition::ModuleHeader { params, .. } = d {
+                        Some(params.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            let mut result = Vec::new();
+            for (i, use_param) in last_seg.params.iter().enumerate() {
+                match use_param {
+                    UseParam::Positional(path_segs) => {
+                        let param_name = match header_params.get(i) {
+                            Some(p) => p.name.clone(),
+                            None => continue,
+                        };
+                        let concrete_path = ModuleName::new(
+                            nonempty::NonEmpty::from_vec(path_segs.iter().cloned().collect())
+                                .unwrap(),
+                        );
+                        let concrete_interned = concrete_path.intern(db);
+                        let concrete =
+                            resolve_module_path(db, tables, current_module, concrete_interned);
+                        result.push((param_name, concrete));
+                    }
+                    UseParam::Named {
+                        name: param_name,
+                        path: path_segs,
+                    } => {
+                        let concrete_path = ModuleName::new(
+                            nonempty::NonEmpty::from_vec(path_segs.iter().cloned().collect())
+                                .unwrap(),
+                        );
+                        let concrete_interned = concrete_path.intern(db);
+                        let concrete =
+                            resolve_module_path(db, tables, current_module, concrete_interned);
+                        result.push((param_name.clone(), concrete));
+                    }
+                }
+            }
+            return result;
+        }
+    }
+    vec![]
+}
+
+#[salsa::tracked]
+pub(super) fn resolve_function_alias_via_param<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    alias: InternedString<'db>,
+) -> Option<String> {
+    let module_name = current_module.name(db);
+    let module_def = tables.modules(db).get().get(&module_name)?.clone();
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return None;
+    };
+    let alias_str = alias.value(db);
+    let header_params: Vec<crate::ast::ModuleParam> = ast_module
+        .definitions
+        .iter()
+        .find_map(|d| {
+            if let Definition::ModuleHeader { params, .. } = d {
+                Some(params.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    for def in &ast_module.definitions {
+        if let Definition::Use {
+            path,
+            name,
+            alias: use_alias,
+            ..
+        } = def
+        {
+            let effective = use_alias
+                .as_ref()
+                .map(String::as_str)
+                .unwrap_or(name.as_str());
+            if effective != alias_str.as_str() {
+                continue;
+            }
+            let first_seg = path.first();
+            if header_params.iter().any(|p| p.name == first_seg.name) {
+                return Some(first_seg.name.clone());
+            }
+        }
+    }
+    None
 }
 
 pub(super) fn ast_type_to_type_name(

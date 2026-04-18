@@ -996,6 +996,8 @@ mod vm_execution_tests {
                 kind: crate::typecheck::FunctionKind::External,
                 type_arguments: vec![],
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
+                module_params: vec![],
+                via_module_param: None,
                 ty: Type::unit(),
                 span: *span,
             },

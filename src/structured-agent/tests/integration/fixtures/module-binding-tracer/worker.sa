@@ -1,0 +1,7 @@
+mod worker(rm: realmodule)
+
+use rm::call_helper
+
+pub fn run(): String {
+    return call_helper()
+}

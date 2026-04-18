@@ -114,6 +114,8 @@ pub enum Expression {
         kind: FunctionKind,
         type_arguments: Vec<Type>,
         arguments: Vec<Expression>,
+        module_params: Vec<(String, structured_agent_runtime::ModuleName)>,
+        via_module_param: Option<String>,
         ty: Type,
         span: Span,
     },

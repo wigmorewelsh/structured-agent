@@ -128,13 +128,39 @@ enum ImportType {
 }
 
 fn referenced_module_names(module: &Module) -> Vec<ImportType> {
+    let header_param_names: std::collections::HashSet<String> = module
+        .definitions
+        .iter()
+        .flat_map(|def| {
+            if let Definition::ModuleHeader { params, .. } = def {
+                params.iter().map(|p| p.name.clone()).collect::<Vec<_>>()
+            } else {
+                vec![]
+            }
+        })
+        .collect();
+
     module
         .definitions
         .iter()
         .flat_map(|def| match def {
             Definition::Use { path, .. } => {
+                if header_param_names.contains(&path.first().name) {
+                    return vec![];
+                }
                 let name_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
-                vec![ImportType::Relative(NonEmpty::from_vec(name_path).unwrap())]
+                let mut imports =
+                    vec![ImportType::Relative(NonEmpty::from_vec(name_path).unwrap())];
+                for seg in path.iter() {
+                    for param in &seg.params {
+                        let param_path = match param {
+                            crate::ast::UseParam::Positional(p) => p.clone(),
+                            crate::ast::UseParam::Named { path: p, .. } => p.clone(),
+                        };
+                        imports.push(ImportType::Relative(param_path));
+                    }
+                }
+                imports
             }
             Definition::ModuleHeader { params, .. } => params
                 .iter()

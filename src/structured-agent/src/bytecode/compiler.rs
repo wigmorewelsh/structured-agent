@@ -314,8 +314,18 @@ impl BytecodeCompiler {
                 resolved,
                 kind,
                 arguments,
+                module_params,
+                via_module_param,
                 ..
-            } => self.compile_call_expression(builder, resolved, kind.clone(), arguments, dest_var),
+            } => self.compile_call_expression(
+                builder,
+                resolved,
+                kind.clone(),
+                arguments,
+                module_params,
+                via_module_param.as_deref(),
+                dest_var,
+            ),
             typed_ast::Expression::Variable { name, .. } => {
                 Self::compile_variable_expression(builder, name, dest_var)
             }
@@ -365,10 +375,42 @@ impl BytecodeCompiler {
         function: &FunctionName,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
+        module_params: &[(String, ModuleName)],
+        via_module_param: Option<&str>,
         dest_var: &str,
     ) -> Result<(), String> {
-        let mut params = Vec::new();
+        if let Some(param_name) = via_module_param {
+            let mut arg_vars = Vec::new();
+            for arg_expr in arguments {
+                let temp_var = builder.next_temp();
+                builder.emit(Instruction::Decl {
+                    name: temp_var.clone(),
+                });
+                self.compile_expression(builder, arg_expr, &temp_var)?;
+                arg_vars.push(temp_var);
+            }
+            builder.emit(Instruction::CallIndirect {
+                module_param: param_name.to_string(),
+                fn_name: function.name.clone(),
+                params: arg_vars,
+                dest: dest_var.to_string(),
+            });
+            return Ok(());
+        }
 
+        let mut leading_params = Vec::new();
+        for (param_name, concrete_module) in module_params {
+            builder.emit(Instruction::Decl {
+                name: param_name.clone(),
+            });
+            builder.emit(Instruction::LoadModule {
+                name: concrete_module.clone(),
+                dest: param_name.clone(),
+            });
+            leading_params.push(param_name.clone());
+        }
+
+        let mut params = leading_params;
         for arg_expr in arguments {
             let temp_var = builder.next_temp();
             builder.emit(Instruction::Decl {

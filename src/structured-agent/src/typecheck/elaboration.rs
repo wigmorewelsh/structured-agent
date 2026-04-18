@@ -273,12 +273,18 @@ fn elaborate_call(
         typed_args.push(typed_arg);
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
+    use super::db::{resolve_function_alias_via_param, resolve_use_param_bindings};
+    let module_params = resolve_use_param_bindings(db, tables, interned_current, interned_fn);
+    let via_module_param =
+        resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
     Some(typed_ast::Expression::Call {
         function: function.to_string(),
         resolved: resolved_fn_name,
         kind: sig.kind,
         type_arguments,
         arguments: typed_args,
+        module_params,
+        via_module_param,
         ty: resolved_return,
         span,
     })
