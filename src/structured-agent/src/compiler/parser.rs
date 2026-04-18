@@ -578,31 +578,21 @@ combine::parser! {
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
-            attempt(
-                (
-                    satisfy(|c: char| c.is_uppercase()),
-                    many::<Vec<char>, _, _>(combine::parser::char::alpha_num()),
+            lex_string("()").map(|_| Type::simple("Unit")),
+            (
+                satisfy(|c: char| c.is_uppercase()),
+                many::<Vec<char>, _, _>(combine::parser::char::alpha_num()),
+                optional(attempt(between(
                     lex_char('<'),
-                    sep_by1(parse_type(), lex_char(',')),
                     lex_char('>'),
-                )
-                    .map(|(first, rest, _, args, _)| {
-                        let name: String = std::iter::once(first).chain(rest).collect();
-                        Type { name, args }
-                    }),
-            ),
-            attempt(lex_string("()").map(|_| Type::simple("Unit"))),
-
-            attempt(
-                (
-                    satisfy(|c: char| c.is_uppercase()),
-                    many(combine::parser::char::alpha_num()),
-                )
-                    .skip(skip_spaces())
-                    .map(|(first, rest): (char, Vec<char>)| {
-                        Type { name: std::iter::once(first).chain(rest).collect(), args: vec![] }
-                    }),
-            ),
+                    sep_by1(parse_type(), lex_char(',')),
+                ))),
+            )
+                .skip(skip_spaces())
+                .map(|(first, rest, args): (char, Vec<char>, Option<Vec<Type>>)| {
+                    let name: String = std::iter::once(first).chain(rest).collect();
+                    Type { name, args: args.unwrap_or_default() }
+                }),
         ))
     }
 }
@@ -682,11 +672,11 @@ combine::parser! {
         choice((
             parse_assignment(),
             parse_variable_assignment(),
-            attempt(parse_select()),
+            parse_select(),
             attempt(parse_injection()),
-            attempt(parse_if_statement()),
-            attempt(parse_while_statement()),
-            attempt(parse_return_statement()),
+            parse_if_statement(),
+            parse_while_statement(),
+            parse_return_statement(),
             parse_expression_statement(),
         ))
     }
@@ -789,8 +779,8 @@ combine::parser! {
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
-            attempt(parse_select_expression()),
-            attempt(parse_if_else_expression()),
+            parse_select_expression(),
+            parse_if_else_expression(),
             parse_simple_expression(),
         ))
     }
@@ -800,23 +790,21 @@ combine::parser! {
     fn parse_if_else_expression[Input]()(Input) -> Expression
     where [Input: Stream<Token = char, Position = usize>]
     {
+        (position(), attempt(lex_string("if"))).then(|(start, _)| {
         (
-            position(),
-            lex_string("if"),
             parse_simple_expression(),
             between(lex_char('{'), lex_char('}'), parse_expression()),
             lex_string("else"),
             between(lex_char('{'), lex_char('}'), parse_expression()),
             position(),
         )
-            .map(
-                |(start, _, condition, then_expr, _, else_expr, end)| Expression::IfElse {
-                    condition: Box::new(condition),
-                    then_expr: Box::new(then_expr),
-                    else_expr: Box::new(else_expr),
-                    span: Span::new(start, end),
-                },
-            )
+            .map(move |(condition, then_expr, _, else_expr, end)| Expression::IfElse {
+                condition: Box::new(condition),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+                span: Span::new(start, end),
+            })
+        })
     }
 }
 
@@ -895,10 +883,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((
-        attempt(parse_multiline_string()),
-        parse_single_line_string(),
-    ))
+    choice((parse_multiline_string(), parse_single_line_string()))
 }
 
 fn parse_single_line_string<Input>() -> impl Parser<Input, Output = Expression>
@@ -1079,26 +1064,29 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("select").with((
-            lex_char('{'),
-            skip_spaces_and_comments(),
-            sep_by(
-                parse_select_clause(),
-                lex_char(',').skip(skip_spaces_and_comments()),
+    (position(), attempt(lex_string("select"))).then(|(start, _)| {
+        (
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                (
+                    skip_spaces_and_comments(),
+                    sep_by(
+                        parse_select_clause(),
+                        lex_char(',').skip(skip_spaces_and_comments()),
+                    ),
+                    skip_spaces_and_comments(),
+                ),
             ),
-            skip_spaces_and_comments(),
-            lex_char('}'),
-        )),
-        position(),
-    )
-        .map(|(start, (_, _, clauses, _, _), end)| {
-            Statement::ExpressionStatement(Expression::Select(SelectExpression {
-                clauses,
-                span: Span::new(start, end),
-            }))
-        })
+            position(),
+        )
+            .map(move |((_, clauses, _), end)| {
+                Statement::ExpressionStatement(Expression::Select(SelectExpression {
+                    clauses,
+                    span: Span::new(start, end),
+                }))
+            })
+    })
 }
 
 fn parse_select_expression<Input>() -> impl Parser<Input, Output = Expression>
@@ -1106,26 +1094,29 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("select").with((
-            lex_char('{'),
-            skip_spaces_and_comments(),
-            sep_by(
-                parse_select_clause(),
-                lex_char(',').skip(skip_spaces_and_comments()),
+    (position(), attempt(lex_string("select"))).then(|(start, _)| {
+        (
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                (
+                    skip_spaces_and_comments(),
+                    sep_by(
+                        parse_select_clause(),
+                        lex_char(',').skip(skip_spaces_and_comments()),
+                    ),
+                    skip_spaces_and_comments(),
+                ),
             ),
-            skip_spaces_and_comments(),
-            lex_char('}'),
-        )),
-        position(),
-    )
-        .map(|(start, (_, _, clauses, _, _), end)| {
-            Expression::Select(SelectExpression {
-                clauses,
-                span: Span::new(start, end),
+            position(),
+        )
+            .map(move |((_, clauses, _), end)| {
+                Expression::Select(SelectExpression {
+                    clauses,
+                    span: Span::new(start, end),
+                })
             })
-        })
+    })
 }
 
 fn parse_select_clause<Input>() -> impl Parser<Input, Output = SelectClause>
@@ -1158,30 +1149,28 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("if"),
-        parse_simple_expression(),
-        between(
-            lex_char('{'),
-            lex_char('}'),
-            many(statement_with_comments()),
-        ),
-        optional(lex_string("else").skip(skip_spaces()).with(between(
-            lex_char('{'),
-            lex_char('}'),
-            many(statement_with_comments()),
-        ))),
-        position(),
-    )
-        .map(
-            |(start, _, condition, body, else_body, end)| Statement::If {
+    (position(), attempt(lex_string("if"))).then(|(start, _)| {
+        (
+            parse_simple_expression(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(statement_with_comments()),
+            ),
+            optional(lex_string("else").skip(skip_spaces()).with(between(
+                lex_char('{'),
+                lex_char('}'),
+                many(statement_with_comments()),
+            ))),
+            position(),
+        )
+            .map(move |(condition, body, else_body, end)| Statement::If {
                 condition,
                 body,
                 else_body,
                 span: Span::new(start, end),
-            },
-        )
+            })
+    })
 }
 
 fn parse_while_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -1189,22 +1178,22 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_string("while"),
-        parse_simple_expression(),
-        between(
-            lex_char('{'),
-            lex_char('}'),
-            many(statement_with_comments()),
-        ),
-        position(),
-    )
-        .map(|(start, _, condition, body, end)| Statement::While {
-            condition,
-            body,
-            span: Span::new(start, end),
-        })
+    (position(), attempt(lex_string("while"))).then(|(start, _)| {
+        (
+            parse_simple_expression(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(statement_with_comments()),
+            ),
+            position(),
+        )
+            .map(move |(condition, body, end)| Statement::While {
+                condition,
+                body,
+                span: Span::new(start, end),
+            })
+    })
 }
 
 fn parse_return_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -1212,7 +1201,9 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (lex_string("return"), parse_expression()).map(|(_, expression)| Statement::Return(expression))
+    attempt(lex_string("return"))
+        .with(parse_expression())
+        .map(Statement::Return)
 }
 
 #[cfg(test)]
