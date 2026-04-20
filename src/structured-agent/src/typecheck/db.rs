@@ -565,6 +565,10 @@ pub(super) fn resolve_type_alias<'db>(
             }
         }
     }
+    if let Some(parent) = &module_def.parent_module {
+        let parent_interned = parent.intern(db);
+        return resolve_type_alias(db, tables, parent_interned, alias);
+    }
     None
 }
 
@@ -603,6 +607,10 @@ pub(super) fn resolve_function_alias<'db>(
                 return module_exports_function(db, tables, resolved_module, resolved_name);
             }
         }
+    }
+    if let Some(parent) = &module_def.parent_module {
+        let parent_interned = parent.intern(db);
+        return resolve_function_alias(db, tables, parent_interned, alias);
     }
     None
 }
@@ -979,6 +987,7 @@ pub(super) fn elaborate_metadata(
             source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
             use_imports: module_def.use_imports.clone(),
+            parent_module: module_def.parent_module.clone(),
         };
         typed_metadata
             .modules

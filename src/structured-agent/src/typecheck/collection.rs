@@ -157,6 +157,7 @@ impl SymbolTableBuilder {
                     file_id: 0,
                 })),
                 use_imports: self.prelude_imports(),
+                parent_module: None,
             };
             self.metadata
                 .modules
@@ -556,6 +557,13 @@ impl SymbolTableBuilder {
                 use_imports.push(prelude_import);
             }
         }
+        let parent_module = if parsed.is_inline {
+            let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
+            segs.pop();
+            NonEmpty::from_vec(segs).map(ModuleName::new)
+        } else {
+            None
+        };
         let module_def = ModuleDefinition {
             name: effective_module_name.clone(),
             visibility: if parsed.is_entry {
@@ -568,6 +576,7 @@ impl SymbolTableBuilder {
             source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
             ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
             use_imports,
+            parent_module,
         };
         self.metadata
             .modules

@@ -41,6 +41,7 @@ pub fn parse_and_type_check(code: &str) -> typed_ast::Module {
         module,
         is_entry: true,
         file_id: TEST_FILE_ID,
+        is_inline: false,
     };
     let typed_metadata = TypeChecker::new()
         .check(&[parsed], &HashMap::new())

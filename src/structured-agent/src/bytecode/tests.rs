@@ -116,6 +116,7 @@ mod compilation_tests {
             module,
             is_entry: false,
             file_id,
+            is_inline: false,
         };
         let typed_metadata = TypeChecker::new()
             .check(&[parsed], &HashMap::new())
@@ -869,6 +870,7 @@ mod vm_execution_tests {
             module,
             is_entry: false,
             file_id,
+            is_inline: false,
         };
         let typed_metadata = TypeChecker::new()
             .check(&[parsed], &HashMap::new())
@@ -1494,6 +1496,7 @@ mod struct_bytecode_tests {
             module,
             is_entry: false,
             file_id,
+            is_inline: false,
         };
         let typed_metadata = TypeChecker::new()
             .check(&[parsed], &HashMap::new())

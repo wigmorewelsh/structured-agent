@@ -3026,6 +3026,7 @@ fn main(): String {
         let parsed = crate::ast::ParsedModule {
             name: NonEmpty::new("test".to_string()),
             module,
+            is_inline: false,
             is_entry: true,
             file_id: TEST_FILE_ID,
         };

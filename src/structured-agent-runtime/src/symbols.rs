@@ -192,6 +192,7 @@ pub struct ModuleDefinition<R: References> {
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
     pub use_imports: Vec<UseImport>,
+    pub parent_module: Option<ModuleName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

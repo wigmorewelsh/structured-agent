@@ -169,6 +169,7 @@ pub(crate) fn discover(
                     file_id,
                     module: inline_module,
                     is_entry: false,
+                    is_inline: true,
                 });
             }
         }
@@ -178,6 +179,7 @@ pub(crate) fn discover(
             file_id,
             module,
             is_entry,
+            is_inline: false,
         });
     }
 

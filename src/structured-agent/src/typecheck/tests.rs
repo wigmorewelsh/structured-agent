@@ -77,6 +77,7 @@ mod tests {
             module,
             is_entry: true,
             file_id: 0,
+            is_inline: false,
         };
         TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
@@ -1709,6 +1710,7 @@ mod typed_ast_tests {
             module: module.clone(),
             is_entry: false,
             file_id: 0,
+            is_inline: false,
         };
         let typed_metadata = TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
@@ -1845,6 +1847,7 @@ mod typed_ast_tests {
         let parsed = crate::ast::ParsedModule {
             name: nonempty::NonEmpty::new("test".to_string()),
             is_entry: false,
+            is_inline: false,
             file_id: 0,
             module,
         };
@@ -2655,6 +2658,7 @@ mod metadata_query_tests {
             module,
             is_entry: true,
             file_id: 0,
+            is_inline: false,
         };
         let metadata = TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
@@ -2777,6 +2781,7 @@ mod metadata_query_tests {
         let parsed = crate::ast::ParsedModule {
             name: NonEmpty::new("main".to_string()),
             module,
+            is_inline: false,
             is_entry: true,
             file_id: 0,
         };
@@ -2977,5 +2982,41 @@ mod metadata_query_tests {
                 module: ModuleName::new(NonEmpty::new("prelude".to_string())),
             }
         );
+    }
+
+    #[test]
+    fn inline_module_inherits_use_imports_from_outer_module() {
+        let helper_source = "pub fn greet(): String {}";
+        let outer_source = "mod outer\n\nuse helper::greet\n\nmod inner {\n    pub fn run(): String {\n        return greet()\n    }\n}";
+
+        let discoverer = crate::compiler::discovery::InMemoryDiscoverer::new(
+            vec![("helper".to_string(), helper_source.to_string())]
+                .into_iter()
+                .collect(),
+        );
+
+        let modules = crate::compiler::discovery::discover(
+            "outer.sa",
+            outer_source,
+            &discoverer,
+            &std::collections::HashSet::new(),
+            |_path, source| {
+                let stream = combine::stream::position::Stream::with_positioner(
+                    source,
+                    IndexPositioner::default(),
+                );
+                parse_program(0)
+                    .parse(stream)
+                    .map(|(m, _)| (0, m))
+                    .map_err(|e| format!("{:?}", e))
+            },
+        )
+        .unwrap();
+
+        let result = TypeChecker::new()
+            .check(&modules, &std::collections::HashMap::new())
+            .map(|_| ());
+
+        assert!(result.is_ok(), "expected ok but got: {:?}", result.err());
     }
 }

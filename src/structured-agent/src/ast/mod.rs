@@ -9,6 +9,7 @@ pub struct ParsedModule {
     pub module: Module,
     pub is_entry: bool,
     pub file_id: FileId,
+    pub is_inline: bool,
 }
 use std::fmt;
 
