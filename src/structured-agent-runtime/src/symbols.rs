@@ -28,13 +28,6 @@ pub trait SymbolQuery {
     fn module(&self, name: &ModuleName) -> Option<Arc<ModuleDefinition<Self::Refs>>>;
     fn function(&self, name: &FunctionName) -> Option<Arc<FunctionDefinition<Self::Refs>>>;
     fn type_def(&self, name: &TypeName) -> Option<Arc<TypeDefinition<Self::Refs>>>;
-    fn impl_for(
-        &self,
-        type_name: &TypeName,
-        trait_name: &TypeName,
-    ) -> Option<Arc<ImplDefinition<Self::Refs>>>;
-    fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<Self::Refs>>>;
-
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
     fn all_types(&self) -> Vec<Arc<TypeDefinition<Self::Refs>>>;
     fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
@@ -88,17 +81,6 @@ impl ModuleName {
             _ => panic!("ModuleName path contains non-Module segment"),
         }
     }
-
-    #[deprecated(note = "stop using magic strings for module names")]
-    pub fn from_str(s: &str) -> Self {
-        let v: Vec<String> = s.split("::").map(|p| p.to_string()).collect();
-        ModuleName::new(NonEmpty::from_vec(v).expect("split always yields at least one element"))
-    }
-
-    #[deprecated(note = "transition marker: replace with the real module name")]
-    pub fn unqualified() -> Self {
-        ModuleName::new(NonEmpty::new(String::new()))
-    }
 }
 
 impl fmt::Display for ModuleName {
@@ -129,18 +111,8 @@ impl FunctionName {
         })
     }
 
-    pub fn new_impl(
-        module: ModuleName,
-        type_name: impl Into<String>,
-        trait_name: impl Into<String>,
-        name: impl Into<String>,
-    ) -> Self {
-        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
-        segs.push(DefinitionSegment::Type(type_name.into()));
-        segs.push(DefinitionSegment::Type(trait_name.into()));
-        segs.push(DefinitionSegment::Impl {
-            discriminator: None,
-        });
+    pub fn for_impl(key: &ImplKey, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = key.0.segments.iter().cloned().collect();
         segs.push(DefinitionSegment::Function(name.into()));
         FunctionName(DefinitionPath {
             segments: NonEmpty::from_vec(segs).expect("at least one segment"),
@@ -228,43 +200,18 @@ impl fmt::Display for TypeName {
 pub struct ImplKey(pub DefinitionPath);
 
 impl ImplKey {
-    pub fn new(
-        module: ModuleName,
-        type_name: impl Into<String>,
-        trait_name: impl Into<String>,
-    ) -> Self {
+    pub fn new(module: ModuleName, discriminator: Option<u32>) -> Self {
         let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
-        segs.push(DefinitionSegment::Type(type_name.into()));
-        segs.push(DefinitionSegment::Type(trait_name.into()));
-        segs.push(DefinitionSegment::Impl {
-            discriminator: None,
-        });
+        segs.push(DefinitionSegment::Impl { discriminator });
         ImplKey(DefinitionPath {
             segments: NonEmpty::from_vec(segs).expect("at least one segment"),
         })
     }
 
-    pub fn type_name(&self) -> &str {
-        let segs: Vec<&DefinitionSegment> = self.0.segments.iter().collect();
-        let impl_pos = segs
-            .iter()
-            .rposition(|s| matches!(s, DefinitionSegment::Impl { .. }))
-            .expect("ImplKey must contain an Impl segment");
-        match segs[impl_pos - 2] {
-            DefinitionSegment::Type(n) => n,
-            _ => panic!("ImplKey: expected Type segment for type_name"),
-        }
-    }
-
-    pub fn trait_name(&self) -> &str {
-        let segs: Vec<&DefinitionSegment> = self.0.segments.iter().collect();
-        let impl_pos = segs
-            .iter()
-            .rposition(|s| matches!(s, DefinitionSegment::Impl { .. }))
-            .expect("ImplKey must contain an Impl segment");
-        match segs[impl_pos - 1] {
-            DefinitionSegment::Type(n) => n,
-            _ => panic!("ImplKey: expected Type segment for trait_name"),
+    pub fn discriminator(&self) -> Option<u32> {
+        match self.0.segments.last() {
+            DefinitionSegment::Impl { discriminator } => *discriminator,
+            _ => panic!("ImplKey must end with Impl segment"),
         }
     }
 
@@ -307,25 +254,6 @@ impl<R: References> SymbolQuery for MetaData<R> {
 
     fn type_def(&self, name: &TypeName) -> Option<Arc<TypeDefinition<R>>> {
         self.types.get(name).cloned()
-    }
-
-    fn impl_for(
-        &self,
-        type_name: &TypeName,
-        trait_name: &TypeName,
-    ) -> Option<Arc<ImplDefinition<R>>> {
-        self.impls
-            .iter()
-            .find(|(k, _)| k.type_name() == type_name.name() && k.trait_name() == trait_name.name())
-            .map(|(_, v)| v.clone())
-    }
-
-    fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<R>>> {
-        self.impls
-            .iter()
-            .filter(|(k, _)| k.type_name() == type_name.name())
-            .map(|(_, v)| v.clone())
-            .collect()
     }
 
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<R>>> {
@@ -416,6 +344,8 @@ pub struct GenericParameterDefinition<R: References> {
 pub struct ImplDefinition<R: References> {
     pub key: ImplKey,
     pub module: ModuleName,
+    pub type_name: R::TypeAnnotation,
+    pub trait_name: R::TypeAnnotation,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
 }

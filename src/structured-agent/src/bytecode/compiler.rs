@@ -795,6 +795,8 @@ pub fn compile_metadata(
             Arc::new(ImplDefinition {
                 key: arc_def.key.clone(),
                 module: arc_def.module.clone(),
+                type_name: arc_def.type_name.clone(),
+                trait_name: arc_def.trait_name.clone(),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
             }),

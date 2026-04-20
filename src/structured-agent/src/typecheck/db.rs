@@ -972,6 +972,8 @@ pub(super) fn elaborate_metadata(
         let new_def = ImplDefinition {
             key: impl_def.key.clone(),
             module: impl_def.module.clone(),
+            type_name: TypeName::new(impl_def.module.clone(), impl_def.type_name.name.clone()),
+            trait_name: TypeName::new(impl_def.module.clone(), impl_def.trait_name.name.clone()),
             source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
         };

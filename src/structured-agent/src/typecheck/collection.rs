@@ -273,6 +273,7 @@ impl SymbolTableBuilder {
         file_id: FileId,
         module_name: &ModuleName,
     ) {
+        let mut impl_counter: u32 = 0;
         for definition in &module.definitions {
             match definition {
                 Definition::Function(func) => {
@@ -290,7 +291,8 @@ impl SymbolTableBuilder {
                     self.register_trait(s, file_id, module_name);
                 }
                 Definition::TraitImpl(impl_arc) => {
-                    self.register_trait_impl(impl_arc, file_id, module_name);
+                    self.register_trait_impl(impl_arc, file_id, module_name, impl_counter);
+                    impl_counter += 1;
                 }
             }
         }
@@ -402,23 +404,28 @@ impl SymbolTableBuilder {
         impl_arc: &Arc<crate::ast::AstTraitImpl>,
         file_id: FileId,
         module_name: &ModuleName,
+        discriminator: u32,
     ) {
         let type_name = &impl_arc.type_name;
         let trait_name = &impl_arc.trait_name;
         let functions = &impl_arc.functions;
         let span = &impl_arc.span;
 
-        let key = ImplKey::new(module_name.clone(), type_name.clone(), trait_name.clone());
+        let key = ImplKey::new(module_name.clone(), Some(discriminator));
         let impl_entry = ImplDefinition {
             key: key.clone(),
             module: module_name.clone(),
+            type_name: AstType::simple(type_name.clone()),
+            trait_name: AstType::simple(trait_name.clone()),
             source_ref: SourceLocation(file_id, *span),
             ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
         };
-        self.metadata.impls.insert(key, Arc::new(impl_entry));
+        self.metadata
+            .impls
+            .insert(key.clone(), Arc::new(impl_entry));
 
         for func in functions {
-            self.register_impl_function(func, file_id, module_name, type_name);
+            self.register_impl_function(func, file_id, &key, type_name);
         }
     }
 
@@ -426,15 +433,10 @@ impl SymbolTableBuilder {
         &mut self,
         func: &Arc<crate::ast::Function>,
         file_id: FileId,
-        module_name: &ModuleName,
+        impl_key: &ImplKey,
         type_name: &str,
     ) {
-        let impl_fn_key = FunctionName::new_impl(
-            module_name.clone(),
-            type_name,
-            type_name,
-            func.name.to_string(),
-        );
+        let impl_fn_key = FunctionName::for_impl(impl_key, func.name.to_string());
         let fn_type_name = TypeName::new(impl_fn_key.module(), impl_fn_key.name());
         let entry = FunctionDefinition {
             name: impl_fn_key.clone(),

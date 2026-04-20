@@ -1702,7 +1702,7 @@ mod typed_ast_tests {
 
     use std::sync::Arc;
     use structured_agent_runtime::Type as RT;
-    use structured_agent_runtime::symbols::{FunctionName, ModuleName};
+    use structured_agent_runtime::symbols::{FunctionName, ImplKey, ModuleName};
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let parsed = crate::ast::ParsedModule {
@@ -2575,7 +2575,8 @@ mod typed_ast_tests {
             .unwrap();
         assert_eq!(resolved, {
             let mn = ModuleName::new(NonEmpty::new("main".to_string()));
-            FunctionName::new_impl(mn, "Vec2", "Add", "add")
+            let key = ImplKey::new(mn, Some(0));
+            FunctionName::for_impl(&key, "add")
         });
     }
 
@@ -2776,9 +2777,10 @@ mod metadata_query_tests {
         let metadata = TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
-        let type_name = TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Foo");
-        let trait_name = TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Add");
-        let impl_def = metadata.impl_for(&type_name, &trait_name);
+        let impl_def = metadata
+            .impls
+            .values()
+            .find(|v| v.type_name.name() == "Foo" && v.trait_name.name() == "Add");
         assert!(impl_def.is_some());
         assert!(matches!(
             impl_def.unwrap().ast_ref,
