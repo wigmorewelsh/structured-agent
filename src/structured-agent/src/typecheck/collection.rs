@@ -236,35 +236,74 @@ impl SymbolTableBuilder {
         module_name: &ModuleName,
     ) {
         for definition in &module.definitions {
-            if let Definition::Struct(struct_def) = definition {
-                let type_name = TypeName::new(module_name.clone(), struct_def.name.clone());
-                let entry = TypeDefinition {
-                    name: type_name.clone(),
-                    kind: TypeDefinitionKind::Struct {
-                        fields: struct_def
-                            .fields
-                            .iter()
-                            .map(|f| FieldDefinition {
-                                name: f.name.clone(),
-                                type_name: f.field_type.clone(),
-                            })
-                            .collect(),
-                        generic_parameters: struct_def
-                            .type_params
-                            .iter()
-                            .map(|tp| GenericParameterDefinition {
-                                name: tp.name.clone(),
-                                constraints: tp.bounds.clone(),
-                            })
-                            .collect(),
-                    },
-                    source_ref: SourceLocation(file_id, struct_def.span),
-                    ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
-                };
-
-                self.metadata.register_type(type_name, Arc::new(entry));
+            match definition {
+                Definition::Signature(sig) => {
+                    self.register_signature(sig, file_id, module_name);
+                }
+                Definition::Struct(struct_def) => {
+                    self.register_struct(struct_def, file_id, module_name);
+                }
+                _ => {}
             }
         }
+    }
+
+    fn register_signature(
+        &mut self,
+        sig: &Arc<crate::ast::AstSignature>,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let type_name = TypeName::new(module_name.clone(), sig.name.clone());
+        let entry = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Signature {
+                entries: sig
+                    .functions
+                    .iter()
+                    .map(|f| SignatureEntry {
+                        name: f.name.clone(),
+                        type_name: AstType::simple(&f.name),
+                    })
+                    .collect(),
+            },
+            source_ref: SourceLocation(file_id, sig.span),
+            ast_ref: CheckerAstRef::Signature(Arc::clone(sig)),
+        };
+        self.metadata.register_type(type_name, Arc::new(entry));
+    }
+
+    fn register_struct(
+        &mut self,
+        struct_def: &Arc<crate::ast::StructDefinition>,
+        file_id: FileId,
+        module_name: &ModuleName,
+    ) {
+        let type_name = TypeName::new(module_name.clone(), struct_def.name.clone());
+        let entry = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Struct {
+                fields: struct_def
+                    .fields
+                    .iter()
+                    .map(|f| FieldDefinition {
+                        name: f.name.clone(),
+                        type_name: f.field_type.clone(),
+                    })
+                    .collect(),
+                generic_parameters: struct_def
+                    .type_params
+                    .iter()
+                    .map(|tp| GenericParameterDefinition {
+                        name: tp.name.clone(),
+                        constraints: tp.bounds.clone(),
+                    })
+                    .collect(),
+            },
+            source_ref: SourceLocation(file_id, struct_def.span),
+            ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
+        };
+        self.metadata.register_type(type_name, Arc::new(entry));
     }
 
     fn register_function_signatures(
@@ -388,7 +427,7 @@ impl SymbolTableBuilder {
                     .iter()
                     .map(|f| SignatureEntry {
                         name: f.name.clone(),
-                        type_name: f.return_type.clone(),
+                        type_name: AstType::simple(&f.name),
                     })
                     .collect(),
                 witness_ref: NoWitness,
@@ -547,6 +586,39 @@ impl SymbolTableBuilder {
         self.metadata
             .modules
             .insert(effective_module_name, Arc::new(module_def));
+
+        self.register_module_as_type(parsed);
+    }
+
+    fn register_module_as_type(&mut self, parsed: &ParsedModule) {
+        let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
+        let last = segs.pop().unwrap();
+        let parent = if segs.is_empty() {
+            ModuleName::new(NonEmpty::new(String::new()))
+        } else {
+            ModuleName::new(NonEmpty::from_vec(segs).unwrap())
+        };
+        let type_name = TypeName::new(parent, last);
+        let entries: Vec<SignatureEntry<CheckerRefs>> = parsed
+            .module
+            .definitions
+            .iter()
+            .filter_map(|def| match def {
+                Definition::Function(func) if func.is_pub => Some(SignatureEntry {
+                    name: func.name.to_string(),
+                    type_name: AstType::simple(&func.name),
+                }),
+                _ => None,
+            })
+            .collect();
+        let module_type = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Signature { entries },
+            source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
+            ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
+        };
+        self.metadata
+            .register_type(type_name, Arc::new(module_type));
     }
 
     fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {
@@ -565,6 +637,7 @@ impl SymbolTableBuilder {
             .filter_map(|t| match &t.kind {
                 TypeDefinitionKind::Struct { .. } => Some(ExportedName::Type(t.name.clone())),
                 TypeDefinitionKind::Trait { .. } => Some(ExportedName::Trait(t.name.clone())),
+                TypeDefinitionKind::Signature { .. } => Some(ExportedName::Type(t.name.clone())),
                 _ => None,
             })
             .collect();

@@ -1,6 +1,6 @@
 use crate::ast::{
-    AstTrait, AstTraitImpl, Function, Module, Parameter, StructDefinition, Type as AstType,
-    TypeParam,
+    AstSignature, AstTrait, AstTraitImpl, Function, Module, Parameter, StructDefinition,
+    Type as AstType, TypeParam,
 };
 use crate::typed_ast;
 use crate::types::{FileId, Span};
@@ -36,6 +36,7 @@ pub enum CheckerAstRef {
         kind: FunctionKind,
     },
     Struct(Arc<StructDefinition>),
+    Signature(Arc<AstSignature>),
     Trait(Arc<AstTrait>),
     Impl(Arc<AstTraitImpl>),
     Module(Arc<Module>),
