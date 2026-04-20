@@ -894,11 +894,11 @@ where
             char(')'),
             sep_by(parse_argument(), lex_char(',')),
         ),
-        skip_spaces(),
         position(),
     )
+        .skip(skip_spaces())
         .map(
-            |(start, parts, args, _, end): (usize, Vec<String>, Vec<Expression>, (), usize)| {
+            |(start, parts, args, end): (usize, Vec<String>, Vec<Expression>, usize)| {
                 Expression::Call {
                     function: parts.join("::"),
                     arguments: args,
