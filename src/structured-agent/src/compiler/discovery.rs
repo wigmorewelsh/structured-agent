@@ -56,6 +56,43 @@ fn resolve_relative(current: &NonEmpty<String>, import: &NonEmpty<String>) -> No
     NonEmpty::from_vec(segments).unwrap()
 }
 
+fn extract_inline_modules(
+    module: &mut Module,
+    parent_path: &NonEmpty<String>,
+    file_id: crate::types::FileId,
+) -> Vec<(NonEmpty<String>, Module)> {
+    let mut result = Vec::new();
+    let mut remaining = Vec::new();
+
+    for def in module.definitions.drain(..) {
+        if let Definition::InlineModule {
+            name,
+            definitions,
+            span,
+        } = def
+        {
+            let inline_path = {
+                let mut p: Vec<String> = parent_path.iter().cloned().collect();
+                p.push(name);
+                NonEmpty::from_vec(p).unwrap()
+            };
+            let mut inline_mod = Module {
+                definitions,
+                span,
+                file_id,
+            };
+            let nested = extract_inline_modules(&mut inline_mod, &inline_path, file_id);
+            result.extend(nested);
+            result.push((inline_path, inline_mod));
+        } else {
+            remaining.push(def);
+        }
+    }
+
+    module.definitions = remaining;
+    result
+}
+
 pub(crate) fn discover(
     entry_path: &str,
     entry_source: &str,
@@ -97,7 +134,9 @@ pub(crate) fn discover(
         };
 
         let parse_path = to_file_path(&entry_dir, &rel_path);
-        let (file_id, module) = parse(&parse_path, &source)?;
+        let (file_id, mut module) = parse(&parse_path, &source)?;
+
+        let inline_mods = extract_inline_modules(&mut module, &rel_path, file_id);
 
         for import in referenced_module_names(&module) {
             let dep_rel = match import {
@@ -107,6 +146,30 @@ pub(crate) fn discover(
             let dep_name = dep_rel.last().to_string();
             if !visited.contains(&dep_rel) && !native_module_names.contains(&dep_name) {
                 queue.push_back((dep_rel, false));
+            }
+        }
+
+        for (inline_rel, inline_module) in &inline_mods {
+            for import in referenced_module_names(inline_module) {
+                let dep_rel = match import {
+                    ImportType::Relative(path) => resolve_relative(inline_rel, &path),
+                    ImportType::Absolute(path) => path,
+                };
+                let dep_name = dep_rel.last().to_string();
+                if !visited.contains(&dep_rel) && !native_module_names.contains(&dep_name) {
+                    queue.push_back((dep_rel, false));
+                }
+            }
+        }
+
+        for (inline_rel, inline_module) in inline_mods {
+            if visited.insert(inline_rel.clone()) {
+                result.push(ParsedModule {
+                    name: inline_rel,
+                    file_id,
+                    module: inline_module,
+                    is_entry: false,
+                });
             }
         }
 
@@ -175,7 +238,7 @@ fn referenced_module_names(module: &Module) -> Vec<ImportType> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Module, ModuleParam};
+    use crate::ast::{Module, ModuleParam, UseSegment};
     use crate::types::Span;
 
     fn empty_module() -> Module {
@@ -380,6 +443,75 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn discovers_inline_module() {
+        let discoverer = make_discoverer(vec![]);
+        let result = discover("main.sa", "", &discoverer, &HashSet::new(), |_, _| {
+            Ok((
+                0,
+                Module {
+                    definitions: vec![Definition::InlineModule {
+                        name: "math".to_string(),
+                        definitions: vec![],
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                },
+            ))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 2);
+        let names: Vec<&NonEmpty<String>> = result.iter().map(|m| &m.name).collect();
+        assert!(names.contains(&&NonEmpty::new("main".to_string())));
+        assert!(names.contains(&&nonempty::nonempty![
+            "main".to_string(),
+            "math".to_string()
+        ]));
+    }
+
+    #[test]
+    fn inline_module_uses_are_discovered() {
+        let discoverer = make_discoverer(vec![("main/other", "")]);
+        let mut call_count = 0u32;
+        let result = discover("main.sa", "", &discoverer, &HashSet::new(), |_, _| {
+            let module = if call_count == 0 {
+                call_count += 1;
+                Module {
+                    definitions: vec![Definition::InlineModule {
+                        name: "math".to_string(),
+                        definitions: vec![Definition::Use {
+                            path: NonEmpty::new(UseSegment {
+                                name: "other".to_string(),
+                                params: vec![],
+                                span: Span::dummy(),
+                            }),
+                            name: "Thing".to_string(),
+                            alias: None,
+                            is_pub: false,
+                            span: Span::dummy(),
+                        }],
+                        span: Span::dummy(),
+                    }],
+                    span: Span::dummy(),
+                    file_id: 0,
+                }
+            } else {
+                empty_module()
+            };
+            Ok((0, module))
+        })
+        .unwrap();
+
+        assert_eq!(result.len(), 3);
+        let names: Vec<&NonEmpty<String>> = result.iter().map(|m| &m.name).collect();
+        assert!(names.contains(&&nonempty::nonempty![
+            "main".to_string(),
+            "other".to_string()
+        ]));
     }
 
     #[test]

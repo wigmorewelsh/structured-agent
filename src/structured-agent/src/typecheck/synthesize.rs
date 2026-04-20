@@ -318,7 +318,9 @@ pub(super) fn check_definition(
         }
         Definition::Use { .. } | Definition::Trait(_) => Some(()),
         Definition::TraitImpl(_t) => Some(()),
-        Definition::ModuleHeader { .. } | Definition::Signature(_) => unreachable!(),
+        Definition::ModuleHeader { .. }
+        | Definition::Signature(_)
+        | Definition::InlineModule { .. } => unreachable!(),
     }
 }
 

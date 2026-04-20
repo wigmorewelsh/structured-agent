@@ -296,7 +296,8 @@ impl SymbolTableBuilder {
                 Definition::Struct(_)
                 | Definition::Use { .. }
                 | Definition::ModuleHeader { .. }
-                | Definition::Signature(_) => {}
+                | Definition::Signature(_)
+                | Definition::InlineModule { .. } => {}
                 Definition::Trait(s) => {
                     self.register_trait(s, file_id, module_name);
                 }

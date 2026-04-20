@@ -149,6 +149,11 @@ pub enum Definition {
     Signature(Arc<AstSignature>),
     Trait(Arc<AstTrait>),
     TraitImpl(Arc<AstTraitImpl>),
+    InlineModule {
+        name: String,
+        definitions: Vec<Definition>,
+        span: Span,
+    },
 }
 
 impl Spanned for Definition {
@@ -162,6 +167,7 @@ impl Spanned for Definition {
             Definition::Signature(s) => s.span,
             Definition::Trait(s) => s.span,
             Definition::TraitImpl(t) => t.span,
+            Definition::InlineModule { span, .. } => *span,
         }
     }
 }
@@ -620,6 +626,15 @@ impl fmt::Display for Definition {
                     write!(f, "\n    {}", func)?;
                 }
                 write!(f, "\n}}")
+            }
+            Definition::InlineModule {
+                name, definitions, ..
+            } => {
+                writeln!(f, "mod {} {{", name)?;
+                for def in definitions {
+                    writeln!(f, "    {}", def)?;
+                }
+                write!(f, "}}")
             }
         }
     }

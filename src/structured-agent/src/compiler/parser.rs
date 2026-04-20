@@ -10,7 +10,7 @@ use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
-use combine::{Parser, Stream, attempt, between, optional, position, sep_by1};
+use combine::{Parser, Stream, attempt, between, not_followed_by, optional, position, sep_by1};
 use nonempty::NonEmpty;
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
@@ -146,9 +146,10 @@ where
     (
         position(),
         skip_spaces_and_comments().with((
-            optional(parse_module_header().skip(skip_spaces_and_comments())),
+            optional(attempt(parse_module_header()).skip(skip_spaces_and_comments())),
             many(
                 choice((
+                    attempt(parse_inline_module()),
                     parse_use(),
                     parse_sig_definition(),
                     parse_trait_impl(),
@@ -182,7 +183,7 @@ where
 {
     (position(), attempt(lex_string("mod"))).then(|(start, _)| {
         (
-            identifier(),
+            identifier().skip(not_followed_by(char('{'))),
             optional(attempt(between(
                 lex_char('('),
                 lex_char(')'),
@@ -195,6 +196,37 @@ where
                 params: params.unwrap_or_default(),
                 span: Span::new(start, end),
             })
+    })
+}
+
+fn parse_inline_module<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (position(), attempt(lex_string("mod")), identifier()).then(|(start, _, name)| {
+        between(
+            lex_char('{').skip(skip_spaces_and_comments()),
+            lex_char('}'),
+            many(
+                choice((
+                    parse_use(),
+                    parse_sig_definition(),
+                    parse_trait_impl(),
+                    parse_trait(),
+                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                    parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
+                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+                ))
+                .skip(skip_spaces_and_comments()),
+            ),
+        )
+        .and(position())
+        .map(move |(definitions, end)| Definition::InlineModule {
+            name: name.clone(),
+            definitions,
+            span: Span::new(start, end),
+        })
     })
 }
 
@@ -3014,6 +3046,39 @@ fn main(): String {
         } else {
             panic!("Expected struct definition");
         }
+    }
+
+    #[test]
+    fn test_parse_inline_module() {
+        let input = "mod math {\n    pub fn add(a: Int, b: Int): Int {}\n}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        let Definition::InlineModule {
+            name, definitions, ..
+        } = &module.definitions[0]
+        else {
+            panic!("expected InlineModule");
+        };
+        assert_eq!(name, "math");
+        assert_eq!(definitions.len(), 1);
+        assert!(matches!(definitions[0], Definition::Function(_)));
+    }
+
+    #[test]
+    fn test_module_header_not_confused_with_inline_module() {
+        let input = "mod mymod\n\npub fn foo(): () {}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        assert!(matches!(
+            module.definitions[0],
+            Definition::ModuleHeader { .. }
+        ));
     }
 
     #[test]
