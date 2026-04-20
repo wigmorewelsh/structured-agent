@@ -137,8 +137,7 @@ pub enum Definition {
     ExternalFunction(Arc<ExternalFunction>),
     Struct(Arc<StructDefinition>),
     Use {
-        path: Vec<UseSegment>,
-        name: String,
+        path: NonEmpty<UseSegment>,
         alias: Option<String>,
         is_pub: bool,
         span: Span,
@@ -524,7 +523,6 @@ impl fmt::Display for Definition {
             }
             Definition::Use {
                 path,
-                name,
                 alias,
                 is_pub,
                 ..
@@ -533,12 +531,15 @@ impl fmt::Display for Definition {
                     write!(f, "pub ")?;
                 }
                 write!(f, "use ")?;
-                for seg in path.iter() {
+                for (i, seg) in path.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "::")?;
+                    }
                     write!(f, "{}", seg.name)?;
                     if !seg.params.is_empty() {
                         write!(f, "(")?;
-                        for (i, p) in seg.params.iter().enumerate() {
-                            if i > 0 {
+                        for (j, p) in seg.params.iter().enumerate() {
+                            if j > 0 {
                                 write!(f, ", ")?;
                             }
                             match p {
@@ -561,9 +562,7 @@ impl fmt::Display for Definition {
                         }
                         write!(f, ")")?;
                     }
-                    write!(f, "::")?;
                 }
-                write!(f, "{}", name)?;
                 if let Some(a) = alias {
                     write!(f, " as {}", a)?;
                 }

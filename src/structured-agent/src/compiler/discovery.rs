@@ -287,38 +287,29 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
 
     for def in definitions {
         match def {
-            Definition::Use { path, name, .. } => {
-                if path.is_empty() {
-                    let mut dep = base.to_vec();
-                    dep.push(name.clone());
-                    deps.push(dep);
-                } else {
-                    let mut dep = base.to_vec();
-                    for seg in path {
-                        dep.push(seg.name.clone());
-                        for param in &seg.params {
-                            match param {
-                                UseParam::Positional(names) => {
-                                    for pname in names {
-                                        let mut pdep = base.to_vec();
-                                        pdep.push(pname.clone());
-                                        deps.push(pdep);
-                                    }
-                                }
-                                UseParam::Named {
-                                    path: param_path, ..
-                                } => {
+            Definition::Use { path, .. } => {
+                let module_seg_count = path.len() - usize::from(path.len() > 1);
+                let mut dep = base.to_vec();
+                for seg in path.iter().take(module_seg_count) {
+                    dep.push(seg.name.clone());
+                    for param in &seg.params {
+                        match param {
+                            UseParam::Positional(names) => {
+                                for pname in names {
                                     let mut pdep = base.to_vec();
-                                    for seg_name in param_path {
-                                        pdep.push(seg_name.clone());
-                                    }
+                                    pdep.push(pname.clone());
                                     deps.push(pdep);
                                 }
                             }
+                            UseParam::Named { path: param_path, .. } => {
+                                let mut pdep = base.to_vec();
+                                pdep.extend(param_path.iter().cloned());
+                                deps.push(pdep);
+                            }
                         }
                     }
-                    deps.push(dep);
                 }
+                deps.push(dep);
             }
             Definition::ModuleHeader { params, .. } => {
                 for param in params {

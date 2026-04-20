@@ -571,19 +571,12 @@ where
             )),
             position(),
         )
-            .map(move |(first_seg, mut rest, alias, end)| {
-                let (path, name) = if rest.is_empty() {
-                    (vec![], first_seg.name.clone())
-                } else {
-                    let name_seg = rest.pop().unwrap();
-                    let name = name_seg.name.clone();
-                    let mut path_vec = vec![first_seg];
-                    path_vec.extend(rest);
-                    (path_vec, name)
-                };
+            .map(move |(first_seg, rest, alias, end)| {
+                let mut segments = vec![first_seg];
+                segments.extend(rest);
+                let path = NonEmpty::from_vec(segments).expect("at least one segment");
                 Definition::Use {
                     path,
-                    name,
                     alias,
                     is_pub: pub_kw.is_some(),
                     span: Span::new(start, end),
@@ -2958,24 +2951,24 @@ pub fn greet(name: String): String {
         let use_def = match &module.definitions[0] {
             Definition::Use {
                 path,
-                name,
                 alias,
                 is_pub,
                 ..
-            } => (path.clone(), name.clone(), alias.clone(), *is_pub),
+            } => (path.clone(), alias.clone(), *is_pub),
             _ => panic!("Expected Use definition"),
         };
         assert_eq!(
             use_def
                 .0
                 .iter()
+                .take(use_def.0.len() - 1)
                 .map(|s| s.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["foo", "bar"]
         );
-        assert_eq!(use_def.1, "baz");
-        assert_eq!(use_def.2, None);
-        assert!(!use_def.3);
+        assert_eq!(use_def.0.last().name, "baz");
+        assert_eq!(use_def.1, None);
+        assert!(!use_def.2);
     }
 
     #[test]
@@ -2988,13 +2981,12 @@ pub fn greet(name: String): String {
         match &module.definitions[0] {
             Definition::Use {
                 path,
-                name,
                 alias,
                 is_pub,
                 ..
             } => {
-                assert_eq!(*path, vec![]);
-                assert_eq!(name, "messaging");
+                assert_eq!(path.len(), 1);
+                assert_eq!(path.last().name, "messaging");
                 assert_eq!(*alias, None);
                 assert!(*is_pub);
             }
@@ -3008,21 +3000,20 @@ pub fn greet(name: String): String {
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
         let use_def = match &module.definitions[0] {
-            Definition::Use {
-                path, name, alias, ..
-            } => (path.clone(), name.clone(), alias.clone()),
+            Definition::Use { path, alias, .. } => (path.clone(), alias.clone()),
             _ => panic!("Expected Use definition"),
         };
         assert_eq!(
             use_def
                 .0
                 .iter()
+                .take(use_def.0.len() - 1)
                 .map(|s| s.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["foo"]
         );
-        assert_eq!(use_def.1, "bar");
-        assert_eq!(use_def.2, Some("fb".to_string()));
+        assert_eq!(use_def.0.last().name, "bar");
+        assert_eq!(use_def.1, Some("fb".to_string()));
     }
 
     #[test]
@@ -3333,8 +3324,8 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
-            Definition::Use { path, name, .. } => {
-                assert_eq!(path.len(), 1);
+            Definition::Use { path, .. } => {
+                assert_eq!(path.len(), 2);
                 assert_eq!(path[0].name, "worker");
                 assert_eq!(
                     path[0].params,
@@ -3342,7 +3333,7 @@ fn main(): String {
                         "fakemodule".to_string()
                     ))]
                 );
-                assert_eq!(name, "run");
+                assert_eq!(path.last().name, "run");
             }
             other => panic!("Expected Use, got {:?}", other),
         }
@@ -3356,7 +3347,7 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
-            Definition::Use { path, name, .. } => {
+            Definition::Use { path, .. } => {
                 assert_eq!(path[0].name, "db");
                 assert_eq!(
                     path[0].params,
@@ -3365,7 +3356,7 @@ fn main(): String {
                         path: nonempty::nonempty!["storage".to_string(), "disk".to_string()],
                     }]
                 );
-                assert_eq!(name, "connect");
+                assert_eq!(path.last().name, "connect");
             }
             other => panic!("Expected Use, got {:?}", other),
         }
@@ -3379,7 +3370,7 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
-            Definition::Use { path, name, .. } => {
+            Definition::Use { path, .. } => {
                 assert_eq!(path[0].name, "worker");
                 assert_eq!(path[0].params.len(), 2);
                 assert_eq!(
@@ -3390,7 +3381,7 @@ fn main(): String {
                     path[0].params[1],
                     UseParam::Positional(nonempty::NonEmpty::new("logger".to_string()))
                 );
-                assert_eq!(name, "run");
+                assert_eq!(path.last().name, "run");
             }
             other => panic!("Expected Use, got {:?}", other),
         }
@@ -3404,8 +3395,8 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
-            Definition::Use { path, name, .. } => {
-                assert_eq!(path.len(), 2);
+            Definition::Use { path, .. } => {
+                assert_eq!(path.len(), 3);
                 assert_eq!(path[0].name, "foo");
                 assert_eq!(
                     path[0].params,
@@ -3420,7 +3411,7 @@ fn main(): String {
                         "y".to_string()
                     ))]
                 );
-                assert_eq!(name, "thing");
+                assert_eq!(path.last().name, "thing");
             }
             other => panic!("Expected Use, got {:?}", other),
         }
@@ -3434,11 +3425,11 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
-            Definition::Use { path, name, .. } => {
-                assert_eq!(path.len(), 1);
+            Definition::Use { path, .. } => {
+                assert_eq!(path.len(), 2);
                 assert_eq!(path[0].name, "plain");
                 assert!(path[0].params.is_empty());
-                assert_eq!(name, "thing");
+                assert_eq!(path.last().name, "thing");
             }
             other => panic!("Expected Use, got {:?}", other),
         }

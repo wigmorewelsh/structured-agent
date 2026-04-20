@@ -582,25 +582,24 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
         .flat_map(|def| match def {
             Definition::Use {
                 path,
-                name,
                 alias,
                 is_pub,
                 ..
             } => {
-                let mut segs = parent.clone();
-                if path.is_empty() {
-                    segs.push(name.clone());
-                } else {
-                    segs.extend(path.iter().map(|s| s.name.clone()));
-                }
-                let Some(resolved) = NonEmpty::from_vec(segs) else {
-                    return vec![];
-                };
+                let name = path.last().name.clone();
+                let module_seg_count = path.len() - usize::from(path.len() > 1);
+                let segs: Vec<_> = parent
+                    .iter()
+                    .cloned()
+                    .chain(path.iter().take(module_seg_count).map(|s| s.name.clone()))
+                    .collect();
+                let resolved =
+                    NonEmpty::from_vec(segs).expect("use path always yields a non-empty module");
                 let local = alias.clone().unwrap_or_else(|| name.clone());
                 vec![UseImport {
                     local,
                     module: ModuleName::new(resolved),
-                    name: name.clone(),
+                    name,
                     is_pub: *is_pub,
                 }]
             }
