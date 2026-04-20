@@ -3,7 +3,7 @@
 use crate::ast::{ExternalFunction, StructDefinition, UseSegment};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
-use nonempty::NonEmpty;
+
 use structured_agent_runtime::FunctionName;
 use structured_agent_runtime::Type;
 
@@ -20,7 +20,7 @@ pub enum Definition {
     ExternalFunction(ExternalFunction),
     Struct(StructDefinition),
     Use {
-        path: NonEmpty<UseSegment>,
+        path: Vec<UseSegment>,
         name: String,
         alias: Option<String>,
         is_pub: bool,

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use crate::types::{FileId, Span, Spanned};
 use nonempty::NonEmpty;
 
-#[derive(Debug)]
+use crate::types::{FileId, Span, Spanned};
+
+#[derive(Debug, Clone)]
 pub struct ParsedModule {
     pub name: NonEmpty<String>,
     pub module: Module,
@@ -136,7 +137,7 @@ pub enum Definition {
     ExternalFunction(Arc<ExternalFunction>),
     Struct(Arc<StructDefinition>),
     Use {
-        path: NonEmpty<UseSegment>,
+        path: Vec<UseSegment>,
         name: String,
         alias: Option<String>,
         is_pub: bool,

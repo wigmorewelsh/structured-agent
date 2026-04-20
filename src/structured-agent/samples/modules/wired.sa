@@ -1,5 +1,4 @@
-mod fmt: formatter::Formatter = formatter
-mod reporter(fmt)
+mod reporter(formatter)
 
 use reporter::report
 

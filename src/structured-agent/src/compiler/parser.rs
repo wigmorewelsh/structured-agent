@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use nonempty::NonEmpty;
+
 use crate::ast::{
     AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction, Function,
     FunctionBody, Module, ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction,
@@ -11,7 +13,6 @@ use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
 use combine::{Parser, Stream, attempt, between, not_followed_by, optional, position, sep_by1};
-use nonempty::NonEmpty;
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
@@ -239,12 +240,13 @@ where
         position(),
         identifier(),
         lex_char(':'),
-        sep_by1(identifier_raw(), attempt(string("::"))).skip(skip_spaces()),
+        sep_by1::<Vec<String>, _, _, _>(identifier_raw(), attempt(string("::")))
+            .skip(skip_spaces()),
         position(),
     )
-        .map(|(start, name, _, path, end)| ModuleParam {
+        .map(|(start, name, _, path_vec, end)| ModuleParam {
             name,
-            path,
+            path: NonEmpty::from_vec(path_vec).unwrap(),
             span: Span::new(start, end),
         })
 }
@@ -561,7 +563,7 @@ where
     .then(|(start, pub_kw, _): (usize, Option<&str>, &str)| {
         (
             parse_use_segment(),
-            many1::<Vec<UseSegment>, _, _>(
+            many::<Vec<UseSegment>, _, _>(
                 (string("::").skip(skip_spaces()), parse_use_segment()).map(|(_, seg)| seg),
             ),
             optional(attempt(
@@ -570,11 +572,15 @@ where
             position(),
         )
             .map(move |(first_seg, mut rest, alias, end)| {
-                let name_seg = rest.pop().unwrap();
-                let name = name_seg.name.clone();
-                let mut path_vec = vec![first_seg];
-                path_vec.extend(rest);
-                let path = NonEmpty::from_vec(path_vec).unwrap();
+                let (path, name) = if rest.is_empty() {
+                    (vec![], first_seg.name.clone())
+                } else {
+                    let name_seg = rest.pop().unwrap();
+                    let name = name_seg.name.clone();
+                    let mut path_vec = vec![first_seg];
+                    path_vec.extend(rest);
+                    (path_vec, name)
+                };
                 Definition::Use {
                     path,
                     name,
@@ -2973,6 +2979,30 @@ pub fn greet(name: String): String {
     }
 
     #[test]
+    fn test_parse_single_segment_pub_use() {
+        let input = "pub use messaging\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use {
+                path,
+                name,
+                alias,
+                is_pub,
+                ..
+            } => {
+                assert_eq!(*path, vec![]);
+                assert_eq!(name, "messaging");
+                assert_eq!(*alias, None);
+                assert!(*is_pub);
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_parse_use_with_alias() {
         let input = "use foo::bar as fb\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
@@ -3114,12 +3144,7 @@ fn main(): String {
                 assert_eq!(params[0].name, "io");
                 assert_eq!(
                     params[0].path,
-                    NonEmpty::from_vec(vec![
-                        "".to_string(),
-                        "storage".to_string(),
-                        "Storage".to_string()
-                    ])
-                    .unwrap()
+                    NonEmpty::from_vec(vec!["storage".to_string(), "Storage".to_string()]).unwrap()
                 );
             }
             other => panic!("Expected ModuleHeader, got {:?}", other),
@@ -3310,10 +3335,10 @@ fn main(): String {
         match &module.definitions[0] {
             Definition::Use { path, name, .. } => {
                 assert_eq!(path.len(), 1);
-                assert_eq!(path.first().name, "worker");
+                assert_eq!(path[0].name, "worker");
                 assert_eq!(
-                    path.first().params,
-                    vec![UseParam::Positional(NonEmpty::new(
+                    path[0].params,
+                    vec![UseParam::Positional(nonempty::NonEmpty::new(
                         "fakemodule".to_string()
                     ))]
                 );
@@ -3332,9 +3357,9 @@ fn main(): String {
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
             Definition::Use { path, name, .. } => {
-                assert_eq!(path.first().name, "db");
+                assert_eq!(path[0].name, "db");
                 assert_eq!(
-                    path.first().params,
+                    path[0].params,
                     vec![UseParam::Named {
                         name: "io".to_string(),
                         path: nonempty::nonempty!["storage".to_string(), "disk".to_string()],
@@ -3355,15 +3380,15 @@ fn main(): String {
         let (module, _) = result.unwrap();
         match &module.definitions[0] {
             Definition::Use { path, name, .. } => {
-                assert_eq!(path.first().name, "worker");
-                assert_eq!(path.first().params.len(), 2);
+                assert_eq!(path[0].name, "worker");
+                assert_eq!(path[0].params.len(), 2);
                 assert_eq!(
-                    path.first().params[0],
-                    UseParam::Positional(NonEmpty::new("realmodule".to_string()))
+                    path[0].params[0],
+                    UseParam::Positional(nonempty::NonEmpty::new("realmodule".to_string()))
                 );
                 assert_eq!(
-                    path.first().params[1],
-                    UseParam::Positional(NonEmpty::new("logger".to_string()))
+                    path[0].params[1],
+                    UseParam::Positional(nonempty::NonEmpty::new("logger".to_string()))
                 );
                 assert_eq!(name, "run");
             }
@@ -3381,15 +3406,19 @@ fn main(): String {
         match &module.definitions[0] {
             Definition::Use { path, name, .. } => {
                 assert_eq!(path.len(), 2);
-                assert_eq!(path.first().name, "foo");
+                assert_eq!(path[0].name, "foo");
                 assert_eq!(
-                    path.first().params,
-                    vec![UseParam::Positional(NonEmpty::new("x".to_string()))]
+                    path[0].params,
+                    vec![UseParam::Positional(nonempty::NonEmpty::new(
+                        "x".to_string()
+                    ))]
                 );
-                assert_eq!(path.tail()[0].name, "bar");
+                assert_eq!(path[1].name, "bar");
                 assert_eq!(
-                    path.tail()[0].params,
-                    vec![UseParam::Positional(NonEmpty::new("y".to_string()))]
+                    path[1].params,
+                    vec![UseParam::Positional(nonempty::NonEmpty::new(
+                        "y".to_string()
+                    ))]
                 );
                 assert_eq!(name, "thing");
             }
@@ -3407,8 +3436,8 @@ fn main(): String {
         match &module.definitions[0] {
             Definition::Use { path, name, .. } => {
                 assert_eq!(path.len(), 1);
-                assert_eq!(path.first().name, "plain");
-                assert!(path.first().params.is_empty());
+                assert_eq!(path[0].name, "plain");
+                assert!(path[0].params.is_empty());
                 assert_eq!(name, "thing");
             }
             other => panic!("Expected Use, got {:?}", other),

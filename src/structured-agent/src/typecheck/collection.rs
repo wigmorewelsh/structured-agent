@@ -588,8 +588,14 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
                 ..
             } => {
                 let mut segs = parent.clone();
-                segs.extend(path.iter().map(|s| s.name.clone()));
-                let resolved = NonEmpty::from_vec(segs).unwrap();
+                if path.is_empty() {
+                    segs.push(name.clone());
+                } else {
+                    segs.extend(path.iter().map(|s| s.name.clone()));
+                }
+                let Some(resolved) = NonEmpty::from_vec(segs) else {
+                    return vec![];
+                };
                 let local = alias.clone().unwrap_or_else(|| name.clone());
                 vec![UseImport {
                     local,

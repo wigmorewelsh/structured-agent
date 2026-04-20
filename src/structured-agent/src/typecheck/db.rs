@@ -665,7 +665,7 @@ pub(super) fn resolve_use_param_bindings<'db>(
                 continue;
             }
             let last_seg = path.last();
-            if last_seg.params.is_empty() {
+            if last_seg.map_or(true, |s| s.params.is_empty()) {
                 return vec![];
             }
             let seg_module_path = path.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
@@ -692,7 +692,7 @@ pub(super) fn resolve_use_param_bindings<'db>(
                 })
                 .unwrap_or_default();
             let mut result = Vec::new();
-            for (i, use_param) in last_seg.params.iter().enumerate() {
+            for (i, use_param) in last_seg.unwrap().params.iter().enumerate() {
                 match use_param {
                     UseParam::Positional(path_segs) => {
                         let param_name = match header_params.get(i) {
@@ -769,8 +769,10 @@ pub(super) fn resolve_function_alias_via_param<'db>(
                 continue;
             }
             let first_seg = path.first();
-            if header_params.iter().any(|p| p.name == first_seg.name) {
-                return Some(first_seg.name.clone());
+            if let Some(seg) = first_seg {
+                if header_params.iter().any(|p| p.name == seg.name) {
+                    return Some(seg.name.clone());
+                }
             }
         }
     }

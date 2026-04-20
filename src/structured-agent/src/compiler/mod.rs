@@ -20,7 +20,7 @@ use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 use crate::ast::ParsedModule;
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
-use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover};
+use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover_all};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{FunctionName, MetaData, ModuleName, TypeName};
@@ -143,23 +143,24 @@ impl Compiler {
     pub fn compile_source(&self, unit: &CompilationUnit) -> Result<CompiledProgram, String> {
         let mut sources = HashMap::new();
         sources.insert(unit.name().to_string(), unit.source().to_string());
-        let discoverer = InMemoryDiscoverer::new(sources);
+        let discoverer: Arc<dyn Discoverer> = Arc::new(InMemoryDiscoverer::new(sources));
         self.compile(
             unit.name(),
             unit.source(),
             unit.path().map(String::from),
-            &discoverer,
+            discoverer,
         )
     }
 
     pub fn compile_file(&self, entry_path: &str) -> Result<CompiledProgram, String> {
         let entry_source = std::fs::read_to_string(entry_path)
             .map_err(|e| format!("Failed to read {}: {}", entry_path, e))?;
+        let discoverer: Arc<dyn Discoverer> = Arc::new(FileDiscoverer);
         self.compile(
             entry_path,
             &entry_source,
             Some(entry_path.to_string()),
-            &FileDiscoverer,
+            discoverer,
         )
     }
 
@@ -168,30 +169,25 @@ impl Compiler {
         entry_path: &str,
         entry_source: &str,
         source_path: Option<String>,
-        discoverer: &impl Discoverer,
+        discoverer: Arc<dyn Discoverer>,
     ) -> Result<CompiledProgram, String> {
         debug!("Compiling: {}", entry_path);
 
-        let parser = &self.parser;
         let mut diagnostics = DiagnosticManager::new();
 
         let native_names: std::collections::HashSet<String> =
             self.modules.keys().cloned().collect();
 
-        let modules = discover(
+        let discovered = discover_all(
             entry_path,
             entry_source,
             discoverer,
             &native_names,
-            |path, source| {
-                let unit = CompilationUnit::from_file(path.to_string(), source.to_string());
-                let file_id = diagnostics.add_file(path.to_string(), source.to_string());
-                let reporter = diagnostics.reporter().clone();
-                parser
-                    .parse(&unit, file_id, &reporter)
-                    .map(|m| (file_id, m))
-            },
+            diagnostics.files().clone(),
         )?;
+
+        let modules: Vec<ParsedModule> =
+            discovered.into_iter().map(|dm| dm.into_parsed()).collect();
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
