@@ -10,8 +10,6 @@ pub trait BodyRef {}
 pub trait WitnessRef: fmt::Debug + Clone {}
 pub trait TypeAnnotation: fmt::Debug + Clone {}
 
-impl TypeAnnotation for TypeName {}
-
 #[derive(Clone)]
 pub struct NoAst;
 impl AstRef for NoAst {}
@@ -40,6 +38,239 @@ pub trait SymbolQuery {
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
     fn all_types(&self) -> Vec<Arc<TypeDefinition<Self::Refs>>>;
     fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DefinitionPath {
+    pub segments: NonEmpty<DefinitionSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DefinitionSegment {
+    Module(String),
+    Function(String),
+    Type(String),
+    Impl { discriminator: Option<u32> },
+}
+
+impl DefinitionPath {
+    pub fn from_module_strings(segments: NonEmpty<String>) -> Self {
+        DefinitionPath {
+            segments: segments.map(DefinitionSegment::Module),
+        }
+    }
+}
+
+fn module_prefix_of(path: &DefinitionPath) -> ModuleName {
+    let segs: Vec<String> = path
+        .segments
+        .iter()
+        .take_while(|s| matches!(s, DefinitionSegment::Module(_)))
+        .map(|s| match s {
+            DefinitionSegment::Module(n) => n.clone(),
+            _ => unreachable!(),
+        })
+        .collect();
+    ModuleName::new(NonEmpty::from_vec(segs).unwrap_or_else(|| NonEmpty::new(String::new())))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModuleName(pub DefinitionPath);
+
+impl ModuleName {
+    pub fn new(segments: NonEmpty<String>) -> Self {
+        ModuleName(DefinitionPath::from_module_strings(segments))
+    }
+
+    pub fn last_segment(&self) -> &str {
+        match self.0.segments.last() {
+            DefinitionSegment::Module(n) => n,
+            _ => panic!("ModuleName path contains non-Module segment"),
+        }
+    }
+
+    #[deprecated(note = "stop using magic strings for module names")]
+    pub fn from_str(s: &str) -> Self {
+        let v: Vec<String> = s.split("::").map(|p| p.to_string()).collect();
+        ModuleName::new(NonEmpty::from_vec(v).expect("split always yields at least one element"))
+    }
+
+    #[deprecated(note = "transition marker: replace with the real module name")]
+    pub fn unqualified() -> Self {
+        ModuleName::new(NonEmpty::new(String::new()))
+    }
+}
+
+impl fmt::Display for ModuleName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for seg in self.0.segments.iter() {
+            if let DefinitionSegment::Module(n) = seg {
+                if !first {
+                    write!(f, "::")?;
+                }
+                write!(f, "{}", n)?;
+                first = false;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FunctionName(pub DefinitionPath);
+
+impl FunctionName {
+    pub fn new(module: ModuleName, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Function(name.into()));
+        FunctionName(DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        })
+    }
+
+    pub fn new_impl(
+        module: ModuleName,
+        type_name: impl Into<String>,
+        trait_name: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Type(type_name.into()));
+        segs.push(DefinitionSegment::Type(trait_name.into()));
+        segs.push(DefinitionSegment::Impl {
+            discriminator: None,
+        });
+        segs.push(DefinitionSegment::Function(name.into()));
+        FunctionName(DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        match self.0.segments.last() {
+            DefinitionSegment::Function(n) => n,
+            _ => panic!("FunctionName path does not end with Function segment"),
+        }
+    }
+
+    pub fn module(&self) -> ModuleName {
+        module_prefix_of(&self.0)
+    }
+
+    pub fn is_impl_fn(&self) -> bool {
+        self.0
+            .segments
+            .iter()
+            .any(|s| matches!(s, DefinitionSegment::Impl { .. }))
+    }
+
+    #[deprecated(note = "use .name() directly")]
+    pub fn fn_name(&self) -> &str {
+        self.name()
+    }
+}
+
+impl fmt::Display for FunctionName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for seg in self.0.segments.iter() {
+            let text = match seg {
+                DefinitionSegment::Module(n) if n.is_empty() => continue,
+                DefinitionSegment::Module(n) => n.as_str(),
+                DefinitionSegment::Function(n) => n.as_str(),
+                DefinitionSegment::Type(n) => n.as_str(),
+                DefinitionSegment::Impl { .. } => continue,
+            };
+            if !first {
+                write!(f, "::")?;
+            }
+            write!(f, "{}", text)?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeName(pub DefinitionPath);
+
+impl TypeAnnotation for TypeName {}
+
+impl TypeName {
+    pub fn new(module: ModuleName, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Type(name.into()));
+        TypeName(DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        match self.0.segments.last() {
+            DefinitionSegment::Type(n) => n,
+            _ => panic!("TypeName path does not end with Type segment"),
+        }
+    }
+
+    pub fn module(&self) -> ModuleName {
+        module_prefix_of(&self.0)
+    }
+}
+
+impl fmt::Display for TypeName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.module(), self.name())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImplKey(pub DefinitionPath);
+
+impl ImplKey {
+    pub fn new(
+        module: ModuleName,
+        type_name: impl Into<String>,
+        trait_name: impl Into<String>,
+    ) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Type(type_name.into()));
+        segs.push(DefinitionSegment::Type(trait_name.into()));
+        segs.push(DefinitionSegment::Impl {
+            discriminator: None,
+        });
+        ImplKey(DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        })
+    }
+
+    pub fn type_name(&self) -> &str {
+        let segs: Vec<&DefinitionSegment> = self.0.segments.iter().collect();
+        let impl_pos = segs
+            .iter()
+            .rposition(|s| matches!(s, DefinitionSegment::Impl { .. }))
+            .expect("ImplKey must contain an Impl segment");
+        match segs[impl_pos - 2] {
+            DefinitionSegment::Type(n) => n,
+            _ => panic!("ImplKey: expected Type segment for type_name"),
+        }
+    }
+
+    pub fn trait_name(&self) -> &str {
+        let segs: Vec<&DefinitionSegment> = self.0.segments.iter().collect();
+        let impl_pos = segs
+            .iter()
+            .rposition(|s| matches!(s, DefinitionSegment::Impl { .. }))
+            .expect("ImplKey must contain an Impl segment");
+        match segs[impl_pos - 1] {
+            DefinitionSegment::Type(n) => n,
+            _ => panic!("ImplKey: expected Type segment for trait_name"),
+        }
+    }
+
+    pub fn impl_module(&self) -> ModuleName {
+        module_prefix_of(&self.0)
+    }
 }
 
 #[derive(Clone)]
@@ -85,14 +316,14 @@ impl<R: References> SymbolQuery for MetaData<R> {
     ) -> Option<Arc<ImplDefinition<R>>> {
         self.impls
             .iter()
-            .find(|(k, _)| k.type_name == type_name.name && k.trait_name == trait_name.name)
+            .find(|(k, _)| k.type_name() == type_name.name() && k.trait_name() == trait_name.name())
             .map(|(_, v)| v.clone())
     }
 
     fn traits_implemented_by(&self, type_name: &TypeName) -> Vec<Arc<ImplDefinition<R>>> {
         self.impls
             .iter()
-            .filter(|(k, _)| k.type_name == type_name.name)
+            .filter(|(k, _)| k.type_name() == type_name.name())
             .map(|(_, v)| v.clone())
             .collect()
     }
@@ -108,7 +339,7 @@ impl<R: References> SymbolQuery for MetaData<R> {
     fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<R>>> {
         self.functions
             .values()
-            .filter(|f| &f.name.module == module)
+            .filter(|f| &f.name.module() == module)
             .cloned()
             .collect()
     }
@@ -121,43 +352,6 @@ impl<R: References> MetaData<R> {
 
     pub fn register_type(&mut self, name: TypeName, def: Arc<TypeDefinition<R>>) {
         self.types.insert(name, def);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ModuleName {
-    pub segments: NonEmpty<String>,
-}
-
-impl fmt::Display for ModuleName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.segments.iter();
-        write!(f, "{}", iter.next().unwrap())?;
-        for segment in iter {
-            write!(f, "::{}", segment)?;
-        }
-        Ok(())
-    }
-}
-
-impl ModuleName {
-    pub fn new(segments: NonEmpty<String>) -> Self {
-        ModuleName { segments }
-    }
-
-    #[deprecated(note = "stop using magic strings for module names")]
-    pub fn from_str(s: &str) -> Self {
-        let v: Vec<String> = s.split("::").map(|p| p.to_string()).collect();
-        ModuleName {
-            segments: NonEmpty::from_vec(v).expect("split always yields at least one element"),
-        }
-    }
-
-    #[deprecated(note = "transition marker: replace with the real module name")]
-    pub fn unqualified() -> Self {
-        ModuleName {
-            segments: NonEmpty::new(String::new()),
-        }
     }
 }
 
@@ -195,49 +389,6 @@ pub struct ModuleDefinition<R: References> {
     pub parent_module: Option<ModuleName>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FunctionName {
-    pub name: String,
-    pub module: ModuleName,
-    pub kind: FunctionNameKind,
-}
-
-impl fmt::Display for FunctionName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let module_str = self.module.to_string();
-        match &self.kind {
-            FunctionNameKind::Function => {
-                if module_str.is_empty() {
-                    write!(f, "{}", self.name)
-                } else {
-                    write!(f, "{}::{}", self.module, self.name)
-                }
-            }
-            FunctionNameKind::Impl {
-                type_name,
-                trait_name,
-            } => {
-                if module_str.is_empty() {
-                    write!(f, "{}::{}::{}", type_name, trait_name, self.name)
-                } else {
-                    write!(
-                        f,
-                        "{}::{}::{}::{}",
-                        self.module, type_name, trait_name, self.name
-                    )
-                }
-            }
-        }
-    }
-}
-
-impl FunctionName {
-    #[deprecated(note = "use .name directly")]
-    pub fn fn_name(&self) -> &str {
-        &self.name
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct FunctionDefinition<R: References> {
     pub name: FunctionName,
@@ -261,41 +412,12 @@ pub struct GenericParameterDefinition<R: References> {
     pub constraints: Vec<R::TypeAnnotation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FunctionNameKind {
-    Function,
-    Impl {
-        type_name: String,
-        trait_name: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ImplKey {
-    pub type_name: String,
-    pub trait_name: String,
-    pub impl_module: ModuleName,
-}
-
 #[derive(Debug, Clone)]
 pub struct ImplDefinition<R: References> {
     pub key: ImplKey,
     pub module: ModuleName,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeName {
-    pub name: String,
-    pub module: ModuleName,
-}
-
-// this should be for pretty printing only.
-impl fmt::Display for TypeName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}::{}", self.module, self.name)
-    }
 }
 
 #[derive(Debug, Clone)]

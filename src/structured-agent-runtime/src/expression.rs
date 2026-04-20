@@ -6,9 +6,7 @@ use crate::runtime_value::{
     BooleanValue, IntValue, ListValue, MetadataValue, OptionValue, RuntimeValue, StringValue,
     StructValue, UnitValue, arrow_col_to_expression,
 };
-use crate::symbols::{
-    FunctionName, MetaData, References, SymbolQuery, TypeDefinitionKind, TypeName,
-};
+use crate::symbols::{MetaData, ModuleName, References, SymbolQuery, TypeDefinitionKind, TypeName};
 use crate::types::Type;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,7 +30,7 @@ impl ExpressionParameter {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionValue {
-    Module(FunctionName),
+    Module(ModuleName),
     Dynamic(Arc<dyn RuntimeValue>),
 }
 
@@ -105,7 +103,7 @@ impl ExpressionValue {
         Self::Dynamic(Arc::new(ListValue::new(arr)))
     }
 
-    pub fn module(name: FunctionName) -> Self {
+    pub fn module(name: ModuleName) -> Self {
         Self::Module(name)
     }
 
@@ -243,7 +241,7 @@ impl ExpressionValue {
         }
     }
 
-    pub fn as_module(&self) -> Result<&FunctionName, String> {
+    pub fn as_module(&self) -> Result<&ModuleName, String> {
         match self {
             ExpressionValue::Module(name) => Ok(name),
             _ => Err(format!("expected Module, got {}", self.type_name())),
@@ -293,7 +291,7 @@ where
     R: References<TypeAnnotation = TypeName>,
 {
     match ty {
-        Type::Parameterized(type_name, args) if type_name.name == "List" && args.len() == 1 => {
+        Type::Parameterized(type_name, args) if type_name.name() == "List" && args.len() == 1 => {
             let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
@@ -332,10 +330,10 @@ fn type_name_to_arrow_datatype<R>(
 where
     R: References<TypeAnnotation = TypeName>,
 {
-    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.name) {
+    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.name()) {
         return type_to_arrow_datatype(ty, metadata);
     }
-    match type_name.name.as_str() {
+    match type_name.name() {
         "Int" => DataType::Int64,
         "String" => DataType::Utf8,
         "Boolean" => DataType::Boolean,
@@ -440,10 +438,10 @@ mod tests {
     }
 
     fn test_type_name() -> TypeName {
-        TypeName {
-            name: "Test".to_string(),
-            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
-        }
+        TypeName::new(
+            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+            "Test",
+        )
     }
 
     #[test]
@@ -661,14 +659,14 @@ mod tests {
 
     #[test]
     fn parameterized_type_to_arrow_datatype_delegates_to_struct() {
-        let struct_type_name = TypeName {
-            name: "MyGeneric".to_string(),
-            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
-        };
-        let string_type_name = TypeName {
-            name: "String".to_string(),
-            module: ModuleName::new(nonempty::nonempty!["prelude".to_string()]),
-        };
+        let struct_type_name = TypeName::new(
+            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+            "MyGeneric",
+        );
+        let string_type_name = TypeName::new(
+            ModuleName::new(nonempty::nonempty!["prelude".to_string()]),
+            "String",
+        );
         let mut metadata = MetaData::<TestRefs>::default();
         metadata.register_type(
             struct_type_name.clone(),
@@ -698,14 +696,14 @@ mod tests {
 
     #[test]
     fn parameterized_type_with_generic_field_substitutes_type_arg() {
-        let wrapper_type_name = TypeName {
-            name: "Wrapper".to_string(),
-            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
-        };
-        let t_type_name = TypeName {
-            name: "T".to_string(),
-            module: ModuleName::new(nonempty::nonempty!["test".to_string()]),
-        };
+        let wrapper_type_name = TypeName::new(
+            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+            "Wrapper",
+        );
+        let t_type_name = TypeName::new(
+            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+            "T",
+        );
         let mut metadata = MetaData::<TestRefs>::default();
         metadata.register_type(
             wrapper_type_name.clone(),

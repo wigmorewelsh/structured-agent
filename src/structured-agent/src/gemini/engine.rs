@@ -52,10 +52,10 @@ impl GeminiEngine {
             _ if value_type.is_string() => Ok(JsonSchemaBuilder::string()),
             _ if value_type.is_boolean() => Ok(JsonSchemaBuilder::boolean()),
             _ if value_type.is_int() => Ok(JsonSchemaBuilder::integer()),
-            Type::Parameterized(n, _) if n.name == "List" => {
+            Type::Parameterized(n, _) if n.name() == "List" => {
                 Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string()))
             }
-            Type::Parameterized(n, args) if n.name == "Option" => {
+            Type::Parameterized(n, args) if n.name() == "Option" => {
                 Self::build_value_schema(&args[0], context)
             }
             Type::Parameterized(n, args) => {
@@ -63,7 +63,7 @@ impl GeminiEngine {
                     .runtime()
                     .get_struct_with_args(n, args)
                     .ok_or_else(|| {
-                        format!("Parameterized type {} cannot be used in schema", n.name)
+                        format!("Parameterized type {} cannot be used in schema", n.name())
                     })?;
                 let mut obj = JsonSchemaBuilder::object();
                 for (field_name, field_type) in &fields {
@@ -72,7 +72,7 @@ impl GeminiEngine {
                 }
                 Ok(obj)
             }
-            Type::Struct(tn) if tn.name == "Unit" => {
+            Type::Struct(tn) if tn.name() == "Unit" => {
                 Err("Unit type cannot be used in schema".to_string())
             }
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
@@ -80,7 +80,7 @@ impl GeminiEngine {
                 let fields = context
                     .runtime()
                     .get_struct(type_name)
-                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name))?;
+                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name()))?;
                 let mut obj = JsonSchemaBuilder::object();
                 for (field_name, field_type) in &fields {
                     let field_schema = Self::build_value_schema(field_type, context)?;
@@ -131,7 +131,7 @@ impl GeminiEngine {
                     Err("Expected integer value".to_string())
                 }
             }
-            Type::Parameterized(n, _) if n.name == "List" => {
+            Type::Parameterized(n, _) if n.name() == "List" => {
                 let items: Vec<String> = if json_value.is_array() {
                     json_value
                         .as_array()
@@ -152,7 +152,7 @@ impl GeminiEngine {
                 builder.append(true);
                 Ok(ExpressionValue::list(std::sync::Arc::new(builder.finish())))
             }
-            Type::Parameterized(n, args) if n.name == "Option" => {
+            Type::Parameterized(n, args) if n.name() == "Option" => {
                 if json_value.is_null() {
                     Ok(ExpressionValue::option_none_with_type(
                         context.runtime().type_to_arrow_datatype(&args[0]),
@@ -163,24 +163,24 @@ impl GeminiEngine {
                 }
             }
             Type::Struct(type_name) => {
-                let obj = json_value
-                    .as_object()
-                    .ok_or_else(|| format!("Expected JSON object for struct {}", type_name.name))?;
+                let obj = json_value.as_object().ok_or_else(|| {
+                    format!("Expected JSON object for struct {}", type_name.name())
+                })?;
                 let fields = context
                     .runtime()
                     .get_struct(type_name)
-                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name))?
+                    .ok_or_else(|| format!("Unknown struct: {}", type_name.name()))?
                     .clone();
                 Self::parse_struct_fields(obj, &fields, context)
             }
             Type::Parameterized(n, args) => {
                 let obj = json_value
                     .as_object()
-                    .ok_or_else(|| format!("Expected JSON object for struct {}", n.name))?;
+                    .ok_or_else(|| format!("Expected JSON object for struct {}", n.name()))?;
                 let fields = context
                     .runtime()
                     .get_struct_with_args(n, args)
-                    .ok_or_else(|| format!("Unknown struct: {}", n.name))?
+                    .ok_or_else(|| format!("Unknown struct: {}", n.name()))?
                     .clone();
                 Self::parse_struct_fields(obj, &fields, context)
             }
@@ -459,10 +459,10 @@ mod tests {
         let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
         runtime.check().unwrap();
         let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
-        let ghost_type = Type::Struct(TypeName {
-            name: "Ghost".to_string(),
-            module: ModuleName::new(NonEmpty::new("test".to_string())),
-        });
+        let ghost_type = Type::Struct(TypeName::new(
+            ModuleName::new(NonEmpty::new("test".to_string())),
+            "Ghost",
+        ));
         let result = GeminiEngine::build_value_schema(&ghost_type, &context);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Ghost"));
@@ -480,10 +480,10 @@ struct Task {
 fn main(): () { return () }
 "#;
         let context = make_context_with_struct(code);
-        let task_type = Type::Struct(TypeName {
-            name: "Task".to_string(),
-            module: ModuleName::new(NonEmpty::new("main".to_string())),
-        });
+        let task_type = Type::Struct(TypeName::new(
+            ModuleName::new(NonEmpty::new("main".to_string())),
+            "Task",
+        ));
         let result = GeminiEngine::build_value_schema(&task_type, &context);
         assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
     }
@@ -501,10 +501,10 @@ fn main(): () { return () }
 "#;
         let context = make_context_with_struct(code);
         let json = serde_json::json!({"x": 10, "y": 20});
-        let point_type = Type::Struct(TypeName {
-            name: "Point".to_string(),
-            module: ModuleName::new(NonEmpty::new("main".to_string())),
-        });
+        let point_type = Type::Struct(TypeName::new(
+            ModuleName::new(NonEmpty::new("main".to_string())),
+            "Point",
+        ));
         let result = GeminiEngine::parse_json_value(json, &point_type, &context);
         assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
         let value = result.unwrap();
@@ -531,10 +531,7 @@ fn main(): () { return () }
 "#;
         let context = make_context_with_struct(code);
         let task_type = Type::Parameterized(
-            TypeName {
-                name: "Task".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-            },
+            TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Task"),
             vec![],
         );
         let result = GeminiEngine::build_value_schema(&task_type, &context);
@@ -553,10 +550,7 @@ fn main(): () { return () }
         runtime.check().unwrap();
         let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
         let ghost_type = Type::Parameterized(
-            TypeName {
-                name: "Ghost".to_string(),
-                module: ModuleName::new(NonEmpty::new("test".to_string())),
-            },
+            TypeName::new(ModuleName::new(NonEmpty::new("test".to_string())), "Ghost"),
             vec![],
         );
         let result = GeminiEngine::build_value_schema(&ghost_type, &context);
@@ -578,10 +572,7 @@ fn main(): () { return () }
         let context = make_context_with_struct(code);
         let json = serde_json::json!({"x": 3, "y": 7});
         let point_type = Type::Parameterized(
-            TypeName {
-                name: "Point".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-            },
+            TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Point"),
             vec![],
         );
         let result = GeminiEngine::parse_json_value(json, &point_type, &context);

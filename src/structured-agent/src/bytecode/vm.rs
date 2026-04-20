@@ -297,7 +297,7 @@ impl VM {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
         let name_str = function_name.to_string();
-        let lookup_name = function_name.name.clone();
+        let lookup_name = function_name.name().to_string();
 
         let resolved_params: HashMap<String, ExpressionValue> = params
             .iter()
@@ -394,15 +394,10 @@ impl VM {
         name: &structured_agent_runtime::ModuleName,
         dest: &str,
     ) -> VMState {
-        let function_name = structured_agent_runtime::FunctionName {
-            name: name.segments.last().clone(),
-            module: name.clone(),
-            kind: structured_agent_runtime::FunctionNameKind::Function,
-        };
         Self::write_variable(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::module(function_name)),
+            ExpressionResult::new(ExpressionValue::module(name.clone())),
         );
         Self::advance_pc(state)
     }
@@ -548,12 +543,12 @@ impl VM {
         dest: &str,
     ) -> Result<VMState, String> {
         let module_val = Self::read_variable(&state, module_param)?;
-        let mut function_name = module_val
+        let module_name = module_val
             .value
             .as_module()
             .map_err(|e| format!("CallIndirect: {}", e))?
             .clone();
-        function_name.name = fn_name.to_string();
+        let function_name = structured_agent_runtime::FunctionName::new(module_name, fn_name);
         let func = self
             .runtime
             .get_bytecode_function(&function_name)

@@ -16,7 +16,7 @@ use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{
-    FunctionName, FunctionNameKind, ModuleName, TypeDefinitionKind, TypeName, Visibility,
+    FunctionName, ModuleName, TypeDefinitionKind, TypeName, Visibility,
 };
 
 #[derive(Debug, Clone)]
@@ -121,10 +121,7 @@ fn resolve_local_type<'db>(
     module: InternedModuleName<'db>,
     name: InternedString<'db>,
 ) -> Option<TypeName> {
-    let local_type = TypeName {
-        name: name.value(db).to_string(),
-        module: module.name(db).clone(),
-    };
+    let local_type = TypeName::new(module.name(db), name.value(db));
     if tables.types(db).get().contains_key(&local_type) {
         Some(local_type)
     } else {
@@ -330,11 +327,7 @@ fn check_function(
     func: &Function,
     ctx: &CheckContext,
 ) -> Option<()> {
-    let fn_name = FunctionName {
-        name: func.name.clone(),
-        module: ctx.module_name.clone(),
-        kind: FunctionNameKind::Function,
-    };
+    let fn_name = FunctionName::new(ctx.module_name.clone(), func.name.clone());
     let sig = get_function_sig(db, tables, fn_name.intern(db), ctx.program)?
         .get()
         .clone();
@@ -864,10 +857,8 @@ fn synthesize_struct_literal(
     let resolved_type_name = {
         let interned_mod = ctx.module_name.intern(db);
         let interned_name = struct_name.intern(db);
-        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-            name: struct_name.to_string(),
-            module: ctx.module_name.clone(),
-        })
+        resolve_type_alias(db, tables, interned_mod, interned_name)
+            .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
     };
     if type_params.is_empty() {
         Some(RT::Struct(resolved_type_name))
@@ -898,10 +889,10 @@ fn synthesize_field_access(
     match base_type {
         RT::Struct(type_name) => {
             let (definition, type_params) =
-                get_struct_fields(db, tables, &type_name.name, ctx.module_name).or_accumulate(
+                get_struct_fields(db, tables, type_name.name(), ctx.module_name).or_accumulate(
                     db,
                     TypeError::UnsupportedType {
-                        type_name: type_name.name.clone(),
+                        type_name: type_name.name().to_string(),
                         span,
                         file_id: ctx.file_id,
                     },
@@ -914,7 +905,7 @@ fn synthesize_field_access(
                 .or_accumulate(
                     db,
                     TypeError::UnknownField {
-                        struct_name: type_name.name.clone(),
+                        struct_name: type_name.name().to_string(),
                         field_name: field.to_string(),
                         span,
                         file_id: ctx.file_id,
@@ -968,7 +959,7 @@ fn check_visibility(
     span: Span,
     ctx: &CheckContext,
 ) -> Option<()> {
-    if &fn_name.module == ctx.module_name {
+    if &fn_name.module() == ctx.module_name {
         return Some(());
     }
     let interned = fn_name.intern(db);
@@ -979,7 +970,7 @@ fn check_visibility(
         is_visible,
         db,
         TypeError::PrivateFunction {
-            name: format!("{}::{}", fn_name.module, fn_name.name),
+            name: format!("{}::{}", fn_name.module(), fn_name.name()),
             span,
             file_id: ctx.file_id,
         }

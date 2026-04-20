@@ -11,7 +11,7 @@ use structured_agent_runtime::symbols::{
     BodyRef, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
     TypeDefinition, TypeName, clone_kind_typenames,
 };
-use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
+use structured_agent_runtime::{FunctionName, ModuleName};
 
 #[derive(Clone, Debug)]
 pub struct BytecodeRef {
@@ -88,11 +88,10 @@ impl BytecodeCompiler {
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
-            name: FunctionName {
-                name: typed_func.name.clone(),
-                module: ModuleName::new(NonEmpty::new(String::new())),
-                kind: FunctionNameKind::Function,
-            },
+            name: FunctionName::new(
+                ModuleName::new(NonEmpty::new(String::new())),
+                typed_func.name.clone(),
+            ),
             module_name: None,
             parameters: typed_func
                 .parameters
@@ -391,7 +390,7 @@ impl BytecodeCompiler {
             }
             builder.emit(Instruction::CallIndirect {
                 module_param: param_name.to_string(),
-                fn_name: function.name.clone(),
+                fn_name: function.name().to_string(),
                 params: arg_vars,
                 dest: dest_var.to_string(),
             });

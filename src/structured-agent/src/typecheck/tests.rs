@@ -1702,7 +1702,7 @@ mod typed_ast_tests {
 
     use std::sync::Arc;
     use structured_agent_runtime::Type as RT;
-    use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
+    use structured_agent_runtime::symbols::{FunctionName, ModuleName};
 
     fn check_typed(module: &Module) -> typed_ast::Module {
         let parsed = crate::ast::ParsedModule {
@@ -1719,7 +1719,7 @@ mod typed_ast_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module.to_string() != "main" {
+                if f.name.module().to_string() != "main" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -1859,7 +1859,7 @@ mod typed_ast_tests {
         let main_fn = metadata
             .functions
             .values()
-            .find(|f| f.name.name == "main")
+            .find(|f| f.name.name() == "main")
             .unwrap();
         let crate::typecheck::refs::TypedCheckerAstRef::Function(f, _) = &main_fn.ast_ref else {
             panic!()
@@ -1937,7 +1937,7 @@ mod typed_ast_tests {
         assert!(matches!(
             expr,
             typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
-            if resolved == &FunctionName { name: "get_value".to_string(), module: ModuleName::new(NonEmpty::new("main".to_string())), kind: FunctionNameKind::Function }
+            if resolved == &FunctionName::new(ModuleName::new(NonEmpty::new("main".to_string())), "get_value")
         ));
     }
 
@@ -2170,12 +2170,12 @@ mod typed_ast_tests {
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(
             expr.ty(),
-            &RT::Struct(structured_agent_runtime::symbols::TypeName {
-                name: "Point".to_string(),
-                module: structured_agent_runtime::symbols::ModuleName::new(
-                    nonempty::NonEmpty::new("main".to_string())
-                ),
-            })
+            &RT::Struct(structured_agent_runtime::symbols::TypeName::new(
+                structured_agent_runtime::symbols::ModuleName::new(nonempty::NonEmpty::new(
+                    "main".to_string()
+                )),
+                "Point",
+            ))
         );
     }
 
@@ -2575,14 +2575,7 @@ mod typed_ast_tests {
             .unwrap();
         assert_eq!(resolved, {
             let mn = ModuleName::new(NonEmpty::new("main".to_string()));
-            FunctionName {
-                name: "add".to_string(),
-                module: mn.clone(),
-                kind: FunctionNameKind::Impl {
-                    type_name: "Vec2".to_string(),
-                    trait_name: "Add".to_string(),
-                },
-            }
+            FunctionName::new_impl(mn, "Vec2", "Add", "add")
         });
     }
 
@@ -2631,10 +2624,7 @@ mod typed_ast_tests {
         assert_eq!(
             expr.ty(),
             &RT::Parameterized(
-                structured_agent_runtime::symbols::TypeName {
-                    name: "Box".to_string(),
-                    module: mn,
-                },
+                structured_agent_runtime::symbols::TypeName::new(mn, "Box"),
                 vec![RT::string()],
             )
         );
@@ -2648,8 +2638,7 @@ mod metadata_query_tests {
     use nonempty::NonEmpty;
     use std::sync::Arc;
     use structured_agent_runtime::symbols::{
-        FunctionName, FunctionNameKind, MetaData, ModuleName, SymbolQuery, TypeDefinitionKind,
-        TypeName,
+        FunctionName, MetaData, ModuleName, SymbolQuery, TypeDefinitionKind, TypeName,
     };
 
     fn check_meta(module: crate::ast::Module) -> MetaData<TypedRefs> {
@@ -2700,11 +2689,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .function(&FunctionName {
-                    name: "greet".to_string(),
-                    module: ModuleName::new(NonEmpty::new("main".to_string())),
-                    kind: FunctionNameKind::Function,
-                })
+                .function(&FunctionName::new(
+                    ModuleName::new(NonEmpty::new("main".to_string())),
+                    "greet",
+                ))
                 .is_some()
         );
     }
@@ -2724,10 +2712,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .type_def(&TypeName {
-                    name: "Point".to_string(),
-                    module: ModuleName::new(NonEmpty::new("main".to_string())),
-                })
+                .type_def(&TypeName::new(
+                    ModuleName::new(NonEmpty::new("main".to_string())),
+                    "Point",
+                ))
                 .is_some()
         );
     }
@@ -2748,10 +2736,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .type_def(&TypeName {
-                    name: "Greetable".to_string(),
-                    module: ModuleName::new(NonEmpty::new("main".to_string())),
-                })
+                .type_def(&TypeName::new(
+                    ModuleName::new(NonEmpty::new("main".to_string())),
+                    "Greetable",
+                ))
                 .is_some()
         );
     }
@@ -2788,14 +2776,8 @@ mod metadata_query_tests {
         let metadata = TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
-        let type_name = TypeName {
-            name: "Foo".to_string(),
-            module: ModuleName::new(NonEmpty::new("main".to_string())),
-        };
-        let trait_name = TypeName {
-            name: "Add".to_string(),
-            module: ModuleName::new(NonEmpty::new("main".to_string())),
-        };
+        let type_name = TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Foo");
+        let trait_name = TypeName::new(ModuleName::new(NonEmpty::new("main".to_string())), "Add");
         let impl_def = metadata.impl_for(&type_name, &trait_name);
         assert!(impl_def.is_some());
         assert!(matches!(
@@ -2810,10 +2792,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .type_def(&TypeName {
-                    name: "Unit".to_string(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-                })
+                .type_def(&TypeName::new(
+                    ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    "Unit",
+                ))
                 .is_some()
         );
     }
@@ -2824,10 +2806,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .type_def(&TypeName {
-                    name: "String".to_string(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-                })
+                .type_def(&TypeName::new(
+                    ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    "String",
+                ))
                 .is_some()
         );
     }
@@ -2838,10 +2820,10 @@ mod metadata_query_tests {
         let metadata = check_meta(module);
         assert!(
             metadata
-                .type_def(&TypeName {
-                    name: "List".to_string(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-                })
+                .type_def(&TypeName::new(
+                    ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    "List",
+                ))
                 .is_some()
         );
     }
@@ -2866,27 +2848,26 @@ mod metadata_query_tests {
             )))]);
         let metadata = check_meta(module);
         let fn_def = metadata
-            .function(&FunctionName {
-                name: "get_items".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function,
-            })
+            .function(&FunctionName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "get_items",
+            ))
             .unwrap();
         assert_eq!(
             fn_def.type_name,
-            TypeName {
-                name: "get_items".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-            }
+            TypeName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "get_items",
+            )
         );
         let type_def = metadata.type_def(&fn_def.type_name).unwrap();
         if let TypeDefinitionKind::Function { return_type, .. } = &type_def.kind {
             assert_eq!(
                 return_type,
-                &TypeName {
-                    name: "List".to_string(),
-                    module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-                }
+                &TypeName::new(
+                    ModuleName::new(NonEmpty::new("prelude".to_string())),
+                    "List",
+                )
             );
         } else {
             panic!("expected TypeDefinitionKind::Function");
@@ -2907,11 +2888,10 @@ mod metadata_query_tests {
             )))]);
         let metadata = check_meta(module);
         let fn_def = metadata
-            .function(&FunctionName {
-                name: "greet".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function,
-            })
+            .function(&FunctionName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "greet",
+            ))
             .unwrap();
         let type_def = metadata.type_def(&fn_def.type_name).unwrap();
         let TypeDefinitionKind::Function {
@@ -2926,17 +2906,17 @@ mod metadata_query_tests {
         assert_eq!(parameters[0].name, "name");
         assert_eq!(
             parameters[0].type_name,
-            TypeName {
-                name: "String".to_string(),
-                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-            }
+            TypeName::new(
+                ModuleName::new(NonEmpty::new("prelude".to_string())),
+                "String",
+            )
         );
         assert_eq!(
             return_type,
-            &TypeName {
-                name: "String".to_string(),
-                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-            }
+            &TypeName::new(
+                ModuleName::new(NonEmpty::new("prelude".to_string())),
+                "String",
+            )
         );
     }
 
@@ -2957,11 +2937,10 @@ mod metadata_query_tests {
         let module = create_test_module(vec![Definition::ExternalFunction(Arc::new(ext_func))]);
         let metadata = check_meta(module);
         let fn_def = metadata
-            .function(&FunctionName {
-                name: "math::add".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function,
-            })
+            .function(&FunctionName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "math::add",
+            ))
             .unwrap();
         let type_def = metadata.type_def(&fn_def.type_name).unwrap();
         let TypeDefinitionKind::Function {
@@ -2977,10 +2956,7 @@ mod metadata_query_tests {
         assert_eq!(parameters[1].name, "b");
         assert_eq!(
             return_type,
-            &TypeName {
-                name: "Int".to_string(),
-                module: ModuleName::new(NonEmpty::new("prelude".to_string())),
-            }
+            &TypeName::new(ModuleName::new(NonEmpty::new("prelude".to_string())), "Int",)
         );
     }
 

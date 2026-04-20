@@ -153,7 +153,7 @@ impl LanguageEngine for PrintEngine {
             _ if return_type.is_int() => Ok(crate::runtime::ExpressionValue::integer(0)),
             _ if return_type.is_unit() => Ok(crate::runtime::ExpressionValue::unit()),
             Type::Parameterized(n, args) => {
-                if n.name == "Option" {
+                if n.name() == "Option" {
                     Ok(crate::runtime::ExpressionValue::option_none_with_type(
                         context.runtime().type_to_arrow_datatype(&args[0]),
                     ))
@@ -189,7 +189,7 @@ impl LanguageEngine for PrintEngine {
             _ if param_type.is_boolean() => Ok(crate::runtime::ExpressionValue::boolean(true)),
             _ if param_type.is_int() => Ok(crate::runtime::ExpressionValue::integer(0)),
             Type::Parameterized(n, args) => {
-                if n.name == "Option" {
+                if n.name() == "Option" {
                     Ok(crate::runtime::ExpressionValue::option_none_with_type(
                         context.runtime().type_to_arrow_datatype(&args[0]),
                     ))

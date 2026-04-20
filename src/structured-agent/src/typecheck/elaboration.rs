@@ -425,10 +425,8 @@ fn elaborate_struct_literal(
     let resolved_type_name = {
         let interned_mod = ctx.module_name.intern(db);
         let interned_name = struct_name.intern(db);
-        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-            name: struct_name.to_string(),
-            module: ctx.module_name.clone(),
-        })
+        resolve_type_alias(db, tables, interned_mod, interned_name)
+            .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
     };
     let ty = if type_params.is_empty() {
         RT::Struct(resolved_type_name)
@@ -464,7 +462,7 @@ fn elaborate_field_access(
     let typed_base = elaborate_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     let struct_type_name = match &base_type {
-        RT::Struct(tn) => tn.name.clone(),
+        RT::Struct(tn) => tn.name().to_string(),
         RT::Generic(name) => name.clone(),
         _ => return None,
     };

@@ -3,7 +3,7 @@ use nonempty::NonEmpty;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
 use structured_agent::runtime::Runtime;
-use structured_agent_runtime::{FunctionName, FunctionNameKind, ModuleName};
+use structured_agent_runtime::{FunctionName, ModuleName};
 
 #[tokio::test]
 async fn test_full_pipeline_parse_compile_execute() {
@@ -104,22 +104,20 @@ fn main(): String {
         compiled_program
             .metadata
             .functions
-            .contains_key(&FunctionName {
-                name: "helper".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function
-            }),
+            .contains_key(&FunctionName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "helper",
+            )),
         "Expected 'helper' function to be present"
     );
     assert!(
         compiled_program
             .metadata
             .functions
-            .contains_key(&FunctionName {
-                name: "main".to_string(),
-                module: ModuleName::new(NonEmpty::new("main".to_string())),
-                kind: FunctionNameKind::Function
-            }),
+            .contains_key(&FunctionName::new(
+                ModuleName::new(NonEmpty::new("main".to_string())),
+                "main",
+            )),
         "Expected 'main' function to be present"
     );
 

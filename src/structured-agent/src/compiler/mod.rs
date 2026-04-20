@@ -195,21 +195,19 @@ impl Compiler {
 
         let tc_reporter = diagnostics.reporter().clone();
         let mut checker = TypeChecker::new();
-        let typed_metadata = checker
-            .check(&modules, &self.modules)
-            .map_err(|errors| {
-                for e in &errors {
-                    error!("Type checking failed: {}", e);
-                    if let Err(io_err) = tc_reporter.emit_type_error(e) {
-                        eprintln!("Failed to emit type error: {}", io_err);
-                    }
+        let typed_metadata = checker.check(&modules, &self.modules).map_err(|errors| {
+            for e in &errors {
+                error!("Type checking failed: {}", e);
+                if let Err(io_err) = tc_reporter.emit_type_error(e) {
+                    eprintln!("Failed to emit type error: {}", io_err);
                 }
-                errors
-                    .iter()
-                    .map(|e| format!("Type error: {}", e))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })?;
+            }
+            errors
+                .iter()
+                .map(|e| format!("Type error: {}", e))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?;
 
         for parsed in &modules {
             let reporter = diagnostics.reporter().clone();
@@ -230,9 +228,9 @@ impl Compiler {
             if compiled
                 .metadata
                 .modules
-                .get(&name.module)
+                .get(&name.module())
                 .is_some_and(|m| m.is_entry)
-                && name.name == "main"
+                && name.name() == "main"
             {
                 compiled.main_function = Some(name.clone());
                 break;
@@ -281,17 +279,11 @@ fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
-            _ => Type::Struct(TypeName {
-                name: ast_type.name.clone(),
-                module: module.clone(),
-            }),
+            _ => Type::Struct(TypeName::new(module.clone(), ast_type.name.clone())),
         }
     } else {
         Type::Parameterized(
-            TypeName {
-                name: ast_type.name.clone(),
-                module: module.clone(),
-            },
+            TypeName::new(module.clone(), ast_type.name.clone()),
             ast_type
                 .args
                 .iter()
@@ -374,7 +366,7 @@ mod tests {
     use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
     use nonempty::NonEmpty;
-    use structured_agent_runtime::symbols::{FunctionName, FunctionNameKind, ModuleName};
+    use structured_agent_runtime::symbols::{FunctionName, ModuleName};
 
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
@@ -462,21 +454,18 @@ fn main(): String {
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(compiled.metadata.functions.contains_key(&FunctionName {
-            name: "main".to_string(),
-            module: ModuleName::new(NonEmpty::new("mainproj".to_string())),
-            kind: FunctionNameKind::Function
-        }));
-        assert!(compiled.metadata.functions.contains_key(&FunctionName {
-            name: "greet".to_string(),
-            module: ModuleName::new(NonEmpty::new("greetlib".to_string())),
-            kind: FunctionNameKind::Function
-        }));
-        assert!(compiled.metadata.functions.contains_key(&FunctionName {
-            name: "internal".to_string(),
-            module: ModuleName::new(NonEmpty::new("greetlib".to_string())),
-            kind: FunctionNameKind::Function
-        }));
+        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
+            ModuleName::new(NonEmpty::new("mainproj".to_string())),
+            "main",
+        )));
+        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
+            ModuleName::new(NonEmpty::new("greetlib".to_string())),
+            "greet",
+        )));
+        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
+            ModuleName::new(NonEmpty::new("greetlib".to_string())),
+            "internal",
+        )));
     }
 
     #[test]

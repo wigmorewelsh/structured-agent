@@ -51,7 +51,7 @@ pub fn parse_and_type_check(code: &str) -> typed_ast::Module {
         .functions
         .values()
         .filter_map(|f| {
-            if f.name.module.to_string() != "test" {
+            if f.name.module().to_string() != "test" {
                 return None;
             }
             if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {

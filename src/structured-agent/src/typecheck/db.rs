@@ -13,7 +13,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    FieldDefinition, FunctionDefinition, FunctionName, FunctionNameKind,
+    DefinitionSegment, FieldDefinition, FunctionDefinition, FunctionName,
     GenericParameterDefinition, ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName,
     ParameterDefinition, SignatureEntry, TypeDefinition, TypeDefinitionKind, TypeName,
 };
@@ -249,7 +249,7 @@ pub(super) fn get_function_sig<'db>(
         db,
         // this should never happen, if it does its an internal bug with collection.rs
         TypeError::UndefinedType {
-            name: fn_def.get().type_name.name.clone(),
+            name: fn_def.get().type_name.name().to_string(),
             span: fn_def.get().source_ref.1,
             file_id: fn_def.get().source_ref.0,
         },
@@ -270,18 +270,15 @@ pub(super) fn get_function_sig<'db>(
         })
         .collect();
     let mut type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
-    if let FunctionNameKind::Impl { type_name, .. } = &fn_name.kind {
-        type_env.set_self_type(structured_agent_runtime::symbols::TypeName {
-            name: type_name.clone(),
-            module: fn_name.module.clone(),
-        });
+    if fn_name.is_impl_fn() {
+        type_env.set_self_type(TypeName::new(fn_name.module(), fn_name.name()));
     };
 
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {
         let param_ctx = super::CheckContext {
             file_id: p.source_ref.0,
-            module_name: &fn_name.module,
+            module_name: &fn_name.module(),
             program,
         };
         let param_type = super::synthesize::resolve(
@@ -300,7 +297,7 @@ pub(super) fn get_function_sig<'db>(
     }
     let return_ctx = super::CheckContext {
         file_id: type_def.get().source_ref.0,
-        module_name: &fn_name.module,
+        module_name: &fn_name.module(),
         program,
     };
     let resolved_return = super::synthesize::resolve(
@@ -327,11 +324,8 @@ pub(super) fn get_struct_fields(
 ) -> Option<(Vec<(String, AstType)>, Vec<TypeParam>)> {
     let interned_mod = current_module.intern(db);
     let interned_name = name.intern(db);
-    let resolved =
-        resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-            name: name.to_string(),
-            module: current_module.clone(),
-        });
+    let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
+        .unwrap_or_else(|| TypeName::new(current_module.clone(), name));
     let key = InternedTypeName::new(db, resolved);
     lookup_type_def(db, tables, key).and_then(|arc_ptr| {
         if let CheckerAstRef::Struct(s) = &arc_ptr.get().ast_ref {
@@ -390,10 +384,7 @@ pub(super) fn resolve_type_in_module<'db>(
     module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<TypeName> {
-    let key = TypeName {
-        name: symbol.value(db),
-        module: module.name(db),
-    };
+    let key = TypeName::new(module.name(db), symbol.value(db));
     tables.types(db).get().get(&key).map(|_| key)
 }
 
@@ -439,11 +430,7 @@ pub(super) fn resolve_function_in_module<'db>(
     module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<FunctionName> {
-    let key = FunctionName {
-        name: symbol.value(db),
-        module: module.name(db),
-        kind: FunctionNameKind::Function,
-    };
+    let key = FunctionName::new(module.name(db), symbol.value(db));
     tables.functions(db).get().get(&key).map(|_| key)
 }
 
@@ -491,7 +478,16 @@ pub(super) fn resolve_module_path<'db>(
 ) -> ModuleName {
     let current_name = current_module.name(db);
     let use_path_name = use_path.name(db);
-    let module_alias = use_path_name.segments.first();
+    let use_path_segs: Vec<String> = use_path_name
+        .0
+        .segments
+        .iter()
+        .filter_map(|s| match s {
+            DefinitionSegment::Module(n) => Some(n.clone()),
+            _ => None,
+        })
+        .collect();
+    let module_alias = use_path_segs.first().map(String::as_str).unwrap_or("");
     let module_def = tables.modules(db).get().get(&current_name).cloned();
     let header_params = module_def
         .as_ref()
@@ -508,16 +504,27 @@ pub(super) fn resolve_module_path<'db>(
         })
         .unwrap_or_default();
 
-    if let Some(param) = header_params.iter().find(|p| &p.name == module_alias) {
+    if let Some(param) = header_params.iter().find(|p| p.name == module_alias) {
         let mut resolved: Vec<String> = param.path.iter().cloned().collect();
-        resolved.extend(use_path_name.segments.iter().skip(1).cloned());
+        resolved.extend(use_path_segs.iter().skip(1).cloned());
         return ModuleName::new(NonEmpty::from_vec(resolved).unwrap());
     }
 
-    let mut resolved: Vec<String> = current_name.segments.iter().cloned().collect();
+    let current_segs: Vec<String> = current_name
+        .0
+        .segments
+        .iter()
+        .filter_map(|s| match s {
+            DefinitionSegment::Module(n) => Some(n.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut resolved: Vec<String> = current_segs;
     resolved.pop();
-    resolved.extend(use_path_name.segments.iter().cloned());
-    ModuleName::new(NonEmpty::from_vec(resolved).unwrap_or(use_path_name.segments.clone()))
+    resolved.extend(use_path_segs.iter().cloned());
+    ModuleName::new(
+        NonEmpty::from_vec(resolved).unwrap_or_else(|| NonEmpty::from_vec(use_path_segs).unwrap()),
+    )
 }
 
 #[salsa::tracked]
@@ -778,10 +785,8 @@ pub(super) fn ast_type_to_type_name(
 ) -> TypeName {
     let interned_mod = module_name.intern(db);
     let interned_name = ty.name.clone().intern(db);
-    resolve_type_alias(db, tables, interned_mod, interned_name).unwrap_or_else(|| TypeName {
-        name: ty.name.clone(),
-        module: module_name.clone(),
-    })
+    resolve_type_alias(db, tables, interned_mod, interned_name)
+        .unwrap_or_else(|| TypeName::new(module_name.clone(), ty.name.clone()))
 }
 
 fn convert_generic_params(
@@ -882,7 +887,7 @@ pub(super) fn elaborate_function_def<'db>(
         CheckerAstRef::Function(arc_fn, _) => {
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
-                module_name: &fn_def.name.module,
+                module_name: &fn_def.name.module(),
                 program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
@@ -890,13 +895,10 @@ pub(super) fn elaborate_function_def<'db>(
             )?))
         }
         CheckerAstRef::ImplFunction(arc_fn, type_name_str, _) => {
-            let self_type = structured_agent_runtime::symbols::TypeName {
-                name: type_name_str.clone(),
-                module: fn_def.name.module.clone(),
-            };
+            let self_type = TypeName::new(fn_def.name.module(), type_name_str.clone());
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
-                module_name: &fn_def.name.module,
+                module_name: &fn_def.name.module(),
                 program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
@@ -954,7 +956,7 @@ pub(super) fn elaborate_metadata(
     }
 
     for type_def in tables.types(db).get().values() {
-        let kind = convert_type_kind(db, tables, &type_def.kind, &type_def.name.module);
+        let kind = convert_type_kind(db, tables, &type_def.kind, &type_def.name.module());
         let new_def = TypeDefinition {
             name: type_def.name.clone(),
             kind,

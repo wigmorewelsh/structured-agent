@@ -384,7 +384,7 @@ impl Runtime {
                     .map(|f| {
                         let ty = substitution
                             .iter()
-                            .find(|(k, _)| *k == f.type_name.name)
+                            .find(|(k, _)| *k == f.type_name.name())
                             .map(|(_, t)| (*t).clone())
                             .unwrap_or_else(|| field_type_name_to_type(&f.type_name));
                         (f.name.clone(), ty)
@@ -570,7 +570,7 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
             && func_def.source_ref.1 != crate::types::Span::dummy()
         {
             let ast_ext = crate::ast::ExternalFunction {
-                name: func_def.name.name.clone(),
+                name: func_def.name.name().to_string(),
                 parameters: params.clone(),
                 return_type: return_type.clone(),
                 type_params: type_params.clone(),
@@ -578,7 +578,7 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
                 span: crate::types::Span::dummy(),
             };
             if let Ok(ext_def) =
-                crate::compiler::compile_external_function(&ast_ext, &func_def.name.module)
+                crate::compiler::compile_external_function(&ast_ext, &func_def.name.module())
             {
                 extern_registry.insert(ext_def.name.clone(), ext_def);
             }
@@ -754,10 +754,10 @@ fn main(): Int {
             "fn main(): () { return () }".to_string(),
         ))
         .build();
-        let type_name = TypeName {
-            name: "Unknown".to_string(),
-            module: ModuleName::new(NonEmpty::new("test".to_string())),
-        };
+        let type_name = TypeName::new(
+            ModuleName::new(NonEmpty::new("test".to_string())),
+            "Unknown",
+        );
         assert!(runtime.get_struct(&type_name).is_none());
     }
 
@@ -783,7 +783,7 @@ fn main(): () {
             .metadata
             .types
             .keys()
-            .find(|tn| tn.name == "Task")
+            .find(|tn| tn.name() == "Task")
             .cloned()
             .unwrap();
         let fields = runtime.get_struct(&task_type_name).unwrap();

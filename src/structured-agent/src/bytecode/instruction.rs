@@ -202,12 +202,7 @@ impl fmt::Display for Instruction {
             }
 
             Instruction::LoadModule { name, dest } => {
-                write!(
-                    f,
-                    "load.module {}, {}",
-                    name.segments.iter().cloned().collect::<Vec<_>>().join("::"),
-                    dest
-                )
+                write!(f, "load.module {}, {}", name.to_string(), dest)
             }
             Instruction::CallIndirect {
                 module_param,
