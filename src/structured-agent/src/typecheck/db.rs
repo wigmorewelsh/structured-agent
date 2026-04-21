@@ -413,7 +413,7 @@ fn resolve_absolute_path<'db>(
     tables: SymbolTablesInput,
     use_path: NonEmpty<String>,
 ) -> Option<TypeName> {
-    let root = ModuleName::new(NonEmpty::new(String::new())).intern(db);
+    let root = ModuleName::root().intern(db);
     let head_symbol = use_path.head.clone().intern(db);
     let mut last_type_name = lookup_type_in_symbol_tables(db, tables, root, head_symbol);
     let mut search_module = ModuleName::new(NonEmpty::new(use_path.head.clone())).intern(db);
@@ -467,12 +467,14 @@ pub(super) fn resolve_type_in_module<'db>(
     symbol: InternedString<'db>,
 ) -> Option<TypeName> {
     let prelude = ModuleName::new(NonEmpty::new("prelude".to_string()));
+    let unstable = ModuleName::new(NonEmpty::new("unstable".to_string()));
     // check locals
     lookup_type_in_symbol_tables(db, tables, current_module, symbol)
         .or_else(|| resolve_type_as_mod_param(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_alias(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
         .or_else(|| lookup_type_in_symbol_tables(db, tables, prelude.intern(db), symbol))
+        .or_else(|| lookup_type_in_symbol_tables(db, tables, unstable.intern(db), symbol))
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]

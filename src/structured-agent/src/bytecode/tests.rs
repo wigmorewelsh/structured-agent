@@ -110,9 +110,9 @@ mod compilation_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: NonEmpty::new("".to_string()),
+            name: NonEmpty::new("test".to_string()),
             module,
-            is_entry: false,
+            is_entry: true,
             file_id,
             is_inline: false,
         };
@@ -123,7 +123,7 @@ mod compilation_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "" {
+                if f.name.module().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -323,7 +323,7 @@ fn main(): String {
       2: ldc.str $tmp1, "arg1"
       3: decl $tmp2
       4: ldc.bool $tmp2, true
-      5: call.external foo, [$tmp1, $tmp2], $tmp0
+      5: call.external test::foo, [$tmp1, $tmp2], $tmp0
       6: ret $tmp0
 }
 "#;
@@ -477,7 +477,7 @@ fn greet(name: String): () {
       0: decl $tmp0
       1: decl $tmp1
       2: mov $tmp1, x
-      3: call.external process, [$tmp1], $tmp0
+      3: call.external test::process, [$tmp1], $tmp0
       4: decl result
       5: mov result, $tmp0
       6: drop $tmp0
@@ -522,7 +522,7 @@ fn greet(name: String): () {
       9: decl $tmp5
      10: decl $tmp6
      11: mov $tmp6, items
-     12: call.external transform, [$tmp6], $tmp5
+     12: call.external test::transform, [$tmp6], $tmp5
      13: mov result, $tmp5
      14: drop $tmp5
      15: decl $tmp7
@@ -568,9 +568,9 @@ fn greet(name: String): () {
   select_start_$tmp1:
       1: decl $tmp0
       2: decl $tmp3
-      3: meta.function analyze, $tmp3
+      3: meta.function test::analyze, $tmp3
       4: decl $tmp5
-      5: meta.function summarize, $tmp5
+      5: meta.function test::summarize, $tmp5
       6: decl $tmp6
       7: llm.select [$tmp3, $tmp5], $tmp6
       8: drop $tmp3
@@ -582,7 +582,7 @@ fn greet(name: String): () {
      13: decl $tmp8
      14: decl $tmp9
      15: ldc.str $tmp9, "code"
-     16: call.external analyze, [$tmp9], $tmp8
+     16: call.external test::analyze, [$tmp9], $tmp8
      17: decl result
      18: mov result, $tmp8
      19: mov $tmp0, result
@@ -593,7 +593,7 @@ fn greet(name: String): () {
      23: decl $tmp10
      24: decl $tmp11
      25: ldc.str $tmp11, "text"
-     26: call.external summarize, [$tmp11], $tmp10
+     26: call.external test::summarize, [$tmp11], $tmp10
      27: decl summary
      28: mov summary, $tmp10
      29: mov $tmp0, summary
@@ -761,7 +761,7 @@ fn test(): Int {
 ): Int {
       0: decl $tmp0
       1: decl $tmp1
-      2: call.bytecode make_point, [], $tmp1
+      2: call.bytecode test::make_point, [], $tmp1
       3: struct.get $tmp0, $tmp1, x
       4: ret $tmp0
 }
@@ -784,7 +784,7 @@ fn test(): Int {
       0: decl $tmp0
       1: decl $tmp1
       2: llm.placeholder $tmp1, placeholder, String
-      3: call.external foo, [$tmp1], $tmp0
+      3: call.external test::foo, [$tmp1], $tmp0
       4: ret $tmp0
 }
 "#;
@@ -864,7 +864,7 @@ mod vm_execution_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: NonEmpty::new("".to_string()),
+            name: NonEmpty::new("test".to_string()),
             module,
             is_entry: false,
             file_id,
@@ -877,7 +877,7 @@ mod vm_execution_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "" {
+                if f.name.module().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -1488,7 +1488,7 @@ mod struct_bytecode_tests {
         let mut manager = DiagnosticManager::new();
         let file_id = manager.add_file("test.sa".to_string(), code.to_string());
         let parsed = crate::ast::ParsedModule {
-            name: NonEmpty::new("".to_string()),
+            name: NonEmpty::new("test".to_string()),
             module,
             is_entry: false,
             file_id,
@@ -1501,7 +1501,7 @@ mod struct_bytecode_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "" {
+                if f.name.module().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {

@@ -88,10 +88,7 @@ impl BytecodeCompiler {
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
-            name: FunctionName::new(
-                ModuleName::new(NonEmpty::new(String::new())),
-                typed_func.name.clone(),
-            ),
+            name: FunctionName::new(ModuleName::root(), typed_func.name.clone()),
             module_name: None,
             parameters: typed_func
                 .parameters

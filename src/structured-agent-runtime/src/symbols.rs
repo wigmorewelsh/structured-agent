@@ -40,6 +40,7 @@ pub struct DefinitionPath {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefinitionSegment {
+    Root,
     Module(String),
     Function(String),
     Type(String),
@@ -48,23 +49,31 @@ pub enum DefinitionSegment {
 
 impl DefinitionPath {
     pub fn from_module_strings(segments: NonEmpty<String>) -> Self {
+        let mut segs = vec![DefinitionSegment::Root];
+        segs.extend(segments.into_iter().map(DefinitionSegment::Module));
         DefinitionPath {
-            segments: segments.map(DefinitionSegment::Module),
+            segments: NonEmpty::from_vec(segs).expect("at least Root"),
+        }
+    }
+
+    pub fn root() -> Self {
+        DefinitionPath {
+            segments: NonEmpty::new(DefinitionSegment::Root),
         }
     }
 }
 
 fn module_prefix_of(path: &DefinitionPath) -> ModuleName {
-    let segs: Vec<String> = path
+    let segs: Vec<DefinitionSegment> = path
         .segments
         .iter()
-        .take_while(|s| matches!(s, DefinitionSegment::Module(_)))
-        .map(|s| match s {
-            DefinitionSegment::Module(n) => n.clone(),
-            _ => unreachable!(),
-        })
+        .take_while(|s| matches!(s, DefinitionSegment::Root | DefinitionSegment::Module(_)))
+        .cloned()
         .collect();
-    ModuleName::new(NonEmpty::from_vec(segs).unwrap_or_else(|| NonEmpty::new(String::new())))
+    ModuleName(DefinitionPath {
+        segments: NonEmpty::from_vec(segs)
+            .unwrap_or_else(|| NonEmpty::new(DefinitionSegment::Root)),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -75,8 +84,13 @@ impl ModuleName {
         ModuleName(DefinitionPath::from_module_strings(segments))
     }
 
+    pub fn root() -> Self {
+        ModuleName(DefinitionPath::root())
+    }
+
     pub fn last_segment(&self) -> &str {
         match self.0.segments.last() {
+            DefinitionSegment::Root => "",
             DefinitionSegment::Module(n) => n,
             _ => panic!("ModuleName path contains non-Module segment"),
         }
@@ -148,7 +162,7 @@ impl fmt::Display for FunctionName {
         let mut first = true;
         for seg in self.0.segments.iter() {
             let text = match seg {
-                DefinitionSegment::Module(n) if n.is_empty() => continue,
+                DefinitionSegment::Root => continue,
                 DefinitionSegment::Module(n) => n.as_str(),
                 DefinitionSegment::Function(n) => n.as_str(),
                 DefinitionSegment::Type(n) => n.as_str(),
@@ -180,8 +194,11 @@ impl TypeName {
 
     pub fn name(&self) -> &str {
         match self.0.segments.last() {
+            DefinitionSegment::Root => "",
+            DefinitionSegment::Module(n) => n,
+            DefinitionSegment::Function(n) => n,
             DefinitionSegment::Type(n) => n,
-            _ => panic!("TypeName path does not end with Type segment"),
+            DefinitionSegment::Impl { .. } => "",
         }
     }
 
@@ -204,13 +221,12 @@ impl From<TypeName> for ModuleName {
 
 impl fmt::Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}::{}", self.module(), self.name())
-    }
-}
-
-impl From<NonEmpty<String>> for TypeName {
-    fn from(segments: NonEmpty<String>) -> Self {
-        TypeName(DefinitionPath::from_module_strings(segments))
+        let module_str = self.module().to_string();
+        if module_str.is_empty() {
+            write!(f, "{}", self.name())
+        } else {
+            write!(f, "{}::{}", module_str, self.name())
+        }
     }
 }
 
