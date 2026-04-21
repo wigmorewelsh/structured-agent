@@ -1,5 +1,5 @@
 use super::db::{
-    Intern, SymbolTablesInput, TypeCheckDatabase, get_struct_fields, resolve_type_alias,
+    Intern, SymbolTablesInput, TypeCheckDatabase, get_struct_fields, resolve_type_in_module,
 };
 use super::synthesize;
 use crate::ast::{Expression, Function, SelectClause, Statement};
@@ -425,7 +425,7 @@ fn elaborate_struct_literal(
     let resolved_type_name = {
         let interned_mod = ctx.module_name.intern(db);
         let interned_name = struct_name.intern(db);
-        resolve_type_alias(db, tables, interned_mod, interned_name)
+        resolve_type_in_module(db, tables, interned_mod, interned_name)
             .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
     };
     let ty = if type_params.is_empty() {

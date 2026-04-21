@@ -1,7 +1,6 @@
 use super::db::{
-    Intern, InternedModuleName, InternedString, SymbolTablesInput, TypeCheckDatabase,
-    get_function_sig, get_struct_fields, lookup_function_def, resolve_function_call,
-    resolve_type_alias,
+    Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
+    lookup_function_def, resolve_function_call, resolve_type_in_module,
 };
 use super::error::OrAccumulateError;
 use crate::ast::{
@@ -115,20 +114,6 @@ impl TypeEnvironment {
     }
 }
 
-fn resolve_local_type<'db>(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    module: InternedModuleName<'db>,
-    name: InternedString<'db>,
-) -> Option<TypeName> {
-    let local_type = TypeName::new(module.name(db), name.value(db));
-    if tables.types(db).get().contains_key(&local_type) {
-        Some(local_type)
-    } else {
-        None
-    }
-}
-
 fn resolve_type_name(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -139,8 +124,7 @@ fn resolve_type_name(
     let interned_mod = ctx.module_name.intern(db);
     let interned_name = name.intern(db);
 
-    let type_name = resolve_local_type(db, tables, interned_mod, interned_name)
-        .or_else(|| resolve_type_alias(db, tables, interned_mod, interned_name));
+    let type_name = resolve_type_in_module(db, tables, interned_mod, interned_name);
 
     type_name.or_accumulate(
         db,
@@ -859,7 +843,7 @@ fn synthesize_struct_literal(
     let resolved_type_name = {
         let interned_mod = ctx.module_name.intern(db);
         let interned_name = struct_name.intern(db);
-        resolve_type_alias(db, tables, interned_mod, interned_name)
+        resolve_type_in_module(db, tables, interned_mod, interned_name)
             .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
     };
     if type_params.is_empty() {
