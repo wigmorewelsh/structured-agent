@@ -2634,7 +2634,7 @@ mod typed_ast_tests {
 
 mod metadata_query_tests {
     use super::*;
-    use crate::ast::{SigFunction, StructDefinition, StructField};
+    use crate::ast::{AstSignature, SigFunction, StructDefinition, StructField};
     use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
     use nonempty::NonEmpty;
     use std::sync::Arc;

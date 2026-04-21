@@ -3,6 +3,7 @@ mod tests {
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
     use crate::runtime::Runtime;
+    use crate::typecheck::TypeChecker;
 
     fn compile(code: &str) -> Result<CompiledProgram, String> {
         let unit = CompilationUnit::from_string(code.to_string());

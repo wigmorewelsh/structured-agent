@@ -81,6 +81,10 @@ impl ModuleName {
             _ => panic!("ModuleName path contains non-Module segment"),
         }
     }
+
+    pub fn from_def_path(def_path: DefinitionPath) -> ModuleName {
+        ModuleName(def_path)
+    }
 }
 
 impl fmt::Display for ModuleName {
@@ -188,12 +192,22 @@ impl TypeName {
     pub fn module(&self) -> ModuleName {
         module_prefix_of(&self.0)
     }
+
+    pub fn to_module_name(&self) -> ModuleName {
+        ModuleName::from_def_path(self.0.clone())
+    }
 }
 
 impl fmt::Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}::{}", self.module(), self.name())
     }
+}
+
+impl From<NonEmpty<String>> for TypeName {
+    fn from(segments: NonEmpty<String>) -> Self {
+        TypeName(DefinitionPath::from_module_strings(segments))
+    }    
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

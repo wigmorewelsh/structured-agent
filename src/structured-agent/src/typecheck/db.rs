@@ -2,9 +2,10 @@ use super::refs::{
     CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef,
     TypedRefs,
 };
-use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam, UseParam};
+use crate::ast::{Definition, Module as AstModule, Type as AstType, TypeParam, Use, UseParam};
 use crate::typecheck::TypeError;
 use crate::typecheck::error::OrAccumulateError;
+
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
@@ -194,6 +195,20 @@ impl<'db> Intern<'db> for &FunctionName {
     }
 }
 
+impl<'db> Intern<'db> for TypeName {
+    type Interned = InternedTypeName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedTypeName::new(db, self)
+    }
+}
+
+impl<'db> Intern<'db> for &TypeName {
+    type Interned = InternedTypeName<'db>;
+    fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned {
+        InternedTypeName::new(db, self.clone())
+    }
+}
+
 #[salsa::tracked]
 pub(super) fn lookup_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
@@ -209,7 +224,7 @@ pub(super) fn lookup_function_def<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn lookup_type_def<'db>(
+pub(super) fn lookup_type_def_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     key: InternedTypeName<'db>,
@@ -246,7 +261,7 @@ pub(super) fn get_function_sig<'db>(
     };
 
     let type_key = InternedTypeName::new(db, fn_def.get().type_name.clone());
-    let type_def = lookup_type_def(db, tables, type_key).or_accumulate(
+    let type_def = lookup_type_def_in_symbol_tables(db, tables, type_key).or_accumulate(
         db,
         // this should never happen, if it does its an internal bug with collection.rs
         TypeError::UndefinedType {
@@ -328,7 +343,7 @@ pub(super) fn get_struct_fields(
     let resolved = resolve_type_alias(db, tables, interned_mod, interned_name)
         .unwrap_or_else(|| TypeName::new(current_module.clone(), name));
     let key = InternedTypeName::new(db, resolved);
-    lookup_type_def(db, tables, key).and_then(|arc_ptr| {
+    lookup_type_def_in_symbol_tables(db, tables, key).and_then(|arc_ptr| {
         if let CheckerAstRef::Struct(s) = &arc_ptr.get().ast_ref {
             let fields = s
                 .fields
@@ -379,7 +394,7 @@ pub(super) fn check_module(
 }
 
 #[salsa::tracked]
-pub(super) fn resolve_type_in_module<'db>(
+pub(super) fn lookup_type_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     module: InternedModuleName<'db>,
@@ -406,7 +421,7 @@ pub(super) fn module_exports_type<'db>(
     module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<TypeName> {
-    if let Some(found) = resolve_type_in_module(db, tables, module, symbol) {
+    if let Some(found) = lookup_type_in_symbol_tables(db, tables, module, symbol) {
         return Some(found);
     }
     let module_name = module.name(db);
@@ -577,6 +592,142 @@ pub(super) fn resolve_type_alias<'db>(
     if let Some(parent) = &module_def.parent_module {
         let parent_interned = parent.intern(db);
         return resolve_type_alias(db, tables, parent_interned, alias);
+    }
+    None
+}
+
+type DefKind = TypeDefinitionKind<CheckerRefs>;
+
+fn resolve_absolute_path<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    use_path: NonEmpty<String>,
+) -> Option<TypeName> {
+    let root = ModuleName::new(NonEmpty::new(String::new())).intern(db);
+    let head_symbol = use_path.head.clone().intern(db);
+    let mut last_type_name = lookup_type_in_symbol_tables(db, tables, root, head_symbol);
+    let mut search_module = ModuleName::new(NonEmpty::new(use_path.head.clone())).intern(db);
+    for symbol in use_path.tail.iter() {
+        let type_name =
+            resolve_type_in_module(db, tables, search_module, symbol.clone().intern(db))?;
+        let type_def = lookup_type_def_in_symbol_tables(db, tables, type_name.clone().intern(db))?;
+        if let DefKind::Signature { .. } = type_def.get().kind {
+            let module_name = type_name.to_module_name();
+            let interned_module = module_name.intern(db);
+            search_module = interned_module;
+        }
+        last_type_name = Some(type_name);
+    }
+    last_type_name
+}
+
+fn resolve_local_use_path<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    use_path: Arc<Use>,
+) -> Option<TypeName> {
+    let mut search_module = current_module.clone();
+    let mut last_type_name = None;
+    for seg in use_path.path.iter() {
+        let symbol = seg.name.clone().intern(db);
+        let type_name = resolve_type_in_module(db, tables, search_module, symbol)?;
+        let type_def = lookup_type_def_in_symbol_tables(db, tables, type_name.clone().intern(db))?;
+        if let DefKind::Signature { .. } = type_def.get().kind {
+            let module_name = type_name.to_module_name();
+            let interned_module = module_name.intern(db);
+            search_module = interned_module;
+        }
+        last_type_name = Some(type_name);
+    }
+    last_type_name
+}
+
+fn resolve_type_in_module<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<TypeName> {
+    // check locals
+    lookup_type_in_symbol_tables(db, tables, current_module, symbol)
+        .or_else(|| resolve_type_as_mod_param(db, tables, current_module, symbol))
+        .or_else(|| resolve_type_as_alias(db, tables, current_module, symbol))
+        .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
+}
+
+fn resolve_type_as_mod_param<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<TypeName> {
+    let module_def = tables
+        .modules(db)
+        .get()
+        .get(&current_module.name(db))?
+        .clone();
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return None;
+    };
+    for def in &ast_module.definitions {
+        if let Definition::ModuleHeader { params, .. } = def {
+            for param in params {
+                if param.name == symbol.value(db) {
+                    return resolve_absolute_path(db, tables, param.path.clone());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_type_as_alias<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<TypeName> {
+    let module_name = current_module.name(db);
+    let module_def = tables.modules(db).get().get(&module_name)?.clone();
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return None;
+    };
+    let alias_str = symbol.value(db);
+    for def in &ast_module.definitions {
+        if let Definition::Use(u) = def
+            && let Some(use_alias) = &u.alias
+        {
+            if use_alias == alias_str.as_str() {
+                return resolve_local_use_path(db, tables, current_module, u.clone());
+            }
+        }
+    }
+    None
+}
+
+fn resolve_type_as_use<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<TypeName> {
+    let module_name = current_module.name(db);
+    let module_def = tables.modules(db).get().get(&module_name)?.clone();
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return None;
+    };
+    let symbol_str = symbol.value(db);
+    for def in &ast_module.definitions {
+        if let Definition::Use(u) = def
+            && u.alias.is_none()
+        {
+            let last = u.path.last();
+            if last.name == symbol_str.as_str() {
+                return resolve_local_use_path(db, tables, current_module, u.clone());
+            }
+        }
     }
     None
 }
