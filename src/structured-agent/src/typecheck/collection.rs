@@ -322,7 +322,7 @@ impl SymbolTableBuilder {
                     self.register_external_function(ext_func, file_id, module_name);
                 }
                 Definition::Struct(_)
-                | Definition::Use { .. }
+                | Definition::Use(_)
                 | Definition::ModuleHeader { .. }
                 | Definition::Signature(_)
                 | Definition::InlineModule { .. } => {}
@@ -653,12 +653,10 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
         .definitions
         .iter()
         .flat_map(|def| match def {
-            Definition::Use {
-                path,
-                alias,
-                is_pub,
-                ..
-            } => {
+            Definition::Use(u) => {
+                let path = &u.path;
+                let alias = &u.alias;
+                let is_pub = u.is_pub;
                 let name = path.last().name.clone();
                 let module_seg_count = path.len() - usize::from(path.len() > 1);
                 let segs: Vec<_> = parent
@@ -673,7 +671,7 @@ fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<U
                     local,
                     module: ModuleName::new(resolved),
                     name,
-                    is_pub: *is_pub,
+                    is_pub,
                 }]
             }
             Definition::ModuleHeader { params, .. } => params

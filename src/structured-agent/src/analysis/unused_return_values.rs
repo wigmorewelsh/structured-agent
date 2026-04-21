@@ -32,7 +32,7 @@ impl UnusedReturnValueAnalyzer {
                         .insert(ext_func.name.clone(), returns_value);
                 }
                 Definition::Struct(_)
-                | Definition::Use { .. }
+                | Definition::Use(_)
                 | Definition::ModuleHeader { .. }
                 | Definition::Signature(_)
                 | Definition::Trait(_)

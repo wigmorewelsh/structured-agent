@@ -287,7 +287,8 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
 
     for def in definitions {
         match def {
-            Definition::Use { path, .. } => {
+            Definition::Use(u) => {
+                let path = &u.path;
                 let module_seg_count = path.len() - usize::from(path.len() > 1);
                 let mut dep = base.to_vec();
                 for seg in path.iter().take(module_seg_count) {
@@ -301,7 +302,9 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
                                     deps.push(pdep);
                                 }
                             }
-                            UseParam::Named { path: param_path, .. } => {
+                            UseParam::Named {
+                                path: param_path, ..
+                            } => {
                                 let mut pdep = base.to_vec();
                                 pdep.extend(param_path.iter().cloned());
                                 deps.push(pdep);

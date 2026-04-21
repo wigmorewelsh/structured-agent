@@ -8,6 +8,7 @@ use crate::typecheck::error::OrAccumulateError;
 use crate::typed_ast;
 use crate::types::{FileId, Span};
 use nonempty::NonEmpty;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -541,21 +542,18 @@ pub(super) fn resolve_type_alias<'db>(
     };
     let alias_str = alias.value(db);
     for def in &ast_module.definitions {
-        if let Definition::Use {
-            path,
-            alias: use_alias,
-            ..
-        } = def
-        {
-            let name = path.last().name.clone();
-            let effective = use_alias
+        if let Definition::Use(u) = def {
+            let name = u.path.last().name.clone();
+            let effective = u
+                .alias
                 .as_ref()
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective == alias_str.as_str() {
-                let name_path = path
+                let name_path = u
+                    .path
                     .iter()
-                    .take(path.len() - 1)
+                    .take(u.path.len() - 1)
                     .map(|s| s.name.clone())
                     .collect::<Vec<_>>();
                 let use_path =
@@ -597,21 +595,15 @@ pub(super) fn resolve_function_alias<'db>(
     };
     let alias_str = alias.value(db);
     for def in &ast_module.definitions {
-        if let Definition::Use {
-            path,
-            alias: use_alias,
-            ..
-        } = def
+        if let Definition::Use(u) = def
+            && let Some(use_alias) = &u.alias
         {
-            let name = path.last().name.clone();
-            let effective = use_alias
-                .as_ref()
-                .map(String::as_str)
-                .unwrap_or(name.as_str());
-            if effective == alias_str.as_str() {
-                let name_path = path
+            let name = u.path.last().name.clone();
+            if use_alias == alias_str.as_str() {
+                let name_path = u
+                    .path
                     .iter()
-                    .take(path.len() - 1)
+                    .take(u.path.len() - 1)
                     .map(|s| s.name.clone())
                     .collect::<Vec<_>>();
                 let use_path =
@@ -658,30 +650,27 @@ pub(super) fn resolve_use_param_bindings<'db>(
     };
     let alias_str = alias.value(db);
     for def in &ast_module.definitions {
-        if let Definition::Use {
-            path,
-            alias: use_alias,
-            ..
-        } = def
-        {
-            let name = path.last().name.clone();
-            let effective = use_alias
+        if let Definition::Use(u) = def {
+            let name = u.path.last().name.clone();
+            let effective = u
+                .alias
                 .as_ref()
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective != alias_str.as_str() {
                 continue;
             }
-            if path.len() < 2 {
+            if u.path.len() < 2 {
                 return vec![];
             }
-            let last_module_seg = &path[path.len() - 2];
+            let last_module_seg = &u.path[u.path.len() - 2];
             if last_module_seg.params.is_empty() {
                 return vec![];
             }
-            let seg_module_path: Vec<_> = path
+            let seg_module_path: Vec<_> = u
+                .path
                 .iter()
-                .take(path.len() - 1)
+                .take(u.path.len() - 1)
                 .map(|s| s.name.clone())
                 .collect();
             let seg_module_name =
@@ -769,21 +758,17 @@ pub(super) fn resolve_function_alias_via_param<'db>(
         })
         .unwrap_or_default();
     for def in &ast_module.definitions {
-        if let Definition::Use {
-            path,
-            alias: use_alias,
-            ..
-        } = def
-        {
-            let name = path.last().name.clone();
-            let effective = use_alias
+        if let Definition::Use(u) = def {
+            let name = u.path.last().name.clone();
+            let effective = u
+                .alias
                 .as_ref()
                 .map(String::as_str)
                 .unwrap_or(name.as_str());
             if effective != alias_str.as_str() {
                 continue;
             }
-            let seg = path.first();
+            let seg = u.path.first();
             if header_params.iter().any(|p| p.name == seg.name) {
                 return Some(seg.name.clone());
             }

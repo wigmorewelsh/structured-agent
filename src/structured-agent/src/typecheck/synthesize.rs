@@ -9,7 +9,7 @@ use crate::ast::{
 };
 use crate::ensure_or_accumulate;
 use crate::typecheck::error::TypeError;
-use crate::typecheck::solver::Constraint;
+use crate::typecheck::solver::{Constraint, ConstraintKind};
 use crate::types::{FileId, Span, Spanned};
 
 use salsa::Accumulator;
@@ -313,7 +313,7 @@ pub(super) fn check_definition(
             }
             Some(())
         }
-        Definition::Use { .. } | Definition::Trait(_) => Some(()),
+        Definition::Use(_) | Definition::Trait(_) => Some(()),
         Definition::TraitImpl(_t) => Some(()),
         Definition::ModuleHeader { .. }
         | Definition::Signature(_)
@@ -653,14 +653,16 @@ fn synthesize_call(
             for bound in &tp.bounds {
                 if let Some(bound_type) = resolve(db, tables, bound, env, span, ctx) {
                     Constraint {
-                        caller: ctx.module_name.to_string(),
-                        callee: function.to_string(),
-                        actual_type: actual.clone(),
-                        bound_type,
-                        context: format!(
-                            "call to '{}': type parameter '{}' bound",
-                            function, tp.name
-                        ),
+                        kind: ConstraintKind::TypeBound {
+                            caller: ctx.module_name.to_string(),
+                            callee: function.to_string(),
+                            actual_type: actual.clone(),
+                            bound_type,
+                            context: format!(
+                                "call to '{}': type parameter '{}' bound",
+                                function, tp.name
+                            ),
+                        },
                         span,
                         file_id: ctx.file_id,
                     }

@@ -132,16 +132,19 @@ pub struct UseSegment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Use {
+    pub path: NonEmpty<UseSegment>,
+    pub alias: Option<String>,
+    pub is_pub: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Function(Arc<Function>),
     ExternalFunction(Arc<ExternalFunction>),
     Struct(Arc<StructDefinition>),
-    Use {
-        path: NonEmpty<UseSegment>,
-        alias: Option<String>,
-        is_pub: bool,
-        span: Span,
-    },
+    Use(Arc<Use>),
     ModuleHeader {
         name: String,
         params: Vec<ModuleParam>,
@@ -163,7 +166,7 @@ impl Spanned for Definition {
             Definition::Function(f) => f.span,
             Definition::ExternalFunction(f) => f.span,
             Definition::Struct(s) => s.span,
-            Definition::Use { span, .. } => *span,
+            Definition::Use(u) => u.span,
             Definition::ModuleHeader { span, .. } => *span,
             Definition::Signature(s) => s.span,
             Definition::Trait(s) => s.span,
@@ -521,13 +524,11 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "\n}}")
             }
-            Definition::Use {
-                path,
-                alias,
-                is_pub,
-                ..
-            } => {
-                if *is_pub {
+            Definition::Use(u) => {
+                let path = &u.path;
+                let alias = &u.alias;
+                let is_pub = u.is_pub;
+                if is_pub {
                     write!(f, "pub ")?;
                 }
                 write!(f, "use ")?;
