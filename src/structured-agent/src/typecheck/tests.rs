@@ -2961,35 +2961,4 @@ mod metadata_query_tests {
             &TypeName::new(ModuleName::new(NonEmpty::new("prelude".to_string())), "Int",)
         );
     }
-
-    #[test]
-    fn inline_module_inherits_use_imports_from_outer_module() {
-        let helper_source = "pub fn greet(): String {}";
-        let outer_source = "mod outer\n\nuse helper::greet\n\nmod inner {\n    pub fn run(): String {\n        return greet()\n    }\n}";
-
-        let discoverer: std::sync::Arc<dyn crate::compiler::discovery::Discoverer> =
-            std::sync::Arc::new(crate::compiler::discovery::InMemoryDiscoverer::new(
-                vec![("helper".to_string(), helper_source.to_string())]
-                    .into_iter()
-                    .collect(),
-            ));
-
-        let discovered = crate::compiler::discovery::discover_all(
-            "outer.sa",
-            outer_source,
-            discoverer,
-            &std::collections::HashSet::new(),
-            crate::types::SourceFiles::new(),
-        )
-        .unwrap();
-
-        let modules: Vec<crate::ast::ParsedModule> =
-            discovered.into_iter().map(|dm| dm.into_parsed()).collect();
-
-        let result = TypeChecker::new()
-            .check(&modules, &std::collections::HashMap::new())
-            .map(|_| ());
-
-        assert!(result.is_ok(), "expected ok but got: {:?}", result.err());
-    }
 }

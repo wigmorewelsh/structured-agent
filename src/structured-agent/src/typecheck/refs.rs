@@ -7,11 +7,10 @@ use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    AstRef, BodyRef, NoAst, References, SourceRef, TypeAnnotation, TypeName, UseImport, WitnessRef,
+    AstRef, BodyRef, NoAst, References, SourceRef, TypeAnnotation, TypeName, WitnessRef,
 };
 
 pub type ModuleVisibility = HashMap<String, bool>;
-pub type AliasToQualified = HashMap<String, UseImport>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionKind {

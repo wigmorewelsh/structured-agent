@@ -8,8 +8,7 @@ use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     ExportedName, FieldDefinition, FunctionDefinition, FunctionName, GenericParameterDefinition,
     ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, ParameterDefinition,
-    SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, TypeName, UseImport,
-    Visibility,
+    SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, TypeName, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -84,21 +83,6 @@ impl SymbolTableBuilder {
         );
     }
 
-    fn prelude_imports(&self) -> Vec<UseImport> {
-        let prelude_module = ModuleName::new(NonEmpty::new("prelude".to_string()));
-        self.metadata
-            .types
-            .keys()
-            .filter(|tn| tn.module() == prelude_module)
-            .map(|type_name| UseImport {
-                local: type_name.name().to_string(),
-                module: prelude_module.clone(),
-                name: type_name.name().to_string(),
-                is_pub: false,
-            })
-            .collect()
-    }
-
     fn register_native_modules(
         &mut self,
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
@@ -149,7 +133,6 @@ impl SymbolTableBuilder {
                     span: Span::dummy(),
                     file_id: 0,
                 })),
-                use_imports: self.prelude_imports(),
                 parent_module: None,
             };
             self.metadata
@@ -556,12 +539,6 @@ impl SymbolTableBuilder {
         effective_module_name: ModuleName,
     ) {
         let exports = self.collect_module_exports(&effective_module_name);
-        let mut use_imports = extract_use_imports(&parsed.module, &parsed.name);
-        for prelude_import in self.prelude_imports() {
-            if !use_imports.iter().any(|u| u.local == prelude_import.local) {
-                use_imports.push(prelude_import);
-            }
-        }
         let parent_module = if parsed.is_inline {
             let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
             segs.pop();
@@ -580,7 +557,6 @@ impl SymbolTableBuilder {
             exports,
             source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
             ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
-            use_imports,
             parent_module,
         };
         self.metadata
@@ -644,46 +620,4 @@ impl SymbolTableBuilder {
         exports.extend(type_exports);
         exports
     }
-}
-
-fn extract_use_imports(module: &Module, module_name: &NonEmpty<String>) -> Vec<UseImport> {
-    let mut parent: Vec<String> = module_name.iter().cloned().collect();
-    parent.pop();
-    module
-        .definitions
-        .iter()
-        .flat_map(|def| match def {
-            Definition::Use(u) => {
-                let path = &u.path;
-                let alias = &u.alias;
-                let is_pub = u.is_pub;
-                let name = path.last().name.clone();
-                let module_seg_count = path.len() - usize::from(path.len() > 1);
-                let segs: Vec<_> = parent
-                    .iter()
-                    .cloned()
-                    .chain(path.iter().take(module_seg_count).map(|s| s.name.clone()))
-                    .collect();
-                let resolved =
-                    NonEmpty::from_vec(segs).expect("use path always yields a non-empty module");
-                let local = alias.clone().unwrap_or_else(|| name.clone());
-                vec![UseImport {
-                    local,
-                    module: ModuleName::new(resolved),
-                    name,
-                    is_pub,
-                }]
-            }
-            Definition::ModuleHeader { params, .. } => params
-                .iter()
-                .map(|p| UseImport {
-                    local: p.name.clone(),
-                    module: ModuleName::new(p.path.clone()),
-                    name: p.name.clone(),
-                    is_pub: false,
-                })
-                .collect(),
-            _ => vec![],
-        })
-        .collect()
 }

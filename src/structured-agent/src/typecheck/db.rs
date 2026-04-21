@@ -935,7 +935,6 @@ pub(super) fn elaborate_metadata(
             exports: module_def.exports.clone(),
             source_ref: SourceLocation(module_def.source_ref.0, module_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(module_def.ast_ref.clone()),
-            use_imports: module_def.use_imports.clone(),
             parent_module: module_def.parent_module.clone(),
         };
         typed_metadata

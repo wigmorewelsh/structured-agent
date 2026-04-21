@@ -15,8 +15,8 @@ mod integration_test;
 pub use error::TypeError;
 pub use error::TypeErrorAccumulator;
 pub use refs::{
-    AliasToQualified, CheckerAstRef, CheckerRefs, FunctionKind, ModuleVisibility, NoBody,
-    NoWitness, PrimitiveRefs, SourceLocation, TypedCheckerAstRef, TypedRefs,
+    CheckerAstRef, CheckerRefs, FunctionKind, ModuleVisibility, NoBody, NoWitness, PrimitiveRefs,
+    SourceLocation, TypedCheckerAstRef, TypedRefs,
 };
 
 use crate::ast::{ParsedModule, TypeParam};

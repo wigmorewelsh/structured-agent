@@ -207,7 +207,7 @@ impl fmt::Display for TypeName {
 impl From<NonEmpty<String>> for TypeName {
     fn from(segments: NonEmpty<String>) -> Self {
         TypeName(DefinitionPath::from_module_strings(segments))
-    }    
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -311,14 +311,6 @@ pub enum ExportedName {
     Trait(TypeName),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct UseImport {
-    pub local: String,
-    pub module: ModuleName,
-    pub name: String,
-    pub is_pub: bool,
-}
-
 #[derive(Debug, Clone)]
 pub struct ModuleDefinition<R: References> {
     pub name: ModuleName,
@@ -327,7 +319,6 @@ pub struct ModuleDefinition<R: References> {
     pub exports: Vec<ExportedName>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
-    pub use_imports: Vec<UseImport>,
     pub parent_module: Option<ModuleName>,
 }
 
