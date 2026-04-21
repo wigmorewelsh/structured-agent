@@ -643,7 +643,18 @@ fn resolve_local_use_path<'db>(
     last_type_name
 }
 
-fn resolve_type_in_module<'db>(
+fn resolve_type_cycle_recovery<'db>(
+    _db: &'db dyn TypeCheckDatabase,
+    _id: salsa::Id,
+    _tables: SymbolTablesInput,
+    _current_module: InternedModuleName<'db>,
+    _symbol: InternedString<'db>,
+) -> Option<TypeName> {
+    None
+}
+
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+pub(super) fn resolve_type_in_module<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -656,7 +667,8 @@ fn resolve_type_in_module<'db>(
         .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
 }
 
-fn resolve_type_as_mod_param<'db>(
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+pub(super) fn resolve_type_as_mod_param<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -683,7 +695,8 @@ fn resolve_type_as_mod_param<'db>(
     None
 }
 
-fn resolve_type_as_alias<'db>(
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+pub(super) fn resolve_type_as_alias<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -707,7 +720,8 @@ fn resolve_type_as_alias<'db>(
     None
 }
 
-fn resolve_type_as_use<'db>(
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+pub(super) fn resolve_type_as_use<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
