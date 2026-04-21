@@ -470,11 +470,13 @@ pub(super) fn resolve_type_in_module<'db>(
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<TypeName> {
+    let prelude = ModuleName::new(NonEmpty::new("prelude".to_string()));
     // check locals
     lookup_type_in_symbol_tables(db, tables, current_module, symbol)
         .or_else(|| resolve_type_as_mod_param(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_alias(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
+        .or_else(|| lookup_type_in_symbol_tables(db, tables, prelude.intern(db), symbol))
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
