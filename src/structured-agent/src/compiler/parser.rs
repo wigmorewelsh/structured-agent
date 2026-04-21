@@ -3022,7 +3022,7 @@ pub fn greet(name: String): String {
     fn test_use_alias_resolves_in_typecheck() {
         let input = r#"
 extern fn greet(name: String): String
-use test::greet as hello
+use greet as hello
 fn main(): String {
     return hello("world")
 }
