@@ -1,5 +1,7 @@
 use super::db::{
-    Intern, SymbolTablesInput, TypeCheckDatabase, get_struct_fields, resolve_type_in_module,
+    Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
+    resolve_function_alias_via_param, resolve_function_call, resolve_type_in_module,
+    resolve_use_param_bindings,
 };
 use super::synthesize;
 use crate::ast::{Expression, Function, SelectClause, Statement};
@@ -237,8 +239,6 @@ fn elaborate_call(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    use super::db::{get_function_sig, resolve_function_call};
-
     let interned_current = ctx.module_name.intern(db);
     let interned_fn = function.intern(db);
 
@@ -273,10 +273,8 @@ fn elaborate_call(
         typed_args.push(typed_arg);
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
-    use super::db::{resolve_function_alias_via_param, resolve_use_param_bindings};
     let module_params = resolve_use_param_bindings(db, tables, interned_current, interned_fn);
-    let via_module_param =
-        resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
+    let via_module_param = resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
     Some(typed_ast::Expression::Call {
         function: function.to_string(),
         resolved: resolved_fn_name,
