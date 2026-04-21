@@ -567,14 +567,8 @@ impl SymbolTableBuilder {
     }
 
     fn register_module_as_type(&mut self, parsed: &ParsedModule) {
-        let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
-        let last = segs.pop().unwrap();
-        let parent = if segs.is_empty() {
-            ModuleName::new(NonEmpty::new(String::new()))
-        } else {
-            ModuleName::new(NonEmpty::from_vec(segs).unwrap())
-        };
-        let type_name = TypeName::new(parent, last);
+        let module_name = ModuleName::new(parsed.name.clone());
+        let type_name = TypeName::from(module_name);
         let entries: Vec<SignatureEntry<CheckerRefs>> = parsed
             .module
             .definitions

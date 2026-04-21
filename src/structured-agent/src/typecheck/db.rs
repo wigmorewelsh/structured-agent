@@ -422,9 +422,7 @@ fn resolve_absolute_path<'db>(
             resolve_type_in_module(db, tables, search_module, symbol.clone().intern(db))?;
         let type_def = lookup_type_def_in_symbol_tables(db, tables, type_name.clone().intern(db))?;
         if let DefKind::Signature { .. } = type_def.get().kind {
-            let module_name = type_name.to_module_name();
-            let interned_module = module_name.intern(db);
-            search_module = interned_module;
+            search_module = ModuleName::from(type_name.clone()).intern(db);
         }
         last_type_name = Some(type_name);
     }
@@ -444,9 +442,7 @@ fn resolve_local_use_path<'db>(
         let type_name = resolve_type_in_module(db, tables, search_module, symbol)?;
         let type_def = lookup_type_def_in_symbol_tables(db, tables, type_name.clone().intern(db))?;
         if let DefKind::Signature { .. } = type_def.get().kind {
-            let module_name = type_name.to_module_name();
-            let interned_module = module_name.intern(db);
-            search_module = interned_module;
+            search_module = ModuleName::from(type_name.clone()).intern(db);
         }
         last_type_name = Some(type_name);
     }
@@ -591,12 +587,12 @@ fn resolve_path_to_module<'db>(
             lookup_type_def_in_symbol_tables(db, tables, type_name.clone().intern(db))
         {
             if let DefKind::Signature { .. } = type_def.get().kind {
-                search = type_name.to_module_name().intern(db);
+                search = ModuleName::from(type_name.clone()).intern(db);
             }
         }
         last_type = Some(type_name);
     }
-    last_type.map(|t| t.to_module_name())
+    last_type.map(ModuleName::from)
 }
 
 #[salsa::tracked]
