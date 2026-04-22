@@ -1,0 +1,8 @@
+[package]
+name = "structured-agent-il"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-runtime = { path = "../structured-agent-runtime" }

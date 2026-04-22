@@ -12,7 +12,7 @@ pub mod il_analysis;
 pub mod mcp;
 pub mod runtime;
 pub mod typecheck;
-pub mod typed_ast;
+pub use structured_agent_typed_ast as typed_ast;
 pub mod types;
 
 #[cfg(test)]

@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 
-use crate::ast::{ExternalFunction, StructDefinition, UseSegment};
-use crate::typecheck::FunctionKind;
-use crate::types::{FileId, Span};
-
+use structured_agent_ast::ast::{ExternalFunction, StructDefinition, UseSegment};
+use structured_agent_ast::types::{FileId, Span};
 use structured_agent_runtime::DefinitionPath;
 use structured_agent_runtime::Type;
+use structured_agent_runtime::symbols::FunctionKind;
 
 #[derive(Clone, Debug)]
 pub struct Module {
@@ -29,14 +28,14 @@ pub enum Definition {
 
     Trait {
         name: String,
-        functions: Vec<crate::ast::SigFunction>,
-        span: crate::types::Span,
+        functions: Vec<structured_agent_ast::ast::SigFunction>,
+        span: Span,
     },
     TraitImpl {
         type_name: String,
         trait_name: String,
         functions: Vec<Function>,
-        span: crate::types::Span,
+        span: Span,
     },
 }
 

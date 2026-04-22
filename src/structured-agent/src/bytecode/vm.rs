@@ -1,4 +1,3 @@
-use super::Instruction;
 use crate::runtime::{
     AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
 };
@@ -6,6 +5,7 @@ use crate::types::ExecutableFunction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use structured_agent_il::Instruction;
 use structured_agent_runtime::DefinitionPath;
 
 pub struct VMState {

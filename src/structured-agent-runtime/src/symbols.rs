@@ -4,6 +4,12 @@ use crate::runtime_value::RuntimeValueFactory;
 
 use nonempty::NonEmpty;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionKind {
+    Bytecode,
+    External,
+}
+
 pub trait SourceRef: fmt::Debug + Clone {}
 pub trait AstRef {}
 pub trait BodyRef {}
@@ -56,7 +62,7 @@ impl DefinitionPath {
             segments: NonEmpty::new(DefinitionSegment::Root),
         }
     }
-    
+
     pub fn parent(self) -> Self {
         let segs: Vec<DefinitionSegment> = self.segments.into_iter().collect();
         if segs.len() == 1 {

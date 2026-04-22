@@ -1,7 +1,5 @@
-mod builder;
 mod compiler;
 mod function_expr;
-mod instruction;
 mod vm;
 
 #[cfg(test)]
@@ -14,5 +12,5 @@ pub use compiler::{
     BytecodeCompiler, BytecodeRef, BytecodeRefs, CompiledFunction, compile_metadata,
 };
 pub use function_expr::BytecodeFunctionExpr;
-pub use instruction::Instruction;
+pub use structured_agent_il::Instruction;
 pub use vm::VM;

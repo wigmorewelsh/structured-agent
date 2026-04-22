@@ -1,0 +1,9 @@
+[package]
+name = "structured-agent-typed-ast"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-ast = { path = "../structured-agent-ast" }
+structured-agent-runtime = { path = "../structured-agent-runtime" }

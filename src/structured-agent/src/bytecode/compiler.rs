@@ -1,4 +1,5 @@
-use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
+use super::BytecodeFunctionExpr;
+use structured_agent_il::{Instruction, builder::InstructionBuilder};
 
 use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;

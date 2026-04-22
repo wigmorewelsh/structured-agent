@@ -5,10 +5,12 @@ members = [
     "src/structured-agent",
     "src/structured-agent-analysis",
     "src/structured-agent-ast",
+    "src/structured-agent-il",
     "src/structured-agent-parser",
     "src/structured-agent-runtime",
     "src/structured-agent-macros",
     "src/structured-agent-stdlib",
+    "src/structured-agent-typed-ast",
     "src/structured-agent-zed/tree-sitter-structured-agent",
 ]
 

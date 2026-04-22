@@ -6,17 +6,12 @@ use crate::typed_ast;
 use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use std::sync::Arc;
+pub use structured_agent_runtime::symbols::FunctionKind;
 use structured_agent_runtime::symbols::{
     AstRef, BodyRef, DefinitionPath, NoAst, References, SourceRef, WitnessRef,
 };
 
 pub type ModuleVisibility = HashMap<String, bool>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionKind {
-    Bytecode,
-    External,
-}
 
 #[derive(Debug, Clone)]
 pub struct SourceLocation(pub FileId, pub Span);
@@ -46,7 +41,6 @@ impl SourceRef for SourceLocation {}
 impl AstRef for CheckerAstRef {}
 impl BodyRef for NoBody {}
 impl WitnessRef for NoWitness {}
-
 
 #[derive(Clone)]
 pub struct CheckerRefs;

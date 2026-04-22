@@ -2170,8 +2170,13 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "structured-agent-analysis",
+ "structured-agent-ast",
+ "structured-agent-il",
+ "structured-agent-parser",
  "structured-agent-runtime",
  "structured-agent-stdlib",
+ "structured-agent-typed-ast",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2179,6 +2184,32 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "structured-agent-analysis"
+version = "0.1.0"
+dependencies = [
+ "codespan-reporting",
+ "combine",
+ "structured-agent",
+ "structured-agent-ast",
+ "structured-agent-parser",
+]
+
+[[package]]
+name = "structured-agent-ast"
+version = "0.1.0"
+dependencies = [
+ "nonempty",
+ "structured-agent-runtime",
+]
+
+[[package]]
+name = "structured-agent-il"
+version = "0.1.0"
+dependencies = [
+ "structured-agent-runtime",
 ]
 
 [[package]]
@@ -2194,11 +2225,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "structured-agent-parser"
+version = "0.1.0"
+dependencies = [
+ "combine",
+ "nonempty",
+ "structured-agent-ast",
+]
+
+[[package]]
 name = "structured-agent-runtime"
 version = "0.1.0"
 dependencies = [
  "arrow",
  "async-trait",
+ "codespan-reporting",
  "nonempty",
  "serde_json",
  "tokio",
@@ -2213,6 +2254,14 @@ dependencies = [
  "structured-agent-macros",
  "structured-agent-runtime",
  "tokio",
+]
+
+[[package]]
+name = "structured-agent-typed-ast"
+version = "0.1.0"
+dependencies = [
+ "structured-agent-ast",
+ "structured-agent-runtime",
 ]
 
 [[package]]

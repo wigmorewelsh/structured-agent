@@ -1,4 +1,4 @@
-use super::Instruction;
+use crate::Instruction;
 use std::collections::HashMap;
 
 pub struct InstructionBuilder {
