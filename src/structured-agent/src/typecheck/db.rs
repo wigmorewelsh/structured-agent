@@ -367,14 +367,9 @@ fn resolve_absolute_path<'db>(
     tables: SymbolTablesInput,
     use_path: NonEmpty<String>,
 ) -> Option<DefinitionPath> {
-    let root = InternedModuleName::new(db, DefinitionPath::root());
-    let head_symbol = use_path.head.clone().intern(db);
-    let mut last_type_name = lookup_type_in_symbol_tables(db, tables, root, head_symbol);
-    let mut search_module = InternedModuleName::new(
-        db,
-        DefinitionPath::for_module(NonEmpty::new(use_path.head.clone())),
-    );
-    for symbol in use_path.tail.iter() {
+    let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
+    let mut last_type_name = None;
+    for symbol in use_path.iter() {
         let type_name =
             resolve_type_in_module(db, tables, search_module, symbol.clone().intern(db))?;
         let type_def = lookup_type_def_in_symbol_tables(
@@ -445,6 +440,7 @@ pub fn resolve_type_in_module<'db>(
         .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
         .or_else(|| lookup_type_in_symbol_tables(db, tables, prelude, symbol))
         .or_else(|| lookup_type_in_symbol_tables(db, tables, unstable, symbol))
+        .or_else(|| resolve_type_as_sibling_module(db, tables, current_module, symbol))
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
@@ -455,6 +451,20 @@ fn resolve_type_as_relative_module<'db>(
     symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
     let key = current_module.name(db).with_module(symbol.value(db));
+    tables.types(db).get().get(&key).map(|_| key)
+}
+
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+fn resolve_type_as_sibling_module<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<DefinitionPath> {
+    let key = current_module
+        .name(db)
+        .parent()
+        .with_module(symbol.value(db));
     tables.types(db).get().get(&key).map(|_| key)
 }
 

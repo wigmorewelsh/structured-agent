@@ -56,6 +56,17 @@ impl DefinitionPath {
             segments: NonEmpty::new(DefinitionSegment::Root),
         }
     }
+    
+    pub fn parent(self) -> Self {
+        let segs: Vec<DefinitionSegment> = self.segments.into_iter().collect();
+        if segs.len() == 1 {
+            return DefinitionPath::root();
+        }
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs[..segs.len() - 1].to_vec())
+                .expect("at least one segment"),
+        }
+    }
 
     pub fn for_module(segments: NonEmpty<String>) -> Self {
         let mut segs = vec![DefinitionSegment::Root];
