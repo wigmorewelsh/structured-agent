@@ -1,45 +1,64 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Expression, Module, Statement};
-use crate::types::FileId;
+use structured_agent_ast::ast::{Definition, Expression, Module, Statement, Type};
+use structured_agent_ast::types::FileId;
+use std::collections::HashMap;
 
-pub struct UnusedExpressionAnalyzer {
+pub struct UnusedReturnValueAnalyzer {
     warnings: Vec<Warning>,
     file_id: FileId,
+    function_return_types: HashMap<String, bool>,
 }
 
-impl UnusedExpressionAnalyzer {
+impl UnusedReturnValueAnalyzer {
     pub fn new() -> Self {
         Self {
             warnings: Vec::new(),
             file_id: FileId::default(),
+            function_return_types: HashMap::new(),
+        }
+    }
+
+    fn collect_function_signatures(&mut self, module: &Module) {
+        for definition in &module.definitions {
+            match definition {
+                Definition::Function(func) => {
+                    let returns_value = func.return_type != Type::simple("Unit");
+                    self.function_return_types
+                        .insert(func.name.clone(), returns_value);
+                }
+                Definition::ExternalFunction(ext_func) => {
+                    let returns_value = ext_func.return_type != Type::simple("Unit");
+                    self.function_return_types
+                        .insert(ext_func.name.clone(), returns_value);
+                }
+                Definition::Struct(_)
+                | Definition::Use(_)
+                | Definition::ModuleHeader { .. }
+                | Definition::Signature(_)
+                | Definition::Trait(_)
+                | Definition::TraitImpl(_)
+                | Definition::InlineModule { .. } => {}
+            }
         }
     }
 
     fn analyze_statement(&mut self, statement: &Statement) {
         match statement {
-            Statement::ExpressionStatement(expr) => match expr {
-                Expression::StringLiteral { span, .. }
-                | Expression::BooleanLiteral { span, .. }
-                | Expression::IntLiteral { span, .. }
-                | Expression::ListLiteral { span, .. }
-                | Expression::UnitLiteral { span } => {
-                    self.warnings.push(Warning::UnusedExpression {
+            Statement::ExpressionStatement(expr) => {
+                if let Expression::Call { function, span, .. } = expr
+                    && let Some(&returns_value) = self.function_return_types.get(function)
+                    && returns_value
+                {
+                    self.warnings.push(Warning::UnusedReturnValue {
+                        function_name: function.clone(),
                         span: *span,
                         file_id: self.file_id,
                     });
                 }
-                Expression::Variable { .. }
-                | Expression::Call { .. }
-                | Expression::Select(_)
-                | Expression::IfElse { .. }
-                | Expression::StructLiteral { .. }
-                | Expression::FieldAccess { .. }
-                | Expression::Placeholder { .. } => {
-                    self.analyze_expression(expr);
-                }
-            },
-            Statement::Injection(expr) => {
                 self.analyze_expression(expr);
+            }
+            Statement::Injection(value) => {
+                self.analyze_expression(value);
             }
             Statement::Assignment { expression, .. } => {
                 self.analyze_expression(expression);
@@ -48,19 +67,11 @@ impl UnusedExpressionAnalyzer {
                 self.analyze_expression(expression);
             }
             Statement::If {
-                condition,
-                body,
-                else_body,
-                ..
+                condition, body, ..
             } => {
                 self.analyze_expression(condition);
                 for stmt in body {
                     self.analyze_statement(stmt);
-                }
-                if let Some(else_stmts) = else_body {
-                    for stmt in else_stmts {
-                        self.analyze_statement(stmt);
-                    }
                 }
             }
             Statement::While {
@@ -123,20 +134,23 @@ impl UnusedExpressionAnalyzer {
     }
 }
 
-impl Default for UnusedExpressionAnalyzer {
+impl Default for UnusedReturnValueAnalyzer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Analyzer for UnusedExpressionAnalyzer {
+impl Analyzer for UnusedReturnValueAnalyzer {
     fn name(&self) -> &str {
-        "unused_expressions"
+        "unused_return_values"
     }
 
     fn analyze_module(&mut self, module: &Module, file_id: FileId) -> Vec<Warning> {
         self.warnings.clear();
         self.file_id = file_id;
+        self.function_return_types.clear();
+
+        self.collect_function_signatures(module);
 
         for definition in &module.definitions {
             if let Definition::Function(func) = definition {

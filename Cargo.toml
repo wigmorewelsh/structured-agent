@@ -3,6 +3,9 @@ resolver = "2"
 
 members = [
     "src/structured-agent",
+    "src/structured-agent-analysis",
+    "src/structured-agent-ast",
+    "src/structured-agent-parser",
     "src/structured-agent-runtime",
     "src/structured-agent-macros",
     "src/structured-agent-stdlib",
@@ -42,6 +45,7 @@ libc6 = { version = "*" }
 opt-level = 0
 debug = true
 split-debuginfo = "unpacked"
+incremental = false
 
 # The profile that 'dist' will build with
 [profile.dist]

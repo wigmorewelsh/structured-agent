@@ -1,0 +1,3 @@
+pub fn write(msg: String): String {
+    return msg
+}

@@ -1,0 +1,14 @@
+[package]
+name = "structured-agent-analysis"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-ast = { path = "../structured-agent-ast" }
+codespan-reporting = "0.11"
+
+[dev-dependencies]
+structured-agent-parser = { path = "../structured-agent-parser" }
+structured-agent = { path = "../structured-agent" }
+combine = "4.6.7"

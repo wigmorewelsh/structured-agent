@@ -1,6 +1,6 @@
 pub mod acp;
-pub mod analysis;
-pub mod ast;
+pub use structured_agent_analysis as analysis;
+pub use structured_agent_ast::ast;
 pub mod bytecode;
 pub mod cli;
 pub mod compiler;

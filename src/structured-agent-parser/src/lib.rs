@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use nonempty::NonEmpty;
 
-use crate::ast::{
+
+use structured_agent_ast::ast::{
     AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction, Function,
     FunctionBody, Module, ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction,
     Statement, StructDefinition, StructField, Type, TypeParam, Use, UseParam, UseSegment,
 };
-use crate::types::{FileId, Span, Spanned};
+use structured_agent_ast::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
@@ -2638,7 +2639,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Function(f) = &module.definitions[0] {
-            if let crate::ast::Statement::Return(expr) = &f.body.statements[0] {
+            if let Statement::Return(expr) = &f.body.statements[0] {
                 if let Expression::StructLiteral {
                     struct_name,
                     fields,
@@ -2670,7 +2671,7 @@ extern fn add(n: Int): Int
         let Definition::Function(f) = &module.definitions[0] else {
             panic!()
         };
-        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+        let Statement::Return(expr) = &f.body.statements[0] else {
             panic!()
         };
         let Expression::FieldAccess { base, field, .. } = expr else {
@@ -2796,7 +2797,7 @@ extern fn add(n: Int): Int
         let Definition::Function(f) = &module.definitions[0] else {
             panic!()
         };
-        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+        let Statement::Return(expr) = &f.body.statements[0] else {
             panic!()
         };
         let Expression::FieldAccess { base, field, .. } = expr else {
@@ -2826,7 +2827,7 @@ extern fn add(n: Int): Int
         let Definition::Function(f) = &module.definitions[0] else {
             panic!()
         };
-        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+        let Statement::Return(expr) = &f.body.statements[0] else {
             panic!()
         };
         let Expression::FieldAccess { base, field, .. } = expr else {
@@ -2847,7 +2848,7 @@ extern fn add(n: Int): Int
         let Definition::Function(f) = &module.definitions[0] else {
             panic!()
         };
-        let crate::ast::Statement::Return(expr) = &f.body.statements[0] else {
+        let Statement::Return(expr) = &f.body.statements[0] else {
             panic!()
         };
         let Expression::StructLiteral { span, .. } = expr else {
@@ -3030,19 +3031,6 @@ fn main(): String {
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
-        let (module, _) = result.unwrap();
-        use crate::typecheck::TypeChecker;
-        use nonempty::NonEmpty;
-        use std::collections::HashMap;
-        let parsed = crate::ast::ParsedModule {
-            name: NonEmpty::new("test".to_string()),
-            module,
-            is_inline: false,
-            is_entry: true,
-            file_id: TEST_FILE_ID,
-        };
-        let result = TypeChecker::new().check(&[parsed], &HashMap::new());
-        assert!(result.is_ok(), "use alias should resolve");
     }
 
     #[test]

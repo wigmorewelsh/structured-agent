@@ -62,8 +62,8 @@ pub use unused_return_values::UnusedReturnValueAnalyzer;
 pub use unused_variables::UnusedVariableAnalyzer;
 pub use variable_shadowing::VariableShadowingAnalyzer;
 
-use crate::ast::{Definition, Function, Module};
-use crate::types::{FileId, Span};
+use structured_agent_ast::ast::{Definition, Function, Module};
+use structured_agent_ast::types::{FileId, Span};
 use codespan_reporting::diagnostic::Diagnostic;
 
 pub trait Analyzer {

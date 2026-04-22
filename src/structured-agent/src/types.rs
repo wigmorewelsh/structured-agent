@@ -2,37 +2,12 @@ use async_trait::async_trait;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
+pub use structured_agent_ast::types::{FileId, Span, Spanned};
 pub use structured_agent_runtime::{ExternalFunctionDefinition, NativeFunction, Parameter, Type};
-
-pub type FileId = usize;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
-
-    pub fn dummy() -> Self {
-        Self { start: 0, end: 0 }
-    }
-
-    pub fn to_byte_range(&self) -> std::ops::Range<usize> {
-        self.start..self.end
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct SourceFiles {
     inner: Arc<Mutex<codespan_reporting::files::SimpleFiles<String, String>>>,
-}
-
-pub trait Spanned {
-    fn span(&self) -> Span;
 }
 
 impl Default for SourceFiles {

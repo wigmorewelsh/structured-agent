@@ -1,0 +1,10 @@
+[package]
+name = "structured-agent-parser"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+structured-agent-ast = { path = "../structured-agent-ast" }
+combine = "4.6.7"
+nonempty = "0.10"

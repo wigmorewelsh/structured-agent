@@ -1,0 +1,8 @@
+mod main
+
+use logger(console) as log
+use worker(log)::run
+
+fn main(): String {
+    return run()
+}

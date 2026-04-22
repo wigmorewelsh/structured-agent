@@ -1,0 +1,7 @@
+mod worker(log: logger)
+
+use log::info
+
+pub fn run(): String {
+    return info("hello")
+}

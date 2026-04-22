@@ -1,0 +1,4 @@
+
+pub fn call_helper(): String {
+    return "real module called"
+}

@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Module};
-use crate::types::FileId;
+use structured_agent_ast::ast::{Definition, Module};
+use structured_agent_ast::types::FileId;
 
 pub struct EmptyFunctionAnalyzer;
 

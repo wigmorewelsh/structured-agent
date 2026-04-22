@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Expression, Function, Statement};
-use crate::types::{FileId, Spanned};
+use structured_agent_ast::ast::{Expression, Function, Statement};
+use structured_agent_ast::types::{FileId, Spanned};
 use std::collections::HashMap;
 
 pub struct InfiniteLoopAnalyzer {

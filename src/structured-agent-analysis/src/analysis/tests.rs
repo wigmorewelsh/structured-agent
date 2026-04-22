@@ -3,10 +3,10 @@ mod tests {
     use crate::analysis::{
         Analyzer, InfiniteLoopAnalyzer, ReachabilityAnalyzer, UnusedVariableAnalyzer, Warning,
     };
-    use crate::ast::{
+    use structured_agent_ast::ast::{
         Definition, Expression, Function, FunctionBody, Module, Parameter, Statement, Type,
     };
-    use crate::types::Span;
+    use structured_agent_ast::types::Span;
     use std::sync::Arc;
 
     fn create_test_function(

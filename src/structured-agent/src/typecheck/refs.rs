@@ -7,7 +7,7 @@ use crate::types::{FileId, Span};
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    AstRef, BodyRef, DefinitionPath, NoAst, References, SourceRef, TypeAnnotation, WitnessRef,
+    AstRef, BodyRef, DefinitionPath, NoAst, References, SourceRef, WitnessRef,
 };
 
 pub type ModuleVisibility = HashMap<String, bool>;
@@ -46,7 +46,7 @@ impl SourceRef for SourceLocation {}
 impl AstRef for CheckerAstRef {}
 impl BodyRef for NoBody {}
 impl WitnessRef for NoWitness {}
-impl TypeAnnotation for AstType {}
+
 
 #[derive(Clone)]
 pub struct CheckerRefs;

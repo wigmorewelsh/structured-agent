@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Expression, Function, Statement};
-use crate::types::{FileId, Span};
+use structured_agent_ast::ast::{Expression, Function, Statement};
+use structured_agent_ast::types::{FileId, Span};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

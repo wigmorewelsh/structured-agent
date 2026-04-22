@@ -1,5 +1,5 @@
 pub mod discovery;
-pub mod parser;
+pub use structured_agent_parser as parser;
 
 use crate::analysis::{
     AnalysisRunner, ConstantConditionAnalyzer, DuplicateInjectionAnalyzer, EmptyBlockAnalyzer,

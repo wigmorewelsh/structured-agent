@@ -14,6 +14,9 @@ path = "src/main.rs"
 
 
 [dependencies]
+structured-agent-ast = { path = "../structured-agent-ast" }
+structured-agent-analysis = { path = "../structured-agent-analysis" }
+structured-agent-parser = { path = "../structured-agent-parser" }
 structured-agent-runtime = { path = "../structured-agent-runtime" }
 structured-agent-stdlib = { path = "../structured-agent-stdlib" }
 async-trait = "0.1"

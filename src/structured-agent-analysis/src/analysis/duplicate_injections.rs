@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
-use crate::ast::{Definition, Expression, Module, Statement};
-use crate::types::{FileId, Spanned};
+use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
+use structured_agent_ast::types::{FileId, Spanned};
 
 pub struct DuplicateInjectionAnalyzer;
 

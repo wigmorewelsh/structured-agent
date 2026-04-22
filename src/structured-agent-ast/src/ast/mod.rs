@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use nonempty::NonEmpty;
+use structured_agent_runtime::symbols::TypeAnnotation;
 
 use crate::types::{FileId, Span, Spanned};
 
@@ -732,3 +733,5 @@ impl fmt::Display for Expression {
         }
     }
 }
+
+impl TypeAnnotation for Type {}
