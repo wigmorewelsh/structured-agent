@@ -15,9 +15,9 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    DefinitionPath, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
-    ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, SignatureEntry,
-    TypeDefinition, TypeDefinitionKind,
+    DefinitionPath, DefinitionSegment, FieldDefinition, FunctionDefinition,
+    GenericParameterDefinition, ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition,
+    SignatureEntry, TypeDefinition, TypeDefinitionKind,
 };
 
 #[salsa::db]
@@ -772,22 +772,10 @@ fn convert_type_kind(
             return_type: ast_type_to_type_name(db, tables, return_type, module),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
-                })
-                .collect(),
+            entries: entries.clone(),
         },
         TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
-            functions: functions
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &e.type_name, module),
-                })
-                .collect(),
+            functions: functions.clone(),
             witness_ref: NoWitness,
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,

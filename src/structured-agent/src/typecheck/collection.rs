@@ -6,9 +6,9 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    DefinitionPath, ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
-    ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, SignatureEntry, SymbolQuery,
-    TypeDefinition, TypeDefinitionKind, Visibility,
+    DefinitionPath, DefinitionSegment, ExportedName, FieldDefinition, FunctionDefinition,
+    GenericParameterDefinition, ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition,
+    SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -234,29 +234,72 @@ impl SymbolTableBuilder {
         }
     }
 
+    fn register_function_defs(
+        &mut self,
+        parent_type_path: &DefinitionPath,
+        functions: &[crate::ast::SigFunction],
+        file_id: FileId,
+        ast_ref: CheckerAstRef,
+    ) -> Vec<SignatureEntry> {
+        let mut entries = Vec::new();
+        for f in functions {
+            let fn_type_path =
+                DefinitionPath::for_function(parent_type_path.clone(), f.name.clone());
+            let fn_type_def = TypeDefinition {
+                name: fn_type_path.clone(),
+                kind: TypeDefinitionKind::Function {
+                    parameters: f
+                        .parameters
+                        .iter()
+                        .map(|p| ParameterDefinition {
+                            name: p.name.clone(),
+                            type_name: p.param_type.clone(),
+                            source_ref: SourceLocation(file_id, p.span),
+                        })
+                        .collect(),
+                    generic_parameters: f
+                        .type_params
+                        .iter()
+                        .map(|tp| GenericParameterDefinition {
+                            name: tp.name.clone(),
+                            constraints: tp.bounds.clone(),
+                        })
+                        .collect(),
+                    return_type: f.return_type.clone(),
+                },
+                source_ref: SourceLocation(file_id, f.span),
+                ast_ref: ast_ref.clone(),
+            };
+            self.metadata
+                .register_type(fn_type_path.clone(), Arc::new(fn_type_def));
+            entries.push(SignatureEntry {
+                name: f.name.clone(),
+                type_name: fn_type_path,
+            });
+        }
+        entries
+    }
+
     fn register_signature(
         &mut self,
         sig: &Arc<crate::ast::AstSignature>,
         file_id: FileId,
         module_name: &DefinitionPath,
     ) {
-        let type_name = DefinitionPath::for_type(module_name.clone(), sig.name.clone());
+        let sig_type_name = DefinitionPath::for_type(module_name.clone(), sig.name.clone());
+        let entries = self.register_function_defs(
+            &sig_type_name,
+            &sig.functions,
+            file_id,
+            CheckerAstRef::Signature(Arc::clone(sig)),
+        );
         let entry = TypeDefinition {
-            name: type_name.clone(),
-            kind: TypeDefinitionKind::Signature {
-                entries: sig
-                    .functions
-                    .iter()
-                    .map(|f| SignatureEntry {
-                        name: f.name.clone(),
-                        type_name: AstType::simple(&f.name),
-                    })
-                    .collect(),
-            },
+            name: sig_type_name.clone(),
+            kind: TypeDefinitionKind::Signature { entries },
             source_ref: SourceLocation(file_id, sig.span),
             ast_ref: CheckerAstRef::Signature(Arc::clone(sig)),
         };
-        self.metadata.register_type(type_name, Arc::new(entry));
+        self.metadata.register_type(sig_type_name, Arc::new(entry));
     }
 
     fn register_struct(
@@ -404,24 +447,24 @@ impl SymbolTableBuilder {
         file_id: FileId,
         module_name: &DefinitionPath,
     ) {
-        let type_name = DefinitionPath::for_type(module_name.clone(), trait_def.name.clone());
+        let trait_type_name = DefinitionPath::for_type(module_name.clone(), trait_def.name.clone());
+        let functions = self.register_function_defs(
+            &trait_type_name,
+            &trait_def.functions,
+            file_id,
+            CheckerAstRef::Trait(Arc::clone(trait_def)),
+        );
         let entry = TypeDefinition {
-            name: type_name.clone(),
+            name: trait_type_name.clone(),
             kind: TypeDefinitionKind::Trait {
-                functions: trait_def
-                    .functions
-                    .iter()
-                    .map(|f| SignatureEntry {
-                        name: f.name.clone(),
-                        type_name: AstType::simple(&f.name),
-                    })
-                    .collect(),
+                functions,
                 witness_ref: NoWitness,
             },
             source_ref: SourceLocation(file_id, trait_def.span),
             ast_ref: CheckerAstRef::Trait(Arc::clone(trait_def)),
         };
-        self.metadata.register_type(type_name, Arc::new(entry));
+        self.metadata
+            .register_type(trait_type_name, Arc::new(entry));
     }
 
     fn register_trait_impl(
@@ -537,12 +580,8 @@ impl SymbolTableBuilder {
         tables
     }
 
-    fn register_module_definition(
-        &mut self,
-        parsed: &ParsedModule,
-        effective_module_name: DefinitionPath,
-    ) {
-        let exports = self.collect_module_exports(&effective_module_name);
+    fn register_module_definition(&mut self, parsed: &ParsedModule, module_name: DefinitionPath) {
+        let exports = self.collect_module_exports(&module_name);
         let parent_module = if parsed.is_inline {
             let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
             segs.pop();
@@ -551,7 +590,7 @@ impl SymbolTableBuilder {
             None
         };
         let module_def = ModuleDefinition {
-            name: effective_module_name.clone(),
+            name: module_name.clone(),
             visibility: if parsed.is_entry {
                 Visibility::Public
             } else {
@@ -565,33 +604,32 @@ impl SymbolTableBuilder {
         };
         self.metadata
             .modules
-            .insert(effective_module_name, Arc::new(module_def));
+            .insert(module_name.clone(), Arc::new(module_def));
 
-        self.register_module_as_type(parsed);
+        self.register_module_as_type(parsed, &module_name);
     }
 
-    fn register_module_as_type(&mut self, parsed: &ParsedModule) {
-        let type_name = DefinitionPath::for_module(parsed.name.clone());
-        let entries: Vec<SignatureEntry<CheckerRefs>> = parsed
+    fn register_module_as_type(&mut self, parsed: &ParsedModule, module_name: &DefinitionPath) {
+        let entries: Vec<SignatureEntry> = parsed
             .module
             .definitions
             .iter()
             .filter_map(|def| match def {
                 Definition::Function(func) if func.is_pub => Some(SignatureEntry {
                     name: func.name.to_string(),
-                    type_name: AstType::simple(&func.name),
+                    type_name: DefinitionPath::for_type(module_name.clone(), func.name.to_string()),
                 }),
                 _ => None,
             })
             .collect();
         let module_type = TypeDefinition {
-            name: type_name.clone(),
+            name: module_name.clone(),
             kind: TypeDefinitionKind::Signature { entries },
             source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
             ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
         };
         self.metadata
-            .register_type(type_name, Arc::new(module_type));
+            .register_type(module_name.clone(), Arc::new(module_type));
     }
 
     fn collect_module_exports(&self, module_name: &DefinitionPath) -> Vec<ExportedName> {

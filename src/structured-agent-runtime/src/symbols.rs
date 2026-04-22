@@ -277,9 +277,9 @@ pub struct ImplDefinition<R: References> {
 }
 
 #[derive(Debug, Clone)]
-pub struct SignatureEntry<R: References> {
+pub struct SignatureEntry {
     pub name: String,
-    pub type_name: R::TypeAnnotation,
+    pub type_name: DefinitionPath,
 }
 
 #[derive(Debug, Clone)]
@@ -302,10 +302,10 @@ pub enum TypeDefinitionKind<R: References> {
         return_type: R::TypeAnnotation,
     },
     Signature {
-        entries: Vec<SignatureEntry<R>>,
+        entries: Vec<SignatureEntry>,
     },
     Trait {
-        functions: Vec<SignatureEntry<R>>,
+        functions: Vec<SignatureEntry>,
         witness_ref: R::Witness,
     },
     Primitive,
@@ -370,22 +370,10 @@ where
             return_type: return_type.clone(),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
-            entries: entries
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: e.type_name.clone(),
-                })
-                .collect(),
+            entries: entries.clone(),
         },
         TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
-            functions: functions
-                .iter()
-                .map(|e| SignatureEntry {
-                    name: e.name.clone(),
-                    type_name: e.type_name.clone(),
-                })
-                .collect(),
+            functions: functions.clone(),
             witness_ref: R2::Witness::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
