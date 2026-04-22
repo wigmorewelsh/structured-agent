@@ -1,5 +1,5 @@
 use std::fmt;
-use structured_agent_runtime::{FunctionName, ModuleName, Type};
+use structured_agent_runtime::{DefinitionPath, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -38,18 +38,18 @@ pub enum Instruction {
 
     /// Call a bytecode function with parameters and store result in destination
     CallBytecode {
-        function_name: FunctionName,
+        function_name: DefinitionPath,
         params: Vec<String>,
         dest: String,
     },
     /// Call an external function with parameters and store result in destination
     CallExternal {
-        function_name: FunctionName,
+        function_name: DefinitionPath,
         params: Vec<String>,
         dest: String,
     },
     /// Load a module reference into a variable
-    LoadModule { name: ModuleName, dest: String },
+    LoadModule { name: DefinitionPath, dest: String },
     /// Call a function through a module parameter variable
     CallIndirect {
         module_param: String,
@@ -67,7 +67,7 @@ pub enum Instruction {
 
     /// Get metadata for a function
     MetaFunction {
-        function_name: FunctionName,
+        function_name: DefinitionPath,
         dest: String,
     },
 

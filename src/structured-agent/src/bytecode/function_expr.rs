@@ -3,7 +3,7 @@ use crate::runtime::{Context, ExpressionResult};
 use crate::types::{ExecutableFunction, Function, Parameter, Type};
 use async_trait::async_trait;
 use std::any::Any;
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::DefinitionPath;
 
 pub struct BytecodeFunctionExpr {
     name: String,
@@ -15,7 +15,7 @@ pub struct BytecodeFunctionExpr {
 }
 
 impl BytecodeFunctionExpr {
-    pub fn new(name: FunctionName, body: BytecodeRef) -> Self {
+    pub fn new(name: DefinitionPath, body: BytecodeRef) -> Self {
         Self {
             name: name.to_string(),
             parameters: body.parameters,

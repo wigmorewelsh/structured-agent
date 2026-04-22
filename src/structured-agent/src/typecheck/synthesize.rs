@@ -14,21 +14,21 @@ use crate::types::{FileId, Span, Spanned};
 use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::{
-    FunctionName, ModuleName, TypeDefinitionKind, TypeName, Visibility,
-};
+use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind, Visibility};
+
+use super::db::{InternedFunctionName, InternedModuleName};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TypeEnvironment {
     pub(super) variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
     pub(super) type_params: HashMap<String, ()>,
-    pub(super) self_type: Option<structured_agent_runtime::symbols::TypeName>,
+    pub(super) self_type: Option<DefinitionPath>,
     pub(super) parent: Option<Box<TypeEnvironment>>,
 }
 
 pub(crate) struct CheckContext<'a> {
     pub(super) file_id: FileId,
-    pub(super) module_name: &'a ModuleName,
+    pub(super) module_name: &'a DefinitionPath,
     pub(super) program: crate::typecheck::db::ProgramInput,
 }
 
@@ -77,7 +77,7 @@ impl TypeEnvironment {
         }
     }
 
-    pub(super) fn set_self_type(&mut self, self_type: structured_agent_runtime::symbols::TypeName) {
+    pub(super) fn set_self_type(&mut self, self_type: DefinitionPath) {
         self.self_type = Some(self_type);
     }
 
@@ -120,8 +120,8 @@ fn resolve_type_name(
     name: &str,
     span: Span,
     ctx: &CheckContext,
-) -> Option<TypeName> {
-    let interned_mod = ctx.module_name.intern(db);
+) -> Option<DefinitionPath> {
+    let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_name = name.intern(db);
 
     let type_name = resolve_type_in_module(db, tables, interned_mod, interned_name);
@@ -311,10 +311,15 @@ fn check_function(
     func: &Function,
     ctx: &CheckContext,
 ) -> Option<()> {
-    let fn_name = FunctionName::new(ctx.module_name.clone(), func.name.clone());
-    let sig = get_function_sig(db, tables, fn_name.intern(db), ctx.program)?
-        .get()
-        .clone();
+    let fn_name = DefinitionPath::for_function(ctx.module_name.clone(), func.name.clone());
+    let sig = get_function_sig(
+        db,
+        tables,
+        InternedFunctionName::new(db, fn_name),
+        ctx.program,
+    )?
+    .get()
+    .clone();
     let mut env = TypeEnvironment::new();
     for param in &sig.parameters {
         env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
@@ -578,12 +583,12 @@ fn synthesize_call(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    let interned_current = ctx.module_name.intern(db);
+    let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 
     let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {
-            let interned = fn_name.clone().intern(db);
+            let interned = InternedFunctionName::new(db, fn_name.clone());
             get_function_sig(db, tables, interned, ctx.program)
                 .map(|arc| (fn_name, arc.get().clone()))
         })
@@ -841,10 +846,10 @@ fn synthesize_struct_literal(
         );
     }
     let resolved_type_name = {
-        let interned_mod = ctx.module_name.intern(db);
+        let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
         resolve_type_in_module(db, tables, interned_mod, interned_name)
-            .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
+            .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     if type_params.is_empty() {
         Some(RT::Struct(resolved_type_name))
@@ -875,14 +880,15 @@ fn synthesize_field_access(
     match base_type {
         RT::Struct(type_name) => {
             let (definition, type_params) =
-                get_struct_fields(db, tables, type_name.name(), ctx.module_name).or_accumulate(
-                    db,
-                    TypeError::UnsupportedType {
-                        type_name: type_name.name().to_string(),
-                        span,
-                        file_id: ctx.file_id,
-                    },
-                )?;
+                get_struct_fields(db, tables, type_name.last_name(), ctx.module_name)
+                    .or_accumulate(
+                        db,
+                        TypeError::UnsupportedType {
+                            type_name: type_name.last_name().to_string(),
+                            span,
+                            file_id: ctx.file_id,
+                        },
+                    )?;
             let type_env = super::TypeEnvironment::with_type_params(&type_params);
             let field_ast_type = definition
                 .iter()
@@ -891,7 +897,7 @@ fn synthesize_field_access(
                 .or_accumulate(
                     db,
                     TypeError::UnknownField {
-                        struct_name: type_name.name().to_string(),
+                        struct_name: type_name.last_name().to_string(),
                         field_name: field.to_string(),
                         span,
                         file_id: ctx.file_id,
@@ -941,14 +947,14 @@ fn synthesize_field_access(
 fn check_visibility(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
-    fn_name: &FunctionName,
+    fn_name: &DefinitionPath,
     span: Span,
     ctx: &CheckContext,
 ) -> Option<()> {
-    if &fn_name.module() == ctx.module_name {
+    if &fn_name.module_prefix() == ctx.module_name {
         return Some(());
     }
-    let interned = fn_name.intern(db);
+    let interned = InternedFunctionName::new(db, fn_name.clone());
     let is_visible = lookup_function_def(db, tables, interned)
         .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
         .unwrap_or(true);
@@ -956,7 +962,7 @@ fn check_visibility(
         is_visible,
         db,
         TypeError::PrivateFunction {
-            name: format!("{}::{}", fn_name.module(), fn_name.name()),
+            name: format!("{}::{}", fn_name.module_prefix(), fn_name.last_name()),
             span,
             file_id: ctx.file_id,
         }

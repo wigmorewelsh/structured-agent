@@ -25,12 +25,15 @@ pub trait References {
 pub trait SymbolQuery {
     type Refs: References;
 
-    fn module(&self, name: &ModuleName) -> Option<Arc<ModuleDefinition<Self::Refs>>>;
-    fn function(&self, name: &FunctionName) -> Option<Arc<FunctionDefinition<Self::Refs>>>;
-    fn type_def(&self, name: &TypeName) -> Option<Arc<TypeDefinition<Self::Refs>>>;
+    fn module(&self, name: &DefinitionPath) -> Option<Arc<ModuleDefinition<Self::Refs>>>;
+    fn function(&self, name: &DefinitionPath) -> Option<Arc<FunctionDefinition<Self::Refs>>>;
+    fn type_def(&self, name: &DefinitionPath) -> Option<Arc<TypeDefinition<Self::Refs>>>;
     fn all_functions(&self) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
     fn all_types(&self) -> Vec<Arc<TypeDefinition<Self::Refs>>>;
-    fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
+    fn functions_in_module(
+        &self,
+        module: &DefinitionPath,
+    ) -> Vec<Arc<FunctionDefinition<Self::Refs>>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,7 +51,13 @@ pub enum DefinitionSegment {
 }
 
 impl DefinitionPath {
-    pub fn from_module_strings(segments: NonEmpty<String>) -> Self {
+    pub fn root() -> Self {
+        DefinitionPath {
+            segments: NonEmpty::new(DefinitionSegment::Root),
+        }
+    }
+
+    pub fn for_module(segments: NonEmpty<String>) -> Self {
         let mut segs = vec![DefinitionSegment::Root];
         segs.extend(segments.into_iter().map(DefinitionSegment::Module));
         DefinitionPath {
@@ -56,111 +65,81 @@ impl DefinitionPath {
         }
     }
 
-    pub fn root() -> Self {
+    pub fn for_type(module: DefinitionPath, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Type(name.into()));
         DefinitionPath {
-            segments: NonEmpty::new(DefinitionSegment::Root),
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
         }
     }
-}
 
-fn module_prefix_of(path: &DefinitionPath) -> ModuleName {
-    let segs: Vec<DefinitionSegment> = path
-        .segments
-        .iter()
-        .take_while(|s| matches!(s, DefinitionSegment::Root | DefinitionSegment::Module(_)))
-        .cloned()
-        .collect();
-    ModuleName(DefinitionPath {
-        segments: NonEmpty::from_vec(segs)
-            .unwrap_or_else(|| NonEmpty::new(DefinitionSegment::Root)),
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ModuleName(pub DefinitionPath);
-
-impl ModuleName {
-    pub fn new(segments: NonEmpty<String>) -> Self {
-        ModuleName(DefinitionPath::from_module_strings(segments))
+    pub fn for_function(module: DefinitionPath, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Function(name.into()));
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
     }
 
-    pub fn root() -> Self {
-        ModuleName(DefinitionPath::root())
+    pub fn for_impl_fn(impl_key: &DefinitionPath, name: impl Into<String>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = impl_key.segments.iter().cloned().collect();
+        segs.push(DefinitionSegment::Function(name.into()));
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
     }
 
-    pub fn last_segment(&self) -> &str {
-        match self.0.segments.last() {
+    pub fn for_impl(module: DefinitionPath, discriminator: Option<u32>) -> Self {
+        let mut segs: Vec<DefinitionSegment> = module.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Impl { discriminator });
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
+    }
+
+    pub fn module_prefix(&self) -> DefinitionPath {
+        let segs: Vec<DefinitionSegment> = self
+            .segments
+            .iter()
+            .take_while(|s| matches!(s, DefinitionSegment::Root | DefinitionSegment::Module(_)))
+            .cloned()
+            .collect();
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs)
+                .unwrap_or_else(|| NonEmpty::new(DefinitionSegment::Root)),
+        }
+    }
+
+    pub fn last_name(&self) -> &str {
+        match self.segments.last() {
             DefinitionSegment::Root => "",
             DefinitionSegment::Module(n) => n,
-            _ => panic!("ModuleName path contains non-Module segment"),
-        }
-    }
-}
-
-impl fmt::Display for ModuleName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut first = true;
-        for seg in self.0.segments.iter() {
-            if let DefinitionSegment::Module(n) = seg {
-                if !first {
-                    write!(f, "::")?;
-                }
-                write!(f, "{}", n)?;
-                first = false;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FunctionName(pub DefinitionPath);
-
-impl FunctionName {
-    pub fn new(module: ModuleName, name: impl Into<String>) -> Self {
-        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
-        segs.push(DefinitionSegment::Function(name.into()));
-        FunctionName(DefinitionPath {
-            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
-        })
-    }
-
-    pub fn for_impl(key: &ImplKey, name: impl Into<String>) -> Self {
-        let mut segs: Vec<DefinitionSegment> = key.0.segments.iter().cloned().collect();
-        segs.push(DefinitionSegment::Function(name.into()));
-        FunctionName(DefinitionPath {
-            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
-        })
-    }
-
-    pub fn name(&self) -> &str {
-        match self.0.segments.last() {
             DefinitionSegment::Function(n) => n,
-            _ => panic!("FunctionName path does not end with Function segment"),
+            DefinitionSegment::Type(n) => n,
+            DefinitionSegment::Impl { .. } => "",
         }
-    }
-
-    pub fn module(&self) -> ModuleName {
-        module_prefix_of(&self.0)
     }
 
     pub fn is_impl_fn(&self) -> bool {
-        self.0
-            .segments
+        self.segments
             .iter()
             .any(|s| matches!(s, DefinitionSegment::Impl { .. }))
     }
 
-    #[deprecated(note = "use .name() directly")]
-    pub fn fn_name(&self) -> &str {
-        self.name()
+    pub fn impl_discriminator(&self) -> Option<u32> {
+        match self.segments.last() {
+            DefinitionSegment::Impl { discriminator } => *discriminator,
+            _ => panic!("DefinitionPath does not end with Impl segment"),
+        }
     }
 }
 
-impl fmt::Display for FunctionName {
+impl TypeAnnotation for DefinitionPath {}
+
+impl fmt::Display for DefinitionPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for seg in self.0.segments.iter() {
+        for seg in self.segments.iter() {
             let text = match seg {
                 DefinitionSegment::Root => continue,
                 DefinitionSegment::Module(n) => n.as_str(),
@@ -178,91 +157,14 @@ impl fmt::Display for FunctionName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeName(pub DefinitionPath);
-
-impl TypeAnnotation for TypeName {}
-
-impl TypeName {
-    pub fn new(module: ModuleName, name: impl Into<String>) -> Self {
-        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
-        segs.push(DefinitionSegment::Type(name.into()));
-        TypeName(DefinitionPath {
-            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
-        })
-    }
-
-    pub fn name(&self) -> &str {
-        match self.0.segments.last() {
-            DefinitionSegment::Root => "",
-            DefinitionSegment::Module(n) => n,
-            DefinitionSegment::Function(n) => n,
-            DefinitionSegment::Type(n) => n,
-            DefinitionSegment::Impl { .. } => "",
-        }
-    }
-
-    pub fn module(&self) -> ModuleName {
-        module_prefix_of(&self.0)
-    }
-}
-
-impl From<ModuleName> for TypeName {
-    fn from(m: ModuleName) -> Self {
-        TypeName(m.0)
-    }
-}
-
-impl From<TypeName> for ModuleName {
-    fn from(t: TypeName) -> Self {
-        ModuleName(t.0)
-    }
-}
-
-impl fmt::Display for TypeName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let module_str = self.module().to_string();
-        if module_str.is_empty() {
-            write!(f, "{}", self.name())
-        } else {
-            write!(f, "{}::{}", module_str, self.name())
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ImplKey(pub DefinitionPath);
-
-impl ImplKey {
-    pub fn new(module: ModuleName, discriminator: Option<u32>) -> Self {
-        let mut segs: Vec<DefinitionSegment> = module.0.segments.into_iter().collect();
-        segs.push(DefinitionSegment::Impl { discriminator });
-        ImplKey(DefinitionPath {
-            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
-        })
-    }
-
-    pub fn discriminator(&self) -> Option<u32> {
-        match self.0.segments.last() {
-            DefinitionSegment::Impl { discriminator } => *discriminator,
-            _ => panic!("ImplKey must end with Impl segment"),
-        }
-    }
-
-    pub fn impl_module(&self) -> ModuleName {
-        module_prefix_of(&self.0)
-    }
-}
-
 #[derive(Clone)]
 pub struct MetaData<R: References> {
-    pub modules: HashMap<ModuleName, Arc<ModuleDefinition<R>>>,
-    pub functions: HashMap<FunctionName, Arc<FunctionDefinition<R>>>,
-    pub types: HashMap<TypeName, Arc<TypeDefinition<R>>>,
-    pub impls: HashMap<ImplKey, Arc<ImplDefinition<R>>>,
+    pub modules: HashMap<DefinitionPath, Arc<ModuleDefinition<R>>>,
+    pub functions: HashMap<DefinitionPath, Arc<FunctionDefinition<R>>>,
+    pub types: HashMap<DefinitionPath, Arc<TypeDefinition<R>>>,
+    pub impls: HashMap<DefinitionPath, Arc<ImplDefinition<R>>>,
 }
 
-#[allow(deprecated)]
 impl<R: References> Default for MetaData<R> {
     fn default() -> Self {
         MetaData {
@@ -274,19 +176,18 @@ impl<R: References> Default for MetaData<R> {
     }
 }
 
-#[allow(deprecated)]
 impl<R: References> SymbolQuery for MetaData<R> {
     type Refs = R;
 
-    fn module(&self, name: &ModuleName) -> Option<Arc<ModuleDefinition<R>>> {
+    fn module(&self, name: &DefinitionPath) -> Option<Arc<ModuleDefinition<R>>> {
         self.modules.get(name).cloned()
     }
 
-    fn function(&self, name: &FunctionName) -> Option<Arc<FunctionDefinition<R>>> {
+    fn function(&self, name: &DefinitionPath) -> Option<Arc<FunctionDefinition<R>>> {
         self.functions.get(name).cloned()
     }
 
-    fn type_def(&self, name: &TypeName) -> Option<Arc<TypeDefinition<R>>> {
+    fn type_def(&self, name: &DefinitionPath) -> Option<Arc<TypeDefinition<R>>> {
         self.types.get(name).cloned()
     }
 
@@ -298,21 +199,21 @@ impl<R: References> SymbolQuery for MetaData<R> {
         self.types.values().cloned().collect()
     }
 
-    fn functions_in_module(&self, module: &ModuleName) -> Vec<Arc<FunctionDefinition<R>>> {
+    fn functions_in_module(&self, module: &DefinitionPath) -> Vec<Arc<FunctionDefinition<R>>> {
         self.functions
             .values()
-            .filter(|f| &f.name.module() == module)
+            .filter(|f| &f.name.module_prefix() == module)
             .cloned()
             .collect()
     }
 }
 
 impl<R: References> MetaData<R> {
-    pub fn register_function(&mut self, name: FunctionName, def: Arc<FunctionDefinition<R>>) {
+    pub fn register_function(&mut self, name: DefinitionPath, def: Arc<FunctionDefinition<R>>) {
         self.functions.insert(name, def);
     }
 
-    pub fn register_type(&mut self, name: TypeName, def: Arc<TypeDefinition<R>>) {
+    pub fn register_type(&mut self, name: DefinitionPath, def: Arc<TypeDefinition<R>>) {
         self.types.insert(name, def);
     }
 }
@@ -325,28 +226,28 @@ pub enum Visibility {
 
 #[derive(Debug, Clone)]
 pub enum ExportedName {
-    Module(ModuleName),
-    Function(FunctionName),
-    Type(TypeName),
-    Trait(TypeName),
+    Module(DefinitionPath),
+    Function(DefinitionPath),
+    Type(DefinitionPath),
+    Trait(DefinitionPath),
 }
 
 #[derive(Debug, Clone)]
 pub struct ModuleDefinition<R: References> {
-    pub name: ModuleName,
+    pub name: DefinitionPath,
     pub visibility: Visibility,
     pub is_entry: bool,
     pub exports: Vec<ExportedName>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
-    pub parent_module: Option<ModuleName>,
+    pub parent_module: Option<DefinitionPath>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionDefinition<R: References> {
-    pub name: FunctionName,
+    pub name: DefinitionPath,
     pub visibility: Visibility,
-    pub type_name: TypeName,
+    pub type_name: DefinitionPath,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
     pub body_ref: Option<R::Body>,
@@ -367,8 +268,8 @@ pub struct GenericParameterDefinition<R: References> {
 
 #[derive(Debug, Clone)]
 pub struct ImplDefinition<R: References> {
-    pub key: ImplKey,
-    pub module: ModuleName,
+    pub key: DefinitionPath,
+    pub module: DefinitionPath,
     pub type_name: R::TypeAnnotation,
     pub trait_name: R::TypeAnnotation,
     pub source_ref: R::Source,
@@ -383,7 +284,7 @@ pub struct SignatureEntry<R: References> {
 
 #[derive(Debug, Clone)]
 pub struct TypeDefinition<R: References> {
-    pub name: TypeName,
+    pub name: DefinitionPath,
     pub kind: TypeDefinitionKind<R>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
@@ -422,8 +323,8 @@ pub struct FieldDefinition<R: References> {
 
 pub fn clone_kind_typenames<R1, R2>(kind: &TypeDefinitionKind<R1>) -> TypeDefinitionKind<R2>
 where
-    R1: References<TypeAnnotation = TypeName>,
-    R2: References<TypeAnnotation = TypeName, Source = R1::Source>,
+    R1: References<TypeAnnotation = DefinitionPath>,
+    R2: References<TypeAnnotation = DefinitionPath, Source = R1::Source>,
     R2::Witness: Default,
 {
     match kind {

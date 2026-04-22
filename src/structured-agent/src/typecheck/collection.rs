@@ -6,9 +6,9 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    ExportedName, FieldDefinition, FunctionDefinition, FunctionName, GenericParameterDefinition,
-    ImplDefinition, ImplKey, MetaData, ModuleDefinition, ModuleName, ParameterDefinition,
-    SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, TypeName, Visibility,
+    DefinitionPath, ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
+    ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, SignatureEntry, SymbolQuery,
+    TypeDefinition, TypeDefinitionKind, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -33,7 +33,10 @@ impl SymbolTableBuilder {
             ("Int", "prelude"),
         ];
         for (name, module) in primitives {
-            let type_name = TypeName::new(ModuleName::new(NonEmpty::new(module.to_string())), name);
+            let type_name = DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new(module.to_string())),
+                name,
+            );
             let entry = TypeDefinition {
                 name: type_name.clone(),
                 kind: TypeDefinitionKind::Primitive,
@@ -48,8 +51,8 @@ impl SymbolTableBuilder {
             constraints: vec![],
         };
 
-        let list_name = TypeName::new(
-            ModuleName::new(NonEmpty::new("prelude".to_string())),
+        let list_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
             "List",
         );
         self.metadata.register_type(
@@ -65,8 +68,8 @@ impl SymbolTableBuilder {
             }),
         );
 
-        let option_name = TypeName::new(
-            ModuleName::new(NonEmpty::new("prelude".to_string())),
+        let option_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
             "Option",
         );
         self.metadata.register_type(
@@ -88,9 +91,9 @@ impl SymbolTableBuilder {
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
         for (mod_name, native_mod) in native_modules {
-            let module_name = ModuleName::new(NonEmpty::new(mod_name.clone()));
+            let module_name = DefinitionPath::for_module(NonEmpty::new(mod_name.clone()));
             for func in native_mod.functions() {
-                let fn_key = FunctionName::new(module_name.clone(), func.name());
+                let fn_key = DefinitionPath::for_function(module_name.clone(), func.name());
                 let parameters = func
                     .parameters()
                     .iter()
@@ -145,17 +148,17 @@ impl SymbolTableBuilder {
         use structured_agent_runtime::types::Type as RT;
         match ty {
             RT::Parameterized(type_name, args) => AstType {
-                name: type_name.name().to_string(),
+                name: type_name.last_name().to_string(),
                 args: args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
             },
-            RT::Struct(tn) => AstType::simple(tn.name().to_string()),
+            RT::Struct(tn) => AstType::simple(tn.last_name().to_string()),
             RT::Generic(name) => AstType::simple(name.clone()),
         }
     }
 
     fn insert_fn(
         &mut self,
-        name: FunctionName,
+        name: DefinitionPath,
         params: Vec<crate::ast::Parameter>,
         return_type: AstType,
         type_params: Vec<TypeParam>,
@@ -163,7 +166,7 @@ impl SymbolTableBuilder {
         visibility: Visibility,
         source_ref: SourceLocation,
     ) {
-        let fn_type_name = TypeName::new(name.module(), name.name());
+        let fn_type_name = DefinitionPath::for_type(name.module_prefix(), name.last_name());
         let parameters: Vec<ParameterDefinition<CheckerRefs>> = params
             .iter()
             .map(|p| ParameterDefinition {
@@ -216,7 +219,7 @@ impl SymbolTableBuilder {
         &mut self,
         module: &Module,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
         for definition in &module.definitions {
             match definition {
@@ -235,9 +238,9 @@ impl SymbolTableBuilder {
         &mut self,
         sig: &Arc<crate::ast::AstSignature>,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
-        let type_name = TypeName::new(module_name.clone(), sig.name.clone());
+        let type_name = DefinitionPath::for_type(module_name.clone(), sig.name.clone());
         let entry = TypeDefinition {
             name: type_name.clone(),
             kind: TypeDefinitionKind::Signature {
@@ -260,9 +263,9 @@ impl SymbolTableBuilder {
         &mut self,
         struct_def: &Arc<crate::ast::StructDefinition>,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
-        let type_name = TypeName::new(module_name.clone(), struct_def.name.clone());
+        let type_name = DefinitionPath::for_type(module_name.clone(), struct_def.name.clone());
         let entry = TypeDefinition {
             name: type_name.clone(),
             kind: TypeDefinitionKind::Struct {
@@ -293,7 +296,7 @@ impl SymbolTableBuilder {
         &mut self,
         module: &Module,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
         let mut impl_counter: u32 = 0;
         for definition in &module.definitions {
@@ -324,10 +327,10 @@ impl SymbolTableBuilder {
         &mut self,
         func: &Arc<crate::ast::Function>,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
-        let fn_key = FunctionName::new(module_name.clone(), func.name.to_string());
-        let fn_type_name = TypeName::new(fn_key.module(), fn_key.name());
+        let fn_key = DefinitionPath::for_function(module_name.clone(), func.name.to_string());
+        let fn_type_name = DefinitionPath::for_type(fn_key.module_prefix(), fn_key.last_name());
         let entry = FunctionDefinition {
             name: fn_key.clone(),
             visibility: if func.is_pub {
@@ -377,9 +380,9 @@ impl SymbolTableBuilder {
         &mut self,
         ext_func: &crate::ast::ExternalFunction,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
-        let fn_key = FunctionName::new(module_name.clone(), ext_func.name.to_string());
+        let fn_key = DefinitionPath::for_function(module_name.clone(), ext_func.name.to_string());
         self.insert_fn(
             fn_key,
             ext_func.parameters.iter().cloned().collect(),
@@ -399,9 +402,9 @@ impl SymbolTableBuilder {
         &mut self,
         trait_def: &Arc<crate::ast::AstTrait>,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
     ) {
-        let type_name = TypeName::new(module_name.clone(), trait_def.name.clone());
+        let type_name = DefinitionPath::for_type(module_name.clone(), trait_def.name.clone());
         let entry = TypeDefinition {
             name: type_name.clone(),
             kind: TypeDefinitionKind::Trait {
@@ -425,7 +428,7 @@ impl SymbolTableBuilder {
         &mut self,
         impl_arc: &Arc<crate::ast::AstTraitImpl>,
         file_id: FileId,
-        module_name: &ModuleName,
+        module_name: &DefinitionPath,
         discriminator: u32,
     ) {
         let type_name = &impl_arc.type_name;
@@ -433,7 +436,7 @@ impl SymbolTableBuilder {
         let functions = &impl_arc.functions;
         let span = &impl_arc.span;
 
-        let key = ImplKey::new(module_name.clone(), Some(discriminator));
+        let key = DefinitionPath::for_impl(module_name.clone(), Some(discriminator));
         let impl_entry = ImplDefinition {
             key: key.clone(),
             module: module_name.clone(),
@@ -455,11 +458,12 @@ impl SymbolTableBuilder {
         &mut self,
         func: &Arc<crate::ast::Function>,
         file_id: FileId,
-        impl_key: &ImplKey,
+        impl_key: &DefinitionPath,
         type_name: &str,
     ) {
-        let impl_fn_key = FunctionName::for_impl(impl_key, func.name.to_string());
-        let fn_type_name = TypeName::new(impl_fn_key.module(), impl_fn_key.name());
+        let impl_fn_key = DefinitionPath::for_impl_fn(impl_key, func.name.to_string());
+        let fn_type_name =
+            DefinitionPath::for_type(impl_fn_key.module_prefix(), impl_fn_key.last_name());
         let entry = FunctionDefinition {
             name: impl_fn_key.clone(),
             visibility: Visibility::Private,
@@ -518,7 +522,7 @@ impl SymbolTableBuilder {
     ) -> SymbolTablesInput {
         self.register_native_modules(native_modules);
         for parsed in modules {
-            let module_name = ModuleName::new(parsed.name.clone());
+            let module_name = DefinitionPath::for_module(parsed.name.clone());
             self.register_type_definitions(&parsed.module, parsed.file_id, &module_name);
             self.register_function_signatures(&parsed.module, parsed.file_id, &module_name);
             self.register_module_definition(parsed, module_name);
@@ -536,13 +540,13 @@ impl SymbolTableBuilder {
     fn register_module_definition(
         &mut self,
         parsed: &ParsedModule,
-        effective_module_name: ModuleName,
+        effective_module_name: DefinitionPath,
     ) {
         let exports = self.collect_module_exports(&effective_module_name);
         let parent_module = if parsed.is_inline {
             let mut segs: Vec<String> = parsed.name.iter().cloned().collect();
             segs.pop();
-            NonEmpty::from_vec(segs).map(ModuleName::new)
+            NonEmpty::from_vec(segs).map(DefinitionPath::for_module)
         } else {
             None
         };
@@ -567,8 +571,7 @@ impl SymbolTableBuilder {
     }
 
     fn register_module_as_type(&mut self, parsed: &ParsedModule) {
-        let module_name = ModuleName::new(parsed.name.clone());
-        let type_name = TypeName::from(module_name);
+        let type_name = DefinitionPath::for_module(parsed.name.clone());
         let entries: Vec<SignatureEntry<CheckerRefs>> = parsed
             .module
             .definitions
@@ -591,7 +594,7 @@ impl SymbolTableBuilder {
             .register_type(type_name, Arc::new(module_type));
     }
 
-    fn collect_module_exports(&self, module_name: &ModuleName) -> Vec<ExportedName> {
+    fn collect_module_exports(&self, module_name: &DefinitionPath) -> Vec<ExportedName> {
         let mut exports: Vec<ExportedName> = self
             .metadata
             .functions_in_module(module_name)
@@ -603,7 +606,7 @@ impl SymbolTableBuilder {
             .metadata
             .types
             .values()
-            .filter(|t| &t.name.module() == module_name)
+            .filter(|t| &t.name.module_prefix() == module_name)
             .filter_map(|t| match &t.kind {
                 TypeDefinitionKind::Struct { .. } => Some(ExportedName::Type(t.name.clone())),
                 TypeDefinitionKind::Trait { .. } => Some(ExportedName::Trait(t.name.clone())),

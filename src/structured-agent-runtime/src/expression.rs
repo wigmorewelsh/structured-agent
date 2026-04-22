@@ -6,7 +6,7 @@ use crate::runtime_value::{
     BooleanValue, IntValue, ListValue, MetadataValue, OptionValue, RuntimeValue, StringValue,
     StructValue, UnitValue, arrow_col_to_expression,
 };
-use crate::symbols::{MetaData, ModuleName, References, SymbolQuery, TypeDefinitionKind, TypeName};
+use crate::symbols::{DefinitionPath, MetaData, References, SymbolQuery, TypeDefinitionKind};
 use crate::types::Type;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,7 +30,7 @@ impl ExpressionParameter {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionValue {
-    Module(ModuleName),
+    Module(DefinitionPath),
     Dynamic(Arc<dyn RuntimeValue>),
 }
 
@@ -103,7 +103,7 @@ impl ExpressionValue {
         Self::Dynamic(Arc::new(ListValue::new(arr)))
     }
 
-    pub fn module(name: ModuleName) -> Self {
+    pub fn module(name: DefinitionPath) -> Self {
         Self::Module(name)
     }
 
@@ -241,7 +241,7 @@ impl ExpressionValue {
         }
     }
 
-    pub fn as_module(&self) -> Result<&ModuleName, String> {
+    pub fn as_module(&self) -> Result<&DefinitionPath, String> {
         match self {
             ExpressionValue::Module(name) => Ok(name),
             _ => Err(format!("expected Module, got {}", self.type_name())),
@@ -288,10 +288,12 @@ impl ExpressionValue {
 
 pub fn type_to_arrow_datatype<R>(ty: &Type, metadata: &MetaData<R>) -> DataType
 where
-    R: References<TypeAnnotation = TypeName>,
+    R: References<TypeAnnotation = DefinitionPath>,
 {
     match ty {
-        Type::Parameterized(type_name, args) if type_name.name() == "List" && args.len() == 1 => {
+        Type::Parameterized(type_name, args)
+            if type_name.last_name() == "List" && args.len() == 1 =>
+        {
             let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
@@ -323,17 +325,17 @@ where
 }
 
 fn type_name_to_arrow_datatype<R>(
-    type_name: &TypeName,
+    type_name: &DefinitionPath,
     subst: &[(String, &Type)],
     metadata: &MetaData<R>,
 ) -> DataType
 where
-    R: References<TypeAnnotation = TypeName>,
+    R: References<TypeAnnotation = DefinitionPath>,
 {
-    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.name()) {
+    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.last_name()) {
         return type_to_arrow_datatype(ty, metadata);
     }
-    match type_name.name() {
+    match type_name.last_name() {
         "Int" => DataType::Int64,
         "String" => DataType::Utf8,
         "Boolean" => DataType::Boolean,
@@ -399,8 +401,8 @@ mod tests {
 
     use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
     use crate::symbols::{
-        FieldDefinition, GenericParameterDefinition, MetaData, ModuleName, NoAst, TypeDefinition,
-        TypeDefinitionKind, TypeName,
+        DefinitionPath, FieldDefinition, GenericParameterDefinition, MetaData, NoAst,
+        TypeDefinition, TypeDefinitionKind,
     };
     use crate::types::Type;
 
@@ -421,7 +423,7 @@ mod tests {
         type Ast = NoAst;
         type Body = NoBody;
         type Witness = NoWitness;
-        type TypeAnnotation = TypeName;
+        type TypeAnnotation = DefinitionPath;
     }
 
     #[derive(Debug)]
@@ -437,9 +439,9 @@ mod tests {
         }
     }
 
-    fn test_type_name() -> TypeName {
-        TypeName::new(
-            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+    fn test_type_name() -> DefinitionPath {
+        DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["test".to_string()]),
             "Test",
         )
     }
@@ -659,12 +661,12 @@ mod tests {
 
     #[test]
     fn parameterized_type_to_arrow_datatype_delegates_to_struct() {
-        let struct_type_name = TypeName::new(
-            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        let struct_type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["test".to_string()]),
             "MyGeneric",
         );
-        let string_type_name = TypeName::new(
-            ModuleName::new(nonempty::nonempty!["prelude".to_string()]),
+        let string_type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["prelude".to_string()]),
             "String",
         );
         let mut metadata = MetaData::<TestRefs>::default();
@@ -696,12 +698,12 @@ mod tests {
 
     #[test]
     fn parameterized_type_with_generic_field_substitutes_type_arg() {
-        let wrapper_type_name = TypeName::new(
-            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        let wrapper_type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["test".to_string()]),
             "Wrapper",
         );
-        let t_type_name = TypeName::new(
-            ModuleName::new(nonempty::nonempty!["test".to_string()]),
+        let t_type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["test".to_string()]),
             "T",
         );
         let mut metadata = MetaData::<TestRefs>::default();

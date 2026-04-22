@@ -12,7 +12,7 @@ use crate::types::{
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
-use structured_agent_runtime::{FunctionName, Module, SymbolQuery};
+use structured_agent_runtime::{DefinitionPath, Module, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -20,7 +20,7 @@ use tracing::{debug, error};
 
 struct CachedProgram {
     metadata: Arc<MetaData<BytecodeRefs>>,
-    main_function: Option<FunctionName>,
+    main_function: Option<DefinitionPath>,
     extern_registry: HashMap<String, ExternalFunctionDefinition>,
 }
 
@@ -242,7 +242,7 @@ impl Runtime {
 
     pub fn get_bytecode_function(
         &self,
-        name: &FunctionName,
+        name: &DefinitionPath,
     ) -> Option<Arc<dyn ExecutableFunction>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
         let func_def = cached.metadata.functions.get(name)?;
@@ -344,7 +344,7 @@ impl Runtime {
 
     pub fn get_struct(
         &self,
-        type_name: &structured_agent_runtime::symbols::TypeName,
+        type_name: &structured_agent_runtime::symbols::DefinitionPath,
     ) -> Option<Vec<(String, crate::types::Type)>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
         let td = cached.metadata.types.get(type_name)?;
@@ -362,7 +362,7 @@ impl Runtime {
 
     pub fn get_struct_with_args(
         &self,
-        type_name: &structured_agent_runtime::symbols::TypeName,
+        type_name: &structured_agent_runtime::symbols::DefinitionPath,
         args: &[crate::types::Type],
     ) -> Option<Vec<(String, crate::types::Type)>> {
         let cached = self.compiled.get()?.as_ref().ok()?;
@@ -384,7 +384,7 @@ impl Runtime {
                     .map(|f| {
                         let ty = substitution
                             .iter()
-                            .find(|(k, _)| *k == f.type_name.name())
+                            .find(|(k, _)| *k == f.type_name.last_name())
                             .map(|(_, t)| (*t).clone())
                             .unwrap_or_else(|| field_type_name_to_type(&f.type_name));
                         (f.name.clone(), ty)
@@ -551,7 +551,7 @@ impl Clone for Runtime {
 }
 
 fn field_type_name_to_type(
-    type_name: &structured_agent_runtime::symbols::TypeName,
+    type_name: &structured_agent_runtime::symbols::DefinitionPath,
 ) -> crate::types::Type {
     crate::types::Type::Struct(type_name.clone())
 }
@@ -570,7 +570,7 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
             && func_def.source_ref.1 != crate::types::Span::dummy()
         {
             let ast_ext = crate::ast::ExternalFunction {
-                name: func_def.name.name().to_string(),
+                name: func_def.name.last_name().to_string(),
                 parameters: params.clone(),
                 return_type: return_type.clone(),
                 type_params: type_params.clone(),
@@ -578,7 +578,7 @@ fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, Stri
                 span: crate::types::Span::dummy(),
             };
             if let Ok(ext_def) =
-                crate::compiler::compile_external_function(&ast_ext, &func_def.name.module())
+                crate::compiler::compile_external_function(&ast_ext, &func_def.name.module_prefix())
             {
                 extern_registry.insert(ext_def.name.clone(), ext_def);
             }
@@ -749,13 +749,13 @@ fn main(): Int {
     #[test]
     fn test_get_struct_returns_none_for_unknown() {
         use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::{ModuleName, TypeName};
+        use structured_agent_runtime::symbols::DefinitionPath;
         let runtime = Runtime::builder(ProgramSource::Inline(
             "fn main(): () { return () }".to_string(),
         ))
         .build();
-        let type_name = TypeName::new(
-            ModuleName::new(NonEmpty::new("test".to_string())),
+        let type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("test".to_string())),
             "Unknown",
         );
         assert!(runtime.get_struct(&type_name).is_none());
@@ -783,7 +783,7 @@ fn main(): () {
             .metadata
             .types
             .keys()
-            .find(|tn| tn.name() == "Task")
+            .find(|tn| tn.last_name() == "Task")
             .cloned()
             .unwrap();
         let fields = runtime.get_struct(&task_type_name).unwrap();

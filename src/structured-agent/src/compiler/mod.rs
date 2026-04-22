@@ -23,7 +23,7 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover_all};
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::{FunctionName, MetaData, ModuleName, TypeName};
+use structured_agent_runtime::symbols::{DefinitionPath, MetaData};
 use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
@@ -67,7 +67,7 @@ impl CompilationUnit {
 
 pub struct CompiledProgram {
     pub metadata: MetaData<BytecodeRefs>,
-    main_function: Option<FunctionName>,
+    main_function: Option<DefinitionPath>,
     source_path: Option<String>,
 }
 
@@ -104,7 +104,7 @@ impl CompiledProgram {
         self.source_path.as_deref()
     }
 
-    pub fn main_function_name(&self) -> Option<&FunctionName> {
+    pub fn main_function_name(&self) -> Option<&DefinitionPath> {
         self.main_function.as_ref()
     }
 
@@ -224,9 +224,9 @@ impl Compiler {
             if compiled
                 .metadata
                 .modules
-                .get(&name.module())
+                .get(&name.module_prefix())
                 .is_some_and(|m| m.is_entry)
-                && name.name() == "main"
+                && name.last_name() == "main"
             {
                 compiled.main_function = Some(name.clone());
                 break;
@@ -254,7 +254,7 @@ fn analyse_module(parsed: &ParsedModule) -> Vec<crate::analysis::Warning> {
 
 pub fn compile_external_function(
     ast_ext_func: &crate::ast::ExternalFunction,
-    module: &ModuleName,
+    module: &DefinitionPath,
 ) -> Result<ExternalFunctionDefinition, String> {
     let parameters = ast_ext_func
         .parameters
@@ -268,18 +268,21 @@ pub fn compile_external_function(
     ))
 }
 
-fn ast_type_to_type(ast_type: &crate::ast::Type, module: &ModuleName) -> Type {
+fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Type {
     if ast_type.args.is_empty() {
         match ast_type.name.as_str() {
             "Boolean" => Type::boolean(),
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
-            _ => Type::Struct(TypeName::new(module.clone(), ast_type.name.clone())),
+            _ => Type::Struct(DefinitionPath::for_type(
+                module.clone(),
+                ast_type.name.clone(),
+            )),
         }
     } else {
         Type::Parameterized(
-            TypeName::new(module.clone(), ast_type.name.clone()),
+            DefinitionPath::for_type(module.clone(), ast_type.name.clone()),
             ast_type
                 .args
                 .iter()
@@ -362,7 +365,7 @@ mod tests {
     use crate::cli::config::ProgramSource;
     use crate::runtime::{ExpressionValue, Runtime};
     use nonempty::NonEmpty;
-    use structured_agent_runtime::symbols::{FunctionName, ModuleName};
+    use structured_agent_runtime::symbols::DefinitionPath;
 
     async fn run_source(source: &str, expected: &str) {
         let result = Runtime::builder(ProgramSource::Inline(source.to_string()))
@@ -450,18 +453,33 @@ fn main(): String {
             .compile_file(main_path.to_str().unwrap())
             .expect("compile_file failed");
 
-        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
-            ModuleName::new(NonEmpty::new("mainproj".to_string())),
-            "main",
-        )));
-        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
-            ModuleName::new(NonEmpty::new("greetlib".to_string())),
-            "greet",
-        )));
-        assert!(compiled.metadata.functions.contains_key(&FunctionName::new(
-            ModuleName::new(NonEmpty::new("greetlib".to_string())),
-            "internal",
-        )));
+        assert!(
+            compiled
+                .metadata
+                .functions
+                .contains_key(&DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("mainproj".to_string())),
+                    "main",
+                ))
+        );
+        assert!(
+            compiled
+                .metadata
+                .functions
+                .contains_key(&DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("greetlib".to_string())),
+                    "greet",
+                ))
+        );
+        assert!(
+            compiled
+                .metadata
+                .functions
+                .contains_key(&DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("greetlib".to_string())),
+                    "internal",
+                ))
+        );
     }
 
     #[test]

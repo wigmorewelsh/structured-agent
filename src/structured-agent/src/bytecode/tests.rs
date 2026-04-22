@@ -2,7 +2,7 @@
 mod instruction_display_tests {
     use crate::bytecode::Instruction;
     use nonempty::NonEmpty;
-    use structured_agent_runtime::{FunctionName, ModuleName};
+    use structured_agent_runtime::DefinitionPath;
 
     #[test]
     fn test_ldc_str_display() {
@@ -16,8 +16,8 @@ mod instruction_display_tests {
     #[test]
     fn test_call_bytecode_display() {
         let instr = Instruction::CallBytecode {
-            function_name: FunctionName::new(
-                ModuleName::new(NonEmpty::new("mymod".to_string())),
+            function_name: DefinitionPath::for_function(
+                DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
             params: vec!["x".to_string(), "y".to_string()],
@@ -32,8 +32,8 @@ mod instruction_display_tests {
     #[test]
     fn test_call_external_display() {
         let instr = Instruction::CallExternal {
-            function_name: FunctionName::new(
-                ModuleName::new(NonEmpty::new("mymod".to_string())),
+            function_name: DefinitionPath::for_function(
+                DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
             params: vec!["x".to_string(), "y".to_string()],
@@ -123,7 +123,7 @@ mod compilation_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "test" {
+                if f.name.module_prefix().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -849,7 +849,7 @@ mod vm_execution_tests {
     use nonempty::NonEmpty;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use structured_agent_runtime::{FunctionName, ModuleName};
+    use structured_agent_runtime::DefinitionPath;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -877,7 +877,7 @@ mod vm_execution_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "test" {
+                if f.name.module_prefix().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {
@@ -921,16 +921,16 @@ mod vm_execution_tests {
 
     fn ast_type_to_rt(t: &crate::ast::Type) -> structured_agent_runtime::Type {
         use nonempty::NonEmpty;
+        use structured_agent_runtime::DefinitionPath;
         use structured_agent_runtime::Type as RT;
-        use structured_agent_runtime::symbols::{ModuleName, TypeName};
         if t.args.is_empty() {
             match t.name.as_str() {
                 "Boolean" => RT::boolean(),
                 "String" => RT::string(),
                 "Int" => RT::int(),
                 "Unit" => RT::unit(),
-                _ => RT::Struct(TypeName::new(
-                    ModuleName::new(NonEmpty::new("main".to_string())),
+                _ => RT::Struct(DefinitionPath::for_type(
+                    DefinitionPath::for_module(NonEmpty::new("main".to_string())),
                     t.name.clone(),
                 )),
             }
@@ -940,8 +940,8 @@ mod vm_execution_tests {
                 _ => "main",
             };
             RT::Parameterized(
-                TypeName::new(
-                    ModuleName::new(NonEmpty::new(module_str.to_string())),
+                DefinitionPath::for_type(
+                    DefinitionPath::for_module(NonEmpty::new(module_str.to_string())),
                     t.name.clone(),
                 ),
                 t.args.iter().map(ast_type_to_rt).collect(),
@@ -988,8 +988,8 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Expression::Call {
                 function: function.clone(),
-                resolved: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                resolved: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     function.to_string(),
                 ),
                 kind: crate::typecheck::FunctionKind::External,
@@ -1441,8 +1441,8 @@ mod vm_execution_tests {
         let test_body = compiled_program
             .metadata
             .functions
-            .get(&FunctionName::new(
-                ModuleName::new(NonEmpty::new("main".to_string())),
+            .get(&DefinitionPath::for_function(
+                DefinitionPath::for_module(NonEmpty::new("main".to_string())),
                 "test",
             ))
             .and_then(|d| d.body_ref.as_ref())
@@ -1501,7 +1501,7 @@ mod struct_bytecode_tests {
             .functions
             .values()
             .filter_map(|f| {
-                if f.name.module().to_string() != "test" {
+                if f.name.module_prefix().to_string() != "test" {
                     return None;
                 }
                 if let TypedCheckerAstRef::Function(func, _) = &f.ast_ref {

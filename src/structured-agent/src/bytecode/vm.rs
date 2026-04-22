@@ -6,7 +6,7 @@ use crate::types::ExecutableFunction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::DefinitionPath;
 
 pub struct VMState {
     pc: usize,
@@ -219,7 +219,7 @@ impl VM {
     async fn execute_call(
         &self,
         state: VMState,
-        function_name: &FunctionName,
+        function_name: &DefinitionPath,
         params: &[String],
         dest: &str,
     ) -> Result<VMState, String> {
@@ -290,14 +290,14 @@ impl VM {
     async fn execute_external_call(
         &self,
         state: VMState,
-        function_name: &FunctionName,
+        function_name: &DefinitionPath,
         params: &[String],
         dest: &str,
     ) -> Result<VMState, String> {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
         let name_str = function_name.to_string();
-        let lookup_name = function_name.name().to_string();
+        let lookup_name = function_name.last_name().to_string();
 
         let resolved_params: HashMap<String, ExpressionValue> = params
             .iter()
@@ -372,7 +372,7 @@ impl VM {
     fn execute_meta_function(
         &self,
         mut state: VMState,
-        function_name: &FunctionName,
+        function_name: &DefinitionPath,
         dest: &str,
     ) -> Result<VMState, String> {
         let func = self
@@ -391,7 +391,7 @@ impl VM {
     fn execute_load_module(
         &self,
         mut state: VMState,
-        name: &structured_agent_runtime::ModuleName,
+        name: &DefinitionPath,
         dest: &str,
     ) -> VMState {
         Self::write_variable(
@@ -548,7 +548,7 @@ impl VM {
             .as_module()
             .map_err(|e| format!("CallIndirect: {}", e))?
             .clone();
-        let function_name = structured_agent_runtime::FunctionName::new(module_name, fn_name);
+        let function_name = DefinitionPath::for_function(module_name, fn_name);
         let func = self
             .runtime
             .get_bytecode_function(&function_name)

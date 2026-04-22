@@ -8,15 +8,16 @@ use crate::ast::{Expression, Function, SelectClause, Statement};
 use crate::typed_ast;
 use crate::types::{Span, Spanned};
 
+use super::db::{InternedFunctionName, InternedModuleName};
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::TypeName;
+use structured_agent_runtime::symbols::DefinitionPath;
 
 pub(super) fn elaborate_function(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     func: &Function,
     ctx: &synthesize::CheckContext,
-    self_type: Option<structured_agent_runtime::symbols::TypeName>,
+    self_type: Option<DefinitionPath>,
 ) -> Option<typed_ast::Function> {
     let mut env = synthesize::TypeEnvironment::with_type_params(&func.type_params);
     if let Some(st) = self_type {
@@ -239,12 +240,12 @@ fn elaborate_call(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let interned_current = ctx.module_name.intern(db);
+    let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 
     let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
         .and_then(|fn_name| {
-            let interned = fn_name.clone().intern(db);
+            let interned = InternedFunctionName::new(db, fn_name.clone());
             get_function_sig(db, tables, interned, ctx.program)
                 .map(|arc| (fn_name, arc.get().clone()))
         })?;
@@ -274,7 +275,8 @@ fn elaborate_call(
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
     let module_params = resolve_use_param_bindings(db, tables, interned_current, interned_fn);
-    let via_module_param = resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
+    let via_module_param =
+        resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
     Some(typed_ast::Expression::Call {
         function: function.to_string(),
         resolved: resolved_fn_name,
@@ -421,10 +423,10 @@ fn elaborate_struct_literal(
         typed_fields.push((field_name.clone(), typed_value));
     }
     let resolved_type_name = {
-        let interned_mod = ctx.module_name.intern(db);
+        let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
         resolve_type_in_module(db, tables, interned_mod, interned_name)
-            .unwrap_or_else(|| TypeName::new(ctx.module_name.clone(), struct_name))
+            .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     let ty = if type_params.is_empty() {
         RT::Struct(resolved_type_name)
@@ -460,7 +462,7 @@ fn elaborate_field_access(
     let typed_base = elaborate_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     let struct_type_name = match &base_type {
-        RT::Struct(tn) => tn.name().to_string(),
+        RT::Struct(tn) => tn.last_name().to_string(),
         RT::Generic(name) => name.clone(),
         _ => return None,
     };

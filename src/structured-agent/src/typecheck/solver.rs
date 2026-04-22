@@ -1,7 +1,7 @@
 use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type;
-use structured_agent_runtime::symbols::{TypeDefinitionKind, TypeName};
+use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
 
 use crate::typecheck::db::{ProgramInput, SymbolTablesInput, TypeCheckDatabase, check_program};
 use crate::typecheck::{TypeError, TypeErrorAccumulator};
@@ -17,8 +17,8 @@ pub enum ConstraintKind {
         context: String,
     },
     SigCheck {
-        module_type: TypeName,
-        sig_type: TypeName,
+        module_type: DefinitionPath,
+        sig_type: DefinitionPath,
     },
 }
 
@@ -133,8 +133,8 @@ fn check_sig_entries(
     constraint: &Constraint,
     module_kind: &TypeDefinitionKind<crate::typecheck::refs::CheckerRefs>,
     sig_kind: &TypeDefinitionKind<crate::typecheck::refs::CheckerRefs>,
-    sig_type: &TypeName,
-    module_type: &TypeName,
+    sig_type: &DefinitionPath,
+    module_type: &DefinitionPath,
 ) {
     match (module_kind, sig_kind) {
         (

@@ -4,7 +4,7 @@ use crate::ast::{ExternalFunction, StructDefinition, UseSegment};
 use crate::typecheck::FunctionKind;
 use crate::types::{FileId, Span};
 
-use structured_agent_runtime::FunctionName;
+use structured_agent_runtime::DefinitionPath;
 use structured_agent_runtime::Type;
 
 #[derive(Clone, Debug)]
@@ -110,11 +110,11 @@ pub struct SelectClause {
 pub enum Expression {
     Call {
         function: String,
-        resolved: FunctionName,
+        resolved: DefinitionPath,
         kind: FunctionKind,
         type_arguments: Vec<Type>,
         arguments: Vec<Expression>,
-        module_params: Vec<(String, structured_agent_runtime::ModuleName)>,
+        module_params: Vec<(String, structured_agent_runtime::DefinitionPath)>,
         via_module_param: Option<String>,
         ty: Type,
         span: Span,

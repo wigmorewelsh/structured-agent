@@ -5,7 +5,7 @@ mod tests {
     use crate::bytecode::Instruction;
     use crate::il_analysis::{CallArityAnalyzer, IlAnalyzer, IlWarning};
     use nonempty::NonEmpty;
-    use structured_agent_runtime::{FunctionName, ModuleName};
+    use structured_agent_runtime::DefinitionPath;
 
     use super::super::test_helpers::make_function;
 
@@ -30,8 +30,8 @@ mod tests {
                 value: "hello".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "greet",
                 ),
                 params: vec!["$arg0".to_string()],
@@ -54,8 +54,8 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "get_value",
                 ),
                 params: vec![],
@@ -78,8 +78,8 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "add",
                 ),
                 params: vec!["$a".to_string()],
@@ -111,8 +111,8 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "negate",
                 ),
                 params: vec!["$a".to_string(), "$b".to_string()],
@@ -144,8 +144,8 @@ mod tests {
                 name: "$tmp0".to_string(),
             },
             Instruction::CallExternal {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "external_tool",
                 ),
                 params: vec!["$a".to_string(), "$b".to_string(), "$c".to_string()],
@@ -171,16 +171,16 @@ mod tests {
                 name: "$b".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "foo",
                 ),
                 params: vec![],
                 dest: "$a".to_string(),
             },
             Instruction::CallBytecode {
-                function_name: FunctionName::new(
-                    ModuleName::new(NonEmpty::new("test".to_string())),
+                function_name: DefinitionPath::for_function(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     "bar",
                 ),
                 params: vec!["$a".to_string(), "$b".to_string()],

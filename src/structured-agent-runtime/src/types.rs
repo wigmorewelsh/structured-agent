@@ -3,12 +3,12 @@ use nonempty::NonEmpty;
 
 use crate::actor::AgentHandle;
 use crate::expression::ExpressionValue;
-use crate::symbols::{ModuleName, TypeName};
+use crate::symbols::DefinitionPath;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Struct(TypeName),
-    Parameterized(TypeName, Vec<Type>),
+    Struct(DefinitionPath),
+    Parameterized(DefinitionPath, Vec<Type>),
     Generic(std::string::String),
 }
 
@@ -27,8 +27,11 @@ pub struct ExternalFunctionDefinition {
 }
 
 impl Type {
-    fn prelude(name: &str) -> TypeName {
-        TypeName::new(ModuleName::new(NonEmpty::new("prelude".to_string())), name)
+    fn prelude(name: &str) -> DefinitionPath {
+        DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
+            name,
+        )
     }
 
     pub fn string() -> Self {
@@ -48,47 +51,35 @@ impl Type {
     }
 
     pub fn is_string(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.name() == "String")
+        matches!(self, Type::Struct(tn) if tn.last_name() == "String")
     }
 
     pub fn is_boolean(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.name() == "Boolean")
+        matches!(self, Type::Struct(tn) if tn.last_name() == "Boolean")
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.name() == "Int")
+        matches!(self, Type::Struct(tn) if tn.last_name() == "Int")
     }
 
     pub fn is_unit(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.name() == "Unit")
+        matches!(self, Type::Struct(tn) if tn.last_name() == "Unit")
     }
 
     pub fn list(inner: Type) -> Self {
-        Self::Parameterized(
-            TypeName::new(
-                ModuleName::new(NonEmpty::new("prelude".to_string())),
-                "List",
-            ),
-            vec![inner],
-        )
+        Self::Parameterized(Self::prelude("List"), vec![inner])
     }
 
     pub fn option(inner: Type) -> Self {
-        Self::Parameterized(
-            TypeName::new(
-                ModuleName::new(NonEmpty::new("prelude".to_string())),
-                "Option",
-            ),
-            vec![inner],
-        )
+        Self::Parameterized(Self::prelude("Option"), vec![inner])
     }
 
     pub fn is_list(&self) -> bool {
-        matches!(self, Type::Parameterized(n, _) if n.name() == "List")
+        matches!(self, Type::Parameterized(n, _) if n.last_name() == "List")
     }
 
     pub fn is_option(&self) -> bool {
-        matches!(self, Type::Parameterized(n, _) if n.name() == "Option")
+        matches!(self, Type::Parameterized(n, _) if n.last_name() == "Option")
     }
 
     pub fn generic(name: impl Into<std::string::String>) -> Self {
@@ -97,10 +88,10 @@ impl Type {
 
     pub fn name(&self) -> String {
         match self {
-            Type::Struct(tn) => tn.name().to_string(),
+            Type::Struct(tn) => tn.last_name().to_string(),
             Type::Parameterized(type_name, args) => {
                 let arg_names: Vec<String> = args.iter().map(|a| a.name()).collect();
-                format!("{}<{}>", type_name.name(), arg_names.join(", "))
+                format!("{}<{}>", type_name.last_name(), arg_names.join(", "))
             }
             Type::Generic(name) => name.clone(),
         }
@@ -110,10 +101,10 @@ impl Type {
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Struct(tn) => write!(f, "{}", tn.name()),
+            Type::Struct(tn) => write!(f, "{}", tn.last_name()),
             Type::Parameterized(type_name, args) => {
                 let arg_strs: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-                write!(f, "{}<{}>", type_name.name(), arg_strs.join(", "))
+                write!(f, "{}<{}>", type_name.last_name(), arg_strs.join(", "))
             }
             Type::Generic(name) => write!(f, "{}", name),
         }

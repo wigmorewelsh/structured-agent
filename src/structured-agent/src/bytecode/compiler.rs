@@ -3,15 +3,14 @@ use super::{BytecodeFunctionExpr, Instruction, builder::InstructionBuilder};
 use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 use crate::typed_ast;
 use crate::types::{ExecutableFunction, Parameter};
-use nonempty::NonEmpty;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    BodyRef, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
-    TypeDefinition, TypeName, clone_kind_typenames,
+    BodyRef, DefinitionPath, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition,
+    References, TypeDefinition, clone_kind_typenames,
 };
-use structured_agent_runtime::{FunctionName, ModuleName};
 
 #[derive(Clone, Debug)]
 pub struct BytecodeRef {
@@ -32,12 +31,12 @@ impl References for BytecodeRefs {
     type Ast = TypedCheckerAstRef;
     type Body = BytecodeRef;
     type Witness = NoWitness;
-    type TypeAnnotation = TypeName;
+    type TypeAnnotation = DefinitionPath;
 }
 
 #[derive(Clone, Debug)]
 pub struct CompiledFunction {
-    pub name: FunctionName,
+    pub name: DefinitionPath,
     pub module_name: Option<String>,
     pub parameters: Vec<Parameter>,
     pub return_type: crate::types::Type,
@@ -88,7 +87,7 @@ impl BytecodeCompiler {
         let (instructions, labels) = builder.build()?;
 
         Ok(CompiledFunction {
-            name: FunctionName::new(ModuleName::root(), typed_func.name.clone()),
+            name: DefinitionPath::for_function(DefinitionPath::root(), typed_func.name.clone()),
             module_name: None,
             parameters: typed_func
                 .parameters
@@ -368,10 +367,10 @@ impl BytecodeCompiler {
     fn compile_call_expression(
         &self,
         builder: &mut InstructionBuilder,
-        function: &FunctionName,
+        function: &DefinitionPath,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
-        module_params: &[(String, ModuleName)],
+        module_params: &[(String, DefinitionPath)],
         via_module_param: Option<&str>,
         dest_var: &str,
     ) -> Result<(), String> {
@@ -387,7 +386,7 @@ impl BytecodeCompiler {
             }
             builder.emit(Instruction::CallIndirect {
                 module_param: param_name.to_string(),
-                fn_name: function.name().to_string(),
+                fn_name: function.last_name().to_string(),
                 params: arg_vars,
                 dest: dest_var.to_string(),
             });
