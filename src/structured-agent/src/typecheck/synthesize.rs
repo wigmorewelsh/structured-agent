@@ -7,7 +7,7 @@ use crate::ast::{
     Definition, Expression, Function, SelectClause, Statement, Type as AstType, TypeParam,
 };
 use crate::ensure_or_accumulate;
-use crate::typecheck::error::TypeError;
+use crate::typecheck::error::{TypeErrorAccumulator, TypeError};
 use crate::typecheck::solver::{Constraint, ConstraintKind};
 use crate::types::{FileId, Span, Spanned};
 
@@ -195,11 +195,11 @@ pub fn resolve(
             Some(RT::Parameterized(type_name, resolved_args))
         }
         _ => {
-            TypeError::UnboundTypeParameter {
+            TypeErrorAccumulator(TypeError::UnboundTypeParameter {
                 name: name.clone(),
                 span,
                 file_id: ctx.file_id,
-            }
+            })
             .accumulate(db);
             None
         }
@@ -542,12 +542,12 @@ pub fn synthesize_expression(
         Expression::IntLiteral { .. } => Some(RT::int()),
         Expression::UnitLiteral { .. } => Some(RT::unit()),
         Expression::Placeholder { span } => {
-            TypeError::TypeMismatch {
+            TypeErrorAccumulator(TypeError::TypeMismatch {
                 expected: "concrete type".to_string(),
                 found: "placeholder".to_string(),
                 span: *span,
                 file_id: ctx.file_id,
-            }
+            })
             .accumulate(db);
             None
         }
@@ -932,12 +932,12 @@ fn synthesize_field_access(
             resolve(db, tables, &field_ast_type, &type_env, span, ctx)
         }
         other => {
-            TypeError::TypeMismatch {
+            TypeErrorAccumulator(TypeError::TypeMismatch {
                 expected: "struct".to_string(),
                 found: other.name(),
                 span,
                 file_id: ctx.file_id,
-            }
+            })
             .accumulate(db);
             None
         }

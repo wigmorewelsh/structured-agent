@@ -1,4 +1,4 @@
-use crate::typecheck::TypeError;
+use structured_agent_runtime::TypeError;
 use crate::types::{FileId, SourceFiles};
 use codespan_reporting::diagnostic::Diagnostic;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
