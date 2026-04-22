@@ -2173,9 +2173,11 @@ dependencies = [
  "structured-agent-analysis",
  "structured-agent-ast",
  "structured-agent-il",
+ "structured-agent-il-analysis",
  "structured-agent-parser",
  "structured-agent-runtime",
  "structured-agent-stdlib",
+ "structured-agent-typecheck",
  "structured-agent-typed-ast",
  "tempfile",
  "tokio",
@@ -2209,6 +2211,17 @@ dependencies = [
 name = "structured-agent-il"
 version = "0.1.0"
 dependencies = [
+ "structured-agent-runtime",
+]
+
+[[package]]
+name = "structured-agent-il-analysis"
+version = "0.1.0"
+dependencies = [
+ "codespan-reporting",
+ "nonempty",
+ "structured-agent-ast",
+ "structured-agent-il",
  "structured-agent-runtime",
 ]
 
@@ -2254,6 +2267,20 @@ dependencies = [
  "structured-agent-macros",
  "structured-agent-runtime",
  "tokio",
+]
+
+[[package]]
+name = "structured-agent-typecheck"
+version = "0.1.0"
+dependencies = [
+ "codespan-reporting",
+ "combine",
+ "nonempty",
+ "salsa",
+ "structured-agent-ast",
+ "structured-agent-parser",
+ "structured-agent-runtime",
+ "structured-agent-typed-ast",
 ]
 
 [[package]]

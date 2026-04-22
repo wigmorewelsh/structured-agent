@@ -8,9 +8,7 @@ mod tests;
 #[cfg(test)]
 mod vm_test;
 
-pub use compiler::{
-    BytecodeCompiler, BytecodeRef, BytecodeRefs, CompiledFunction, compile_metadata,
-};
+pub use compiler::{BytecodeCompiler, BytecodeRefs, compile_metadata};
 pub use function_expr::BytecodeFunctionExpr;
-pub use structured_agent_il::Instruction;
+pub use structured_agent_il::{BytecodeRef, CompiledFunction, Instruction};
 pub use vm::VM;

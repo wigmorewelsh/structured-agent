@@ -1,0 +1,17 @@
+[package]
+name = "structured-agent-typecheck"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-ast = { path = "../structured-agent-ast" }
+structured-agent-typed-ast = { path = "../structured-agent-typed-ast" }
+structured-agent-runtime = { path = "../structured-agent-runtime" }
+salsa = "0.26.0"
+nonempty = "0.10"
+codespan-reporting = "0.11"
+
+[dev-dependencies]
+structured-agent-parser = { path = "../structured-agent-parser" }
+combine = "4.6.7"
