@@ -65,6 +65,14 @@ impl DefinitionPath {
         }
     }
 
+    pub fn with_module(self, module_symbol: String) -> Self {
+        let mut segs: Vec<DefinitionSegment> = self.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Module(module_symbol));
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
+    }
+
     pub fn for_type(module: DefinitionPath, name: impl Into<String>) -> Self {
         let mut segs: Vec<DefinitionSegment> = module.segments.into_iter().collect();
         segs.push(DefinitionSegment::Type(name.into()));
@@ -73,9 +81,25 @@ impl DefinitionPath {
         }
     }
 
+    pub fn with_type(self, type_symbol: String) -> Self {
+        let mut segs: Vec<DefinitionSegment> = self.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Type(type_symbol));
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
+    }
+
     pub fn for_function(module: DefinitionPath, name: impl Into<String>) -> Self {
         let mut segs: Vec<DefinitionSegment> = module.segments.into_iter().collect();
         segs.push(DefinitionSegment::Function(name.into()));
+        DefinitionPath {
+            segments: NonEmpty::from_vec(segs).expect("at least one segment"),
+        }
+    }
+
+    pub fn with_function(self, function_symbol: String) -> Self {
+        let mut segs: Vec<DefinitionSegment> = self.segments.into_iter().collect();
+        segs.push(DefinitionSegment::Function(function_symbol));
         DefinitionPath {
             segments: NonEmpty::from_vec(segs).expect("at least one segment"),
         }

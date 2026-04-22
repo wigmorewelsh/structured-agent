@@ -39,7 +39,7 @@ impl NativeFunction for DynNativeFunctionWrapper {
 }
 
 pub struct NativeFunctionProvider {
-    pub(crate) native_functions: HashMap<String, Arc<dyn ExecutableFunction>>,
+    pub native_functions: HashMap<String, Arc<dyn ExecutableFunction>>,
 }
 
 impl NativeFunctionProvider {

@@ -11,7 +11,7 @@ use super::{RuntimeValue, RuntimeValueFactory, arrow_col_to_expression};
 
 #[derive(Debug)]
 pub struct OptionValue {
-    pub(super) union: Arc<UnionArray>,
+    pub union: Arc<UnionArray>,
 }
 
 impl OptionValue {
@@ -89,7 +89,7 @@ impl OptionValue {
         }
     }
 
-    pub(crate) fn from_union(union: Arc<UnionArray>) -> Self {
+    pub fn from_union(union: Arc<UnionArray>) -> Self {
         Self { union }
     }
 

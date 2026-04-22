@@ -52,7 +52,7 @@ pub use unreachable_instructions::UnreachableInstructionAnalyzer;
 pub use variable_allocation::VariableAllocationAnalyzer;
 pub use variable_drop::VariableDropAnalyzer;
 
-pub(crate) fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
+pub fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
     match instruction {
         Instruction::Drop { name } => vec![name.as_str()],
         Instruction::Mov { src, .. } => vec![src.as_str()],
@@ -76,7 +76,7 @@ pub(crate) fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
     }
 }
 
-pub(crate) fn instruction_writes(instruction: &Instruction) -> Option<&str> {
+pub fn instruction_writes(instruction: &Instruction) -> Option<&str> {
     match instruction {
         Instruction::Decl { name } => Some(name.as_str()),
         Instruction::LdcStr { dest, .. } => Some(dest.as_str()),

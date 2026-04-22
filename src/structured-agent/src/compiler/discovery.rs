@@ -11,11 +11,11 @@ use crate::ast::{Definition, Module, ParsedModule, UseParam};
 use crate::compiler::parser;
 use crate::types::{FileId, SourceFiles};
 
-pub(crate) trait Discoverer: Send + Sync {
+pub trait Discoverer: Send + Sync {
     fn resolve(&self, path: &str) -> Result<String, String>;
 }
 
-pub(crate) struct FileDiscoverer;
+pub struct FileDiscoverer;
 
 impl Discoverer for FileDiscoverer {
     fn resolve(&self, path: &str) -> Result<String, String> {
@@ -23,12 +23,12 @@ impl Discoverer for FileDiscoverer {
     }
 }
 
-pub(crate) struct InMemoryDiscoverer {
+pub struct InMemoryDiscoverer {
     sources: std::collections::HashMap<String, String>,
 }
 
 impl InMemoryDiscoverer {
-    pub(crate) fn new(sources: std::collections::HashMap<String, String>) -> Self {
+    pub fn new(sources: std::collections::HashMap<String, String>) -> Self {
         Self { sources }
     }
 }
@@ -42,17 +42,17 @@ impl Discoverer for InMemoryDiscoverer {
     }
 }
 
-pub(crate) struct DiscoveredModule {
-    pub(crate) name: NonEmpty<String>,
-    pub(crate) module: Module,
-    pub(crate) is_entry: bool,
-    pub(crate) file_id: FileId,
-    pub(crate) is_inline: bool,
-    pub(crate) source_info: Option<(String, String)>,
+pub struct DiscoveredModule {
+    pub name: NonEmpty<String>,
+    pub module: Module,
+    pub is_entry: bool,
+    pub file_id: FileId,
+    pub is_inline: bool,
+    pub source_info: Option<(String, String)>,
 }
 
 impl DiscoveredModule {
-    pub(crate) fn into_parsed(self) -> ParsedModule {
+    pub fn into_parsed(self) -> ParsedModule {
         ParsedModule {
             name: self.name,
             module: self.module,
@@ -73,13 +73,13 @@ struct ModuleSource {
 }
 
 #[salsa::db]
-pub(crate) trait DiscoveryDatabase: salsa::Database {
+pub trait DiscoveryDatabase: salsa::Database {
     fn input(&self, logical: Vec<String>) -> Option<ModuleSource>;
 }
 
 #[salsa::db]
 #[derive(Clone)]
-pub(crate) struct DiscoveryDb {
+pub struct DiscoveryDb {
     storage: salsa::Storage<Self>,
     sources: Arc<DashMap<Vec<String>, ModuleSource>>,
     entry_dir: Arc<String>,
@@ -333,7 +333,7 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
     deps
 }
 
-pub(crate) fn discover_all(
+pub fn discover_all(
     entry_path: &str,
     entry_source: &str,
     discoverer: Arc<dyn Discoverer>,

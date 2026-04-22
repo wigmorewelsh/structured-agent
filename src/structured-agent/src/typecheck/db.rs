@@ -21,11 +21,11 @@ use structured_agent_runtime::symbols::{
 };
 
 #[salsa::db]
-pub(super) trait TypeCheckDatabase: salsa::Database {}
+pub trait TypeCheckDatabase: salsa::Database {}
 
 #[salsa::db]
 #[derive(Default)]
-pub(super) struct TypeCheckDb {
+pub struct TypeCheckDb {
     storage: salsa::Storage<Self>,
 }
 
@@ -36,30 +36,30 @@ impl salsa::Database for TypeCheckDb {}
 impl TypeCheckDatabase for TypeCheckDb {}
 
 #[salsa::input]
-pub(super) struct ParsedModuleInput {
-    pub(super) name: NonEmpty<String>,
-    pub(super) is_entry: bool,
-    pub(super) file_id: FileId,
-    pub(super) module: AstModule,
+pub struct ParsedModuleInput {
+    pub name: NonEmpty<String>,
+    pub is_entry: bool,
+    pub file_id: FileId,
+    pub module: AstModule,
 }
 
 #[salsa::input]
-pub(super) struct ProgramInput {
-    pub(super) modules: Vec<ParsedModuleInput>,
+pub struct ProgramInput {
+    pub modules: Vec<ParsedModuleInput>,
 }
 
-pub(super) struct ArcPtr<T>(Arc<T>);
+pub struct ArcPtr<T>(Arc<T>);
 
 impl<T> ArcPtr<T> {
-    pub(super) fn new(val: T) -> Self {
+    pub fn new(val: T) -> Self {
         ArcPtr(Arc::new(val))
     }
 
-    pub(super) fn from_arc(arc: Arc<T>) -> Self {
+    pub fn from_arc(arc: Arc<T>) -> Self {
         ArcPtr(arc)
     }
 
-    pub(super) fn get(&self) -> &T {
+    pub fn get(&self) -> &T {
         &self.0
     }
 }
@@ -104,44 +104,44 @@ unsafe impl<T> salsa::Update for ArcPtr<T> {
 }
 
 #[salsa::input]
-pub(super) struct SymbolTablesInput {
-    pub(super) functions: ArcPtr<HashMap<DefinitionPath, Arc<FunctionDefinition<CheckerRefs>>>>,
-    pub(super) types: ArcPtr<HashMap<DefinitionPath, Arc<TypeDefinition<CheckerRefs>>>>,
-    pub(super) impls: ArcPtr<HashMap<DefinitionPath, Arc<ImplDefinition<CheckerRefs>>>>,
-    pub(super) modules: ArcPtr<HashMap<DefinitionPath, Arc<ModuleDefinition<CheckerRefs>>>>,
+pub struct SymbolTablesInput {
+    pub functions: ArcPtr<HashMap<DefinitionPath, Arc<FunctionDefinition<CheckerRefs>>>>,
+    pub types: ArcPtr<HashMap<DefinitionPath, Arc<TypeDefinition<CheckerRefs>>>>,
+    pub impls: ArcPtr<HashMap<DefinitionPath, Arc<ImplDefinition<CheckerRefs>>>>,
+    pub modules: ArcPtr<HashMap<DefinitionPath, Arc<ModuleDefinition<CheckerRefs>>>>,
 }
 
 #[salsa::interned]
-pub(super) struct InternedString<'db> {
-    pub(super) value: String,
+pub struct InternedString<'db> {
+    pub value: String,
 }
 
 #[salsa::interned]
-pub(super) struct InternedFunctionName {
-    pub(super) name: DefinitionPath,
+pub struct InternedFunctionName {
+    pub name: DefinitionPath,
 }
 
 #[salsa::interned]
-pub(super) struct InternedTypeName {
-    pub(super) name: DefinitionPath,
+pub struct InternedTypeName {
+    pub name: DefinitionPath,
 }
 
 #[salsa::interned]
-pub(super) struct InternedTraitName {
-    pub(super) name: DefinitionPath,
+pub struct InternedTraitName {
+    pub name: DefinitionPath,
 }
 
 #[salsa::interned]
-pub(super) struct InternedImplKey {
-    pub(super) key: DefinitionPath,
+pub struct InternedImplKey {
+    pub key: DefinitionPath,
 }
 
 #[salsa::interned]
-pub(super) struct InternedModuleName {
-    pub(super) name: DefinitionPath,
+pub struct InternedModuleName {
+    pub name: DefinitionPath,
 }
 
-pub(super) trait Intern<'db> {
+pub trait Intern<'db> {
     type Interned;
     fn intern(self, db: &'db dyn TypeCheckDatabase) -> Self::Interned;
 }
@@ -168,7 +168,7 @@ impl<'db> Intern<'db> for &str {
 }
 
 #[salsa::tracked]
-pub(super) fn lookup_function_def<'db>(
+pub fn lookup_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     key: InternedFunctionName<'db>,
@@ -182,7 +182,7 @@ pub(super) fn lookup_function_def<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn lookup_type_def_in_symbol_tables<'db>(
+pub fn lookup_type_def_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     key: InternedTypeName<'db>,
@@ -196,7 +196,7 @@ pub(super) fn lookup_type_def_in_symbol_tables<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn get_function_sig<'db>(
+pub fn get_function_sig<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
@@ -290,7 +290,7 @@ pub(super) fn get_function_sig<'db>(
     }))
 }
 
-pub(super) fn get_struct_fields(
+pub fn get_struct_fields(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     name: &str,
@@ -317,18 +317,14 @@ pub(super) fn get_struct_fields(
 }
 
 #[salsa::tracked]
-pub(super) fn check_program(
-    db: &dyn TypeCheckDatabase,
-    program: ProgramInput,
-    tables: SymbolTablesInput,
-) {
+pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput, tables: SymbolTablesInput) {
     for parsed in program.modules(db) {
         check_module(db, parsed, tables, program);
     }
 }
 
 #[salsa::tracked]
-pub(super) fn check_module(
+pub fn check_module(
     db: &dyn TypeCheckDatabase,
     parsed: ParsedModuleInput,
     tables: SymbolTablesInput,
@@ -352,7 +348,7 @@ pub(super) fn check_module(
 }
 
 #[salsa::tracked]
-pub(super) fn lookup_type_in_symbol_tables<'db>(
+pub fn lookup_type_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     module: InternedModuleName<'db>,
@@ -429,7 +425,7 @@ fn resolve_type_cycle_recovery<'db>(
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
-pub(super) fn resolve_type_in_module<'db>(
+pub fn resolve_type_in_module<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -452,7 +448,18 @@ pub(super) fn resolve_type_in_module<'db>(
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
-pub(super) fn resolve_type_as_mod_param<'db>(
+fn resolve_type_as_relative_module<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    symbol: InternedString<'db>,
+) -> Option<DefinitionPath> {
+    let key = current_module.name(db).with_module(symbol.value(db));
+    tables.types(db).get().get(&key).map(|_| key)
+}
+
+#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+pub fn resolve_type_as_mod_param<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -480,7 +487,7 @@ pub(super) fn resolve_type_as_mod_param<'db>(
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
-pub(super) fn resolve_type_as_alias<'db>(
+pub fn resolve_type_as_alias<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -505,7 +512,7 @@ pub(super) fn resolve_type_as_alias<'db>(
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
-pub(super) fn resolve_type_as_use<'db>(
+pub fn resolve_type_as_use<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -533,7 +540,7 @@ pub(super) fn resolve_type_as_use<'db>(
 // --- new type resolution -- end
 
 #[salsa::tracked]
-pub(super) fn resolve_function_call<'db>(
+pub fn resolve_function_call<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -578,7 +585,7 @@ fn resolve_path_to_module<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn resolve_use_param_bindings<'db>(
+pub fn resolve_use_param_bindings<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -660,7 +667,7 @@ fn resolve_use_param_bindings_inner<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn resolve_function_alias_via_param<'db>(
+pub fn resolve_function_alias_via_param<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
@@ -704,7 +711,7 @@ pub(super) fn resolve_function_alias_via_param<'db>(
     None
 }
 
-pub(super) fn ast_type_to_type_name(
+pub fn ast_type_to_type_name(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     ty: &AstType,
@@ -790,7 +797,7 @@ fn convert_type_kind(
 }
 
 #[salsa::tracked]
-pub(super) fn elaborate_function_def<'db>(
+pub fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
@@ -830,7 +837,7 @@ pub(super) fn elaborate_function_def<'db>(
 }
 
 #[salsa::tracked]
-pub(super) fn elaborate_metadata(
+pub fn elaborate_metadata(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     program: ProgramInput,

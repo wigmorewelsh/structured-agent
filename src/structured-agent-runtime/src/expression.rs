@@ -159,7 +159,7 @@ impl ExpressionValue {
         }))
     }
 
-    pub(crate) fn to_arrow(&self) -> Arc<dyn Array> {
+    pub fn to_arrow(&self) -> Arc<dyn Array> {
         match self {
             ExpressionValue::Module(_) => panic!("expected value, got Module"),
             ExpressionValue::Dynamic(v) => v.to_arrow(),

@@ -29,7 +29,7 @@ pub trait RuntimeValueFactory: std::fmt::Debug + Send + Sync {
     fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue>;
 }
 
-pub(crate) fn is_metadata_struct_array(arr: &StructArray) -> bool {
+pub fn is_metadata_struct_array(arr: &StructArray) -> bool {
     arr.fields()
         .first()
         .map(|f| {
@@ -41,7 +41,7 @@ pub(crate) fn is_metadata_struct_array(arr: &StructArray) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
+pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
     match col.data_type() {
         DataType::Null => ExpressionValue::unit(),
         DataType::Utf8 => {

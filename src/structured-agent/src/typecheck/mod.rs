@@ -35,14 +35,14 @@ pub struct TypeChecker {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct FunctionSignature {
-    pub(super) parameters: Vec<crate::typed_ast::Parameter>,
-    pub(super) return_type: structured_agent_runtime::Type,
-    pub(super) kind: FunctionKind,
-    pub(super) type_params: Vec<TypeParam>,
+pub struct FunctionSignature {
+    pub parameters: Vec<crate::typed_ast::Parameter>,
+    pub return_type: structured_agent_runtime::Type,
+    pub kind: FunctionKind,
+    pub type_params: Vec<TypeParam>,
 }
 
-pub(super) use synthesize::{CheckContext, TypeEnvironment};
+pub use synthesize::{CheckContext, TypeEnvironment};
 
 impl Default for TypeChecker {
     fn default() -> Self {

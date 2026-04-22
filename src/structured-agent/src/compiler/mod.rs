@@ -1,4 +1,4 @@
-pub(crate) mod discovery;
+pub mod discovery;
 pub mod parser;
 
 use crate::analysis::{
@@ -321,14 +321,14 @@ fn build_analysis_runner() -> AnalysisRunner {
         .with_analyzer(Box::new(UnusedExpressionAnalyzer::new()))
 }
 
-pub(crate) struct CodespanParser {}
+pub struct CodespanParser {}
 
 impl CodespanParser {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 
-    pub(crate) fn parse(
+    pub fn parse(
         &self,
         unit: &CompilationUnit,
         file_id: FileId,

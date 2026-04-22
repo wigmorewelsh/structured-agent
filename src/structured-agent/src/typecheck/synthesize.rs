@@ -19,21 +19,21 @@ use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind, Visi
 use super::db::{InternedFunctionName, InternedModuleName};
 
 #[derive(Debug, Clone)]
-pub(crate) struct TypeEnvironment {
-    pub(super) variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
-    pub(super) type_params: HashMap<String, ()>,
-    pub(super) self_type: Option<DefinitionPath>,
-    pub(super) parent: Option<Box<TypeEnvironment>>,
+pub struct TypeEnvironment {
+    pub variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
+    pub type_params: HashMap<String, ()>,
+    pub self_type: Option<DefinitionPath>,
+    pub parent: Option<Box<TypeEnvironment>>,
 }
 
-pub(crate) struct CheckContext<'a> {
-    pub(super) file_id: FileId,
-    pub(super) module_name: &'a DefinitionPath,
-    pub(super) program: crate::typecheck::db::ProgramInput,
+pub struct CheckContext<'a> {
+    pub file_id: FileId,
+    pub module_name: &'a DefinitionPath,
+    pub program: crate::typecheck::db::ProgramInput,
 }
 
 impl TypeEnvironment {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
             type_params: HashMap::new(),
@@ -42,7 +42,7 @@ impl TypeEnvironment {
         }
     }
 
-    pub(super) fn with_type_params(type_params: &[TypeParam]) -> Self {
+    pub fn with_type_params(type_params: &[TypeParam]) -> Self {
         let mut env = Self::new();
         for tp in type_params {
             env.add_type_param(tp.name.clone());
@@ -50,7 +50,7 @@ impl TypeEnvironment {
         env
     }
 
-    pub(super) fn create_child(&self) -> Self {
+    pub fn create_child(&self) -> Self {
         Self {
             variables: HashMap::new(),
             type_params: self.type_params.clone(),
@@ -63,7 +63,7 @@ impl TypeEnvironment {
         self.type_params.insert(name, ());
     }
 
-    pub(super) fn lookup_type_param(&self, name: &str) -> bool {
+    pub fn lookup_type_param(&self, name: &str) -> bool {
         if name == "Self" && self.self_type.is_some() {
             return true;
         }
@@ -77,11 +77,11 @@ impl TypeEnvironment {
         }
     }
 
-    pub(super) fn set_self_type(&mut self, self_type: DefinitionPath) {
+    pub fn set_self_type(&mut self, self_type: DefinitionPath) {
         self.self_type = Some(self_type);
     }
 
-    pub(super) fn declare_variable(
+    pub fn declare_variable(
         &mut self,
         name: String,
         var_type: structured_agent_runtime::Type,
@@ -90,7 +90,7 @@ impl TypeEnvironment {
         self.variables.insert(name, (var_type, span));
     }
 
-    pub(super) fn lookup_variable(&self, name: &str) -> Option<structured_agent_runtime::Type> {
+    pub fn lookup_variable(&self, name: &str) -> Option<structured_agent_runtime::Type> {
         if let Some((ty, _)) = self.variables.get(name) {
             Some(ty.clone())
         } else if let Some(parent) = &self.parent {
@@ -100,7 +100,7 @@ impl TypeEnvironment {
         }
     }
 
-    pub(super) fn lookup_variable_with_span(
+    pub fn lookup_variable_with_span(
         &self,
         name: &str,
     ) -> Option<(structured_agent_runtime::Type, Span)> {
@@ -136,7 +136,7 @@ fn resolve_type_name(
     )
 }
 
-pub(super) fn resolve(
+pub fn resolve(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     t: &AstType,
@@ -274,7 +274,7 @@ impl Unifier {
     }
 }
 
-pub(super) fn check_definition(
+pub fn check_definition(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     definition: &Definition,
@@ -516,7 +516,7 @@ fn check_block(
     Some(())
 }
 
-pub(super) fn synthesize_expression(
+pub fn synthesize_expression(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     expression: &Expression,

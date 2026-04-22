@@ -12,7 +12,7 @@ use super::db::{InternedFunctionName, InternedModuleName};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::DefinitionPath;
 
-pub(super) fn elaborate_function(
+pub fn elaborate_function(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     func: &Function,
@@ -167,7 +167,7 @@ fn elaborate_block(
     Some(typed_stmts)
 }
 
-pub(super) fn elaborate_expression(
+pub fn elaborate_expression(
     db: &dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     expression: &Expression,

@@ -70,7 +70,7 @@ fn param_type(db: &dyn salsa::Database, p: &Param) -> Type {
         .unwrap_or_else(int)
 }
 
-pub(crate) fn lookup_fn(db: &dyn salsa::Database, program: Program, name: &str) -> Option<FnDecl> {
+pub fn lookup_fn(db: &dyn salsa::Database, program: Program, name: &str) -> Option<FnDecl> {
     program
         .functions(db)
         .iter()
@@ -78,7 +78,7 @@ pub(crate) fn lookup_fn(db: &dyn salsa::Database, program: Program, name: &str) 
         .copied()
 }
 
-pub(crate) fn build_env(params: &[Param], types: &[Type]) -> HashMap<String, Type> {
+pub fn build_env(params: &[Param], types: &[Type]) -> HashMap<String, Type> {
     params
         .iter()
         .zip(types)
@@ -168,7 +168,7 @@ pub fn solve_constraints(db: &dyn salsa::Database, program: Program) -> SolvedCo
     SolvedConstraints { resolved }
 }
 
-pub(crate) fn synthesize(
+pub fn synthesize(
     db: &dyn salsa::Database,
     program: Program,
     env: &HashMap<String, Type>,

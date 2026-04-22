@@ -12,12 +12,12 @@ use structured_agent_runtime::symbols::{
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
-pub(super) struct SymbolTableBuilder {
+pub struct SymbolTableBuilder {
     metadata: MetaData<CheckerRefs>,
 }
 
 impl SymbolTableBuilder {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         let mut builder = Self {
             metadata: MetaData::default(),
         };
@@ -557,7 +557,7 @@ impl SymbolTableBuilder {
             .register_type(fn_type_name, Arc::new(fn_type_def));
     }
 
-    pub(super) fn build_symbol_tables(
+    pub fn build_symbol_tables(
         mut self,
         db: &TypeCheckDb,
         modules: &[ParsedModule],

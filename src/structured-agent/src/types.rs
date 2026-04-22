@@ -102,7 +102,7 @@ pub trait LanguageEngine: Send + Sync {
 
 pub struct PrintEngine {}
 
-pub(crate) fn format_event(event: &crate::runtime::Event) -> String {
+pub fn format_event(event: &crate::runtime::Event) -> String {
     let content = event.content.format_for_llm();
 
     if let Some(name) = &event.name {
