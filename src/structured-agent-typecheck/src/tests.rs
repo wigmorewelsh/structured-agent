@@ -2623,6 +2623,123 @@ mod typed_ast_tests {
             &RT::Parameterized(DefinitionPath::for_type(mn, "Box"), vec![RT::string()],)
         );
     }
+
+    #[test]
+    fn binding_ids_are_unique_within_function_and_match_references() {
+        let func = create_test_function(
+            "f",
+            vec![
+                create_parameter("x", AstType::simple("Int")),
+                create_parameter("y", AstType::simple("Int")),
+            ],
+            AstType::simple("Int"),
+            vec![
+                Statement::Assignment {
+                    variable: "z".to_string(),
+                    expression: Expression::Variable {
+                        name: "x".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    span: crate::types::Span::dummy(),
+                },
+                Statement::Return(Expression::Variable {
+                    name: "z".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
+            ],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
+        let f = first_function(&module);
+
+        let x_id = f.parameters[0].binding_id;
+        let y_id = f.parameters[1].binding_id;
+
+        let (z_id, x_ref_id) = if let typed_ast::Statement::Assignment {
+            binding_id,
+            expression:
+                typed_ast::Expression::Variable {
+                    binding_id: ref_id, ..
+                },
+            ..
+        } = f.body.statements[0]
+        {
+            (binding_id, ref_id)
+        } else {
+            panic!("expected assignment with variable expression");
+        };
+
+        let z_ref_id = if let typed_ast::Statement::Return(typed_ast::Expression::Variable {
+            binding_id,
+            ..
+        }) = f.body.statements[1]
+        {
+            binding_id
+        } else {
+            panic!("expected return with variable expression");
+        };
+
+        assert_ne!(x_id, y_id);
+        assert_ne!(x_id, z_id);
+        assert_ne!(y_id, z_id);
+
+        assert_eq!(x_ref_id, x_id);
+        assert_eq!(z_ref_id, z_id);
+    }
+
+    #[test]
+    fn two_functions_have_independent_binding_id_sequences() {
+        let func1 = create_test_function(
+            "f1",
+            vec![create_parameter("a", AstType::simple("Int"))],
+            AstType::simple("Int"),
+            vec![Statement::Return(Expression::Variable {
+                name: "a".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let func2 = create_test_function(
+            "f2",
+            vec![create_parameter("b", AstType::simple("Int"))],
+            AstType::simple("Int"),
+            vec![Statement::Return(Expression::Variable {
+                name: "b".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(func1)),
+            Definition::Function(Arc::new(func2)),
+        ]));
+
+        let functions: Vec<_> = module
+            .definitions
+            .iter()
+            .filter_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    Some(f)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(functions.len(), 2);
+        for f in &functions {
+            let param_id = f.parameters[0].binding_id;
+            let ref_id = if let typed_ast::Statement::Return(typed_ast::Expression::Variable {
+                binding_id,
+                ..
+            }) = f.body.statements[0]
+            {
+                binding_id
+            } else {
+                panic!("expected return with variable");
+            };
+            assert_eq!(ref_id, param_id);
+        }
+    }
 }
 
 mod metadata_query_tests {

@@ -27,10 +27,11 @@ pub fn elaborate_function(
     for param in &func.parameters {
         let runtime_type =
             synthesize::resolve(db, tables, &param.param_type, &env, param.span, ctx)?;
-        env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
+        let binding_id = env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
         typed_parameters.push(typed_ast::Parameter {
             name: param.name.clone(),
             param_type: runtime_type,
+            binding_id,
             span: param.span,
         });
     }
@@ -70,10 +71,11 @@ fn elaborate_statement(
         } => {
             let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
             let expr_type = typed_expr.ty().clone();
-            env.declare_variable(variable.clone(), expr_type, expression.span());
+            let binding_id = env.declare_variable(variable.clone(), expr_type, expression.span());
             Some((
                 typed_ast::Statement::Assignment {
                     variable: variable.clone(),
+                    binding_id,
                     expression: typed_expr,
                     span: *span,
                 },
@@ -86,9 +88,11 @@ fn elaborate_statement(
             span,
         } => {
             let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
+            let binding_id = env.lookup_variable(variable)?.1;
             Some((
                 typed_ast::Statement::VariableAssignment {
                     variable: variable.clone(),
+                    binding_id,
                     expression: typed_expr,
                     span: *span,
                 },
@@ -181,9 +185,10 @@ pub fn elaborate_expression(
             span,
         } => elaborate_call(db, tables, function, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
-            let ty = env.lookup_variable(name)?;
+            let (ty, binding_id) = env.lookup_variable(name)?;
             Some(typed_ast::Expression::Variable {
                 name: name.clone(),
+                binding_id,
                 ty,
                 span: *span,
             })

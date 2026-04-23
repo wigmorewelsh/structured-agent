@@ -10,6 +10,7 @@ use structured_agent_ast::ast::{
     Definition, Expression, Function, SelectClause, Statement, Type as AstType, TypeParam,
 };
 use structured_agent_ast::types::{FileId, Span, Spanned};
+use structured_agent_typed_ast::BindingId;
 
 use salsa::Accumulator;
 use std::collections::HashMap;
@@ -20,10 +21,11 @@ use super::db::{InternedFunctionName, InternedModuleName};
 
 #[derive(Debug, Clone)]
 pub struct TypeEnvironment {
-    pub variables: HashMap<String, (structured_agent_runtime::Type, Span)>,
+    pub variables: HashMap<String, (structured_agent_runtime::Type, BindingId, Span)>,
     pub type_params: HashMap<String, ()>,
     pub self_type: Option<DefinitionPath>,
     pub parent: Option<Box<TypeEnvironment>>,
+    id_alloc: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 pub struct CheckContext<'a> {
@@ -39,6 +41,7 @@ impl TypeEnvironment {
             type_params: HashMap::new(),
             self_type: None,
             parent: None,
+            id_alloc: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
         }
     }
 
@@ -56,6 +59,7 @@ impl TypeEnvironment {
             type_params: self.type_params.clone(),
             self_type: self.self_type.clone(),
             parent: Some(Box::new(self.clone())),
+            id_alloc: std::sync::Arc::clone(&self.id_alloc),
         }
     }
 
@@ -86,13 +90,21 @@ impl TypeEnvironment {
         name: String,
         var_type: structured_agent_runtime::Type,
         span: Span,
-    ) {
-        self.variables.insert(name, (var_type, span));
+    ) -> BindingId {
+        let id = BindingId(
+            self.id_alloc
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        );
+        self.variables.insert(name, (var_type, id, span));
+        id
     }
 
-    pub fn lookup_variable(&self, name: &str) -> Option<structured_agent_runtime::Type> {
-        if let Some((ty, _)) = self.variables.get(name) {
-            Some(ty.clone())
+    pub fn lookup_variable(
+        &self,
+        name: &str,
+    ) -> Option<(structured_agent_runtime::Type, BindingId)> {
+        if let Some((ty, id, _)) = self.variables.get(name) {
+            Some((ty.clone(), *id))
         } else if let Some(parent) = &self.parent {
             parent.lookup_variable(name)
         } else {
@@ -103,9 +115,9 @@ impl TypeEnvironment {
     pub fn lookup_variable_with_span(
         &self,
         name: &str,
-    ) -> Option<(structured_agent_runtime::Type, Span)> {
-        if let Some((ty, span)) = self.variables.get(name) {
-            Some((ty.clone(), *span))
+    ) -> Option<(structured_agent_runtime::Type, BindingId, Span)> {
+        if let Some((ty, id, span)) = self.variables.get(name) {
+            Some((ty.clone(), *id, *span))
         } else if let Some(parent) = &self.parent {
             parent.lookup_variable_with_span(name)
         } else {
@@ -364,7 +376,7 @@ fn check_statement(
             span,
         } => {
             let ty = synthesize_expression(db, tables, expression, &env, ctx)?;
-            let (existing_type, declaration_span) =
+            let (existing_type, _, declaration_span) =
                 env.lookup_variable_with_span(variable).or_accumulate(
                     db,
                     TypeError::UnknownVariable {
@@ -529,14 +541,16 @@ pub fn synthesize_expression(
             arguments,
             span,
         } => synthesize_call(db, tables, function, arguments, *span, env, ctx),
-        Expression::Variable { name, span } => env.lookup_variable(name).or_accumulate(
-            db,
-            TypeError::UnknownVariable {
-                name: name.clone(),
-                span: *span,
-                file_id: ctx.file_id,
-            },
-        ),
+        Expression::Variable { name, span } => {
+            env.lookup_variable(name).map(|(ty, _)| ty).or_accumulate(
+                db,
+                TypeError::UnknownVariable {
+                    name: name.clone(),
+                    span: *span,
+                    file_id: ctx.file_id,
+                },
+            )
+        }
         Expression::StringLiteral { .. } => Some(RT::string()),
         Expression::BooleanLiteral { .. } => Some(RT::boolean()),
         Expression::IntLiteral { .. } => Some(RT::int()),

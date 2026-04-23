@@ -268,6 +268,7 @@ pub fn get_function_sig<'db>(
         resolved_params.push(crate::typed_ast::Parameter {
             name: p.name.clone(),
             param_type,
+            binding_id: crate::typed_ast::BindingId(0),
             span: p.source_ref.1,
         });
     }

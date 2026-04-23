@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BindingId(pub u32);
+
 pub mod refs;
 pub use refs::{NoBody, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
@@ -46,6 +49,7 @@ pub enum Definition {
 pub struct Parameter {
     pub name: String,
     pub param_type: Type,
+    pub binding_id: BindingId,
     pub span: Span,
 }
 
@@ -71,11 +75,13 @@ pub enum Statement {
     Injection(Expression),
     Assignment {
         variable: String,
+        binding_id: BindingId,
         expression: Expression,
         span: Span,
     },
     VariableAssignment {
         variable: String,
+        binding_id: BindingId,
         expression: Expression,
         span: Span,
     },
@@ -123,6 +129,7 @@ pub enum Expression {
     },
     Variable {
         name: String,
+        binding_id: BindingId,
         ty: Type,
         span: Span,
     },

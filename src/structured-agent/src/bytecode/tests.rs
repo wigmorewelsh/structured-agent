@@ -971,6 +971,7 @@ mod vm_execution_tests {
             },
             AE::Variable { name, span } => typed_ast::Expression::Variable {
                 name: name.clone(),
+                binding_id: typed_ast::BindingId(0),
                 ty: Type::unit(),
                 span: *span,
             },
@@ -1065,6 +1066,7 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Statement::Assignment {
                 variable: variable.clone(),
+                binding_id: typed_ast::BindingId(0),
                 expression: ast_expr_to_typed(expression),
                 span: *span,
             },
@@ -1074,6 +1076,7 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Statement::VariableAssignment {
                 variable: variable.clone(),
+                binding_id: typed_ast::BindingId(0),
                 expression: ast_expr_to_typed(expression),
                 span: *span,
             },
@@ -1115,6 +1118,7 @@ mod vm_execution_tests {
                 .map(|p| typed_ast::Parameter {
                     name: p.name.clone(),
                     param_type: ast_type_to_rt(&p.param_type),
+                    binding_id: typed_ast::BindingId(0),
                     span: p.span,
                 })
                 .collect(),
