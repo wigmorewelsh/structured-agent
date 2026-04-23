@@ -1,0 +1,15 @@
+// Project tasks configuration. See https://zed.dev/docs/tasks for documentation.
+[
+  {
+    "label": "Run nextest",
+    "command": "cargo nextest run",
+  },
+  {
+    "label": "Run cargo check",
+    "command": "cargo check",
+  },
+  {
+    "label": "Run cargo build",
+    "command": "cargo build",
+  },
+]

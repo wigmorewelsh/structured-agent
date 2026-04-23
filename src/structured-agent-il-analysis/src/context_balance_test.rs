@@ -2,7 +2,7 @@
 mod tests {
     use super::super::test_helpers::make_function;
     use crate::{ContextBalanceAnalyzer, IlAnalyzer, IlWarning};
-    use structured_agent_il::Instruction;
+    use structured_agent_il::{Instruction, Slot};
 
     #[test]
     fn no_warning_for_balanced_ctx() {
@@ -10,22 +10,10 @@ mod tests {
             Instruction::CtxChild {
                 is_scope_boundary: false,
             },
-            Instruction::Decl {
-                name: "$tmp0".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$tmp0".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(0) },
             Instruction::CtxRestore,
-            Instruction::Decl {
-                name: "$ret".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$ret".to_string(),
-            },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(1) },
+            Instruction::Ret { var: Slot(1) },
         ];
         let function = make_function(instructions);
         let mut analyzer = ContextBalanceAnalyzer::new();
@@ -44,15 +32,8 @@ mod tests {
             },
             Instruction::CtxRestore,
             Instruction::CtxRestore,
-            Instruction::Decl {
-                name: "$ret".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$ret".to_string(),
-            },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(0) },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = ContextBalanceAnalyzer::new();
@@ -64,15 +45,8 @@ mod tests {
     fn warns_on_ctx_restore_without_child() {
         let instructions = vec![
             Instruction::CtxRestore,
-            Instruction::Decl {
-                name: "$ret".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$ret".to_string(),
-            },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(0) },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = ContextBalanceAnalyzer::new();
@@ -92,15 +66,8 @@ mod tests {
             Instruction::CtxChild {
                 is_scope_boundary: false,
             },
-            Instruction::Decl {
-                name: "$ret".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$ret".to_string(),
-            },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(0) },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = ContextBalanceAnalyzer::new();
@@ -118,9 +85,7 @@ mod tests {
             Instruction::CtxChild {
                 is_scope_boundary: false,
             },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = ContextBalanceAnalyzer::new();

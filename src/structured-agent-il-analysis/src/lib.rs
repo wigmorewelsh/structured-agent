@@ -1,15 +1,13 @@
 mod branch_target;
 mod call_arity;
 mod context_balance;
-mod double_drop;
-mod duplicate_decl;
 mod return_coverage;
 mod unreachable_instructions;
 mod variable_allocation;
-mod variable_drop;
 
 use codespan_reporting::diagnostic::Diagnostic;
 use structured_agent_ast::types::FileId;
+use structured_agent_il::slot::Slot;
 use structured_agent_il::{BytecodeRef, Instruction};
 
 #[cfg(test)]
@@ -25,12 +23,6 @@ mod call_arity_test;
 mod context_balance_test;
 
 #[cfg(test)]
-mod double_drop_test;
-
-#[cfg(test)]
-mod duplicate_decl_test;
-
-#[cfg(test)]
 mod return_coverage_test;
 
 #[cfg(test)]
@@ -39,61 +31,52 @@ mod unreachable_instructions_test;
 #[cfg(test)]
 mod variable_allocation_test;
 
-#[cfg(test)]
-mod variable_drop_test;
-
 pub use branch_target::BranchTargetAnalyzer;
 pub use call_arity::CallArityAnalyzer;
 pub use context_balance::ContextBalanceAnalyzer;
-pub use double_drop::DoubleDropAnalyzer;
-pub use duplicate_decl::DuplicateDeclAnalyzer;
 pub use return_coverage::ReturnCoverageAnalyzer;
 pub use unreachable_instructions::UnreachableInstructionAnalyzer;
 pub use variable_allocation::VariableAllocationAnalyzer;
-pub use variable_drop::VariableDropAnalyzer;
 
-pub fn instruction_reads(instruction: &Instruction) -> Vec<&str> {
+pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
     match instruction {
-        Instruction::Drop { name } => vec![name.as_str()],
-        Instruction::Mov { src, .. } => vec![src.as_str()],
-        Instruction::BrFalse { var, .. } => vec![var.as_str()],
-        Instruction::BrTrue { var, .. } => vec![var.as_str()],
-        Instruction::Switch { var, .. } => vec![var.as_str()],
-        Instruction::Ret { var } => vec![var.as_str()],
+        Instruction::Mov { src, .. } => vec![*src],
+        Instruction::BrFalse { var, .. } => vec![*var],
+        Instruction::BrTrue { var, .. } => vec![*var],
+        Instruction::Switch { var, .. } => vec![*var],
+        Instruction::Ret { var } => vec![*var],
         Instruction::CallBytecode { params, .. } | Instruction::CallExternal { params, .. } => {
-            params.iter().map(String::as_str).collect()
+            params.clone()
         }
-        Instruction::CtxEvent { var } => vec![var.as_str()],
-        Instruction::ListCreate { elements, .. } => elements.iter().map(String::as_str).collect(),
-        Instruction::LlmSelect { metadata_vars, .. } => {
-            metadata_vars.iter().map(String::as_str).collect()
-        }
-        Instruction::StructNew { fields, .. } => {
-            fields.iter().map(|(_, src)| src.as_str()).collect()
-        }
-        Instruction::StructGet { src, .. } => vec![src.as_str()],
+        Instruction::CtxEvent { var } => vec![*var],
+        Instruction::ListCreate { elements, .. } => elements.clone(),
+        Instruction::LlmSelect { metadata_vars, .. } => metadata_vars.clone(),
+        Instruction::StructNew { fields, .. } => fields.iter().map(|(_, src)| *src).collect(),
+        Instruction::StructGet { src, .. } => vec![*src],
+        Instruction::CallIndirect { params, .. } => params.clone(),
         _ => vec![],
     }
 }
 
-pub fn instruction_writes(instruction: &Instruction) -> Option<&str> {
+pub fn instruction_writes(instruction: &Instruction) -> Option<Slot> {
     match instruction {
-        Instruction::Decl { name } => Some(name.as_str()),
-        Instruction::LdcStr { dest, .. } => Some(dest.as_str()),
-        Instruction::LdcBool { dest, .. } => Some(dest.as_str()),
-        Instruction::LdcInt { dest, .. } => Some(dest.as_str()),
-        Instruction::LdcUnit { dest } => Some(dest.as_str()),
-        Instruction::Mov { dest, .. } => Some(dest.as_str()),
+        Instruction::LdcStr { dest, .. } => Some(*dest),
+        Instruction::LdcBool { dest, .. } => Some(*dest),
+        Instruction::LdcInt { dest, .. } => Some(*dest),
+        Instruction::LdcUnit { dest } => Some(*dest),
+        Instruction::Mov { dest, .. } => Some(*dest),
         Instruction::CallBytecode { dest, .. } | Instruction::CallExternal { dest, .. } => {
-            Some(dest.as_str())
+            Some(*dest)
         }
-        Instruction::MetaFunction { dest, .. } => Some(dest.as_str()),
-        Instruction::ListCreate { dest, .. } => Some(dest.as_str()),
-        Instruction::LlmPlaceholder { dest, .. } => Some(dest.as_str()),
-        Instruction::LlmSelect { dest, .. } => Some(dest.as_str()),
-        Instruction::LlmGenerate { dest, .. } => Some(dest.as_str()),
-        Instruction::StructNew { dest, .. } => Some(dest.as_str()),
-        Instruction::StructGet { dest, .. } => Some(dest.as_str()),
+        Instruction::LoadModule { dest, .. } => Some(*dest),
+        Instruction::CallIndirect { dest, .. } => Some(*dest),
+        Instruction::MetaFunction { dest, .. } => Some(*dest),
+        Instruction::ListCreate { dest, .. } => Some(*dest),
+        Instruction::LlmPlaceholder { dest, .. } => Some(*dest),
+        Instruction::LlmSelect { dest, .. } => Some(*dest),
+        Instruction::LlmGenerate { dest, .. } => Some(*dest),
+        Instruction::StructNew { dest, .. } => Some(*dest),
+        Instruction::StructGet { dest, .. } => Some(*dest),
         _ => None,
     }
 }
@@ -109,9 +92,6 @@ pub enum IlWarning {
         name: String,
         instruction_index: usize,
     },
-    VariableNotDropped {
-        name: String,
-    },
     InvalidBranchTarget {
         instruction_index: usize,
         target: i32,
@@ -124,14 +104,6 @@ pub enum IlWarning {
         depth: i32,
     },
     UnreachableInstruction {
-        instruction_index: usize,
-    },
-    DuplicateDeclaration {
-        name: String,
-        instruction_index: usize,
-    },
-    DoubleDrop {
-        name: String,
         instruction_index: usize,
     },
     CallArityMismatch {
@@ -152,9 +124,6 @@ impl IlWarning {
                 "variable `{}` used at instruction {} before being allocated",
                 name, instruction_index
             ),
-            IlWarning::VariableNotDropped { name } => {
-                format!("variable `{}` is allocated but never dropped", name)
-            }
             IlWarning::InvalidBranchTarget {
                 instruction_index,
                 target,
@@ -173,20 +142,6 @@ impl IlWarning {
             IlWarning::UnreachableInstruction { instruction_index } => {
                 format!("instruction {} is unreachable", instruction_index)
             }
-            IlWarning::DuplicateDeclaration {
-                name,
-                instruction_index,
-            } => format!(
-                "variable `{}` declared a second time at instruction {}",
-                name, instruction_index
-            ),
-            IlWarning::DoubleDrop {
-                name,
-                instruction_index,
-            } => format!(
-                "variable `{}` dropped a second time at instruction {}",
-                name, instruction_index
-            ),
             IlWarning::CallArityMismatch {
                 function_name,
                 expected,

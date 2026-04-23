@@ -334,7 +334,7 @@ fn elaborate_select(
     let first = &clauses[0];
     let typed_first_run = elaborate_expression(db, tables, &first.expression_to_run, env, ctx)?;
     let mut first_env = env.create_child();
-    first_env.declare_variable(
+    let first_result_bid = first_env.declare_variable(
         first.result_variable.clone(),
         typed_first_run.ty().clone(),
         first.expression_to_run.span(),
@@ -345,13 +345,14 @@ fn elaborate_select(
     let mut typed_clauses = vec![typed_ast::SelectClause {
         expression_to_run: typed_first_run,
         result_variable: first.result_variable.clone(),
+        result_variable_binding_id: first_result_bid,
         expression_next: typed_first_next,
         span: first.span,
     }];
     for clause in clauses.iter().skip(1) {
         let typed_run = elaborate_expression(db, tables, &clause.expression_to_run, env, ctx)?;
         let mut clause_env = env.create_child();
-        clause_env.declare_variable(
+        let clause_result_bid = clause_env.declare_variable(
             clause.result_variable.clone(),
             typed_run.ty().clone(),
             clause.expression_to_run.span(),
@@ -361,6 +362,7 @@ fn elaborate_select(
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
             result_variable: clause.result_variable.clone(),
+            result_variable_binding_id: clause_result_bid,
             expression_next: typed_next,
             span: clause.span,
         });

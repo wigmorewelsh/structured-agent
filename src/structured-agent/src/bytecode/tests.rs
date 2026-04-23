@@ -1318,30 +1318,6 @@ mod vm_execution_tests {
     }
 
     #[tokio::test]
-    async fn test_vm_drop_removes_variable() {
-        let code = r#"
-            fn test(): () {
-                let x = "temp"
-            }
-        "#;
-
-        let module = parse_and_typecheck(code);
-        let func = get_function(&module, "test");
-        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
-
-        let runtime: Arc<dyn RuntimeService> =
-            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
-        let context = Context::with_runtime(runtime.clone());
-        let vm = VM::new(runtime);
-
-        let frame = vec![None; compiled.slot_table.len()];
-        let (_returned_context, _result) = vm
-            .execute(&compiled.instructions, context, frame)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
     async fn test_vm_decl_creates_unit_variable() {
         let code = r#"
             fn test(): () {

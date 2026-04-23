@@ -2219,7 +2219,6 @@ dependencies = [
  "structured-agent-interpreter-runtime",
  "structured-agent-runtime",
  "structured-agent-typed-ast",
- "structured-agent-vm",
 ]
 
 [[package]]

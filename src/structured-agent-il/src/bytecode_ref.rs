@@ -14,6 +14,7 @@ pub struct BytecodeRef {
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub documentation: Option<String>,
+    pub slot_table: SlotTable,
 }
 
 impl BodyRef for BytecodeRef {}

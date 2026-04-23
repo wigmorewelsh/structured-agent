@@ -1,6 +1,27 @@
 use super::helpers::{make_context, parse_and_type_check};
-use structured_agent::bytecode::BytecodeCompiler;
+use nonempty::NonEmpty;
+use structured_agent::bytecode::{BytecodeCompiler, BytecodeFunctionExpr, BytecodeRef};
 use structured_agent::typed_ast;
+use structured_agent::types::Function;
+use structured_agent_runtime::DefinitionPath;
+
+fn make_bytecode_ref(compiled: structured_agent::bytecode::CompiledFunction) -> BytecodeRef {
+    BytecodeRef {
+        instructions: compiled.instructions,
+        labels: compiled.labels,
+        parameters: compiled.parameters,
+        return_type: compiled.return_type,
+        documentation: compiled.documentation,
+        slot_table: compiled.slot_table,
+    }
+}
+
+fn make_path(name: &str) -> DefinitionPath {
+    DefinitionPath::for_function(
+        DefinitionPath::for_module(NonEmpty::new("test".to_string())),
+        name,
+    )
+}
 
 #[tokio::test]
 async fn test_assignment_full_pipeline() {
@@ -21,33 +42,19 @@ fn test_assignment(): () {
             _ => None,
         })
         .collect();
-    let external_functions: Vec<_> = typed_module
-        .definitions
-        .iter()
-        .filter_map(|def| match def {
-            typed_ast::Definition::ExternalFunction(f) => Some(f),
-            _ => None,
-        })
-        .collect();
     assert_eq!(functions.len(), 1);
-    assert_eq!(external_functions.len(), 0);
 
     let function = &functions[0];
     assert_eq!(function.name, "test_assignment");
-    assert_eq!(function.body.statements.len(), 2);
 
-    let compiled_function = BytecodeCompiler::new().compile_function(function).unwrap();
-    let (context, _) = compiled_function
-        .execute(make_context(), vec![])
-        .await
+    let compiled = BytecodeCompiler::new()
+        .compile_to_bytecode(function)
         .unwrap();
+    let body_ref = make_bytecode_ref(compiled);
+    let func_expr = BytecodeFunctionExpr::new(make_path("test_assignment"), body_ref);
+    let (context, _) = func_expr.execute(make_context(), vec![]).await.unwrap();
 
-    let stored_value = context.get_variable("message");
-    assert!(stored_value.is_some());
-    assert_eq!(
-        stored_value.unwrap().value.as_string().unwrap(),
-        "Hello, World!"
-    );
+    assert_eq!(context.events_count(), 1);
 }
 
 #[tokio::test]
@@ -73,21 +80,14 @@ fn test_var_assignment(): () {
         .collect();
     assert_eq!(functions.len(), 1);
 
-    let compiled_function = BytecodeCompiler::new()
-        .compile_function(functions[0])
+    let compiled = BytecodeCompiler::new()
+        .compile_to_bytecode(functions[0])
         .unwrap();
-    let (context, _) = compiled_function
-        .execute(make_context(), vec![])
-        .await
-        .unwrap();
+    let body_ref = make_bytecode_ref(compiled);
+    let func_expr = BytecodeFunctionExpr::new(make_path("test_var_assignment"), body_ref);
+    let (context, _) = func_expr.execute(make_context(), vec![]).await.unwrap();
 
-    assert_eq!(
-        context.events_count(),
-        2,
-        "Expected 2 events from variable injections"
-    );
-    assert!(context.get_variable("greeting").is_some());
-    assert!(context.get_variable("name").is_some());
+    assert_eq!(context.events_count(), 2);
 }
 
 #[tokio::test]
@@ -108,32 +108,14 @@ fn test_return(): () {
             _ => None,
         })
         .collect();
-    let external_functions: Vec<_> = typed_module
-        .definitions
-        .iter()
-        .filter_map(|def| match def {
-            typed_ast::Definition::ExternalFunction(f) => Some(f),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(external_functions.len(), 0);
+    assert_eq!(functions.len(), 1);
 
-    let compiled_function = BytecodeCompiler::new()
-        .compile_function(functions[0])
+    let compiled = BytecodeCompiler::new()
+        .compile_to_bytecode(functions[0])
         .unwrap();
-    let (context, expr_result) = compiled_function
-        .execute(make_context(), vec![])
-        .await
-        .unwrap();
+    let body_ref = make_bytecode_ref(compiled);
+    let func_expr = BytecodeFunctionExpr::new(make_path("test_return"), body_ref);
+    let (_context, expr_result) = func_expr.execute(make_context(), vec![]).await.unwrap();
 
     assert_eq!(expr_result.value.type_name(), "Unit");
-    assert_eq!(
-        context
-            .get_variable("result")
-            .unwrap()
-            .value
-            .as_string()
-            .unwrap(),
-        "test value"
-    );
 }

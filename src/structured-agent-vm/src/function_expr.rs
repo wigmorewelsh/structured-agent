@@ -14,6 +14,7 @@ pub struct BytecodeFunctionExpr {
     instructions: Vec<structured_agent_il::Instruction>,
     labels: std::collections::HashMap<String, usize>,
     documentation: Option<String>,
+    slot_count: usize,
 }
 
 impl BytecodeFunctionExpr {
@@ -25,6 +26,7 @@ impl BytecodeFunctionExpr {
             instructions: body.instructions,
             labels: body.labels,
             documentation: body.documentation,
+            slot_count: body.slot_table.len(),
         }
     }
 }
@@ -52,6 +54,7 @@ impl Clone for BytecodeFunctionExpr {
             instructions: self.instructions.clone(),
             labels: self.labels.clone(),
             documentation: self.documentation.clone(),
+            slot_count: self.slot_count,
         }
     }
 }
@@ -72,18 +75,17 @@ impl Function for BytecodeFunctionExpr {
 
     async fn execute(
         &self,
-        mut context: Context,
+        context: Context,
         args: Vec<ExpressionResult>,
     ) -> Result<(Context, ExpressionResult), String> {
-        for (i, param) in self.parameters.iter().enumerate() {
-            context.declare_variable(param.name.clone(), args[i].clone());
+        let mut frame: Vec<Option<ExpressionResult>> = vec![None; self.slot_count];
+        for (i, arg) in args.iter().enumerate() {
+            frame[i + 1] = Some(arg.clone());
         }
 
         let vm = VM::new(context.runtime_arc());
-        let result = vm.execute(&self.instructions, context).await?;
-        let returned_context = result.0;
-        let returned_result = result.1;
-        Ok((returned_context, returned_result))
+        let result = vm.execute(&self.instructions, context, frame).await?;
+        Ok((result.0, result.1))
     }
 
     fn as_any(&self) -> &dyn Any {

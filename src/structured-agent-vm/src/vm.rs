@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use structured_agent_il::Instruction;
+use structured_agent_il::slot::Slot;
 use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
     ExpressionValue, RuntimeService,
@@ -11,6 +12,7 @@ use structured_agent_runtime::DefinitionPath;
 pub struct VMState {
     pc: usize,
     context: Context,
+    frame: Vec<Option<ExpressionResult>>,
 }
 
 pub struct VM {
@@ -26,8 +28,13 @@ impl VM {
         &self,
         instructions: &[Instruction],
         context: Context,
+        frame: Vec<Option<ExpressionResult>>,
     ) -> Result<(Context, ExpressionResult), String> {
-        let mut state = VMState { pc: 0, context };
+        let mut state = VMState {
+            pc: 0,
+            context,
+            frame,
+        };
 
         loop {
             if state.pc >= instructions.len() {
@@ -38,46 +45,54 @@ impl VM {
 
             state = match instruction {
                 Instruction::Nop => Self::advance_pc(state),
-                Instruction::Drop { name } => self.execute_drop(state, name),
-                Instruction::LdcStr { dest, value } => self.execute_ldc_str(state, dest, value),
-                Instruction::LdcBool { dest, value } => self.execute_ldc_bool(state, dest, *value),
-                Instruction::LdcInt { dest, value } => self.execute_ldc_int(state, dest, *value),
-                Instruction::LdcUnit { dest } => self.execute_ldc_unit(state, dest),
-                Instruction::Mov { dest, src } => self.execute_mov(state, dest, src)?,
-                Instruction::Decl { name } => self.execute_decl(state, name),
+                Instruction::LdcStr { dest, value } => self.execute_ldc_str(state, *dest, value),
+                Instruction::LdcBool { dest, value } => self.execute_ldc_bool(state, *dest, *value),
+                Instruction::LdcInt { dest, value } => self.execute_ldc_int(state, *dest, *value),
+                Instruction::LdcUnit { dest } => self.execute_ldc_unit(state, *dest),
+                Instruction::Mov { dest, src } => self.execute_mov(state, *dest, *src)?,
                 Instruction::Br { offset } => Self::branch(state, *offset as usize),
                 Instruction::BrFalse { var, offset } => {
-                    Self::branch_if_bool(state, var, *offset, false)?
+                    Self::branch_if_bool(state, *var, *offset, false)?
                 }
                 Instruction::BrTrue { var, offset } => {
-                    Self::branch_if_bool(state, var, *offset, true)?
+                    Self::branch_if_bool(state, *var, *offset, true)?
                 }
-                Instruction::Switch { var, offsets } => self.execute_switch(state, var, offsets)?,
+                Instruction::Switch { var, offsets } => {
+                    self.execute_switch(state, *var, offsets)?
+                }
                 Instruction::Ret { var } => {
-                    let (state, result) = self.execute_ret(state, var)?;
+                    let (state, result) = self.execute_ret(state, *var)?;
                     return Ok((state.context, result));
                 }
                 Instruction::Yield => return Err("Yield not yet implemented".to_string()),
                 Instruction::CallBytecode {
                     function_name,
+                    module_param_names,
                     params,
                     dest,
                 } => {
-                    self.execute_call(state, function_name, params, dest)
+                    self.execute_call(state, function_name, module_param_names, params, *dest)
                         .await?
                 }
                 Instruction::CallExternal {
                     function_name,
+                    module_param_names,
                     params,
                     dest,
                 } => {
-                    self.execute_external_call(state, function_name, params, dest)
-                        .await?
+                    self.execute_external_call(
+                        state,
+                        function_name,
+                        module_param_names,
+                        params,
+                        *dest,
+                    )
+                    .await?
                 }
                 Instruction::LoadModule { name, dest } => {
-                    self.execute_load_module(state, name, dest)
+                    self.execute_load_module(state, name, *dest)
                 }
-                Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
+                Instruction::CtxEvent { var } => self.execute_ctx_event(state, *var)?,
                 Instruction::CtxChild { is_scope_boundary } => {
                     self.execute_ctx_child(state, *is_scope_boundary)
                 }
@@ -85,32 +100,32 @@ impl VM {
                 Instruction::MetaFunction {
                     function_name,
                     dest,
-                } => self.execute_meta_function(state, function_name, dest)?,
+                } => self.execute_meta_function(state, function_name, *dest)?,
                 Instruction::ListCreate { dest, elements } => {
-                    self.execute_list_create(state, dest, elements)?
+                    self.execute_list_create(state, *dest, elements)?
                 }
                 Instruction::LlmPlaceholder {
                     dest,
                     param_name,
                     param_type,
                 } => {
-                    self.execute_llm_placeholder(state, dest, param_name, param_type)
+                    self.execute_llm_placeholder(state, *dest, param_name, param_type)
                         .await?
                 }
                 Instruction::LlmSelect {
                     metadata_vars,
                     dest,
-                } => self.execute_llm_select(state, metadata_vars, dest).await?,
+                } => self.execute_llm_select(state, metadata_vars, *dest).await?,
                 Instruction::LlmGenerate { dest, return_type } => {
-                    self.execute_llm_generate(state, dest, return_type).await?
+                    self.execute_llm_generate(state, *dest, return_type).await?
                 }
                 Instruction::StructNew {
                     dest,
                     struct_name: _,
                     fields,
-                } => self.execute_struct_new(state, dest, fields)?,
+                } => self.execute_struct_new(state, *dest, fields)?,
                 Instruction::StructGet { dest, src, field } => {
-                    self.execute_struct_get(state, dest, src, field)?
+                    self.execute_struct_get(state, *dest, *src, field)?
                 }
                 Instruction::CallIndirect {
                     module_param,
@@ -118,15 +133,15 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_indirect_call(state, module_param, fn_name, params, dest)
+                    self.execute_indirect_call(state, module_param, fn_name, params, *dest)
                         .await?
                 }
             };
         }
     }
 
-    fn execute_ldc_str(&self, mut state: VMState, dest: &str, value: &str) -> VMState {
-        Self::write_variable(
+    fn execute_ldc_str(&self, mut state: VMState, dest: Slot, value: &str) -> VMState {
+        Self::write_slot(
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::string(value)),
@@ -134,8 +149,8 @@ impl VM {
         Self::advance_pc(state)
     }
 
-    fn execute_ldc_bool(&self, mut state: VMState, dest: &str, value: bool) -> VMState {
-        Self::write_variable(
+    fn execute_ldc_bool(&self, mut state: VMState, dest: Slot, value: bool) -> VMState {
+        Self::write_slot(
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::boolean(value)),
@@ -143,8 +158,8 @@ impl VM {
         Self::advance_pc(state)
     }
 
-    fn execute_ldc_int(&self, mut state: VMState, dest: &str, value: i64) -> VMState {
-        Self::write_variable(
+    fn execute_ldc_int(&self, mut state: VMState, dest: Slot, value: i64) -> VMState {
+        Self::write_slot(
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::integer(value)),
@@ -152,8 +167,8 @@ impl VM {
         Self::advance_pc(state)
     }
 
-    fn execute_ldc_unit(&self, mut state: VMState, dest: &str) -> VMState {
-        Self::write_variable(
+    fn execute_ldc_unit(&self, mut state: VMState, dest: Slot) -> VMState {
+        Self::write_slot(
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::unit()),
@@ -161,33 +176,19 @@ impl VM {
         Self::advance_pc(state)
     }
 
-    fn execute_mov(&self, mut state: VMState, dest: &str, src: &str) -> Result<VMState, String> {
-        let value = Self::read_variable(&state, src)?;
-        state.context.assign_variable(dest.to_string(), value)?;
+    fn execute_mov(&self, mut state: VMState, dest: Slot, src: Slot) -> Result<VMState, String> {
+        let value = Self::read_slot(&state, src)?;
+        Self::write_slot(&mut state, dest, value);
         Ok(Self::advance_pc(state))
-    }
-
-    fn execute_decl(&self, mut state: VMState, name: &str) -> VMState {
-        Self::write_variable(
-            &mut state,
-            name,
-            ExpressionResult::new(ExpressionValue::unit()),
-        );
-        Self::advance_pc(state)
-    }
-
-    fn execute_drop(&self, mut state: VMState, name: &str) -> VMState {
-        state.context.remove_variable(name);
-        Self::advance_pc(state)
     }
 
     fn execute_switch(
         &self,
         state: VMState,
-        var: &str,
+        var: Slot,
         offsets: &[i32],
     ) -> Result<VMState, String> {
-        let value = Self::read_variable(&state, var)?;
+        let value = Self::read_slot(&state, var)?;
 
         let s = value.value.as_string().map_err(|_| {
             format!(
@@ -209,9 +210,9 @@ impl VM {
     fn execute_ret(
         &self,
         mut state: VMState,
-        var: &str,
+        var: Slot,
     ) -> Result<(VMState, ExpressionResult), String> {
-        let result = Self::read_variable(&state, var)?;
+        let result = Self::read_slot(&state, var)?;
         state.context.set_return_value(result.clone());
         Ok((state, result))
     }
@@ -220,15 +221,23 @@ impl VM {
         &self,
         state: VMState,
         function_name: &DefinitionPath,
-        params: &[String],
-        dest: &str,
+        module_param_names: &[String],
+        params: &[Slot],
+        dest: Slot,
     ) -> Result<VMState, String> {
         let func = self
             .runtime
             .get_bytecode_function(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        self.invoke_function(state, func, &function_name.to_string(), params, dest)
-            .await
+        self.invoke_function(
+            state,
+            func,
+            &function_name.to_string(),
+            module_param_names,
+            params,
+            dest,
+        )
+        .await
     }
 
     async fn invoke_function(
@@ -236,35 +245,29 @@ impl VM {
         mut state: VMState,
         func: Arc<dyn ExecutableFunction>,
         display_name: &str,
-        params: &[String],
-        dest: &str,
+        module_param_names: &[String],
+        params: &[Slot],
+        dest: Slot,
     ) -> Result<VMState, String> {
         let function_params = func.parameters();
 
         let mut args = Vec::new();
-        for var_name in params.iter() {
-            let value = Self::read_variable(&state, var_name)?;
-            args.push(value.clone());
+        for slot in params {
+            args.push(Self::read_slot(&state, *slot)?);
         }
-
-        let leading_count = args.len().saturating_sub(function_params.len());
 
         let evaluated_parameters: Vec<ExpressionParameter> = args
             .iter()
-            .enumerate()
-            .skip(leading_count)
-            .map(|(i, arg)| {
-                ExpressionParameter::new(
-                    function_params[i - leading_count].name.clone(),
-                    arg.value.clone(),
-                )
-            })
+            .zip(function_params.iter())
+            .map(|(arg, param)| ExpressionParameter::new(param.name.clone(), arg.value.clone()))
             .collect();
 
         let mut child_context = state.context.create_child(true);
 
-        for (i, var_name) in params.iter().enumerate().take(leading_count) {
-            child_context.declare_variable(var_name.clone(), args[i].clone());
+        for (i, name) in module_param_names.iter().enumerate() {
+            if let Some(val) = args.get(i) {
+                child_context.declare_variable(name.clone(), val.clone());
+            }
         }
 
         child_context.add_event(
@@ -283,7 +286,7 @@ impl VM {
             value: result.value.clone(),
         };
 
-        Self::write_variable(&mut state, dest, result_with_metadata);
+        Self::write_slot(&mut state, dest, result_with_metadata);
         Ok(Self::advance_pc(state))
     }
 
@@ -291,8 +294,9 @@ impl VM {
         &self,
         state: VMState,
         function_name: &DefinitionPath,
-        params: &[String],
-        dest: &str,
+        module_param_names: &[String],
+        params: &[Slot],
+        dest: Slot,
     ) -> Result<VMState, String> {
         static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
         let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
@@ -301,10 +305,10 @@ impl VM {
 
         let resolved_params: HashMap<String, ExpressionValue> = params
             .iter()
-            .filter_map(|name| {
-                Self::read_variable(&state, name)
+            .filter_map(|slot| {
+                Self::read_slot(&state, *slot)
                     .ok()
-                    .map(|r| (name.clone(), r.value))
+                    .map(|r| (format!("s{}", slot.0), r.value))
             })
             .collect();
 
@@ -323,10 +327,10 @@ impl VM {
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
         let state = self
-            .invoke_function(state, func, &lookup_name, params, dest)
+            .invoke_function(state, func, &lookup_name, module_param_names, params, dest)
             .await?;
 
-        let result = Self::read_variable(&state, dest)?;
+        let result = Self::read_slot(&state, dest)?;
 
         state
             .context
@@ -340,8 +344,8 @@ impl VM {
         Ok(state)
     }
 
-    fn execute_ctx_event(&self, mut state: VMState, var: &str) -> Result<VMState, String> {
-        let expr_result = Self::read_variable(&state, var)?;
+    fn execute_ctx_event(&self, mut state: VMState, var: Slot) -> Result<VMState, String> {
+        let expr_result = Self::read_slot(&state, var)?;
 
         state.context.add_event(
             expr_result.value.clone(),
@@ -356,6 +360,7 @@ impl VM {
         let new_state = VMState {
             pc: state.pc,
             context: child_context,
+            frame: state.frame,
         };
         Self::advance_pc(new_state)
     }
@@ -365,6 +370,7 @@ impl VM {
         let new_state = VMState {
             pc: state.pc,
             context: parent_context,
+            frame: state.frame,
         };
         Ok(Self::advance_pc(new_state))
     }
@@ -373,7 +379,7 @@ impl VM {
         &self,
         mut state: VMState,
         function_name: &DefinitionPath,
-        dest: &str,
+        dest: Slot,
     ) -> Result<VMState, String> {
         let func = self
             .runtime
@@ -384,7 +390,7 @@ impl VM {
         let metadata =
             ExpressionValue::metadata(&name_str, func.documentation().map(|s| s.to_string()));
 
-        Self::write_variable(&mut state, dest, ExpressionResult::new(metadata));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))
     }
 
@@ -392,9 +398,9 @@ impl VM {
         &self,
         mut state: VMState,
         name: &DefinitionPath,
-        dest: &str,
+        dest: Slot,
     ) -> VMState {
-        Self::write_variable(
+        Self::write_slot(
             &mut state,
             dest,
             ExpressionResult::new(ExpressionValue::module(name.clone())),
@@ -405,23 +411,23 @@ impl VM {
     fn execute_list_create(
         &self,
         mut state: VMState,
-        dest: &str,
-        element_vars: &[String],
+        dest: Slot,
+        element_slots: &[Slot],
     ) -> Result<VMState, String> {
-        let elements: Vec<ExpressionValue> = element_vars
+        let elements: Vec<ExpressionValue> = element_slots
             .iter()
-            .map(|var| Ok(Self::read_variable(&state, var)?.value))
+            .map(|slot| Ok(Self::read_slot(&state, *slot)?.value))
             .collect::<Result<_, String>>()?;
 
         let list_value = ExpressionValue::from_elements(elements)?;
-        Self::write_variable(&mut state, dest, ExpressionResult::new(list_value));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(list_value));
         Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_placeholder(
         &self,
         mut state: VMState,
-        dest: &str,
+        dest: Slot,
         param_name: &str,
         param_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
@@ -432,24 +438,24 @@ impl VM {
             .fill_parameter(&state.context, param_name, param_type)
             .await?;
 
-        Self::write_variable(&mut state, dest, ExpressionResult::new(value));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(value));
         Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_select(
         &self,
         mut state: VMState,
-        metadata_vars: &[String],
-        dest: &str,
+        metadata_slots: &[Slot],
+        dest: Slot,
     ) -> Result<VMState, String> {
         let mut metadata_values = Vec::new();
 
-        for var_name in metadata_vars {
-            let value = Self::read_variable(&state, var_name)?;
+        for slot in metadata_slots {
+            let value = Self::read_slot(&state, *slot)?;
             if value.value.type_name() != "Metadata" {
                 return Err(format!(
-                    "Expected Metadata value in variable {}, got {}",
-                    var_name,
+                    "Expected Metadata value in slot {}, got {}",
+                    slot.0,
                     value.value.type_name()
                 ));
             }
@@ -465,14 +471,14 @@ impl VM {
 
         let result = ExpressionResult::new(ExpressionValue::string(selected_index.to_string()));
 
-        Self::write_variable(&mut state, dest, result);
+        Self::write_slot(&mut state, dest, result);
         Ok(Self::advance_pc(state))
     }
 
     async fn execute_llm_generate(
         &self,
         mut state: VMState,
-        dest: &str,
+        dest: Slot,
         return_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
         let value = state
@@ -487,7 +493,7 @@ impl VM {
             .agent_handle()
             .publish(AgentMessageContent::String(value.format_for_llm()));
 
-        Self::write_variable(&mut state, dest, ExpressionResult::new(value));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(value));
         Ok(Self::advance_pc(state))
     }
 
@@ -501,24 +507,27 @@ impl VM {
         state
     }
 
-    fn read_variable(state: &VMState, name: &str) -> Result<ExpressionResult, String> {
+    fn read_slot(state: &VMState, slot: Slot) -> Result<ExpressionResult, String> {
         state
-            .context
-            .get_variable(name)
-            .ok_or_else(|| format!("Variable not found: {}", name))
+            .frame
+            .get(slot.0 as usize)
+            .and_then(|v| v.clone())
+            .ok_or_else(|| format!("Slot {} not initialized", slot.0))
     }
 
-    fn write_variable(state: &mut VMState, name: &str, value: ExpressionResult) {
-        state.context.declare_variable(name.to_string(), value);
+    fn write_slot(state: &mut VMState, slot: Slot, value: ExpressionResult) {
+        if let Some(entry) = state.frame.get_mut(slot.0 as usize) {
+            *entry = Some(value);
+        }
     }
 
     fn branch_if_bool(
         state: VMState,
-        var: &str,
+        var: Slot,
         offset: i32,
         expected: bool,
     ) -> Result<VMState, String> {
-        let value = Self::read_variable(&state, var)?;
+        let value = Self::read_slot(&state, var)?;
 
         let b = value.value.as_boolean().map_err(|_| {
             format!(
@@ -539,10 +548,13 @@ impl VM {
         state: VMState,
         module_param: &str,
         fn_name: &str,
-        params: &[String],
-        dest: &str,
+        params: &[Slot],
+        dest: Slot,
     ) -> Result<VMState, String> {
-        let module_val = Self::read_variable(&state, module_param)?;
+        let module_val = state
+            .context
+            .get_variable(module_param)
+            .ok_or_else(|| format!("Module param not found in context: {}", module_param))?;
         let module_name = module_val
             .value
             .as_module()
@@ -553,39 +565,39 @@ impl VM {
             .runtime
             .get_bytecode_function(&function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        self.invoke_function(state, func, &function_name.to_string(), params, dest)
+        self.invoke_function(state, func, &function_name.to_string(), &[], params, dest)
             .await
     }
 
     fn execute_struct_new(
         &self,
         mut state: VMState,
-        dest: &str,
-        fields: &[(String, String)],
+        dest: Slot,
+        fields: &[(String, Slot)],
     ) -> Result<VMState, String> {
         let field_values: Vec<(&str, ExpressionValue)> = fields
             .iter()
             .map(|(name, src)| {
-                let val = Self::read_variable(&state, src)?;
+                let val = Self::read_slot(&state, *src)?;
                 Ok((name.as_str(), val.value.clone()))
             })
             .collect::<Result<Vec<_>, String>>()?;
 
         let struct_value = ExpressionValue::struct_value(field_values);
-        Self::write_variable(&mut state, dest, ExpressionResult::new(struct_value));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(struct_value));
         Ok(Self::advance_pc(state))
     }
 
     fn execute_struct_get(
         &self,
         mut state: VMState,
-        dest: &str,
-        src: &str,
+        dest: Slot,
+        src: Slot,
         field: &str,
     ) -> Result<VMState, String> {
-        let src_val = Self::read_variable(&state, src)?;
+        let src_val = Self::read_slot(&state, src)?;
         let field_value = src_val.value.get_struct_field(field)?;
-        Self::write_variable(&mut state, dest, ExpressionResult::new(field_value));
+        Self::write_slot(&mut state, dest, ExpressionResult::new(field_value));
         Ok(Self::advance_pc(state))
     }
 }

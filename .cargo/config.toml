@@ -1,0 +1,2 @@
+[target.x86_64-apple-darwin]
+linker = "/Users/timwigmore-welsh/Projects/structured-agent/scripts/ld-signed.sh"

@@ -11,9 +11,7 @@ use crate::analysis::{
 use crate::ast::Module;
 use crate::bytecode::{BytecodeRef, BytecodeRefs, compile_metadata};
 use crate::diagnostics::{DiagnosticManager, DiagnosticReporter};
-use crate::il_analysis::{
-    IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer, VariableDropAnalyzer,
-};
+use crate::il_analysis::{IlAnalysisRunner, IlWarning, VariableAllocationAnalyzer};
 use crate::typecheck::TypeChecker;
 use crate::types::{ExternalFunctionDefinition, FileId, Parameter, Type};
 
@@ -293,9 +291,8 @@ fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Typ
 }
 
 fn analyse_il(metadata: &MetaData<BytecodeRefs>) -> Vec<IlWarning> {
-    let mut runner = IlAnalysisRunner::new()
-        .with_analyzer(Box::new(VariableAllocationAnalyzer::new()))
-        .with_analyzer(Box::new(VariableDropAnalyzer::new()));
+    let mut runner =
+        IlAnalysisRunner::new().with_analyzer(Box::new(VariableAllocationAnalyzer::new()));
     metadata
         .functions
         .values()

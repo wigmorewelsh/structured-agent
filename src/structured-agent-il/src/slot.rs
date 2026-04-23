@@ -1,5 +1,13 @@
+use std::fmt;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Slot(pub u32);
+
+impl fmt::Display for Slot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "s{}", self.0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotKind {
@@ -28,7 +36,11 @@ impl SlotTable {
 
     pub fn push(&mut self, kind: SlotKind, name: impl Into<String>) -> Slot {
         let slot = Slot(self.slots.len() as u32);
-        self.slots.push(SlotInfo { slot, kind, name: name.into() });
+        self.slots.push(SlotInfo {
+            slot,
+            kind,
+            name: name.into(),
+        });
         slot
     }
 

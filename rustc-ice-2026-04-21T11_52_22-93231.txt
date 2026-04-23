@@ -1,0 +1,50 @@
+thread 'rustc' panicked at /rustc-dev/b6f0945e4681bc4d2faa7c22c5f61dc36abf7dd2/library/alloc/src/vec/mod.rs:2852:36:
+slice index starts at 20 but ends at 18
+stack backtrace:
+   0:        0x114dc2dd7 - std::backtrace::Backtrace::create::h5407d97fde370e7b
+   1:        0x114dc2d25 - std::backtrace::Backtrace::force_capture::h5bacb9a437d8e09b
+   2:        0x112732bf6 - std[7032f7da8d6bf68a]::panicking::update_hook::<alloc[98a46281dcd6bcaf]::boxed::Box<rustc_driver_impl[87234074a053cbe]::install_ice_hook::{closure#1}>>::{closure#0}
+   3:        0x114dc3de1 - std::panicking::panic_with_hook::hfc4b60351e169d7e
+   4:        0x114dc3aa8 - std::panicking::panic_handler::{{closure}}::h801a399395c5a50e
+   5:        0x114dbcb29 - std::sys::backtrace::__rust_end_short_backtrace::ha22b2da92cb4e0d5
+   6:        0x114d9d204 - __rustc[2820174ead26b8c1]::rust_begin_unwind
+   7:        0x1182a626f - core::panicking::panic_fmt::hc41398d124e9f6af
+   8:        0x1182a56b6 - core::slice::index::slice_index_fail::do_panic::runtime::ha5b9056819fdf7cd
+   9:        0x1182a5556 - core::slice::index::slice_index_fail::h9561f4d981ec46ee
+  10:        0x1127f3818 - <rustc_errors[fa7eff4a34a4e282]::styled_buffer::StyledBuffer>::replace
+  11:        0x1127d0e65 - <rustc_errors[fa7eff4a34a4e282]::emitter::HumanEmitter>::emit_messages_default_inner::{closure#0}
+  12:        0x112800f7e - <rustc_errors[fa7eff4a34a4e282]::emitter::HumanEmitter as rustc_errors[fa7eff4a34a4e282]::emitter::Emitter>::emit_diagnostic
+  13:        0x1127db0ac - <rustc_errors[fa7eff4a34a4e282]::json::Diagnostic>::from_errors_diagnostic
+  14:        0x11280cb61 - <rustc_errors[fa7eff4a34a4e282]::json::JsonEmitter as rustc_errors[fa7eff4a34a4e282]::emitter::Emitter>::emit_diagnostic
+  15:        0x1127d6ffa - <rustc_errors[fa7eff4a34a4e282]::DiagCtxtInner>::emit_diagnostic::{closure#3}
+  16:        0x1126e22c1 - rustc_interface[56770afee9ab6c4a]::callbacks::track_diagnostic::<core[c668c751d3456a88]::option::Option<rustc_span[25e9643bd21aa3e5]::ErrorGuaranteed>>
+  17:        0x1127f0c49 - <rustc_errors[fa7eff4a34a4e282]::DiagCtxtInner>::emit_diagnostic
+  18:        0x1127eba2c - <rustc_errors[fa7eff4a34a4e282]::DiagCtxtHandle>::emit_diagnostic
+  19:        0x11280acbc - <() as rustc_errors[fa7eff4a34a4e282]::diagnostic::EmissionGuarantee>::emit_producing_guarantee
+  20:        0x1136d5875 - rustc_middle[32788d3665dba24a]::lint::lint_level::lint_level_impl
+  21:        0x113de64f4 - <rustc_passes[75eb7d840900a8b5]::dead::DeadVisitor>::lint_at_single_level
+  22:        0x113de4845 - <rustc_passes[75eb7d840900a8b5]::dead::DeadVisitor>::warn_multiple
+  23:        0x113e03873 - rustc_passes[75eb7d840900a8b5]::dead::check_mod_deathness
+  24:        0x11402215a - rustc_query_impl[eb1a837bb2501a52]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[eb1a837bb2501a52]::query_impl::check_mod_deathness::dynamic_query::{closure#2}::{closure#0}, rustc_middle[32788d3665dba24a]::query::erase::Erased<[u8; 0usize]>>
+  25:        0x11409c7fa - rustc_query_system[b7fd7249458a5cb8]::query::plumbing::try_execute_query::<rustc_query_impl[eb1a837bb2501a52]::DynamicConfig<rustc_query_system[b7fd7249458a5cb8]::query::caches::DefaultCache<rustc_span[25e9643bd21aa3e5]::def_id::LocalModDefId, rustc_middle[32788d3665dba24a]::query::erase::Erased<[u8; 0usize]>>, false, false, false>, rustc_query_impl[eb1a837bb2501a52]::plumbing::QueryCtxt, true>
+  26:        0x1141f6940 - rustc_query_impl[eb1a837bb2501a52]::query_impl::check_mod_deathness::get_query_incr::__rust_end_short_backtrace
+  27:        0x1131ea4bc - rustc_interface[56770afee9ab6c4a]::passes::analysis::{closure#0}
+  28:        0x11321fd3e - rustc_interface[56770afee9ab6c4a]::passes::analysis
+  29:        0x114024e3a - rustc_query_impl[eb1a837bb2501a52]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[eb1a837bb2501a52]::query_impl::analysis::dynamic_query::{closure#2}::{closure#0}, rustc_middle[32788d3665dba24a]::query::erase::Erased<[u8; 0usize]>>
+  30:        0x1140487ce - rustc_query_system[b7fd7249458a5cb8]::query::plumbing::try_execute_query::<rustc_query_impl[eb1a837bb2501a52]::DynamicConfig<rustc_query_system[b7fd7249458a5cb8]::query::caches::SingleCache<rustc_middle[32788d3665dba24a]::query::erase::Erased<[u8; 0usize]>>, false, false, false>, rustc_query_impl[eb1a837bb2501a52]::plumbing::QueryCtxt, true>
+  31:        0x114218aca - rustc_query_impl[eb1a837bb2501a52]::query_impl::analysis::get_query_incr::__rust_end_short_backtrace
+  32:        0x1126e0dd6 - rustc_interface[56770afee9ab6c4a]::passes::create_and_enter_global_ctxt::<core[c668c751d3456a88]::option::Option<rustc_interface[56770afee9ab6c4a]::queries::Linker>, rustc_driver_impl[87234074a053cbe]::run_compiler::{closure#0}::{closure#2}>
+  33:        0x112730010 - rustc_interface[56770afee9ab6c4a]::interface::run_compiler::<(), rustc_driver_impl[87234074a053cbe]::run_compiler::{closure#0}>::{closure#1}
+  34:        0x1127205e1 - std[7032f7da8d6bf68a]::sys::backtrace::__rust_begin_short_backtrace::<rustc_interface[56770afee9ab6c4a]::util::run_in_thread_with_globals<rustc_interface[56770afee9ab6c4a]::util::run_in_thread_pool_with_globals<rustc_interface[56770afee9ab6c4a]::interface::run_compiler<(), rustc_driver_impl[87234074a053cbe]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>
+  35:        0x112738b16 - <<std[7032f7da8d6bf68a]::thread::Builder>::spawn_unchecked_<rustc_interface[56770afee9ab6c4a]::util::run_in_thread_with_globals<rustc_interface[56770afee9ab6c4a]::util::run_in_thread_pool_with_globals<rustc_interface[56770afee9ab6c4a]::interface::run_compiler<(), rustc_driver_impl[87234074a053cbe]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>::{closure#1} as core[c668c751d3456a88]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  36:        0x114db881f - std::sys::thread::unix::Thread::new::thread_start::he5caaf2486b20bbc
+  37:     0x7ff81329ae4d - __pthread_start
+
+
+rustc version: 1.92.0-nightly (b6f0945e4 2025-10-08)
+platform: x86_64-apple-darwin
+
+query stack during panic:
+#0 [check_mod_deathness] checking deathness of variables in module `compiler::discovery`
+#1 [analysis] running analysis passes on this crate
+end of query stack

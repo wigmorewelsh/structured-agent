@@ -3,15 +3,13 @@ use structured_agent_il::{
     BytecodeRef, CompiledFunction, Instruction, builder::InstructionBuilder,
 };
 use structured_agent_typed_ast::BindingId;
-use structured_agent_vm::BytecodeFunctionExpr;
 
-use structured_agent_interpreter_runtime::ExecutableFunction;
 use structured_agent_runtime::Parameter;
 use structured_agent_runtime::symbols::FunctionKind;
 use structured_agent_typed_ast as typed_ast;
 use structured_agent_typed_ast::{NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     DefinitionPath, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
@@ -31,6 +29,11 @@ impl References for BytecodeRefs {
 
 pub struct BytecodeCompiler;
 
+struct CompilerCtx<'a> {
+    builder: &'a mut InstructionBuilder,
+    binding_id_to_slot: &'a HashMap<BindingId, Slot>,
+}
+
 impl BytecodeCompiler {
     pub fn new() -> Self {
         Self
@@ -43,45 +46,47 @@ impl BytecodeCompiler {
         let mut builder = InstructionBuilder::new();
 
         let _ret_slot = builder.alloc_slot(SlotKind::ReturnSlot, "$ret");
-        let mut binding_to_slot: HashMap<BindingId, Slot> = HashMap::new();
+        let mut binding_id_to_slot: HashMap<BindingId, Slot> = HashMap::new();
 
         for param in &typed_func.parameters {
             let slot = builder.alloc_slot(SlotKind::ValueParam, &param.name);
-            binding_to_slot.insert(param.binding_id, slot);
+            binding_id_to_slot.insert(param.binding_id, slot);
         }
 
         for (binding_id, name) in collect_binding_ids(&typed_func.body.statements) {
-            binding_to_slot
+            binding_id_to_slot
                 .entry(binding_id)
                 .or_insert_with(|| builder.alloc_slot(SlotKind::Local, &name));
         }
 
-        let _ = binding_to_slot;
+        let has_explicit_return = typed_func
+            .body
+            .statements
+            .iter()
+            .any(|s| matches!(s, typed_ast::Statement::Return(_)));
 
-        let mut has_explicit_return = false;
-        for stmt in &typed_func.body.statements {
-            if matches!(stmt, typed_ast::Statement::Return(_)) {
-                has_explicit_return = true;
-            }
-            self.compile_statement(&mut builder, stmt)?;
-        }
+        {
+            let mut ctx = CompilerCtx {
+                builder: &mut builder,
+                binding_id_to_slot: &binding_id_to_slot,
+            };
 
-        if !has_explicit_return {
-            let return_temp = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: return_temp.clone(),
-            });
-            if typed_func.return_type == structured_agent_runtime::Type::unit() {
-                builder.emit(Instruction::LdcUnit {
-                    dest: return_temp.clone(),
-                });
-            } else {
-                builder.emit(Instruction::LlmGenerate {
-                    dest: return_temp.clone(),
-                    return_type: typed_func.return_type.clone(),
-                });
+            for stmt in &typed_func.body.statements {
+                self.compile_statement(&mut ctx, stmt)?;
             }
-            builder.emit(Instruction::Ret { var: return_temp });
+
+            if !has_explicit_return {
+                let return_temp = ctx.builder.next_temp_slot();
+                if typed_func.return_type == structured_agent_runtime::Type::unit() {
+                    ctx.builder.emit(Instruction::LdcUnit { dest: return_temp });
+                } else {
+                    ctx.builder.emit(Instruction::LlmGenerate {
+                        dest: return_temp,
+                        return_type: typed_func.return_type.clone(),
+                    });
+                }
+                ctx.builder.emit(Instruction::Ret { var: return_temp });
+            }
         }
 
         let (instructions, labels, slot_table) = builder.build()?;
@@ -104,206 +109,170 @@ impl BytecodeCompiler {
 
     fn compile_statement(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         stmt: &typed_ast::Statement,
     ) -> Result<(), String> {
         match stmt {
-            typed_ast::Statement::Injection(expr) => self.compile_injection(builder, expr),
+            typed_ast::Statement::Injection(expr) => self.compile_injection(ctx, expr),
             typed_ast::Statement::Assignment {
-                variable,
+                binding_id,
                 expression,
                 ..
-            } => self.compile_assignment(builder, variable, expression),
+            } => self.compile_assignment(ctx, binding_id, expression),
             typed_ast::Statement::VariableAssignment {
-                variable,
+                binding_id,
                 expression,
                 ..
-            } => self.compile_variable_assignment(builder, variable, expression),
+            } => self.compile_variable_assignment(ctx, binding_id, expression),
             typed_ast::Statement::ExpressionStatement(expr) => {
-                self.compile_expression_statement(builder, expr)
+                self.compile_expression_statement(ctx, expr)
             }
             typed_ast::Statement::If {
                 condition,
                 body,
                 else_body,
                 ..
-            } => self.compile_if_statement(builder, condition, body, else_body.as_deref()),
+            } => self.compile_if_statement(ctx, condition, body, else_body.as_deref()),
             typed_ast::Statement::While {
                 condition, body, ..
-            } => self.compile_while_statement(builder, condition, body),
-            typed_ast::Statement::Return(expr) => self.compile_return_statement(builder, expr),
+            } => self.compile_while_statement(ctx, condition, body),
+            typed_ast::Statement::Return(expr) => self.compile_return_statement(ctx, expr),
         }
     }
 
     fn compile_injection(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         expr: &typed_ast::Expression,
     ) -> Result<(), String> {
-        let temp_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: temp_var.clone(),
-        });
-        self.compile_expression(builder, expr, &temp_var)?;
-        builder.emit(Instruction::CtxEvent {
-            var: temp_var.clone(),
-        });
-        builder.emit(Instruction::Drop { name: temp_var });
+        let temp_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, expr, temp_slot)?;
+        ctx.builder.emit(Instruction::CtxEvent { var: temp_slot });
         Ok(())
     }
 
     fn compile_assignment(
         &self,
-        builder: &mut InstructionBuilder,
-        variable: &str,
+        ctx: &mut CompilerCtx,
+        binding_id: &BindingId,
         expression: &typed_ast::Expression,
     ) -> Result<(), String> {
-        let temp_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: temp_var.clone(),
-        });
-        self.compile_expression(builder, expression, &temp_var)?;
-        builder.emit(Instruction::Decl {
-            name: variable.to_string(),
-        });
-        builder.emit(Instruction::Mov {
-            dest: variable.to_string(),
-            src: temp_var.clone(),
-        });
-        builder.emit(Instruction::Drop { name: temp_var });
-        Ok(())
+        let dest_slot = *ctx
+            .binding_id_to_slot
+            .get(binding_id)
+            .ok_or_else(|| format!("binding {:?} not found", binding_id))?;
+        self.compile_expression(ctx, expression, dest_slot)
     }
 
     fn compile_variable_assignment(
         &self,
-        builder: &mut InstructionBuilder,
-        variable: &str,
+        ctx: &mut CompilerCtx,
+        binding_id: &BindingId,
         expression: &typed_ast::Expression,
     ) -> Result<(), String> {
-        let temp_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: temp_var.clone(),
-        });
-        self.compile_expression(builder, expression, &temp_var)?;
-        builder.emit(Instruction::Mov {
-            dest: variable.to_string(),
-            src: temp_var.clone(),
-        });
-        builder.emit(Instruction::Drop { name: temp_var });
-        Ok(())
+        let dest_slot = *ctx
+            .binding_id_to_slot
+            .get(binding_id)
+            .ok_or_else(|| format!("binding {:?} not found", binding_id))?;
+        self.compile_expression(ctx, expression, dest_slot)
     }
 
     fn compile_expression_statement(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         expr: &typed_ast::Expression,
     ) -> Result<(), String> {
-        let temp_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: temp_var.clone(),
-        });
-        self.compile_expression(builder, expr, &temp_var)?;
-        builder.emit(Instruction::Drop { name: temp_var });
-        Ok(())
+        let temp_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, expr, temp_slot)
     }
 
     fn compile_if_statement(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         condition: &typed_ast::Expression,
         body: &[typed_ast::Statement],
         else_body: Option<&[typed_ast::Statement]>,
     ) -> Result<(), String> {
-        let if_start = format!("if_start_{}", builder.next_temp());
-        builder.emit_label(&if_start);
+        let cond_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, condition, cond_slot)?;
 
-        let cond_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: cond_var.clone(),
-        });
-        self.compile_expression(builder, condition, &cond_var)?;
+        let id = ctx.builder.next_label_id();
+        let else_label = format!("else_{}", id);
+        let end_label = format!("end_{}", id);
 
-        let else_label = format!("else_{}", builder.next_temp());
-        let end_label = format!("end_{}", builder.next_temp());
+        ctx.builder.emit_brfalse(cond_slot, &else_label);
 
-        builder.emit_brfalse(cond_var, &else_label);
-
-        builder.emit(Instruction::CtxChild {
+        ctx.builder.emit(Instruction::CtxChild {
             is_scope_boundary: false,
         });
         for stmt in body {
-            self.compile_statement(builder, stmt)?;
+            self.compile_statement(ctx, stmt)?;
         }
-        builder.emit(Instruction::CtxRestore);
-        builder.emit_br(&end_label);
+        ctx.builder.emit(Instruction::CtxRestore);
+        ctx.builder.emit_br(&end_label);
 
-        builder.emit_label(&else_label);
+        ctx.builder.emit_label(&else_label);
         if let Some(else_stmts) = else_body {
-            builder.emit(Instruction::CtxChild {
+            ctx.builder.emit(Instruction::CtxChild {
                 is_scope_boundary: false,
             });
             for stmt in else_stmts {
-                self.compile_statement(builder, stmt)?;
+                self.compile_statement(ctx, stmt)?;
             }
-            builder.emit(Instruction::CtxRestore);
+            ctx.builder.emit(Instruction::CtxRestore);
         }
 
-        builder.emit_label(&end_label);
-        builder.emit(Instruction::Nop);
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
         Ok(())
     }
 
     fn compile_while_statement(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         condition: &typed_ast::Expression,
         body: &[typed_ast::Statement],
     ) -> Result<(), String> {
-        let loop_start = format!("loop_start_{}", builder.next_temp());
-        let loop_end = format!("loop_end_{}", builder.next_temp());
+        let id = ctx.builder.next_label_id();
+        let loop_start = format!("loop_start_{}", id);
+        let loop_end = format!("loop_end_{}", id);
 
-        builder.emit_label(&loop_start);
+        ctx.builder.emit_label(&loop_start);
 
-        let cond_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: cond_var.clone(),
-        });
-        self.compile_expression(builder, condition, &cond_var)?;
-        builder.emit_brfalse(cond_var, &loop_end);
+        let cond_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, condition, cond_slot)?;
+        ctx.builder.emit_brfalse(cond_slot, &loop_end);
 
-        builder.emit(Instruction::CtxChild {
+        ctx.builder.emit(Instruction::CtxChild {
             is_scope_boundary: false,
         });
         for stmt in body {
-            self.compile_statement(builder, stmt)?;
+            self.compile_statement(ctx, stmt)?;
         }
-        builder.emit(Instruction::CtxRestore);
-        builder.emit_br(&loop_start);
+        ctx.builder.emit(Instruction::CtxRestore);
+        ctx.builder.emit_br(&loop_start);
 
-        builder.emit_label(&loop_end);
-        builder.emit(Instruction::Nop);
+        ctx.builder.emit_label(&loop_end);
+        ctx.builder.emit(Instruction::Nop);
         Ok(())
     }
 
     fn compile_return_statement(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         expr: &typed_ast::Expression,
     ) -> Result<(), String> {
-        let return_temp = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: return_temp.clone(),
-        });
-        self.compile_expression(builder, expr, &return_temp)?;
-        builder.emit(Instruction::Ret { var: return_temp });
+        let return_temp = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, expr, return_temp)?;
+        ctx.builder.emit(Instruction::Ret { var: return_temp });
         Ok(())
     }
 
     fn compile_expression(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         expr: &typed_ast::Expression,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
         match expr {
             typed_ast::Expression::Call {
@@ -314,7 +283,7 @@ impl BytecodeCompiler {
                 via_module_param,
                 ..
             } => self.compile_call_expression(
-                builder,
+                ctx,
                 resolved,
                 kind.clone(),
                 arguments,
@@ -322,203 +291,190 @@ impl BytecodeCompiler {
                 via_module_param.as_deref(),
                 dest_var,
             ),
-            typed_ast::Expression::Variable { name, .. } => {
-                Self::compile_variable_expression(builder, name, dest_var)
+            typed_ast::Expression::Variable { binding_id, .. } => {
+                Self::compile_variable_expression(ctx, binding_id, dest_var)
             }
             typed_ast::Expression::StringLiteral { value, .. } => {
-                Self::compile_string_literal(builder, value, dest_var)
+                Self::compile_string_literal(ctx, value, dest_var)
             }
             typed_ast::Expression::BooleanLiteral { value, .. } => {
-                Self::compile_boolean_literal(builder, *value, dest_var)
+                Self::compile_boolean_literal(ctx, *value, dest_var)
             }
             typed_ast::Expression::IntLiteral { value, .. } => {
-                Self::compile_int_literal(builder, *value, dest_var)
+                Self::compile_int_literal(ctx, *value, dest_var)
             }
             typed_ast::Expression::ListLiteral { elements, .. } => {
-                self.compile_list_literal(builder, elements, dest_var)
+                self.compile_list_literal(ctx, elements, dest_var)
             }
             typed_ast::Expression::Placeholder { ty, .. } => {
-                Self::compile_placeholder(builder, dest_var, ty)
+                Self::compile_placeholder(ctx, dest_var, ty)
             }
-            typed_ast::Expression::UnitLiteral { .. } => {
-                Self::compile_unit_literal(builder, dest_var)
-            }
+            typed_ast::Expression::UnitLiteral { .. } => Self::compile_unit_literal(ctx, dest_var),
             typed_ast::Expression::Select(select, _ty) => {
-                self.compile_select_expression(builder, select, dest_var)
+                self.compile_select_expression(ctx, select, dest_var)
             }
             typed_ast::Expression::IfElse {
                 condition,
                 then_expr,
                 else_expr,
                 ..
-            } => {
-                self.compile_if_else_expression(builder, condition, then_expr, else_expr, dest_var)
-            }
+            } => self.compile_if_else_expression(ctx, condition, then_expr, else_expr, dest_var),
             typed_ast::Expression::StructLiteral {
                 struct_name,
                 fields,
                 ..
-            } => self.compile_struct_literal(builder, struct_name, fields, dest_var),
+            } => self.compile_struct_literal(ctx, struct_name, fields, dest_var),
             typed_ast::Expression::FieldAccess { base, field, .. } => {
-                self.compile_field_access(builder, base, field, dest_var)
+                self.compile_field_access(ctx, base, field, dest_var)
             }
         }
     }
 
     fn compile_call_expression(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         function: &DefinitionPath,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
         module_params: &[(String, DefinitionPath)],
         via_module_param: Option<&str>,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
         if let Some(param_name) = via_module_param {
-            let mut arg_vars = Vec::new();
+            let mut arg_slots = Vec::new();
             for arg_expr in arguments {
-                let temp_var = builder.next_temp();
-                builder.emit(Instruction::Decl {
-                    name: temp_var.clone(),
-                });
-                self.compile_expression(builder, arg_expr, &temp_var)?;
-                arg_vars.push(temp_var);
+                let temp = ctx.builder.next_temp_slot();
+                self.compile_expression(ctx, arg_expr, temp)?;
+                arg_slots.push(temp);
             }
-            builder.emit(Instruction::CallIndirect {
+            ctx.builder.emit(Instruction::CallIndirect {
                 module_param: param_name.to_string(),
                 fn_name: function.last_name().to_string(),
-                params: arg_vars,
-                dest: dest_var.to_string(),
+                params: arg_slots,
+                dest: dest_var,
             });
             return Ok(());
         }
 
-        let mut leading_params = Vec::new();
+        let mut module_param_names: Vec<String> = Vec::new();
+        let mut params: Vec<Slot> = Vec::new();
         for (param_name, concrete_module) in module_params {
-            builder.emit(Instruction::Decl {
-                name: param_name.clone(),
-            });
-            builder.emit(Instruction::LoadModule {
+            let slot = ctx.builder.next_temp_slot();
+            ctx.builder.emit(Instruction::LoadModule {
                 name: concrete_module.clone(),
-                dest: param_name.clone(),
+                dest: slot,
             });
-            leading_params.push(param_name.clone());
+            module_param_names.push(param_name.clone());
+            params.push(slot);
         }
 
-        let mut params = leading_params;
         for arg_expr in arguments {
-            let temp_var = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: temp_var.clone(),
-            });
-            self.compile_expression(builder, arg_expr, &temp_var)?;
-            params.push(temp_var);
+            let temp = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, arg_expr, temp)?;
+            params.push(temp);
         }
 
         let instruction = match kind {
             FunctionKind::Bytecode => Instruction::CallBytecode {
                 function_name: function.clone(),
+                module_param_names: module_param_names.clone(),
                 params,
-                dest: dest_var.to_string(),
+                dest: dest_var,
             },
             FunctionKind::External => Instruction::CallExternal {
                 function_name: function.clone(),
+                module_param_names,
                 params,
-                dest: dest_var.to_string(),
+                dest: dest_var,
             },
         };
-        builder.emit(instruction);
+        ctx.builder.emit(instruction);
         Ok(())
     }
 
     fn compile_variable_expression(
-        builder: &mut InstructionBuilder,
-        name: &str,
-        dest_var: &str,
+        ctx: &mut CompilerCtx,
+        binding_id: &BindingId,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        builder.emit(Instruction::Mov {
-            dest: dest_var.to_string(),
-            src: name.to_string(),
+        let src = *ctx
+            .binding_id_to_slot
+            .get(binding_id)
+            .ok_or_else(|| format!("binding {:?} not found", binding_id))?;
+        ctx.builder.emit(Instruction::Mov {
+            dest: dest_var,
+            src,
         });
         Ok(())
     }
 
     fn compile_string_literal(
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         value: &str,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        builder.emit(Instruction::LdcStr {
-            dest: dest_var.to_string(),
+        ctx.builder.emit(Instruction::LdcStr {
+            dest: dest_var,
             value: value.to_string(),
         });
         Ok(())
     }
 
     fn compile_boolean_literal(
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         value: bool,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        builder.emit(Instruction::LdcBool {
-            dest: dest_var.to_string(),
+        ctx.builder.emit(Instruction::LdcBool {
+            dest: dest_var,
             value,
         });
         Ok(())
     }
 
     fn compile_int_literal(
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         value: i64,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        builder.emit(Instruction::LdcInt {
-            dest: dest_var.to_string(),
+        ctx.builder.emit(Instruction::LdcInt {
+            dest: dest_var,
             value,
         });
         Ok(())
     }
 
-    fn compile_unit_literal(
-        builder: &mut InstructionBuilder,
-        dest_var: &str,
-    ) -> Result<(), String> {
-        builder.emit(Instruction::LdcUnit {
-            dest: dest_var.to_string(),
-        });
+    fn compile_unit_literal(ctx: &mut CompilerCtx, dest_var: Slot) -> Result<(), String> {
+        ctx.builder.emit(Instruction::LdcUnit { dest: dest_var });
         Ok(())
     }
 
     fn compile_list_literal(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         elements: &[typed_ast::Expression],
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        let mut element_vars = Vec::new();
+        let mut element_slots = Vec::new();
         for elem in elements {
-            let temp_var = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: temp_var.clone(),
-            });
-            self.compile_expression(builder, elem, &temp_var)?;
-            element_vars.push(temp_var);
+            let temp = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, elem, temp)?;
+            element_slots.push(temp);
         }
-        builder.emit(Instruction::ListCreate {
-            dest: dest_var.to_string(),
-            elements: element_vars,
+        ctx.builder.emit(Instruction::ListCreate {
+            dest: dest_var,
+            elements: element_slots,
         });
         Ok(())
     }
 
     fn compile_placeholder(
-        builder: &mut InstructionBuilder,
-        dest_var: &str,
+        ctx: &mut CompilerCtx,
+        dest_var: Slot,
         ty: &structured_agent_runtime::Type,
     ) -> Result<(), String> {
-        builder.emit(Instruction::LlmPlaceholder {
-            dest: dest_var.to_string(),
+        ctx.builder.emit(Instruction::LlmPlaceholder {
+            dest: dest_var,
             param_name: "placeholder".to_string(),
             param_type: ty.clone(),
         });
@@ -527,22 +483,20 @@ impl BytecodeCompiler {
 
     fn compile_select_expression(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         select: &typed_ast::SelectExpression,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        let select_start = format!("select_start_{}", builder.next_temp());
-        builder.emit_label(&select_start);
-
-        builder.emit(Instruction::Decl {
-            name: dest_var.to_string(),
-        });
+        let select_id = ctx.builder.next_label_id();
+        let select_start = format!("select_start_{}", select_id);
+        ctx.builder.emit_label(&select_start);
 
         let mut clause_labels = Vec::new();
-        let mut metadata_vars = Vec::new();
+        let mut metadata_slots = Vec::new();
 
         for i in 0..select.clauses.len() {
-            let label = format!("clause_{}_{}", i, builder.next_temp());
+            let label_id = ctx.builder.next_label_id();
+            let label = format!("clause_{}_{}", i, label_id);
             clause_labels.push(label.clone());
 
             let function_name = if let typed_ast::Expression::Call { resolved, .. } =
@@ -553,138 +507,116 @@ impl BytecodeCompiler {
                 return Err(format!("select clause {} expression is not a Call", i));
             };
 
-            let meta_var = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: meta_var.clone(),
-            });
-            builder.emit(Instruction::MetaFunction {
+            let meta_slot = ctx.builder.next_temp_slot();
+            ctx.builder.emit(Instruction::MetaFunction {
                 function_name,
-                dest: meta_var.clone(),
+                dest: meta_slot,
             });
-            metadata_vars.push(meta_var);
+            metadata_slots.push(meta_slot);
         }
 
-        let choice_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: choice_var.clone(),
-        });
-        builder.emit(Instruction::LlmSelect {
-            metadata_vars: metadata_vars.clone(),
-            dest: choice_var.clone(),
+        let choice_slot = ctx.builder.next_temp_slot();
+        ctx.builder.emit(Instruction::LlmSelect {
+            metadata_vars: metadata_slots,
+            dest: choice_slot,
         });
 
-        for meta_var in &metadata_vars {
-            builder.emit(Instruction::Drop {
-                name: meta_var.clone(),
-            });
-        }
+        ctx.builder.emit_switch(choice_slot, clause_labels.clone());
 
-        builder.emit_switch(choice_var.clone(), clause_labels.clone());
-        builder.emit(Instruction::Drop { name: choice_var });
-
-        let end_label = format!("select_end_{}", builder.next_temp());
+        let end_id = ctx.builder.next_label_id();
+        let end_label = format!("select_end_{}", end_id);
 
         for (i, clause) in select.clauses.iter().enumerate() {
-            builder.emit_label(&clause_labels[i]);
+            ctx.builder.emit_label(&clause_labels[i]);
 
-            builder.emit(Instruction::CtxChild {
-                is_scope_boundary: false,
-            });
+            let temp_result = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, &clause.expression_to_run, temp_result)?;
 
-            let temp_result = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: temp_result.clone(),
-            });
-            self.compile_expression(builder, &clause.expression_to_run, &temp_result)?;
-
-            builder.emit(Instruction::Decl {
-                name: clause.result_variable.clone(),
-            });
-            builder.emit(Instruction::Mov {
-                dest: clause.result_variable.clone(),
+            let result_slot = *ctx
+                .binding_id_to_slot
+                .get(&clause.result_variable_binding_id)
+                .ok_or_else(|| {
+                    format!(
+                        "select result binding {:?} not found",
+                        clause.result_variable_binding_id
+                    )
+                })?;
+            ctx.builder.emit(Instruction::Mov {
+                dest: result_slot,
                 src: temp_result,
             });
 
-            self.compile_expression(builder, &clause.expression_next, dest_var)?;
+            self.compile_expression(ctx, &clause.expression_next, dest_var)?;
 
-            builder.emit(Instruction::CtxRestore);
-            builder.emit_br(&end_label);
+            ctx.builder.emit_br(&end_label);
         }
 
-        builder.emit_label(&end_label);
-        builder.emit(Instruction::Nop);
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
         Ok(())
     }
 
     fn compile_if_else_expression(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         condition: &typed_ast::Expression,
         then_expr: &typed_ast::Expression,
         else_expr: &typed_ast::Expression,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        let cond_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: cond_var.clone(),
-        });
-        self.compile_expression(builder, condition, &cond_var)?;
+        let cond_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, condition, cond_slot)?;
 
-        let else_label = format!("ifelse_else_{}", builder.next_temp());
-        let end_label = format!("ifelse_end_{}", builder.next_temp());
+        let id = ctx.builder.next_label_id();
+        let else_label = format!("ifelse_else_{}", id);
+        let end_label = format!("ifelse_end_{}", id);
 
-        builder.emit_brfalse(cond_var, &else_label);
+        ctx.builder.emit_brfalse(cond_slot, &else_label);
 
-        self.compile_expression(builder, then_expr, dest_var)?;
-        builder.emit_br(&end_label);
+        self.compile_expression(ctx, then_expr, dest_var)?;
+        ctx.builder.emit_br(&end_label);
 
-        builder.emit_label(&else_label);
-        self.compile_expression(builder, else_expr, dest_var)?;
+        ctx.builder.emit_label(&else_label);
+        self.compile_expression(ctx, else_expr, dest_var)?;
 
-        builder.emit_label(&end_label);
-        builder.emit(Instruction::Nop);
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
         Ok(())
     }
 
     fn compile_struct_literal(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         struct_name: &str,
         fields: &[(String, typed_ast::Expression)],
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        let mut field_vars = Vec::new();
+        let mut field_slots = Vec::new();
         for (field_name, field_expr) in fields {
-            let temp_var = builder.next_temp();
-            builder.emit(Instruction::Decl {
-                name: temp_var.clone(),
-            });
-            self.compile_expression(builder, field_expr, &temp_var)?;
-            field_vars.push((field_name.clone(), temp_var));
+            let temp = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, field_expr, temp)?;
+            field_slots.push((field_name.clone(), temp));
         }
-        builder.emit(Instruction::StructNew {
-            dest: dest_var.to_string(),
+        ctx.builder.emit(Instruction::StructNew {
+            dest: dest_var,
             struct_name: struct_name.to_string(),
-            fields: field_vars,
+            fields: field_slots,
         });
         Ok(())
     }
 
     fn compile_field_access(
         &self,
-        builder: &mut InstructionBuilder,
+        ctx: &mut CompilerCtx,
         base: &typed_ast::Expression,
         field: &str,
-        dest_var: &str,
+        dest_var: Slot,
     ) -> Result<(), String> {
-        let base_var = builder.next_temp();
-        builder.emit(Instruction::Decl {
-            name: base_var.clone(),
-        });
-        self.compile_expression(builder, base, &base_var)?;
-        builder.emit(Instruction::StructGet {
-            dest: dest_var.to_string(),
-            src: base_var,
+        let base_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, base, base_slot)?;
+        ctx.builder.emit(Instruction::StructGet {
+            dest: dest_var,
+            src: base_slot,
             field: field.to_string(),
         });
         Ok(())
@@ -697,76 +629,121 @@ impl Default for BytecodeCompiler {
     }
 }
 
-impl BytecodeCompiler {
-    pub fn compile_function(
-        &self,
-        typed_func: &typed_ast::Function,
-    ) -> Result<Box<dyn ExecutableFunction>, String> {
-        let compiled = self.compile_to_bytecode(typed_func)?;
-        let body = BytecodeRef {
-            instructions: compiled.instructions,
-            labels: compiled.labels,
-            parameters: compiled.parameters,
-            return_type: compiled.return_type,
-            documentation: compiled.documentation,
-        };
-        let bytecode_expr = BytecodeFunctionExpr::new(compiled.name, body);
-        Ok(Box::new(bytecode_expr))
+fn collect_from_expr(
+    expr: &typed_ast::Expression,
+    result: &mut Vec<(BindingId, String)>,
+    seen: &mut HashSet<BindingId>,
+) {
+    match expr {
+        typed_ast::Expression::Select(select, _) => {
+            for clause in &select.clauses {
+                if seen.insert(clause.result_variable_binding_id) {
+                    result.push((
+                        clause.result_variable_binding_id,
+                        clause.result_variable.clone(),
+                    ));
+                }
+                collect_from_expr(&clause.expression_to_run, result, seen);
+                collect_from_expr(&clause.expression_next, result, seen);
+            }
+        }
+        typed_ast::Expression::Call { arguments, .. } => {
+            for arg in arguments {
+                collect_from_expr(arg, result, seen);
+            }
+        }
+        typed_ast::Expression::ListLiteral { elements, .. } => {
+            for e in elements {
+                collect_from_expr(e, result, seen);
+            }
+        }
+        typed_ast::Expression::IfElse {
+            condition,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            collect_from_expr(condition, result, seen);
+            collect_from_expr(then_expr, result, seen);
+            collect_from_expr(else_expr, result, seen);
+        }
+        typed_ast::Expression::StructLiteral { fields, .. } => {
+            for (_, e) in fields {
+                collect_from_expr(e, result, seen);
+            }
+        }
+        typed_ast::Expression::FieldAccess { base, .. } => {
+            collect_from_expr(base, result, seen);
+        }
+        _ => {}
     }
 }
 
 fn collect_binding_ids(statements: &[typed_ast::Statement]) -> Vec<(BindingId, String)> {
     let mut result: Vec<(BindingId, String)> = Vec::new();
-    let mut seen: std::collections::HashSet<BindingId> = std::collections::HashSet::new();
+    let mut seen: HashSet<BindingId> = HashSet::new();
+    collect_binding_ids_inner(statements, &mut result, &mut seen);
+    result
+}
 
+fn collect_binding_ids_inner(
+    statements: &[typed_ast::Statement],
+    result: &mut Vec<(BindingId, String)>,
+    seen: &mut HashSet<BindingId>,
+) {
     for stmt in statements {
         match stmt {
             typed_ast::Statement::Assignment {
                 binding_id,
                 variable,
+                expression,
                 ..
             } => {
                 if seen.insert(*binding_id) {
                     result.push((*binding_id, variable.clone()));
                 }
+                collect_from_expr(expression, result, seen);
             }
             typed_ast::Statement::VariableAssignment {
                 binding_id,
                 variable,
+                expression,
                 ..
             } => {
                 if seen.insert(*binding_id) {
                     result.push((*binding_id, variable.clone()));
                 }
+                collect_from_expr(expression, result, seen);
             }
             typed_ast::Statement::If {
-                body, else_body, ..
+                condition,
+                body,
+                else_body,
+                ..
             } => {
-                for (id, name) in collect_binding_ids(body) {
-                    if seen.insert(id) {
-                        result.push((id, name));
-                    }
-                }
+                collect_from_expr(condition, result, seen);
+                collect_binding_ids_inner(body, result, seen);
                 if let Some(else_stmts) = else_body {
-                    for (id, name) in collect_binding_ids(else_stmts) {
-                        if seen.insert(id) {
-                            result.push((id, name));
-                        }
-                    }
+                    collect_binding_ids_inner(else_stmts, result, seen);
                 }
             }
-            typed_ast::Statement::While { body, .. } => {
-                for (id, name) in collect_binding_ids(body) {
-                    if seen.insert(id) {
-                        result.push((id, name));
-                    }
-                }
+            typed_ast::Statement::While {
+                condition, body, ..
+            } => {
+                collect_from_expr(condition, result, seen);
+                collect_binding_ids_inner(body, result, seen);
             }
-            _ => {}
+            typed_ast::Statement::ExpressionStatement(expr) => {
+                collect_from_expr(expr, result, seen);
+            }
+            typed_ast::Statement::Injection(expr) => {
+                collect_from_expr(expr, result, seen);
+            }
+            typed_ast::Statement::Return(expr) => {
+                collect_from_expr(expr, result, seen);
+            }
         }
     }
-
-    result
 }
 
 pub fn compile_metadata(
@@ -785,6 +762,7 @@ pub fn compile_metadata(
                     parameters: compiled.parameters,
                     return_type: compiled.return_type,
                     documentation: compiled.documentation,
+                    slot_table: compiled.slot_table,
                 })
             }
             TypedCheckerAstRef::ImplFunction(f, _, FunctionKind::Bytecode) => {
@@ -795,6 +773,7 @@ pub fn compile_metadata(
                     parameters: compiled.parameters,
                     return_type: compiled.return_type,
                     documentation: compiled.documentation,
+                    slot_table: compiled.slot_table,
                 })
             }
             _ => None,

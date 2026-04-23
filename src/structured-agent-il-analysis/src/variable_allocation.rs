@@ -23,23 +23,21 @@ impl IlAnalyzer for VariableAllocationAnalyzer {
     }
 
     fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
-        let mut allocated: HashSet<String> =
-            function.parameters.iter().map(|p| p.name.clone()).collect();
-
+        let param_count = function.parameters.len();
+        let mut initialized: HashSet<u32> = (1..=(param_count as u32)).collect();
         let mut warnings = Vec::new();
 
         for (index, instruction) in function.instructions.iter().enumerate() {
-            for var in instruction_reads(instruction) {
-                if !allocated.contains(var) {
+            for slot in instruction_reads(instruction) {
+                if !initialized.contains(&slot.0) {
                     warnings.push(IlWarning::VariableUsedBeforeAllocation {
-                        name: var.to_string(),
+                        name: format!("s{}", slot.0),
                         instruction_index: index,
                     });
                 }
             }
-
             if let Some(dest) = instruction_writes(instruction) {
-                allocated.insert(dest.to_string());
+                initialized.insert(dest.0);
             }
         }
 

@@ -6,14 +6,15 @@ pub struct InstructionBuilder {
     instructions: Vec<Instruction>,
     labels: HashMap<String, usize>,
     pending_labels: Vec<(usize, String, PendingJumpKind)>,
-    temp_counter: usize,
+    temp_counter: u32,
+    label_counter: u32,
     slot_table: SlotTable,
 }
 
 enum PendingJumpKind {
     Br,
-    BrFalse(String),
-    SwitchCase(String, usize),
+    BrFalse(Slot),
+    SwitchCase(Slot, usize),
 }
 
 impl InstructionBuilder {
@@ -23,6 +24,7 @@ impl InstructionBuilder {
             labels: HashMap::new(),
             pending_labels: Vec::new(),
             temp_counter: 0,
+            label_counter: 0,
             slot_table: SlotTable::new(),
         }
     }
@@ -43,34 +45,37 @@ impl InstructionBuilder {
         self.instructions.push(Instruction::Br { offset: 0 });
     }
 
-    pub fn emit_brfalse(&mut self, var: String, label: &str) {
+    pub fn emit_brfalse(&mut self, var: Slot, label: &str) {
         let position = self.instructions.len();
-        self.pending_labels.push((
-            position,
-            label.to_string(),
-            PendingJumpKind::BrFalse(var.clone()),
-        ));
+        self.pending_labels
+            .push((position, label.to_string(), PendingJumpKind::BrFalse(var)));
         self.instructions
             .push(Instruction::BrFalse { var, offset: 0 });
     }
 
-    pub fn emit_switch(&mut self, var: String, case_labels: Vec<String>) {
+    pub fn emit_switch(&mut self, var: Slot, case_labels: Vec<String>) {
         let position = self.instructions.len();
         for (index, label) in case_labels.iter().enumerate() {
             self.pending_labels.push((
                 position,
                 label.clone(),
-                PendingJumpKind::SwitchCase(var.clone(), index),
+                PendingJumpKind::SwitchCase(var, index),
             ));
         }
         let offsets = vec![0; case_labels.len()];
         self.instructions.push(Instruction::Switch { var, offsets });
     }
 
-    pub fn next_temp(&mut self) -> String {
-        let temp = format!("$tmp{}", self.temp_counter);
+    pub fn next_temp_slot(&mut self) -> Slot {
+        let idx = self.temp_counter;
         self.temp_counter += 1;
-        temp
+        self.alloc_slot(SlotKind::Temp, format!("$t{}", idx))
+    }
+
+    pub fn next_label_id(&mut self) -> u32 {
+        let id = self.label_counter;
+        self.label_counter += 1;
+        id
     }
 
     pub fn alloc_slot(&mut self, kind: SlotKind, name: impl Into<String>) -> Slot {
@@ -105,7 +110,7 @@ impl InstructionBuilder {
                         var: switch_var,
                         offsets,
                     } = &mut self.instructions[position]
-                        && switch_var == &var
+                        && *switch_var == var
                     {
                         offsets[index] = target_position;
                     }

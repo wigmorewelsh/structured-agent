@@ -1,19 +1,14 @@
 #[cfg(test)]
 mod tests {
     use crate::{BranchTargetAnalyzer, IlAnalyzer, IlWarning};
-    use structured_agent_il::Instruction;
+    use structured_agent_il::{Instruction, Slot};
 
     use super::super::test_helpers::make_function;
 
     #[test]
     fn no_warning_for_valid_br() {
         let instructions = vec![
-            Instruction::Decl {
-                name: "$tmp0".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$tmp0".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(0) },
             Instruction::Br { offset: 0 },
         ];
         let function = make_function(instructions);
@@ -25,26 +20,16 @@ mod tests {
     #[test]
     fn no_warning_for_valid_brfalse() {
         let instructions = vec![
-            Instruction::Decl {
-                name: "cond".to_string(),
-            },
             Instruction::LdcBool {
-                dest: "cond".to_string(),
+                dest: Slot(0),
                 value: false,
             },
-            Instruction::Decl {
-                name: "$ret".to_string(),
-            },
-            Instruction::LdcUnit {
-                dest: "$ret".to_string(),
-            },
+            Instruction::LdcUnit { dest: Slot(1) },
             Instruction::BrFalse {
-                var: "cond".to_string(),
+                var: Slot(0),
                 offset: 3,
             },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::Ret { var: Slot(1) },
         ];
         let function = make_function(instructions);
         let mut analyzer = BranchTargetAnalyzer::new();
@@ -56,9 +41,7 @@ mod tests {
     fn warns_on_negative_br_offset() {
         let instructions = vec![
             Instruction::Br { offset: -1 },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = BranchTargetAnalyzer::new();
@@ -77,9 +60,7 @@ mod tests {
     fn warns_on_out_of_bounds_br_offset() {
         let instructions = vec![
             Instruction::Br { offset: 99 },
-            Instruction::Ret {
-                var: "$ret".to_string(),
-            },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = BranchTargetAnalyzer::new();
@@ -97,20 +78,15 @@ mod tests {
     #[test]
     fn warns_on_each_invalid_switch_offset() {
         let instructions = vec![
-            Instruction::Decl {
-                name: "idx".to_string(),
-            },
             Instruction::LdcInt {
-                dest: "idx".to_string(),
+                dest: Slot(0),
                 value: 0,
             },
             Instruction::Switch {
-                var: "idx".to_string(),
+                var: Slot(0),
                 offsets: vec![1, -1, 99],
             },
-            Instruction::Ret {
-                var: "idx".to_string(),
-            },
+            Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
         let mut analyzer = BranchTargetAnalyzer::new();

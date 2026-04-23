@@ -1,103 +1,116 @@
 use std::fmt;
 use structured_agent_runtime::{DefinitionPath, Type};
 
+use crate::slot::Slot;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    /// No operation (used as jump target)
     Nop,
 
-    /// Drop variable from context (cleanup temporary)
-    Drop { name: String },
+    LdcStr {
+        dest: Slot,
+        value: String,
+    },
+    LdcBool {
+        dest: Slot,
+        value: bool,
+    },
+    LdcInt {
+        dest: Slot,
+        value: i64,
+    },
+    LdcUnit {
+        dest: Slot,
+    },
 
-    /// Load string constant into variable
-    LdcStr { dest: String, value: String },
-    /// Load boolean constant into variable
-    LdcBool { dest: String, value: bool },
-    /// Load integer constant into variable
-    LdcInt { dest: String, value: i64 },
-    /// Load unit value into variable
-    LdcUnit { dest: String },
+    Mov {
+        dest: Slot,
+        src: Slot,
+    },
 
-    /// Copy variable value (full ExpressionResult)
-    Mov { dest: String, src: String },
-    /// Declare new variable in current context, allowing outer scope declaration before inner scope assignment
-    Decl { name: String },
-
-    /// Unconditional jump
-    Br { offset: i32 },
-    /// Jump if variable is false
-    BrFalse { var: String, offset: i32 },
-    /// Jump if variable is true
-    BrTrue { var: String, offset: i32 },
-    /// Jump based on variable's integer value
-    Switch { var: String, offsets: Vec<i32> },
-    /// Return with variable's value, exit function
-    Ret { var: String },
-    /// Pause execution for durable execution checkpoint
+    Br {
+        offset: i32,
+    },
+    BrFalse {
+        var: Slot,
+        offset: i32,
+    },
+    BrTrue {
+        var: Slot,
+        offset: i32,
+    },
+    Switch {
+        var: Slot,
+        offsets: Vec<i32>,
+    },
+    Ret {
+        var: Slot,
+    },
     Yield,
 
-    /// Call a bytecode function with parameters and store result in destination
     CallBytecode {
         function_name: DefinitionPath,
-        params: Vec<String>,
-        dest: String,
+        module_param_names: Vec<String>,
+        params: Vec<Slot>,
+        dest: Slot,
     },
-    /// Call an external function with parameters and store result in destination
     CallExternal {
         function_name: DefinitionPath,
-        params: Vec<String>,
-        dest: String,
+        module_param_names: Vec<String>,
+        params: Vec<Slot>,
+        dest: Slot,
     },
-    /// Load a module reference into a variable
-    LoadModule { name: DefinitionPath, dest: String },
-    /// Call a function through a module parameter variable
+    LoadModule {
+        name: DefinitionPath,
+        dest: Slot,
+    },
     CallIndirect {
         module_param: String,
         fn_name: String,
-        params: Vec<String>,
-        dest: String,
+        params: Vec<Slot>,
+        dest: Slot,
     },
 
-    /// Inject variable's value into context events (adds Event to context)
-    CtxEvent { var: String },
-    /// Create child context (true=function boundary, false=nested statement like loop/if/select)
-    CtxChild { is_scope_boundary: bool },
-    /// Return to parent context
+    CtxEvent {
+        var: Slot,
+    },
+    CtxChild {
+        is_scope_boundary: bool,
+    },
     CtxRestore,
 
-    /// Get metadata for a function
     MetaFunction {
         function_name: DefinitionPath,
-        dest: String,
+        dest: Slot,
     },
 
-    /// Create list from element variables
-    ListCreate { dest: String, elements: Vec<String> },
+    ListCreate {
+        dest: Slot,
+        elements: Vec<Slot>,
+    },
 
-    /// Await LLM to fill placeholder, store in dest
     LlmPlaceholder {
-        dest: String,
+        dest: Slot,
         param_name: String,
         param_type: Type,
     },
-    /// Await LLM clause choice, store selected index in dest
     LlmSelect {
-        metadata_vars: Vec<String>,
-        dest: String,
+        metadata_vars: Vec<Slot>,
+        dest: Slot,
     },
-    /// Await LLM generation with context, store result in dest
-    LlmGenerate { dest: String, return_type: Type },
+    LlmGenerate {
+        dest: Slot,
+        return_type: Type,
+    },
 
-    /// Create a new struct value from named field variables
     StructNew {
-        dest: String,
+        dest: Slot,
         struct_name: String,
-        fields: Vec<(String, String)>,
+        fields: Vec<(String, Slot)>,
     },
-    /// Read a single field from a struct value into dest
     StructGet {
-        dest: String,
-        src: String,
+        dest: Slot,
+        src: Slot,
         field: String,
     },
 }
@@ -107,37 +120,18 @@ impl fmt::Display for Instruction {
         match self {
             Instruction::Nop => write!(f, "nop"),
 
-            Instruction::Drop { name } => write!(f, "drop {}", name),
-
             Instruction::LdcStr { dest, value } => {
                 write!(f, "ldc.str {}, \"{}\"", dest, value.escape_default())
             }
-            Instruction::LdcBool { dest, value } => {
-                write!(f, "ldc.bool {}, {}", dest, value)
-            }
-            Instruction::LdcInt { dest, value } => {
-                write!(f, "ldc.int {}, {}", dest, value)
-            }
-            Instruction::LdcUnit { dest } => {
-                write!(f, "ldc.unit {}", dest)
-            }
+            Instruction::LdcBool { dest, value } => write!(f, "ldc.bool {}, {}", dest, value),
+            Instruction::LdcInt { dest, value } => write!(f, "ldc.int {}, {}", dest, value),
+            Instruction::LdcUnit { dest } => write!(f, "ldc.unit {}", dest),
 
-            Instruction::Mov { dest, src } => {
-                write!(f, "mov {}, {}", dest, src)
-            }
-            Instruction::Decl { name } => {
-                write!(f, "decl {}", name)
-            }
+            Instruction::Mov { dest, src } => write!(f, "mov {}, {}", dest, src),
 
-            Instruction::Br { offset } => {
-                write!(f, "br {}", offset)
-            }
-            Instruction::BrFalse { var, offset } => {
-                write!(f, "brfalse {}, {}", var, offset)
-            }
-            Instruction::BrTrue { var, offset } => {
-                write!(f, "brtrue {}, {}", var, offset)
-            }
+            Instruction::Br { offset } => write!(f, "br {}", offset),
+            Instruction::BrFalse { var, offset } => write!(f, "brfalse {}, {}", var, offset),
+            Instruction::BrTrue { var, offset } => write!(f, "brtrue {}, {}", var, offset),
             Instruction::Switch { var, offsets } => {
                 write!(f, "switch {}, [", var)?;
                 for (i, offset) in offsets.iter().enumerate() {
@@ -148,17 +142,14 @@ impl fmt::Display for Instruction {
                 }
                 write!(f, "]")
             }
-            Instruction::Ret { var } => {
-                write!(f, "ret {}", var)
-            }
-            Instruction::Yield => {
-                write!(f, "yield")
-            }
+            Instruction::Ret { var } => write!(f, "ret {}", var),
+            Instruction::Yield => write!(f, "yield"),
 
             Instruction::CallBytecode {
                 function_name,
                 params,
                 dest,
+                ..
             } => {
                 write!(f, "call.bytecode {}, [", function_name)?;
                 for (i, var) in params.iter().enumerate() {
@@ -173,6 +164,7 @@ impl fmt::Display for Instruction {
                 function_name,
                 params,
                 dest,
+                ..
             } => {
                 write!(f, "call.external {}, [", function_name)?;
                 for (i, var) in params.iter().enumerate() {
@@ -184,25 +176,8 @@ impl fmt::Display for Instruction {
                 write!(f, "], {}", dest)
             }
 
-            Instruction::CtxEvent { var } => {
-                write!(f, "ctx.event {}", var)
-            }
-            Instruction::CtxChild { is_scope_boundary } => {
-                write!(f, "ctx.child {}", is_scope_boundary)
-            }
-            Instruction::CtxRestore => {
-                write!(f, "ctx.restore")
-            }
-
-            Instruction::MetaFunction {
-                function_name,
-                dest,
-            } => {
-                write!(f, "meta.function {}, {}", function_name, dest)
-            }
-
             Instruction::LoadModule { name, dest } => {
-                write!(f, "load.module {}, {}", name.to_string(), dest)
+                write!(f, "load.module {}, {}", name, dest)
             }
             Instruction::CallIndirect {
                 module_param,
@@ -218,6 +193,19 @@ impl fmt::Display for Instruction {
                     write!(f, "{}", var)?;
                 }
                 write!(f, "], {}", dest)
+            }
+
+            Instruction::CtxEvent { var } => write!(f, "ctx.event {}", var),
+            Instruction::CtxChild { is_scope_boundary } => {
+                write!(f, "ctx.child {}", is_scope_boundary)
+            }
+            Instruction::CtxRestore => write!(f, "ctx.restore"),
+
+            Instruction::MetaFunction {
+                function_name,
+                dest,
+            } => {
+                write!(f, "meta.function {}, {}", function_name, dest)
             }
 
             Instruction::ListCreate { dest, elements } => {
