@@ -6,42 +6,47 @@ mod instruction_display_tests {
 
     #[test]
     fn test_ldc_str_display() {
+        use structured_agent_il::Slot;
         let instr = Instruction::LdcStr {
-            dest: "x".to_string(),
+            dest: Slot(0),
             value: "hello".to_string(),
         };
-        assert_eq!(format!("{}", instr), "ldc.str x, \"hello\"");
+        assert_eq!(format!("{}", instr), "ldc.str s0, \"hello\"");
     }
 
     #[test]
     fn test_call_bytecode_display() {
+        use structured_agent_il::Slot;
         let instr = Instruction::CallBytecode {
             function_name: DefinitionPath::for_function(
                 DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
-            params: vec!["x".to_string(), "y".to_string()],
-            dest: "result".to_string(),
+            module_param_names: vec![],
+            params: vec![Slot(0), Slot(1)],
+            dest: Slot(2),
         };
         assert_eq!(
             format!("{}", instr),
-            "call.bytecode mymod::foo, [x, y], result"
+            "call.bytecode mymod::foo, [s0, s1], s2"
         );
     }
 
     #[test]
     fn test_call_external_display() {
+        use structured_agent_il::Slot;
         let instr = Instruction::CallExternal {
             function_name: DefinitionPath::for_function(
                 DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
-            params: vec!["x".to_string(), "y".to_string()],
-            dest: "result".to_string(),
+            module_param_names: vec![],
+            params: vec![Slot(0), Slot(1)],
+            dest: Slot(2),
         };
         assert_eq!(
             format!("{}", instr),
-            "call.external mymod::foo, [x, y], result"
+            "call.external mymod::foo, [s0, s1], s2"
         );
     }
 
@@ -61,28 +66,24 @@ mod instruction_display_tests {
 
     #[test]
     fn test_struct_new_display() {
+        use structured_agent_il::Slot;
         let instr = Instruction::StructNew {
-            dest: "p".to_string(),
+            dest: Slot(0),
             struct_name: "Point".to_string(),
-            fields: vec![
-                ("x".to_string(), "$tmp0".to_string()),
-                ("y".to_string(), "$tmp1".to_string()),
-            ],
+            fields: vec![("x".to_string(), Slot(1)), ("y".to_string(), Slot(2))],
         };
-        assert_eq!(
-            format!("{}", instr),
-            "struct.new p, Point, {x: $tmp0, y: $tmp1}"
-        );
+        assert_eq!(format!("{}", instr), "struct.new s0, Point, {x: s1, y: s2}");
     }
 
     #[test]
     fn test_struct_get_display() {
+        use structured_agent_il::Slot;
         let instr = Instruction::StructGet {
-            dest: "$tmp0".to_string(),
-            src: "p".to_string(),
+            dest: Slot(0),
+            src: Slot(1),
             field: "x".to_string(),
         };
-        assert_eq!(format!("{}", instr), "struct.get $tmp0, p, x");
+        assert_eq!(format!("{}", instr), "struct.get s0, s1, x");
     }
 }
 
@@ -232,9 +233,8 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): String {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "hello"
-      2: ret $tmp0
+      0: ldc.str s1, "hello"
+      1: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -251,9 +251,8 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Boolean {
-      0: decl $tmp0
-      1: ldc.bool $tmp0, true
-      2: ret $tmp0
+      0: ldc.bool s1, true
+      1: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -270,14 +269,9 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "test"
-      2: decl x
-      3: mov x, $tmp0
-      4: drop $tmp0
-      5: decl $tmp1
-      6: ldc.unit $tmp1
-      7: ret $tmp1
+      0: ldc.str s1, "test"
+      1: ldc.unit s2
+      2: ret s2
 }
 "#;
         compile_and_check(code, expected);
@@ -294,13 +288,10 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "event"
-      2: ctx.event $tmp0
-      3: drop $tmp0
-      4: decl $tmp1
-      5: ldc.unit $tmp1
-      6: ret $tmp1
+      0: ldc.str s1, "event"
+      1: ctx.event s1
+      2: ldc.unit s2
+      3: ret s2
 }
 "#;
         compile_and_check(code, expected);
@@ -318,13 +309,10 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): String {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: ldc.str $tmp1, "arg1"
-      3: decl $tmp2
-      4: ldc.bool $tmp2, true
-      5: call.external test::foo, [$tmp1, $tmp2], $tmp0
-      6: ret $tmp0
+      0: ldc.str s2, "arg1"
+      1: ldc.bool s3, true
+      2: call.external test::foo, [s2, s3], s1
+      3: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -345,29 +333,22 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-  if_start_$tmp0:
-      0: decl $tmp1
-      1: ldc.bool $tmp1, true
-      2: brfalse $tmp1, 10
-      3: ctx.child false
-      4: decl $tmp4
-      5: ldc.str $tmp4, "then"
-      6: ctx.event $tmp4
-      7: drop $tmp4
-      8: ctx.restore
-      9: br 16
-  else_$tmp2:
-     10: ctx.child false
-     11: decl $tmp5
-     12: ldc.str $tmp5, "else"
-     13: ctx.event $tmp5
-     14: drop $tmp5
-     15: ctx.restore
-  end_$tmp3:
-     16: nop
-     17: decl $tmp6
-     18: ldc.unit $tmp6
-     19: ret $tmp6
+      0: ldc.bool s1, true
+      1: brfalse s1, 7
+      2: ctx.child false
+      3: ldc.str s2, "then"
+      4: ctx.event s2
+      5: ctx.restore
+      6: br 11
+  else_0:
+      7: ctx.child false
+      8: ldc.str s3, "else"
+      9: ctx.event s3
+     10: ctx.restore
+  end_0:
+     11: nop
+     12: ldc.unit s4
+     13: ret s4
 }
 "#;
         compile_and_check(code, expected);
@@ -386,22 +367,18 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-  loop_start_$tmp0:
-      0: decl $tmp2
-      1: ldc.bool $tmp2, true
-      2: brfalse $tmp2, 10
-      3: ctx.child false
-      4: decl $tmp3
-      5: ldc.str $tmp3, "loop"
-      6: ctx.event $tmp3
-      7: drop $tmp3
-      8: ctx.restore
-      9: br 0
-  loop_end_$tmp1:
-     10: nop
-     11: decl $tmp4
-     12: ldc.unit $tmp4
-     13: ret $tmp4
+  loop_start_0:
+      0: ldc.bool s1, true
+      1: brfalse s1, 7
+      2: ctx.child false
+      3: ldc.str s2, "loop"
+      4: ctx.event s2
+      5: ctx.restore
+      6: br 0
+  loop_end_0:
+      7: nop
+      8: ldc.unit s3
+      9: ret s3
 }
 "#;
         compile_and_check(code, expected);
@@ -418,13 +395,10 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): List<String> {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: ldc.str $tmp1, "a"
-      3: decl $tmp2
-      4: ldc.str $tmp2, "b"
-      5: list.create $tmp0, [$tmp1, $tmp2]
-      6: ret $tmp0
+      0: ldc.str s2, "a"
+      1: ldc.str s3, "b"
+      2: list.create s1, [s2, s3]
+      3: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -443,18 +417,11 @@ fn greet(name: String): () {
         let expected = r#"fn greet(
     name: String
 ): Unit {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "Hello"
-      2: decl message
-      3: mov message, $tmp0
-      4: drop $tmp0
-      5: decl $tmp1
-      6: mov $tmp1, message
-      7: ctx.event $tmp1
-      8: drop $tmp1
-      9: decl $tmp2
-     10: ldc.unit $tmp2
-     11: ret $tmp2
+      0: ldc.str s2, "Hello"
+      1: mov s3, s2
+      2: ctx.event s3
+      3: ldc.unit s4
+      4: ret s4
 }
 "#;
         compile_and_check_named(code, "greet", expected);
@@ -474,16 +441,10 @@ fn greet(name: String): () {
     x: String,
     y: Boolean
 ): String {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: mov $tmp1, x
-      3: call.external test::process, [$tmp1], $tmp0
-      4: decl result
-      5: mov result, $tmp0
-      6: drop $tmp0
-      7: decl $tmp2
-      8: mov $tmp2, result
-      9: ret $tmp2
+      0: mov s4, s1
+      1: call.external test::process, [s4], s3
+      2: mov s5, s3
+      3: ret s5
 }
 "#;
         compile_and_check_named(code, "calculate", expected);
@@ -509,40 +470,25 @@ fn greet(name: String): () {
     items: List<String>,
     filter: Boolean
 ): String {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "initial"
-      2: decl result
-      3: mov result, $tmp0
-      4: drop $tmp0
-  if_start_$tmp1:
-      5: decl $tmp2
-      6: mov $tmp2, filter
-      7: brfalse $tmp2, 21
-      8: ctx.child false
-      9: decl $tmp5
-     10: decl $tmp6
-     11: mov $tmp6, items
-     12: call.external test::transform, [$tmp6], $tmp5
-     13: mov result, $tmp5
-     14: drop $tmp5
-     15: decl $tmp7
-     16: mov $tmp7, result
-     17: ctx.event $tmp7
-     18: drop $tmp7
-     19: ctx.restore
-     20: br 27
-  else_$tmp3:
-     21: ctx.child false
-     22: decl $tmp8
-     23: ldc.str $tmp8, "skipped"
-     24: ctx.event $tmp8
-     25: drop $tmp8
-     26: ctx.restore
-  end_$tmp4:
-     27: nop
-     28: decl $tmp9
-     29: mov $tmp9, result
-     30: ret $tmp9
+      0: ldc.str s3, "initial"
+      1: mov s4, s2
+      2: brfalse s4, 10
+      3: ctx.child false
+      4: mov s5, s1
+      5: call.external test::transform, [s5], s3
+      6: mov s6, s3
+      7: ctx.event s6
+      8: ctx.restore
+      9: br 14
+  else_0:
+     10: ctx.child false
+     11: ldc.str s7, "skipped"
+     12: ctx.event s7
+     13: ctx.restore
+  end_0:
+     14: nop
+     15: mov s8, s3
+     16: ret s8
 }
 "#;
         compile_and_check_named(code, "process_items", expected);
@@ -564,44 +510,26 @@ fn greet(name: String): () {
         let expected = r#"fn test(
 
 ): String {
-      0: decl $tmp0
-  select_start_$tmp1:
-      1: decl $tmp0
-      2: decl $tmp3
-      3: meta.function test::analyze, $tmp3
-      4: decl $tmp5
-      5: meta.function test::summarize, $tmp5
-      6: decl $tmp6
-      7: llm.select [$tmp3, $tmp5], $tmp6
-      8: drop $tmp3
-      9: drop $tmp5
-     10: switch $tmp6, [12, 22]
-     11: drop $tmp6
-  clause_0_$tmp2:
-     12: ctx.child false
-     13: decl $tmp8
-     14: decl $tmp9
-     15: ldc.str $tmp9, "code"
-     16: call.external test::analyze, [$tmp9], $tmp8
-     17: decl result
-     18: mov result, $tmp8
-     19: mov $tmp0, result
-     20: ctx.restore
-     21: br 32
-  clause_1_$tmp4:
-     22: ctx.child false
-     23: decl $tmp10
-     24: decl $tmp11
-     25: ldc.str $tmp11, "text"
-     26: call.external test::summarize, [$tmp11], $tmp10
-     27: decl summary
-     28: mov summary, $tmp10
-     29: mov $tmp0, summary
-     30: ctx.restore
-     31: br 32
-  select_end_$tmp7:
-     32: nop
-     33: ret $tmp0
+  select_start_0:
+      0: meta.function test::analyze, s4
+      1: meta.function test::summarize, s5
+      2: llm.select [s4, s5], s6
+      3: switch s6, [4, 9]
+  clause_0_1:
+      4: ldc.str s8, "code"
+      5: call.external test::analyze, [s8], s7
+      6: mov s1, s7
+      7: mov s3, s1
+      8: br 14
+  clause_1_2:
+      9: ldc.str s10, "text"
+     10: call.external test::summarize, [s10], s9
+     11: mov s2, s9
+     12: mov s3, s2
+     13: br 14
+  select_end_3:
+     14: nop
+     15: ret s3
 }
 "#;
         compile_and_check(code, expected);
@@ -618,17 +546,15 @@ fn greet(name: String): () {
         let expected = r#"fn test(
     x: Boolean
 ): String {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: mov $tmp1, x
-      3: brfalse $tmp1, 6
-      4: ldc.str $tmp0, "yes"
-      5: br 7
-  ifelse_else_$tmp2:
-      6: ldc.str $tmp0, "no"
-  ifelse_end_$tmp3:
-      7: nop
-      8: ret $tmp0
+      0: mov s3, s1
+      1: brfalse s3, 4
+      2: ldc.str s2, "yes"
+      3: br 5
+  ifelse_else_0:
+      4: ldc.str s2, "no"
+  ifelse_end_0:
+      5: nop
+      6: ret s2
 }
 "#;
         compile_and_check(code, expected);
@@ -647,18 +573,10 @@ fn greet(name: String): () {
         let expected = r#"fn test(
 
 ): String {
-      0: decl $tmp0
-      1: ldc.str $tmp0, "initial"
-      2: decl x
-      3: mov x, $tmp0
-      4: drop $tmp0
-      5: decl $tmp1
-      6: ldc.str $tmp1, "updated"
-      7: mov x, $tmp1
-      8: drop $tmp1
-      9: decl $tmp2
-     10: mov $tmp2, x
-     11: ret $tmp2
+      0: ldc.str s1, "initial"
+      1: ldc.str s1, "updated"
+      2: mov s2, s1
+      3: ret s2
 }
 "#;
         compile_and_check(code, expected);
@@ -678,13 +596,10 @@ fn test(): Point {
         let expected = r#"fn test(
 
 ): Point {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: ldc.int $tmp1, 1
-      3: decl $tmp2
-      4: ldc.int $tmp2, 2
-      5: struct.new $tmp0, Point, {x: $tmp1, y: $tmp2}
-      6: ret $tmp0
+      0: ldc.int s2, 1
+      1: ldc.int s3, 2
+      2: struct.new s1, Point, {x: s2, y: s3}
+      3: ret s1
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -704,11 +619,9 @@ fn test(p: Point): Int {
         let expected = r#"fn test(
     p: Point
 ): Int {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: mov $tmp1, p
-      3: struct.get $tmp0, $tmp1, x
-      4: ret $tmp0
+      0: mov s3, s1
+      1: struct.get s2, s3, x
+      2: ret s2
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -730,13 +643,10 @@ fn test(p: Person): String {
         let expected = r#"fn test(
     p: Person
 ): String {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: decl $tmp2
-      3: mov $tmp2, p
-      4: struct.get $tmp1, $tmp2, address
-      5: struct.get $tmp0, $tmp1, city
-      6: ret $tmp0
+      0: mov s4, s1
+      1: struct.get s3, s4, address
+      2: struct.get s2, s3, city
+      3: ret s2
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -759,11 +669,9 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Int {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: call.bytecode test::make_point, [], $tmp1
-      3: struct.get $tmp0, $tmp1, x
-      4: ret $tmp0
+      0: call.bytecode test::make_point, [], s2
+      1: struct.get s1, s2, x
+      2: ret s1
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -781,11 +689,9 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): String {
-      0: decl $tmp0
-      1: decl $tmp1
-      2: llm.placeholder $tmp1, placeholder, String
-      3: call.external test::foo, [$tmp1], $tmp0
-      4: ret $tmp0
+      0: llm.placeholder s2, placeholder, String
+      1: call.external test::foo, [s2], s1
+      2: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -802,9 +708,8 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Unit {
-      0: decl $tmp0
-      1: ldc.unit $tmp0
-      2: ret $tmp0
+      0: ldc.unit s1
+      1: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -822,14 +727,9 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Unit {
-      0: decl $tmp0
-      1: ldc.unit $tmp0
-      2: decl x
-      3: mov x, $tmp0
-      4: drop $tmp0
-      5: decl $tmp1
-      6: mov $tmp1, x
-      7: ret $tmp1
+      0: ldc.unit s1
+      1: mov s2, s1
+      2: ret s2
 }
 "#;
         compile_and_check(code, expected);
@@ -1045,6 +945,7 @@ mod vm_execution_tests {
                         .map(|c| typed_ast::SelectClause {
                             expression_to_run: ast_expr_to_typed(&c.expression_to_run),
                             result_variable: c.result_variable.clone(),
+                            result_variable_binding_id: typed_ast::BindingId(0),
                             expression_next: ast_expr_to_typed(&c.expression_next),
                             span: c.span,
                         })
@@ -1150,7 +1051,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_string().unwrap(), "hello");
     }
 
@@ -1171,7 +1076,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_boolean().unwrap(), true);
     }
 
@@ -1192,7 +1101,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.type_name(), "Unit");
     }
 
@@ -1214,7 +1127,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_string().unwrap(), "test");
     }
 
@@ -1237,7 +1154,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_string().unwrap(), "updated");
     }
 
@@ -1255,15 +1176,18 @@ mod vm_execution_tests {
 
         let runtime: Arc<dyn RuntimeService> =
             Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
-        let mut context = Context::with_runtime(runtime.clone());
+        let context = Context::with_runtime(runtime.clone());
 
-        context.declare_variable(
-            "x".to_string(),
-            crate::runtime::ExpressionResult::new(ExpressionValue::boolean(true)),
-        );
+        let mut frame = vec![None; compiled.slot_table.len()];
+        frame[1] = Some(crate::runtime::ExpressionResult::new(
+            ExpressionValue::boolean(true),
+        ));
 
         let vm = VM::new(runtime);
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_string().unwrap(), "yes");
     }
 
@@ -1285,8 +1209,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) =
-            vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (returned_context, _result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(returned_context.events_count(), 2);
     }
 
@@ -1311,7 +1238,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (_context, result) = vm.execute(&compiled.instructions, context).await.unwrap();
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.value.as_boolean().unwrap(), false);
     }
 
@@ -1335,10 +1266,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) =
-            vm.execute(&compiled.instructions, context).await.unwrap();
-        assert!(returned_context.get_variable("x").is_some());
-        assert!(returned_context.get_variable("y").is_none());
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_returned_context, _result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1352,18 +1284,8 @@ mod vm_execution_tests {
         let ast_module = parse_code(code);
         let ast_func = get_ast_function(&ast_module, "test");
         let typed_func = ast_func_to_typed(ast_func);
-        let compiled = BytecodeCompiler::new()
-            .compile_to_bytecode(&typed_func)
-            .unwrap();
-
-        let runtime: Arc<dyn RuntimeService> =
-            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
-        let context = Context::with_runtime(runtime.clone());
-        let vm = VM::new(runtime);
-
-        let result = vm.execute(&compiled.instructions, context).await;
+        let result = BytecodeCompiler::new().compile_to_bytecode(&typed_func);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Variable not found"));
     }
 
     #[tokio::test]
@@ -1389,7 +1311,8 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&compiled.instructions, context).await;
+        let frame = vec![None; compiled.slot_table.len()];
+        let result = vm.execute(&compiled.instructions, context, frame).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Expected boolean"));
     }
@@ -1411,9 +1334,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) =
-            vm.execute(&compiled.instructions, context).await.unwrap();
-        assert!(returned_context.get_variable("$tmp0").is_none());
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_returned_context, _result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1433,10 +1358,12 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let (returned_context, _result) =
-            vm.execute(&compiled.instructions, context).await.unwrap();
-        let x_value = returned_context.get_variable("x").unwrap();
-        assert_eq!(x_value.value.as_string().unwrap(), "value");
+        let frame = vec![None; compiled.slot_table.len()];
+        let (_returned_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
+        assert_eq!(result.value.type_name(), "Unit");
     }
 
     #[tokio::test]
@@ -1473,7 +1400,11 @@ mod vm_execution_tests {
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
-        let result = vm.execute(&test_body.instructions, context).await.unwrap();
+        let frame = vec![None; test_body.slot_table.len()];
+        let result = vm
+            .execute(&test_body.instructions, context, frame)
+            .await
+            .unwrap();
         assert_eq!(result.1.value.as_string().unwrap(), "test_value");
     }
 }
