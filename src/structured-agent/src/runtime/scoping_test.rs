@@ -222,30 +222,3 @@ fn main(): () {
     // Should not see the false branch
     assert!(!messages.contains(&"this should not print".to_string()));
 }
-
-#[tokio::test]
-async fn test_context_assign_variable_directly() {
-    let runtime = Arc::new(test_runtime()) as Arc<dyn RuntimeService>;
-    let mut context = Context::with_runtime(runtime);
-
-    context.declare_variable(
-        "test_var".to_string(),
-        ExpressionResult::new(ExpressionValue::string("initial")),
-    );
-
-    assert_eq!(
-        context.get_variable("test_var").unwrap().value,
-        ExpressionValue::string("initial")
-    );
-
-    let result = context.assign_variable(
-        "test_var".to_string(),
-        ExpressionResult::new(ExpressionValue::string("modified")),
-    );
-    assert!(result.is_ok(), "assign_variable should succeed");
-
-    assert_eq!(
-        context.get_variable("test_var").unwrap().value,
-        ExpressionValue::string("modified")
-    );
-}

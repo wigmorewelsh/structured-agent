@@ -85,9 +85,7 @@ impl VM {
                     self.execute_load_module(state, name, *dest)
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, *var)?,
-                Instruction::CtxChild { is_scope_boundary } => {
-                    self.execute_ctx_child(state, *is_scope_boundary)
-                }
+                Instruction::CtxChild => self.execute_ctx_child(state),
                 Instruction::CtxRestore => self.execute_ctx_restore(state)?,
                 Instruction::MetaFunction {
                     function_name,
@@ -201,11 +199,10 @@ impl VM {
 
     fn execute_ret(
         &self,
-        mut state: VMState,
+        state: VMState,
         var: Slot,
     ) -> Result<(VMState, ExpressionResult), String> {
         let result = Self::read_slot(&state, var)?;
-        state.context.set_return_value(result.clone());
         Ok((state, result))
     }
 
@@ -245,7 +242,7 @@ impl VM {
             .map(|(arg, param)| ExpressionParameter::new(param.name.clone(), arg.value.clone()))
             .collect();
 
-        let mut child_context = state.context.create_child(true);
+        let mut child_context = state.context.create_child();
 
         child_context.add_event(
             ExpressionValue::string(format!("## {}", display_name)),
@@ -331,8 +328,8 @@ impl VM {
         Ok(Self::advance_pc(state))
     }
 
-    fn execute_ctx_child(&self, state: VMState, is_scope_boundary: bool) -> VMState {
-        let child_context = state.context.create_child(is_scope_boundary);
+    fn execute_ctx_child(&self, state: VMState) -> VMState {
+        let child_context = state.context.create_child();
         let new_state = VMState {
             pc: state.pc,
             context: child_context,

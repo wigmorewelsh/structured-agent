@@ -72,9 +72,7 @@ pub enum Instruction {
     CtxEvent {
         var: Slot,
     },
-    CtxChild {
-        is_scope_boundary: bool,
-    },
+    CtxChild,
     CtxRestore,
 
     MetaFunction {
@@ -192,9 +190,7 @@ impl fmt::Display for Instruction {
             }
 
             Instruction::CtxEvent { var } => write!(f, "ctx.event {}", var),
-            Instruction::CtxChild { is_scope_boundary } => {
-                write!(f, "ctx.child {}", is_scope_boundary)
-            }
+            Instruction::CtxChild => write!(f, "ctx.child"),
             Instruction::CtxRestore => write!(f, "ctx.restore"),
 
             Instruction::MetaFunction {

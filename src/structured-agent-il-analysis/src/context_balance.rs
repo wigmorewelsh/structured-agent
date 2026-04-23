@@ -27,7 +27,7 @@ impl IlAnalyzer for ContextBalanceAnalyzer {
 
         for (index, instruction) in function.instructions.iter().enumerate() {
             match instruction {
-                Instruction::CtxChild { .. } => {
+                Instruction::CtxChild => {
                     depth += 1;
                 }
                 Instruction::CtxRestore => {

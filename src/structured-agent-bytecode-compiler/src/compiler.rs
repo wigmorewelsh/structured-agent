@@ -206,9 +206,7 @@ impl BytecodeCompiler {
 
         ctx.builder.emit_brfalse(cond_slot, &else_label);
 
-        ctx.builder.emit(Instruction::CtxChild {
-            is_scope_boundary: false,
-        });
+        ctx.builder.emit(Instruction::CtxChild);
         for stmt in body {
             self.compile_statement(ctx, stmt)?;
         }
@@ -217,9 +215,7 @@ impl BytecodeCompiler {
 
         ctx.builder.emit_label(&else_label);
         if let Some(else_stmts) = else_body {
-            ctx.builder.emit(Instruction::CtxChild {
-                is_scope_boundary: false,
-            });
+            ctx.builder.emit(Instruction::CtxChild);
             for stmt in else_stmts {
                 self.compile_statement(ctx, stmt)?;
             }
@@ -247,9 +243,7 @@ impl BytecodeCompiler {
         self.compile_expression(ctx, condition, cond_slot)?;
         ctx.builder.emit_brfalse(cond_slot, &loop_end);
 
-        ctx.builder.emit(Instruction::CtxChild {
-            is_scope_boundary: false,
-        });
+        ctx.builder.emit(Instruction::CtxChild);
         for stmt in body {
             self.compile_statement(ctx, stmt)?;
         }

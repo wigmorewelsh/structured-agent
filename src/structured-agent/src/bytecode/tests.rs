@@ -56,10 +56,8 @@ mod instruction_display_tests {
 
     #[test]
     fn test_ctx_child_display() {
-        let instr = Instruction::CtxChild {
-            is_scope_boundary: true,
-        };
-        assert_eq!(format!("{}", instr), "ctx.child true");
+        let instr = Instruction::CtxChild;
+        assert_eq!(format!("{}", instr), "ctx.child");
     }
 
     #[test]
@@ -333,13 +331,13 @@ fn main(): String {
 ): Unit {
       0: ldc.bool s1, true
       1: brfalse s1, 7
-      2: ctx.child false
+      2: ctx.child
       3: ldc.str s2, "then"
       4: ctx.event s2
       5: ctx.restore
       6: br 11
   else_0:
-      7: ctx.child false
+      7: ctx.child
       8: ldc.str s3, "else"
       9: ctx.event s3
      10: ctx.restore
@@ -368,7 +366,7 @@ fn main(): String {
   loop_start_0:
       0: ldc.bool s1, true
       1: brfalse s1, 7
-      2: ctx.child false
+      2: ctx.child
       3: ldc.str s2, "loop"
       4: ctx.event s2
       5: ctx.restore
@@ -471,7 +469,7 @@ fn greet(name: String): () {
       0: ldc.str s3, "initial"
       1: mov s4, s2
       2: brfalse s4, 10
-      3: ctx.child false
+      3: ctx.child
       4: mov s5, s1
       5: call.external test::transform, [s5], s3
       6: mov s6, s3
@@ -479,7 +477,7 @@ fn greet(name: String): () {
       8: ctx.restore
       9: br 14
   else_0:
-     10: ctx.child false
+     10: ctx.child
      11: ldc.str s7, "skipped"
      12: ctx.event s7
      13: ctx.restore

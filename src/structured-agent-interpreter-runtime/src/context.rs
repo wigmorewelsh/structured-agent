@@ -1,9 +1,6 @@
 use crate::service::RuntimeService;
-use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_runtime::{
-    AgentHandle, ExpressionParameter, ExpressionResult, ExpressionValue,
-};
+use structured_agent_runtime::{AgentHandle, ExpressionParameter, ExpressionValue};
 
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -15,9 +12,6 @@ pub struct Event {
 pub struct Context {
     parent: Option<Box<Context>>,
     events: Vec<Event>,
-    variables: HashMap<String, ExpressionResult>,
-    is_scope_boundary: bool,
-    return_value: Option<ExpressionResult>,
     runtime: Arc<dyn RuntimeService>,
     agent_handle: AgentHandle,
 }
@@ -27,9 +21,6 @@ impl Context {
         Self {
             parent: None,
             events: Vec::new(),
-            variables: HashMap::new(),
-            is_scope_boundary: true,
-            return_value: None,
             runtime,
             agent_handle: AgentHandle::detached(),
         }
@@ -42,9 +33,6 @@ impl Context {
         Self {
             parent: None,
             events: Vec::new(),
-            variables: HashMap::new(),
-            is_scope_boundary: true,
-            return_value: None,
             runtime,
             agent_handle,
         }
@@ -111,52 +99,12 @@ impl Context {
         self.events.last().cloned()
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<ExpressionResult> {
-        if let Some(result) = self.variables.get(name) {
-            Some(result.clone())
-        } else if self.is_scope_boundary {
-            None
-        } else {
-            self.parent.as_ref().and_then(|p| p.get_variable(name))
-        }
-    }
-
-    pub fn declare_variable(&mut self, name: String, result: ExpressionResult) {
-        self.variables.insert(name, result);
-    }
-
-    pub fn assign_variable(
-        &mut self,
-        name: String,
-        result: ExpressionResult,
-    ) -> Result<(), String> {
-        if let std::collections::hash_map::Entry::Occupied(mut e) =
-            self.variables.entry(name.clone())
-        {
-            e.insert(result);
-            Ok(())
-        } else if self.is_scope_boundary {
-            Err(format!("Variable '{}' not found", name))
-        } else if let Some(parent) = &mut self.parent {
-            parent.assign_variable(name, result)
-        } else {
-            Err(format!("Variable '{}' not found", name))
-        }
-    }
-
-    pub fn remove_variable(&mut self, name: &str) {
-        self.variables.remove(name);
-    }
-
-    pub fn create_child(self, is_scope_boundary: bool) -> Self {
+    pub fn create_child(self) -> Self {
         let runtime = self.runtime.clone();
         let agent_handle = self.agent_handle.clone();
         Self {
             parent: Some(Box::new(self)),
             events: Vec::new(),
-            variables: HashMap::new(),
-            is_scope_boundary,
-            return_value: None,
             runtime,
             agent_handle,
         }
@@ -175,43 +123,12 @@ impl Context {
     pub fn runtime_arc(&self) -> Arc<dyn RuntimeService> {
         self.runtime.clone()
     }
-
-    pub fn set_return_value(&mut self, result: ExpressionResult) {
-        if self.is_scope_boundary {
-            self.return_value = Some(result);
-        } else if let Some(parent) = &mut self.parent {
-            parent.set_return_value(result);
-        }
-    }
-
-    pub fn get_return_value(&self) -> Option<ExpressionResult> {
-        if self.is_scope_boundary {
-            self.return_value.clone()
-        } else if let Some(parent) = &self.parent {
-            parent.get_return_value()
-        } else {
-            None
-        }
-    }
-
-    pub fn has_return_value(&self) -> bool {
-        if self.is_scope_boundary {
-            self.return_value.is_some()
-        } else if let Some(parent) = &self.parent {
-            parent.has_return_value()
-        } else {
-            false
-        }
-    }
 }
 
 impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Context")
             .field("events", &self.events)
-            .field("variables", &self.variables)
-            .field("is_scope_boundary", &self.is_scope_boundary)
-            .field("return_value", &self.return_value)
             .field("runtime", &"<Runtime>")
             .field("agent_handle", &"<AgentHandle>")
             .finish()

@@ -7,9 +7,7 @@ mod tests {
     #[test]
     fn no_warning_for_balanced_ctx() {
         let instructions = vec![
-            Instruction::CtxChild {
-                is_scope_boundary: false,
-            },
+            Instruction::CtxChild,
             Instruction::LdcUnit { dest: Slot(0) },
             Instruction::CtxRestore,
             Instruction::LdcUnit { dest: Slot(1) },
@@ -24,12 +22,8 @@ mod tests {
     #[test]
     fn no_warning_for_nested_balanced_ctx() {
         let instructions = vec![
-            Instruction::CtxChild {
-                is_scope_boundary: true,
-            },
-            Instruction::CtxChild {
-                is_scope_boundary: false,
-            },
+            Instruction::CtxChild,
+            Instruction::CtxChild,
             Instruction::CtxRestore,
             Instruction::CtxRestore,
             Instruction::LdcUnit { dest: Slot(0) },
@@ -63,9 +57,7 @@ mod tests {
     #[test]
     fn warns_when_ctx_child_not_restored() {
         let instructions = vec![
-            Instruction::CtxChild {
-                is_scope_boundary: false,
-            },
+            Instruction::CtxChild,
             Instruction::LdcUnit { dest: Slot(0) },
             Instruction::Ret { var: Slot(0) },
         ];
@@ -79,12 +71,8 @@ mod tests {
     #[test]
     fn warns_once_per_unrestored_depth() {
         let instructions = vec![
-            Instruction::CtxChild {
-                is_scope_boundary: false,
-            },
-            Instruction::CtxChild {
-                is_scope_boundary: false,
-            },
+            Instruction::CtxChild,
+            Instruction::CtxChild,
             Instruction::Ret { var: Slot(0) },
         ];
         let function = make_function(instructions);
