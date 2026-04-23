@@ -32,7 +32,6 @@ pub struct BytecodeCompiler;
 struct CompilerCtx<'a> {
     builder: &'a mut InstructionBuilder,
     binding_id_to_slot: &'a HashMap<BindingId, Slot>,
-    name_to_slot: &'a HashMap<String, Slot>,
 }
 
 impl BytecodeCompiler {
@@ -48,12 +47,10 @@ impl BytecodeCompiler {
 
         let _ret_slot = builder.alloc_slot(SlotKind::ReturnSlot, "$ret");
         let mut binding_id_to_slot: HashMap<BindingId, Slot> = HashMap::new();
-        let mut name_to_slot: HashMap<String, Slot> = HashMap::new();
 
         for param in &typed_func.parameters {
             let slot = builder.alloc_slot(SlotKind::ValueParam, &param.name);
             binding_id_to_slot.insert(param.binding_id, slot);
-            name_to_slot.insert(param.name.clone(), slot);
         }
 
         for (binding_id, name) in collect_binding_ids(&typed_func.body.statements) {
@@ -72,7 +69,6 @@ impl BytecodeCompiler {
             let mut ctx = CompilerCtx {
                 builder: &mut builder,
                 binding_id_to_slot: &binding_id_to_slot,
-                name_to_slot: &name_to_slot,
             };
 
             for stmt in &typed_func.body.statements {
@@ -286,7 +282,7 @@ impl BytecodeCompiler {
                 kind.clone(),
                 arguments,
                 module_params,
-                via_module_param.as_deref(),
+                *via_module_param,
                 dest_var,
             ),
             typed_ast::Expression::Variable { binding_id, .. } => {
@@ -334,37 +330,26 @@ impl BytecodeCompiler {
         function: &DefinitionPath,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
-        module_params: &[(String, DefinitionPath)],
-        via_module_param: Option<&str>,
+        module_params: &[typed_ast::ModuleArg],
+        via_module_param: Option<BindingId>,
         dest_var: Slot,
     ) -> Result<(), String> {
-        if let Some(param_name) = via_module_param {
-            let module_slot = *ctx
-                .name_to_slot
-                .get(param_name)
-                .ok_or_else(|| format!("module param slot not found: {}", param_name))?;
-            let mut arg_slots = vec![module_slot];
-            for arg_expr in arguments {
-                let temp = ctx.builder.next_temp_slot();
-                self.compile_expression(ctx, arg_expr, temp)?;
-                arg_slots.push(temp);
-            }
-            ctx.builder.emit(Instruction::CallIndirect {
-                module_param: module_slot,
-                fn_name: function.last_name().to_string(),
-                params: arg_slots,
-                dest: dest_var,
-            });
-            return Ok(());
-        }
-
         let mut params: Vec<Slot> = Vec::new();
-        for (_, concrete_module) in module_params {
-            let slot = ctx.builder.next_temp_slot();
-            ctx.builder.emit(Instruction::LoadModule {
-                name: concrete_module.clone(),
-                dest: slot,
-            });
+        for module_arg in module_params {
+            let slot = match module_arg {
+                typed_ast::ModuleArg::Concrete(path) => {
+                    let s = ctx.builder.next_temp_slot();
+                    ctx.builder.emit(Instruction::LoadModule {
+                        name: path.clone(),
+                        dest: s,
+                    });
+                    s
+                }
+                typed_ast::ModuleArg::FromParam(binding_id) => *ctx
+                    .binding_id_to_slot
+                    .get(binding_id)
+                    .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?,
+            };
             params.push(slot);
         }
 
@@ -374,19 +359,33 @@ impl BytecodeCompiler {
             params.push(temp);
         }
 
-        let instruction = match kind {
-            FunctionKind::Bytecode => Instruction::CallBytecode {
-                function_name: function.clone(),
+        if let Some(binding_id) = via_module_param {
+            let module_slot = *ctx
+                .binding_id_to_slot
+                .get(&binding_id)
+                .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?;
+            params.insert(0, module_slot);
+            ctx.builder.emit(Instruction::CallIndirect {
+                module_param: module_slot,
+                fn_name: function.last_name().to_string(),
                 params,
                 dest: dest_var,
-            },
-            FunctionKind::External => Instruction::CallExternal {
-                function_name: function.clone(),
-                params,
-                dest: dest_var,
-            },
-        };
-        ctx.builder.emit(instruction);
+            });
+        } else {
+            let instruction = match kind {
+                FunctionKind::Bytecode => Instruction::CallBytecode {
+                    function_name: function.clone(),
+                    params,
+                    dest: dest_var,
+                },
+                FunctionKind::External => Instruction::CallExternal {
+                    function_name: function.clone(),
+                    params,
+                    dest: dest_var,
+                },
+            };
+            ctx.builder.emit(instruction);
+        }
         Ok(())
     }
 

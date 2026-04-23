@@ -1,14 +1,22 @@
 #![allow(dead_code)]
 
+use structured_agent_runtime::DefinitionPath;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ModuleArg {
+    Concrete(DefinitionPath),
+    FromParam(BindingId),
+}
 
 pub mod refs;
 pub use refs::{NoBody, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
 use structured_agent_ast::ast::{ExternalFunction, StructDefinition, UseSegment};
 use structured_agent_ast::types::{FileId, Span};
-use structured_agent_runtime::DefinitionPath;
+
 use structured_agent_runtime::Type;
 use structured_agent_runtime::symbols::FunctionKind;
 
@@ -123,8 +131,8 @@ pub enum Expression {
         kind: FunctionKind,
         type_arguments: Vec<Type>,
         arguments: Vec<Expression>,
-        module_params: Vec<(String, structured_agent_runtime::DefinitionPath)>,
-        via_module_param: Option<String>,
+        module_params: Vec<ModuleArg>,
+        via_module_param: Option<BindingId>,
         ty: Type,
         span: Span,
     },

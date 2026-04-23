@@ -17,9 +17,9 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
-    DefinitionPath, DefinitionSegment, FieldDefinition, FunctionDefinition,
-    GenericParameterDefinition, ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition,
-    SignatureEntry, TypeDefinition, TypeDefinitionKind,
+    DefinitionPath, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
+    ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, TypeDefinition,
+    TypeDefinitionKind,
 };
 
 #[salsa::db]
@@ -302,6 +302,7 @@ pub fn get_struct_fields(
     let interned_mod = InternedModuleName::new(db, current_module.clone());
     let interned_name = name.intern(db);
     let resolved = resolve_type_in_module(db, tables, interned_mod, interned_name)
+        .map(|r| r.ty)
         .unwrap_or_else(|| DefinitionPath::for_type(current_module.clone(), name));
     let key = InternedTypeName::new(db, resolved);
     lookup_type_def_in_symbol_tables(db, tables, key).and_then(|arc_ptr| {
@@ -365,6 +366,66 @@ pub fn lookup_type_in_symbol_tables<'db>(
 
 type DefKind = TypeDefinitionKind<CheckerRefs>;
 
+#[derive(Clone, PartialEq)]
+pub struct ResolvedType {
+    pub ty: DefinitionPath,
+    pub path: Vec<ResolveSegment>,
+}
+
+impl ResolvedType {
+    pub fn new(ty: DefinitionPath) -> Self {
+        Self { ty, path: vec![] }
+    }
+
+    pub fn with_segment(mut self, seg: ResolveSegment) -> Self {
+        self.path.insert(0, seg);
+        self
+    }
+}
+
+unsafe impl salsa::Update for ResolvedType {
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        #[allow(unsafe_op_in_unsafe_fn)]
+        let old = &mut *old_pointer;
+        if *old != new_value {
+            *old = new_value;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum ResolveSegment {
+    Local(DefinitionPath, Vec<UseParam>),
+    UseAlias(String, DefinitionPath, Vec<UseParam>),
+    UseDirect(String, DefinitionPath, Vec<UseParam>),
+    ModuleHeader(String, DefinitionPath, Vec<UseParam>),
+}
+
+impl ResolveSegment {
+    fn inject_params(&mut self, params: Vec<UseParam>) {
+        match self {
+            ResolveSegment::Local(_, p)
+            | ResolveSegment::UseAlias(_, _, p)
+            | ResolveSegment::UseDirect(_, _, p)
+            | ResolveSegment::ModuleHeader(_, _, p) => *p = params,
+        }
+    }
+}
+
+pub enum CallModuleArg {
+    Concrete(DefinitionPath),
+    FromParam(String),
+}
+
+pub struct CallRouting {
+    pub via_module_param: Option<String>,
+    pub module_args: Vec<CallModuleArg>,
+}
+
 fn resolve_absolute_path<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -373,17 +434,17 @@ fn resolve_absolute_path<'db>(
     let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
     let mut last_type_name = None;
     for symbol in use_path.iter() {
-        let type_name =
+        let resolved =
             resolve_type_in_module(db, tables, search_module, symbol.clone().intern(db))?;
         let type_def = lookup_type_def_in_symbol_tables(
             db,
             tables,
-            InternedTypeName::new(db, type_name.clone()),
+            InternedTypeName::new(db, resolved.ty.clone()),
         )?;
         if let DefKind::Signature { .. } = type_def.get().kind {
-            search_module = InternedModuleName::new(db, type_name.clone());
+            search_module = InternedModuleName::new(db, resolved.ty.clone());
         }
-        last_type_name = Some(type_name);
+        last_type_name = Some(resolved.ty);
     }
     last_type_name
 }
@@ -393,23 +454,35 @@ fn resolve_local_use_path<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     use_path: Arc<Use>,
-) -> Option<DefinitionPath> {
-    let mut search_module = current_module.clone();
-    let mut last_type_name = None;
+) -> Option<ResolvedType> {
+    let mut search_module = current_module;
+    let mut accumulated: Vec<ResolveSegment> = vec![];
+    let mut last_ty = None;
     for seg in use_path.path.iter() {
         let symbol = seg.name.clone().intern(db);
-        let type_name = resolve_type_in_module(db, tables, search_module, symbol)?;
-        let type_def = lookup_type_def_in_symbol_tables(
+        let mut resolved = resolve_type_in_module(db, tables, search_module, symbol)?;
+        // NOTE: this looks like it may cause issue, the intent it to match up the params with the right segment
+        if !seg.params.is_empty() {
+            if let Some(last_seg) = resolved.path.last_mut() {
+                last_seg.inject_params(seg.params.clone());
+            }
+        }
+        accumulated.extend(resolved.path);
+        if let Some(type_def) = lookup_type_def_in_symbol_tables(
             db,
             tables,
-            InternedTypeName::new(db, type_name.clone()),
-        )?;
-        if let DefKind::Signature { .. } = type_def.get().kind {
-            search_module = InternedModuleName::new(db, type_name.clone());
+            InternedTypeName::new(db, resolved.ty.clone()),
+        ) {
+            if let DefKind::Signature { .. } = type_def.get().kind {
+                search_module = InternedModuleName::new(db, resolved.ty.clone());
+            }
         }
-        last_type_name = Some(type_name);
+        last_ty = Some(resolved.ty);
     }
-    last_type_name
+    Some(ResolvedType {
+        ty: last_ty?,
+        path: accumulated,
+    })
 }
 
 fn resolve_type_cycle_recovery<'db>(
@@ -418,7 +491,7 @@ fn resolve_type_cycle_recovery<'db>(
     _tables: SymbolTablesInput,
     _current_module: InternedModuleName<'db>,
     _symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     None
 }
 
@@ -428,7 +501,7 @@ pub fn resolve_type_in_module<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     let prelude = InternedModuleName::new(
         db,
         DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
@@ -438,15 +511,39 @@ pub fn resolve_type_in_module<'db>(
         DefinitionPath::for_module(NonEmpty::new("unstable".to_string())),
     );
     lookup_type_in_symbol_tables(db, tables, current_module, symbol)
+        .map(|ty| {
+            ResolvedType::new(ty.clone())
+                .with_segment(ResolveSegment::Local(current_module.name(db), vec![]))
+        })
         .or_else(|| resolve_type_as_mod_param(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_alias(db, tables, current_module, symbol))
         .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
-        .or_else(|| lookup_type_in_symbol_tables(db, tables, prelude, symbol))
-        .or_else(|| lookup_type_in_symbol_tables(db, tables, unstable, symbol))
+        .or_else(|| {
+            lookup_type_in_symbol_tables(db, tables, prelude, symbol).map(|ty| {
+                ResolvedType::new(ty.clone())
+                    .with_segment(ResolveSegment::Local(prelude.name(db), vec![]))
+            })
+        })
+        .or_else(|| {
+            lookup_type_in_symbol_tables(db, tables, unstable, symbol).map(|ty| {
+                ResolvedType::new(ty.clone())
+                    .with_segment(ResolveSegment::Local(unstable.name(db), vec![]))
+            })
+        })
         .or_else(|| resolve_type_as_sibling_module(db, tables, current_module, symbol))
 }
 
-#[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+fn resolve_relative_module_cycle_recovery<'db>(
+    _db: &'db dyn TypeCheckDatabase,
+    _id: salsa::Id,
+    _tables: SymbolTablesInput,
+    _current_module: InternedModuleName<'db>,
+    _symbol: InternedString<'db>,
+) -> Option<DefinitionPath> {
+    None
+}
+
+#[salsa::tracked(cycle_result = resolve_relative_module_cycle_recovery)]
 fn resolve_type_as_relative_module<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -463,12 +560,17 @@ fn resolve_type_as_sibling_module<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     let key = current_module
         .name(db)
         .parent()
         .with_module(symbol.value(db));
-    tables.types(db).get().get(&key).map(|_| key)
+    tables.types(db).get().get(&key).map(|_| {
+        ResolvedType::new(key.clone()).with_segment(ResolveSegment::Local(
+            current_module.name(db).parent(),
+            vec![],
+        ))
+    })
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
@@ -477,7 +579,7 @@ pub fn resolve_type_as_mod_param<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     let module_def = tables
         .modules(db)
         .get()
@@ -490,12 +592,18 @@ pub fn resolve_type_as_mod_param<'db>(
         if let Definition::ModuleHeader { params, .. } = def {
             for param in params {
                 if param.name == symbol.value(db) {
-                    return resolve_absolute_path(db, tables, param.path.clone());
+                    let ty = resolve_absolute_path(db, tables, param.path.clone())?;
+                    return Some(
+                        ResolvedType::new(ty).with_segment(ResolveSegment::ModuleHeader(
+                            param.name.clone(),
+                            current_module.name(db),
+                            vec![],
+                        )),
+                    );
                 }
             }
         }
     }
-
     None
 }
 
@@ -505,7 +613,7 @@ pub fn resolve_type_as_alias<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     let module_name = current_module.name(db);
     let module_def = tables.modules(db).get().get(&module_name)?.clone();
     let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
@@ -530,7 +638,7 @@ pub fn resolve_type_as_use<'db>(
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
-) -> Option<DefinitionPath> {
+) -> Option<ResolvedType> {
     let module_name = current_module.name(db);
     let module_def = tables.modules(db).get().get(&module_name)?.clone();
     let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
@@ -550,6 +658,52 @@ pub fn resolve_type_as_use<'db>(
     None
 }
 
+pub fn resolve_call_routing<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    alias: InternedString<'db>,
+) -> Option<CallRouting> {
+    let resolved = resolve_type_in_module(db, tables, current_module, alias)?;
+    let via_module_param =
+        if let Some(ResolveSegment::ModuleHeader(name, _, _)) = resolved.path.first() {
+            Some(name.clone())
+        } else {
+            None
+        };
+    let module_args = resolved
+        .path
+        .iter()
+        .flat_map(|seg| match seg {
+            ResolveSegment::Local(_, p)
+            | ResolveSegment::UseAlias(_, _, p)
+            | ResolveSegment::UseDirect(_, _, p)
+            | ResolveSegment::ModuleHeader(_, _, p) => p.iter(),
+        })
+        .filter_map(|use_param| {
+            let path = match use_param {
+                UseParam::Positional(path_segs) => path_segs,
+                UseParam::Named { path, .. } => path,
+            };
+            let resolved = resolve_path_full(db, tables, current_module, path)?;
+            match resolved.path.iter().find_map(|s| {
+                if let ResolveSegment::ModuleHeader(name, _, _) = s {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            }) {
+                Some(param_name) => Some(CallModuleArg::FromParam(param_name)),
+                None => Some(CallModuleArg::Concrete(resolved.ty)),
+            }
+        })
+        .collect();
+    Some(CallRouting {
+        via_module_param,
+        module_args,
+    })
+}
+
 // --- new type resolution -- end
 
 #[salsa::tracked]
@@ -559,7 +713,7 @@ pub fn resolve_function_call<'db>(
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
-    let type_name = resolve_type_in_module(db, tables, current_module, symbol)?;
+    let type_name = resolve_type_in_module(db, tables, current_module, symbol)?.ty;
     let type_def =
         lookup_type_def_in_symbol_tables(db, tables, InternedTypeName::new(db, type_name.clone()))?;
     if let DefKind::Function { .. } = type_def.get().kind {
@@ -572,156 +726,43 @@ pub fn resolve_function_call<'db>(
     }
 }
 
+fn resolve_path_full<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    path: &NonEmpty<String>,
+) -> Option<ResolvedType> {
+    let mut search = current_module;
+    let mut accumulated: Vec<ResolveSegment> = vec![];
+    let mut last_ty = None;
+    for seg in path.iter() {
+        let sym = seg.clone().intern(db);
+        let resolved = resolve_type_in_module(db, tables, search, sym)?;
+        accumulated.extend(resolved.path);
+        if let Some(type_def) = lookup_type_def_in_symbol_tables(
+            db,
+            tables,
+            InternedTypeName::new(db, resolved.ty.clone()),
+        ) {
+            if let DefKind::Signature { .. } = type_def.get().kind {
+                search = InternedModuleName::new(db, resolved.ty.clone());
+            }
+        }
+        last_ty = Some(resolved.ty);
+    }
+    Some(ResolvedType {
+        ty: last_ty?,
+        path: accumulated,
+    })
+}
+
 fn resolve_path_to_module<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<String>,
 ) -> Option<DefinitionPath> {
-    let mut search = current_module;
-    let mut last_type = None;
-    for seg in path.iter() {
-        let sym = seg.clone().intern(db);
-        let type_name = resolve_type_in_module(db, tables, search, sym)?;
-        if let Some(type_def) = lookup_type_def_in_symbol_tables(
-            db,
-            tables,
-            InternedTypeName::new(db, type_name.clone()),
-        ) {
-            if let DefKind::Signature { .. } = type_def.get().kind {
-                search = InternedModuleName::new(db, type_name.clone());
-            }
-        }
-        last_type = Some(type_name);
-    }
-    last_type
-}
-
-#[salsa::tracked]
-pub fn resolve_use_param_bindings<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    current_module: InternedModuleName<'db>,
-    alias: InternedString<'db>,
-) -> Vec<(String, DefinitionPath)> {
-    resolve_use_param_bindings_inner(db, tables, current_module, alias).unwrap_or_default()
-}
-
-fn resolve_use_param_bindings_inner<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    current_module: InternedModuleName<'db>,
-    alias: InternedString<'db>,
-) -> Option<Vec<(String, DefinitionPath)>> {
-    let module_name = current_module.name(db);
-    let module_def = tables.modules(db).get().get(&module_name).cloned()?;
-    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
-        return None;
-    };
-    let alias_str = alias.value(db);
-
-    let mut u = None;
-    for def in &ast_module.definitions {
-        let Definition::Use(candidate) = def else {
-            continue;
-        };
-        let name = candidate.path.last().name.as_str();
-        let effective = candidate.alias.as_deref().unwrap_or(name);
-        if effective == alias_str.as_str() {
-            u = Some(candidate.clone());
-            break;
-        }
-    }
-    let u = u?;
-
-    let parameterized_seg = u.path.iter().find(|seg| !seg.params.is_empty())?;
-
-    let func_type = resolve_type_in_module(db, tables, current_module, alias)?;
-    let func_module_def = tables
-        .modules(db)
-        .get()
-        .get(&func_type.module_prefix())
-        .cloned()?;
-    let CheckerAstRef::Module(func_ast) = &func_module_def.ast_ref else {
-        return None;
-    };
-    let mut header_params: Vec<crate::ast::ModuleParam> = vec![];
-    for d in &func_ast.definitions {
-        if let Definition::ModuleHeader { params, .. } = d {
-            header_params = params.clone();
-            break;
-        }
-    }
-
-    let mut result = Vec::new();
-    for (i, use_param) in parameterized_seg.params.iter().enumerate() {
-        match use_param {
-            UseParam::Positional(path_segs) => {
-                if let (Some(p), Some(concrete)) = (
-                    header_params.get(i),
-                    resolve_path_to_module(db, tables, current_module, path_segs),
-                ) {
-                    result.push((p.name.clone(), concrete));
-                }
-            }
-            UseParam::Named {
-                name: param_name,
-                path: path_segs,
-            } => {
-                if let Some(concrete) =
-                    resolve_path_to_module(db, tables, current_module, path_segs)
-                {
-                    result.push((param_name.clone(), concrete));
-                }
-            }
-        }
-    }
-    Some(result)
-}
-
-#[salsa::tracked]
-pub fn resolve_function_alias_via_param<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    current_module: InternedModuleName<'db>,
-    alias: InternedString<'db>,
-) -> Option<String> {
-    resolve_function_call(db, tables, current_module, alias)?;
-    let module_name = current_module.name(db);
-    let module_def = tables.modules(db).get().get(&module_name)?.clone();
-    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
-        return None;
-    };
-    let alias_str = alias.value(db);
-    let header_params: Vec<crate::ast::ModuleParam> = ast_module
-        .definitions
-        .iter()
-        .find_map(|d| {
-            if let Definition::ModuleHeader { params, .. } = d {
-                Some(params.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-    for def in &ast_module.definitions {
-        if let Definition::Use(u) = def {
-            let name = u.path.last().name.clone();
-            let effective = u
-                .alias
-                .as_ref()
-                .map(String::as_str)
-                .unwrap_or(name.as_str());
-            if effective != alias_str.as_str() {
-                continue;
-            }
-            let seg = u.path.first();
-            if header_params.iter().any(|p| p.name == seg.name) {
-                return Some(seg.name.clone());
-            }
-        }
-    }
-    None
+    resolve_path_full(db, tables, current_module, path).map(|r| r.ty)
 }
 
 pub fn ast_type_to_type_name(
@@ -733,6 +774,7 @@ pub fn ast_type_to_type_name(
     let interned_mod = InternedModuleName::new(db, module_name.clone());
     let interned_name = ty.name.clone().intern(db);
     resolve_type_in_module(db, tables, interned_mod, interned_name)
+        .map(|r| r.ty)
         .unwrap_or_else(|| DefinitionPath::for_type(module_name.clone(), ty.name.clone()))
 }
 

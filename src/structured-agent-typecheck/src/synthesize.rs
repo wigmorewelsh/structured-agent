@@ -136,7 +136,7 @@ fn resolve_type_name(
     let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_name = name.intern(db);
 
-    let type_name = resolve_type_in_module(db, tables, interned_mod, interned_name);
+    let type_name = resolve_type_in_module(db, tables, interned_mod, interned_name).map(|r| r.ty);
 
     type_name.or_accumulate(
         db,
@@ -863,6 +863,7 @@ fn synthesize_struct_literal(
         let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
         resolve_type_in_module(db, tables, interned_mod, interned_name)
+            .map(|r| r.ty)
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     if type_params.is_empty() {

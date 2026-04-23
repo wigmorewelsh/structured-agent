@@ -1,7 +1,6 @@
 use super::db::{
-    Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
-    resolve_function_alias_via_param, resolve_function_call, resolve_type_in_module,
-    resolve_use_param_bindings,
+    CallModuleArg, Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig,
+    get_struct_fields, resolve_call_routing, resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
 use structured_agent_ast::ast::{Expression, Function, SelectClause, Statement};
@@ -290,9 +289,24 @@ fn elaborate_call(
         typed_args.push(typed_arg);
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
-    let module_params = resolve_use_param_bindings(db, tables, interned_current, interned_fn);
-    let via_module_param =
-        resolve_function_alias_via_param(db, tables, interned_current, interned_fn);
+    let routing = resolve_call_routing(db, tables, interned_current, interned_fn);
+    let via_module_param = routing
+        .as_ref()
+        .and_then(|r| r.via_module_param.as_deref())
+        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id));
+    let module_params = routing
+        .map(|r| {
+            r.module_args
+                .into_iter()
+                .filter_map(|arg| match arg {
+                    CallModuleArg::Concrete(path) => Some(typed_ast::ModuleArg::Concrete(path)),
+                    CallModuleArg::FromParam(name) => env
+                        .lookup_variable(&name)
+                        .map(|(_, id)| typed_ast::ModuleArg::FromParam(id)),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Some(typed_ast::Expression::Call {
         function: function.to_string(),
         resolved: resolved_fn_name,
@@ -444,6 +458,7 @@ fn elaborate_struct_literal(
         let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
         resolve_type_in_module(db, tables, interned_mod, interned_name)
+            .map(|r| r.ty)
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     let ty = if type_params.is_empty() {
