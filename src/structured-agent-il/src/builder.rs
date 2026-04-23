@@ -1,4 +1,5 @@
 use crate::Instruction;
+use crate::slot::{Slot, SlotKind, SlotTable};
 use std::collections::HashMap;
 
 pub struct InstructionBuilder {
@@ -6,6 +7,7 @@ pub struct InstructionBuilder {
     labels: HashMap<String, usize>,
     pending_labels: Vec<(usize, String, PendingJumpKind)>,
     temp_counter: usize,
+    slot_table: SlotTable,
 }
 
 enum PendingJumpKind {
@@ -21,6 +23,7 @@ impl InstructionBuilder {
             labels: HashMap::new(),
             pending_labels: Vec::new(),
             temp_counter: 0,
+            slot_table: SlotTable::new(),
         }
     }
 
@@ -70,7 +73,13 @@ impl InstructionBuilder {
         temp
     }
 
-    pub fn build(mut self) -> Result<(Vec<Instruction>, HashMap<String, usize>), String> {
+    pub fn alloc_slot(&mut self, kind: SlotKind, name: impl Into<String>) -> Slot {
+        self.slot_table.push(kind, name)
+    }
+
+    pub fn build(
+        mut self,
+    ) -> Result<(Vec<Instruction>, HashMap<String, usize>, SlotTable), String> {
         for (position, label, kind) in self.pending_labels {
             let target = self
                 .labels
@@ -104,7 +113,7 @@ impl InstructionBuilder {
             }
         }
 
-        Ok((self.instructions, self.labels))
+        Ok((self.instructions, self.labels, self.slot_table))
     }
 }
 

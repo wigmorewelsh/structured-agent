@@ -1,6 +1,8 @@
+use structured_agent_il::slot::{Slot, SlotKind};
 use structured_agent_il::{
     BytecodeRef, CompiledFunction, Instruction, builder::InstructionBuilder,
 };
+use structured_agent_typed_ast::BindingId;
 use structured_agent_vm::BytecodeFunctionExpr;
 
 use structured_agent_interpreter_runtime::ExecutableFunction;
@@ -9,6 +11,7 @@ use structured_agent_runtime::symbols::FunctionKind;
 use structured_agent_typed_ast as typed_ast;
 use structured_agent_typed_ast::{NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     DefinitionPath, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,
@@ -39,6 +42,22 @@ impl BytecodeCompiler {
     ) -> Result<CompiledFunction, String> {
         let mut builder = InstructionBuilder::new();
 
+        let _ret_slot = builder.alloc_slot(SlotKind::ReturnSlot, "$ret");
+        let mut binding_to_slot: HashMap<BindingId, Slot> = HashMap::new();
+
+        for param in &typed_func.parameters {
+            let slot = builder.alloc_slot(SlotKind::ValueParam, &param.name);
+            binding_to_slot.insert(param.binding_id, slot);
+        }
+
+        for (binding_id, name) in collect_binding_ids(&typed_func.body.statements) {
+            binding_to_slot
+                .entry(binding_id)
+                .or_insert_with(|| builder.alloc_slot(SlotKind::Local, &name));
+        }
+
+        let _ = binding_to_slot;
+
         let mut has_explicit_return = false;
         for stmt in &typed_func.body.statements {
             if matches!(stmt, typed_ast::Statement::Return(_)) {
@@ -65,7 +84,7 @@ impl BytecodeCompiler {
             builder.emit(Instruction::Ret { var: return_temp });
         }
 
-        let (instructions, labels) = builder.build()?;
+        let (instructions, labels, slot_table) = builder.build()?;
 
         Ok(CompiledFunction {
             name: DefinitionPath::for_function(DefinitionPath::root(), typed_func.name.clone()),
@@ -79,6 +98,7 @@ impl BytecodeCompiler {
             instructions,
             labels,
             documentation: typed_func.documentation.clone(),
+            slot_table,
         })
     }
 
@@ -693,6 +713,60 @@ impl BytecodeCompiler {
         let bytecode_expr = BytecodeFunctionExpr::new(compiled.name, body);
         Ok(Box::new(bytecode_expr))
     }
+}
+
+fn collect_binding_ids(statements: &[typed_ast::Statement]) -> Vec<(BindingId, String)> {
+    let mut result: Vec<(BindingId, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<BindingId> = std::collections::HashSet::new();
+
+    for stmt in statements {
+        match stmt {
+            typed_ast::Statement::Assignment {
+                binding_id,
+                variable,
+                ..
+            } => {
+                if seen.insert(*binding_id) {
+                    result.push((*binding_id, variable.clone()));
+                }
+            }
+            typed_ast::Statement::VariableAssignment {
+                binding_id,
+                variable,
+                ..
+            } => {
+                if seen.insert(*binding_id) {
+                    result.push((*binding_id, variable.clone()));
+                }
+            }
+            typed_ast::Statement::If {
+                body, else_body, ..
+            } => {
+                for (id, name) in collect_binding_ids(body) {
+                    if seen.insert(id) {
+                        result.push((id, name));
+                    }
+                }
+                if let Some(else_stmts) = else_body {
+                    for (id, name) in collect_binding_ids(else_stmts) {
+                        if seen.insert(id) {
+                            result.push((id, name));
+                        }
+                    }
+                }
+            }
+            typed_ast::Statement::While { body, .. } => {
+                for (id, name) in collect_binding_ids(body) {
+                    if seen.insert(id) {
+                        result.push((id, name));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    result
 }
 
 pub fn compile_metadata(

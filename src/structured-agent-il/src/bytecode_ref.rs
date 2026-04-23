@@ -5,6 +5,7 @@ use structured_agent_runtime::symbols::{BodyRef, DefinitionPath};
 use structured_agent_runtime::{Parameter, Type};
 
 use crate::Instruction;
+use crate::slot::SlotTable;
 
 #[derive(Clone, Debug)]
 pub struct BytecodeRef {
@@ -26,6 +27,7 @@ pub struct CompiledFunction {
     pub instructions: Vec<Instruction>,
     pub labels: HashMap<String, usize>,
     pub documentation: Option<String>,
+    pub slot_table: SlotTable,
 }
 
 impl fmt::Display for CompiledFunction {
