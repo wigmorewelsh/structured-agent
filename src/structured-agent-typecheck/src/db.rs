@@ -809,7 +809,33 @@ fn convert_type_kind(
     }
 }
 
-#[salsa::tracked]
+fn get_module_header_params<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    module: InternedModuleName<'db>,
+) -> Vec<(String, DefinitionPath)> {
+    let module_name = module.name(db);
+    let module_def = match tables.modules(db).get().get(&module_name).cloned() {
+        Some(d) => d,
+        None => return vec![],
+    };
+    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        return vec![];
+    };
+    for def in &ast_module.definitions {
+        if let Definition::ModuleHeader { params, .. } = def {
+            return params
+                .iter()
+                .filter_map(|p| {
+                    let path = resolve_absolute_path(db, tables, p.path.clone())?;
+                    Some((p.name.clone(), path))
+                })
+                .collect();
+        }
+    }
+    vec![]
+}
+
 pub fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -820,13 +846,21 @@ pub fn elaborate_function_def<'db>(
     let fn_def = fn_def_ptr.get();
     match &fn_def.ast_ref {
         CheckerAstRef::Function(arc_fn, _) => {
+            let module_name = fn_def.name.module_prefix();
+            let interned_module = InternedModuleName::new(db, module_name.clone());
+            let module_params = get_module_header_params(db, tables, interned_module);
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
-                module_name: &fn_def.name.module_prefix(),
+                module_name: &module_name,
                 program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
-                db, tables, arc_fn, &ctx, None,
+                db,
+                tables,
+                arc_fn,
+                &ctx,
+                None,
+                &module_params,
             )?))
         }
         CheckerAstRef::ImplFunction(arc_fn, type_name_str, _) => {
@@ -843,6 +877,7 @@ pub fn elaborate_function_def<'db>(
                 arc_fn,
                 &ctx,
                 Some(self_type),
+                &[],
             )?))
         }
         _ => None,

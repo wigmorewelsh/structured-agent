@@ -32,6 +32,7 @@ pub struct BytecodeCompiler;
 struct CompilerCtx<'a> {
     builder: &'a mut InstructionBuilder,
     binding_id_to_slot: &'a HashMap<BindingId, Slot>,
+    name_to_slot: &'a HashMap<String, Slot>,
 }
 
 impl BytecodeCompiler {
@@ -47,10 +48,12 @@ impl BytecodeCompiler {
 
         let _ret_slot = builder.alloc_slot(SlotKind::ReturnSlot, "$ret");
         let mut binding_id_to_slot: HashMap<BindingId, Slot> = HashMap::new();
+        let mut name_to_slot: HashMap<String, Slot> = HashMap::new();
 
         for param in &typed_func.parameters {
             let slot = builder.alloc_slot(SlotKind::ValueParam, &param.name);
             binding_id_to_slot.insert(param.binding_id, slot);
+            name_to_slot.insert(param.name.clone(), slot);
         }
 
         for (binding_id, name) in collect_binding_ids(&typed_func.body.statements) {
@@ -69,6 +72,7 @@ impl BytecodeCompiler {
             let mut ctx = CompilerCtx {
                 builder: &mut builder,
                 binding_id_to_slot: &binding_id_to_slot,
+                name_to_slot: &name_to_slot,
             };
 
             for stmt in &typed_func.body.statements {
@@ -341,14 +345,18 @@ impl BytecodeCompiler {
         dest_var: Slot,
     ) -> Result<(), String> {
         if let Some(param_name) = via_module_param {
-            let mut arg_slots = Vec::new();
+            let module_slot = *ctx
+                .name_to_slot
+                .get(param_name)
+                .ok_or_else(|| format!("module param slot not found: {}", param_name))?;
+            let mut arg_slots = vec![module_slot];
             for arg_expr in arguments {
                 let temp = ctx.builder.next_temp_slot();
                 self.compile_expression(ctx, arg_expr, temp)?;
                 arg_slots.push(temp);
             }
             ctx.builder.emit(Instruction::CallIndirect {
-                module_param: param_name.to_string(),
+                module_param: module_slot,
                 fn_name: function.last_name().to_string(),
                 params: arg_slots,
                 dest: dest_var,
@@ -356,15 +364,13 @@ impl BytecodeCompiler {
             return Ok(());
         }
 
-        let mut module_param_names: Vec<String> = Vec::new();
         let mut params: Vec<Slot> = Vec::new();
-        for (param_name, concrete_module) in module_params {
+        for (_, concrete_module) in module_params {
             let slot = ctx.builder.next_temp_slot();
             ctx.builder.emit(Instruction::LoadModule {
                 name: concrete_module.clone(),
                 dest: slot,
             });
-            module_param_names.push(param_name.clone());
             params.push(slot);
         }
 
@@ -377,13 +383,11 @@ impl BytecodeCompiler {
         let instruction = match kind {
             FunctionKind::Bytecode => Instruction::CallBytecode {
                 function_name: function.clone(),
-                module_param_names: module_param_names.clone(),
                 params,
                 dest: dest_var,
             },
             FunctionKind::External => Instruction::CallExternal {
                 function_name: function.clone(),
-                module_param_names,
                 params,
                 dest: dest_var,
             },

@@ -18,12 +18,23 @@ pub fn elaborate_function(
     func: &Function,
     ctx: &synthesize::CheckContext,
     self_type: Option<DefinitionPath>,
+    module_params: &[(String, DefinitionPath)],
 ) -> Option<typed_ast::Function> {
     let mut env = synthesize::TypeEnvironment::with_type_params(&func.type_params);
     if let Some(st) = self_type {
         env.set_self_type(st);
     }
     let mut typed_parameters = Vec::new();
+    for (name, module_type_path) in module_params {
+        let rt_type = structured_agent_runtime::Type::Struct(module_type_path.clone());
+        let binding_id = env.declare_variable(name.clone(), rt_type.clone(), func.span);
+        typed_parameters.push(typed_ast::Parameter {
+            name: name.clone(),
+            param_type: rt_type,
+            binding_id,
+            span: func.span,
+        });
+    }
     for param in &func.parameters {
         let runtime_type =
             synthesize::resolve(db, tables, &param.param_type, &env, param.span, ctx)?;

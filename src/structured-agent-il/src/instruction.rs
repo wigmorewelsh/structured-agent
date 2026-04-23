@@ -50,13 +50,11 @@ pub enum Instruction {
 
     CallBytecode {
         function_name: DefinitionPath,
-        module_param_names: Vec<String>,
         params: Vec<Slot>,
         dest: Slot,
     },
     CallExternal {
         function_name: DefinitionPath,
-        module_param_names: Vec<String>,
         params: Vec<Slot>,
         dest: Slot,
     },
@@ -65,7 +63,7 @@ pub enum Instruction {
         dest: Slot,
     },
     CallIndirect {
-        module_param: String,
+        module_param: Slot,
         fn_name: String,
         params: Vec<Slot>,
         dest: Slot,
@@ -149,7 +147,6 @@ impl fmt::Display for Instruction {
                 function_name,
                 params,
                 dest,
-                ..
             } => {
                 write!(f, "call.bytecode {}, [", function_name)?;
                 for (i, var) in params.iter().enumerate() {
@@ -164,7 +161,6 @@ impl fmt::Display for Instruction {
                 function_name,
                 params,
                 dest,
-                ..
             } => {
                 write!(f, "call.external {}, [", function_name)?;
                 for (i, var) in params.iter().enumerate() {

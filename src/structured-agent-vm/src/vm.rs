@@ -67,27 +67,19 @@ impl VM {
                 Instruction::Yield => return Err("Yield not yet implemented".to_string()),
                 Instruction::CallBytecode {
                     function_name,
-                    module_param_names,
                     params,
                     dest,
                 } => {
-                    self.execute_call(state, function_name, module_param_names, params, *dest)
+                    self.execute_call(state, function_name, params, *dest)
                         .await?
                 }
                 Instruction::CallExternal {
                     function_name,
-                    module_param_names,
                     params,
                     dest,
                 } => {
-                    self.execute_external_call(
-                        state,
-                        function_name,
-                        module_param_names,
-                        params,
-                        *dest,
-                    )
-                    .await?
+                    self.execute_external_call(state, function_name, params, *dest)
+                        .await?
                 }
                 Instruction::LoadModule { name, dest } => {
                     self.execute_load_module(state, name, *dest)
@@ -133,7 +125,7 @@ impl VM {
                     params,
                     dest,
                 } => {
-                    self.execute_indirect_call(state, module_param, fn_name, params, *dest)
+                    self.execute_indirect_call(state, *module_param, fn_name, params, *dest)
                         .await?
                 }
             };
@@ -221,7 +213,6 @@ impl VM {
         &self,
         state: VMState,
         function_name: &DefinitionPath,
-        module_param_names: &[String],
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
@@ -229,15 +220,8 @@ impl VM {
             .runtime
             .get_bytecode_function(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        self.invoke_function(
-            state,
-            func,
-            &function_name.to_string(),
-            module_param_names,
-            params,
-            dest,
-        )
-        .await
+        self.invoke_function(state, func, &function_name.to_string(), params, dest)
+            .await
     }
 
     async fn invoke_function(
@@ -245,7 +229,6 @@ impl VM {
         mut state: VMState,
         func: Arc<dyn ExecutableFunction>,
         display_name: &str,
-        module_param_names: &[String],
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
@@ -263,12 +246,6 @@ impl VM {
             .collect();
 
         let mut child_context = state.context.create_child(true);
-
-        for (i, name) in module_param_names.iter().enumerate() {
-            if let Some(val) = args.get(i) {
-                child_context.declare_variable(name.clone(), val.clone());
-            }
-        }
 
         child_context.add_event(
             ExpressionValue::string(format!("## {}", display_name)),
@@ -294,7 +271,6 @@ impl VM {
         &self,
         state: VMState,
         function_name: &DefinitionPath,
-        module_param_names: &[String],
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
@@ -327,7 +303,7 @@ impl VM {
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
 
         let state = self
-            .invoke_function(state, func, &lookup_name, module_param_names, params, dest)
+            .invoke_function(state, func, &lookup_name, params, dest)
             .await?;
 
         let result = Self::read_slot(&state, dest)?;
@@ -546,15 +522,12 @@ impl VM {
     async fn execute_indirect_call(
         &self,
         state: VMState,
-        module_param: &str,
+        module_param: Slot,
         fn_name: &str,
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
-        let module_val = state
-            .context
-            .get_variable(module_param)
-            .ok_or_else(|| format!("Module param not found in context: {}", module_param))?;
+        let module_val = Self::read_slot(&state, module_param)?;
         let module_name = module_val
             .value
             .as_module()
@@ -565,7 +538,7 @@ impl VM {
             .runtime
             .get_bytecode_function(&function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        self.invoke_function(state, func, &function_name.to_string(), &[], params, dest)
+        self.invoke_function(state, func, &function_name.to_string(), params, dest)
             .await
     }
 

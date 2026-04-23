@@ -22,7 +22,6 @@ mod instruction_display_tests {
                 DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
-            module_param_names: vec![],
             params: vec![Slot(0), Slot(1)],
             dest: Slot(2),
         };
@@ -40,7 +39,6 @@ mod instruction_display_tests {
                 DefinitionPath::for_module(NonEmpty::new("mymod".to_string())),
                 "foo",
             ),
-            module_param_names: vec![],
             params: vec![Slot(0), Slot(1)],
             dest: Slot(2),
         };
