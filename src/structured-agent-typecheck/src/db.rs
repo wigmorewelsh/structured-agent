@@ -814,26 +814,46 @@ fn get_module_header_params<'db>(
     tables: SymbolTablesInput,
     module: InternedModuleName<'db>,
 ) -> Vec<(String, DefinitionPath)> {
-    let module_name = module.name(db);
-    let module_def = match tables.modules(db).get().get(&module_name).cloned() {
+    collect_module_params_for_path(db, tables, &module.name(db))
+}
+
+fn collect_module_params_for_path(
+    db: &dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    module_name: &DefinitionPath,
+) -> Vec<(String, DefinitionPath)> {
+    let module_def = match tables.modules(db).get().get(module_name).cloned() {
         Some(d) => d,
         None => return vec![],
     };
+
+    let mut params = if let Some(parent) = &module_def.parent_module {
+        collect_module_params_for_path(db, tables, parent)
+    } else {
+        vec![]
+    };
+
     let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
-        return vec![];
+        return params;
     };
     for def in &ast_module.definitions {
-        if let Definition::ModuleHeader { params, .. } = def {
-            return params
+        if let Definition::ModuleHeader {
+            params: header_params,
+            ..
+        } = def
+        {
+            let own: Vec<(String, DefinitionPath)> = header_params
                 .iter()
                 .filter_map(|p| {
                     let path = resolve_absolute_path(db, tables, p.path.clone())?;
                     Some((p.name.clone(), path))
                 })
                 .collect();
+            params.extend(own);
+            break;
         }
     }
-    vec![]
+    params
 }
 
 pub fn elaborate_function_def<'db>(
