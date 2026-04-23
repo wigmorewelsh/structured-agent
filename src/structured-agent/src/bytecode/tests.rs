@@ -842,7 +842,7 @@ mod vm_execution_tests {
     use crate::cli::config::ProgramSource;
     use crate::compiler::{CodespanParser, CompilationUnit};
     use crate::diagnostics::DiagnosticManager;
-    use crate::runtime::{Context, ExpressionValue, Runtime};
+    use crate::runtime::{Context, ExpressionValue, Runtime, RuntimeService};
     use crate::typecheck::TypeChecker;
     use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
@@ -1141,7 +1141,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1161,7 +1162,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1181,7 +1183,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1202,7 +1205,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1224,7 +1228,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1244,7 +1249,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let mut context = Context::with_runtime(runtime.clone());
 
         context.declare_variable(
@@ -1270,7 +1276,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1295,7 +1302,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1318,7 +1326,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1343,7 +1352,8 @@ mod vm_execution_tests {
             .compile_to_bytecode(&typed_func)
             .unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1370,7 +1380,8 @@ mod vm_execution_tests {
             .compile_to_bytecode(&typed_func)
             .unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1391,7 +1402,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1412,7 +1424,8 @@ mod vm_execution_tests {
         let func = get_function(&module, "test");
         let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
 
-        let runtime = Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 
@@ -1452,7 +1465,7 @@ mod vm_execution_tests {
         let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
         runtime.check().unwrap();
 
-        let runtime = Arc::new(runtime);
+        let runtime: Arc<dyn RuntimeService> = Arc::new(runtime);
         let context = Context::with_runtime(runtime.clone());
         let vm = VM::new(runtime);
 

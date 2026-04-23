@@ -1,14 +1,14 @@
-use super::BytecodeFunctionExpr;
 use structured_agent_il::{
     BytecodeRef, CompiledFunction, Instruction, builder::InstructionBuilder,
 };
+use structured_agent_vm::BytecodeFunctionExpr;
 
-use crate::typecheck::{FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
-use crate::typed_ast;
-use crate::types::ExecutableFunction;
+use structured_agent_interpreter_runtime::ExecutableFunction;
 use structured_agent_runtime::Parameter;
+use structured_agent_runtime::symbols::FunctionKind;
+use structured_agent_typed_ast as typed_ast;
+use structured_agent_typed_ast::{NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_runtime::symbols::{
     DefinitionPath, FunctionDefinition, ImplDefinition, MetaData, ModuleDefinition, References,

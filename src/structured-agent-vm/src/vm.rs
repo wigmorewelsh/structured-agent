@@ -1,11 +1,11 @@
-use crate::runtime::{
-    AgentMessageContent, Context, ExpressionParameter, ExpressionResult, ExpressionValue, Runtime,
-};
-use crate::types::ExecutableFunction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use structured_agent_il::Instruction;
+use structured_agent_interpreter_runtime::{
+    AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
+    ExpressionValue, RuntimeService,
+};
 use structured_agent_runtime::DefinitionPath;
 
 pub struct VMState {
@@ -14,11 +14,11 @@ pub struct VMState {
 }
 
 pub struct VM {
-    runtime: Arc<Runtime>,
+    runtime: Arc<dyn RuntimeService>,
 }
 
 impl VM {
-    pub fn new(runtime: Arc<Runtime>) -> Self {
+    pub fn new(runtime: Arc<dyn RuntimeService>) -> Self {
         Self { runtime }
     }
 
@@ -423,7 +423,7 @@ impl VM {
         mut state: VMState,
         dest: &str,
         param_name: &str,
-        param_type: &crate::types::Type,
+        param_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
         let value = state
             .context
@@ -473,7 +473,7 @@ impl VM {
         &self,
         mut state: VMState,
         dest: &str,
-        return_type: &crate::types::Type,
+        return_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
         let value = state
             .context
@@ -563,7 +563,7 @@ impl VM {
         dest: &str,
         fields: &[(String, String)],
     ) -> Result<VMState, String> {
-        let field_values: Vec<(&str, crate::runtime::ExpressionValue)> = fields
+        let field_values: Vec<(&str, ExpressionValue)> = fields
             .iter()
             .map(|(name, src)| {
                 let val = Self::read_variable(&state, src)?;
@@ -571,12 +571,8 @@ impl VM {
             })
             .collect::<Result<Vec<_>, String>>()?;
 
-        let struct_value = crate::runtime::ExpressionValue::struct_value(field_values);
-        Self::write_variable(
-            &mut state,
-            dest,
-            crate::runtime::ExpressionResult::new(struct_value),
-        );
+        let struct_value = ExpressionValue::struct_value(field_values);
+        Self::write_variable(&mut state, dest, ExpressionResult::new(struct_value));
         Ok(Self::advance_pc(state))
     }
 
@@ -589,11 +585,7 @@ impl VM {
     ) -> Result<VMState, String> {
         let src_val = Self::read_variable(&state, src)?;
         let field_value = src_val.value.get_struct_field(field)?;
-        Self::write_variable(
-            &mut state,
-            dest,
-            crate::runtime::ExpressionResult::new(field_value),
-        );
+        Self::write_variable(&mut state, dest, ExpressionResult::new(field_value));
         Ok(Self::advance_pc(state))
     }
 }

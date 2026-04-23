@@ -88,7 +88,7 @@ pub fn create_native_function_expr<F: NativeFunction + 'static>(
 mod tests {
     use super::*;
     use crate::cli::config::ProgramSource;
-    use crate::runtime::{Context, Runtime};
+    use crate::runtime::{Context, Runtime, RuntimeService};
     use crate::types::{NativeFunction, Type};
 
     fn test_runtime() -> Runtime {
@@ -197,7 +197,7 @@ mod tests {
         let native_func = Arc::new(TestNativeFunctionWithDocs::new());
         let expr = NativeFunctionExpr::new(native_func);
 
-        let runtime = Arc::new(test_runtime());
+        let runtime: Arc<dyn RuntimeService> = Arc::new(test_runtime());
         let context = Context::with_runtime(runtime);
 
         let (_context, result) = expr.execute(context, vec![]).await.unwrap();

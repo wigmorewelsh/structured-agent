@@ -1,4 +1,4 @@
-use crate::gemini::{
+use crate::{
     config::{AuthMethod, GeminiConfig},
     error::{GeminiError, GeminiResult},
     types::{

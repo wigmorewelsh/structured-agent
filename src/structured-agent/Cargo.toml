@@ -15,7 +15,11 @@ path = "src/main.rs"
 
 [dependencies]
 structured-agent-ast = { path = "../structured-agent-ast" }
+structured-agent-gemini = { path = "../structured-agent-gemini" }
+structured-agent-bytecode-compiler = { path = "../structured-agent-bytecode-compiler" }
 structured-agent-il = { path = "../structured-agent-il" }
+structured-agent-vm = { path = "../structured-agent-vm" }
+structured-agent-interpreter-runtime = { path = "../structured-agent-interpreter-runtime" }
 structured-agent-il-analysis = { path = "../structured-agent-il-analysis" }
 structured-agent-typed-ast = { path = "../structured-agent-typed-ast" }
 structured-agent-typecheck = { path = "../structured-agent-typecheck" }

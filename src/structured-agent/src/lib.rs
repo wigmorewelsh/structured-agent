@@ -7,7 +7,7 @@ pub mod compiler;
 pub mod diagnostics;
 pub mod expressions;
 
-pub mod gemini;
+pub use structured_agent_gemini as gemini;
 pub use structured_agent_il_analysis as il_analysis;
 pub mod mcp;
 pub mod runtime;

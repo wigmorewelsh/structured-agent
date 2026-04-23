@@ -3,7 +3,7 @@ use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
-use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider};
+use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider, RuntimeService};
 use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
@@ -297,8 +297,10 @@ impl Runtime {
                 if let Some(main_body) = &func_def.body_ref {
                     debug!("Executing main function");
                     let main_expr = BytecodeFunctionExpr::new(main_name.clone(), main_body.clone());
-                    let initial_context =
-                        Context::with_runtime_and_handle(Arc::new(runtime), handle);
+                    let initial_context = Context::with_runtime_and_handle(
+                        Arc::new(runtime) as Arc<dyn RuntimeService>,
+                        handle,
+                    );
                     match main_expr.execute(initial_context, vec![]).await {
                         Ok((_, result)) => {
                             debug!("Program execution completed successfully");
@@ -329,7 +331,8 @@ impl Runtime {
         program: &dyn crate::types::Function,
     ) -> Result<ExpressionValue, RuntimeError> {
         debug!("Running expression");
-        let initial_context = Context::with_runtime(Arc::new(self.create_runtime_ref()));
+        let initial_context =
+            Context::with_runtime(Arc::new(self.create_runtime_ref()) as Arc<dyn RuntimeService>);
         match program.execute(initial_context, vec![]).await {
             Ok((_context, result)) => {
                 debug!("Expression evaluated successfully");
@@ -541,6 +544,49 @@ impl Runtime {
     #[cfg(test)]
     pub fn providers_count(&self) -> usize {
         self.providers.len()
+    }
+}
+
+impl RuntimeService for Runtime {
+    fn get_native_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+        self.function_registry.get(name).cloned()
+    }
+
+    fn get_bytecode_function(&self, name: &DefinitionPath) -> Option<Arc<dyn ExecutableFunction>> {
+        let cached = self.compiled.get()?.as_ref().ok()?;
+        let func_def = cached.metadata.functions.get(name)?;
+        let body = func_def.body_ref.as_ref()?;
+        Some(Arc::new(BytecodeFunctionExpr::new(
+            name.clone(),
+            body.clone(),
+        )))
+    }
+
+    fn engine(&self) -> &dyn LanguageEngine {
+        self.language_engine.as_ref()
+    }
+
+    fn type_to_arrow_datatype(
+        &self,
+        ty: &structured_agent_runtime::Type,
+    ) -> arrow::datatypes::DataType {
+        self.compiled
+            .get()
+            .and_then(|c| c.as_ref().ok())
+            .map(|c| structured_agent_runtime::type_to_arrow_datatype(ty, c.metadata.as_ref()))
+            .unwrap_or(arrow::datatypes::DataType::Null)
+    }
+
+    fn get_struct(&self, type_name: &DefinitionPath) -> Option<Vec<(String, crate::types::Type)>> {
+        Runtime::get_struct(self, type_name)
+    }
+
+    fn get_struct_with_args(
+        &self,
+        type_name: &DefinitionPath,
+        args: &[crate::types::Type],
+    ) -> Option<Vec<(String, crate::types::Type)>> {
+        Runtime::get_struct_with_args(self, type_name, args)
     }
 }
 

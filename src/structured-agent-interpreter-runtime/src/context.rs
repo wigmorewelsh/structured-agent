@@ -1,8 +1,9 @@
-use crate::runtime::Runtime;
-use crate::runtime::actor::AgentHandle;
-use crate::runtime::types::{ExpressionParameter, ExpressionResult, ExpressionValue};
+use crate::service::RuntimeService;
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_runtime::{
+    AgentHandle, ExpressionParameter, ExpressionResult, ExpressionValue,
+};
 
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -17,12 +18,12 @@ pub struct Context {
     variables: HashMap<String, ExpressionResult>,
     is_scope_boundary: bool,
     return_value: Option<ExpressionResult>,
-    runtime: Arc<Runtime>,
+    runtime: Arc<dyn RuntimeService>,
     agent_handle: AgentHandle,
 }
 
 impl Context {
-    pub fn with_runtime(runtime: Arc<Runtime>) -> Self {
+    pub fn with_runtime(runtime: Arc<dyn RuntimeService>) -> Self {
         Self {
             parent: None,
             events: Vec::new(),
@@ -34,7 +35,10 @@ impl Context {
         }
     }
 
-    pub fn with_runtime_and_handle(runtime: Arc<Runtime>, agent_handle: AgentHandle) -> Self {
+    pub fn with_runtime_and_handle(
+        runtime: Arc<dyn RuntimeService>,
+        agent_handle: AgentHandle,
+    ) -> Self {
         Self {
             parent: None,
             events: Vec::new(),
@@ -164,11 +168,11 @@ impl Context {
             .ok_or_else(|| "No parent context to restore".to_string())
     }
 
-    pub fn runtime(&self) -> &Runtime {
-        &self.runtime
+    pub fn runtime(&self) -> &dyn RuntimeService {
+        self.runtime.as_ref()
     }
 
-    pub fn runtime_arc(&self) -> Arc<Runtime> {
+    pub fn runtime_arc(&self) -> Arc<dyn RuntimeService> {
         self.runtime.clone()
     }
 

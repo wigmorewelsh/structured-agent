@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub mod refs;
+pub use refs::{NoBody, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
+
 use structured_agent_ast::ast::{ExternalFunction, StructDefinition, UseSegment};
 use structured_agent_ast::types::{FileId, Span};
 use structured_agent_runtime::DefinitionPath;

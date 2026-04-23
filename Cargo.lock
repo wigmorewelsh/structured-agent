@@ -2172,13 +2172,17 @@ dependencies = [
  "serde_json",
  "structured-agent-analysis",
  "structured-agent-ast",
+ "structured-agent-bytecode-compiler",
+ "structured-agent-gemini",
  "structured-agent-il",
  "structured-agent-il-analysis",
+ "structured-agent-interpreter-runtime",
  "structured-agent-parser",
  "structured-agent-runtime",
  "structured-agent-stdlib",
  "structured-agent-typecheck",
  "structured-agent-typed-ast",
+ "structured-agent-vm",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2208,6 +2212,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "structured-agent-bytecode-compiler"
+version = "0.1.0"
+dependencies = [
+ "structured-agent-il",
+ "structured-agent-interpreter-runtime",
+ "structured-agent-runtime",
+ "structured-agent-typed-ast",
+ "structured-agent-vm",
+]
+
+[[package]]
+name = "structured-agent-gemini"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "nonempty",
+ "reqwest",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "structured-agent-interpreter-runtime",
+ "structured-agent-runtime",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "structured-agent-il"
 version = "0.1.0"
 dependencies = [
@@ -2222,6 +2254,16 @@ dependencies = [
  "nonempty",
  "structured-agent-ast",
  "structured-agent-il",
+ "structured-agent-runtime",
+]
+
+[[package]]
+name = "structured-agent-interpreter-runtime"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "schemars 0.8.22",
  "structured-agent-runtime",
 ]
 
@@ -2288,6 +2330,16 @@ name = "structured-agent-typed-ast"
 version = "0.1.0"
 dependencies = [
  "structured-agent-ast",
+ "structured-agent-runtime",
+]
+
+[[package]]
+name = "structured-agent-vm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "structured-agent-il",
+ "structured-agent-interpreter-runtime",
  "structured-agent-runtime",
 ]
 

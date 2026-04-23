@@ -1,15 +1,17 @@
-use crate::bytecode::{BytecodeRef, VM};
-use crate::runtime::{Context, ExpressionResult};
-use crate::types::{ExecutableFunction, Function, Parameter, Type};
+use crate::vm::VM;
 use async_trait::async_trait;
 use std::any::Any;
+use structured_agent_il::BytecodeRef;
+use structured_agent_interpreter_runtime::{
+    Context, ExecutableFunction, ExpressionResult, Function, Parameter, Type,
+};
 use structured_agent_runtime::DefinitionPath;
 
 pub struct BytecodeFunctionExpr {
     name: String,
     parameters: Vec<Parameter>,
     return_type: Type,
-    instructions: Vec<crate::bytecode::Instruction>,
+    instructions: Vec<structured_agent_il::Instruction>,
     labels: std::collections::HashMap<String, usize>,
     documentation: Option<String>,
 }

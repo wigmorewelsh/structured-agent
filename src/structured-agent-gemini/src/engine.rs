@@ -1,14 +1,13 @@
-use crate::gemini::error::GeminiResult;
-use crate::gemini::types::GenerationConfig;
-use crate::gemini::types::JsonSchemaBuilder;
-use crate::gemini::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
-use crate::runtime::Context;
-use crate::runtime::ExpressionValue;
-use crate::types::LanguageEngine;
-use crate::types::Type;
+use crate::error::GeminiResult;
+use crate::types::GenerationConfig;
+use crate::types::JsonSchemaBuilder;
+use crate::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use async_trait::async_trait;
 use schemars::schema::SchemaObject;
 use serde::{Deserialize, Serialize};
+use structured_agent_interpreter_runtime::{
+    Context, ExpressionValue, LanguageEngine, Type, format_event,
+};
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
 const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
@@ -102,7 +101,7 @@ impl GeminiEngine {
         } else {
             events
                 .iter()
-                .map(|event| ChatMessage::system(crate::types::format_event(event)))
+                .map(|event| ChatMessage::system(format_event(event)))
                 .collect()
         }
     }
@@ -317,7 +316,7 @@ impl LanguageEngine for GeminiEngine {
     async fn select(
         &self,
         context: &Context,
-        options: &[crate::runtime::ExpressionValue],
+        options: &[ExpressionValue],
     ) -> Result<usize, String> {
         let mut selection_prompt =
             "SELECT: Choose one of the following options by responding with the appropriate number:\n"
@@ -444,28 +443,62 @@ impl LanguageEngine for GeminiEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::config::ProgramSource;
+    use arrow::datatypes::DataType;
+    use nonempty::NonEmpty;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use structured_agent_interpreter_runtime::{
+        DefinitionPath, ExecutableFunction, RuntimeService,
+    };
 
-    use crate::runtime::Runtime;
+    struct MockRuntime {
+        structs: HashMap<String, Vec<(String, Type)>>,
+    }
 
-    fn make_context_with_struct(code: &str) -> crate::runtime::Context {
-        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        runtime.check().unwrap();
-        crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime))
+    impl RuntimeService for MockRuntime {
+        fn get_native_function(&self, _: &str) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+        fn get_bytecode_function(&self, _: &DefinitionPath) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+        fn engine(&self) -> &dyn LanguageEngine {
+            unimplemented!()
+        }
+        fn type_to_arrow_datatype(&self, _: &Type) -> DataType {
+            DataType::Null
+        }
+        fn get_struct(&self, type_name: &DefinitionPath) -> Option<Vec<(String, Type)>> {
+            self.structs.get(type_name.last_name()).cloned()
+        }
+        fn get_struct_with_args(
+            &self,
+            type_name: &DefinitionPath,
+            _: &[Type],
+        ) -> Option<Vec<(String, Type)>> {
+            self.structs.get(type_name.last_name()).cloned()
+        }
+    }
+
+    fn make_context(structs: HashMap<String, Vec<(String, Type)>>) -> Context {
+        Context::with_runtime(Arc::new(MockRuntime { structs }))
+    }
+
+    fn empty_context() -> Context {
+        make_context(HashMap::new())
+    }
+
+    fn make_def_path(module: &str, type_name: &str) -> DefinitionPath {
+        DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new(module.to_string())),
+            type_name,
+        )
     }
 
     #[test]
     fn test_build_value_schema_struct_unknown_returns_error() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = "fn main(): () { return () }";
-        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
-        runtime.check().unwrap();
-        let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
-        let ghost_type = Type::Struct(DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("test".to_string())),
-            "Ghost",
-        ));
+        let context = empty_context();
+        let ghost_type = Type::Struct(make_def_path("test", "Ghost"));
         let result = GeminiEngine::build_value_schema(&ghost_type, &context);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Ghost"));
@@ -473,41 +506,33 @@ mod tests {
 
     #[test]
     fn test_build_value_schema_struct_with_fields() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = r#"
-struct Task {
-    title: String,
-    steps: Int,
-}
-fn main(): () { return () }
-"#;
-        let context = make_context_with_struct(code);
-        let task_type = Type::Struct(DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-            "Task",
-        ));
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Task".to_string(),
+            vec![
+                ("title".to_string(), Type::string()),
+                ("steps".to_string(), Type::int()),
+            ],
+        );
+        let context = make_context(structs);
+        let task_type = Type::Struct(make_def_path("main", "Task"));
         let result = GeminiEngine::build_value_schema(&task_type, &context);
         assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
     }
 
     #[test]
     fn test_parse_json_value_struct() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = r#"
-struct Point {
-    x: Int,
-    y: Int,
-}
-fn main(): () { return () }
-"#;
-        let context = make_context_with_struct(code);
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Point".to_string(),
+            vec![
+                ("x".to_string(), Type::int()),
+                ("y".to_string(), Type::int()),
+            ],
+        );
+        let context = make_context(structs);
         let json = serde_json::json!({"x": 10, "y": 20});
-        let point_type = Type::Struct(DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-            "Point",
-        ));
+        let point_type = Type::Struct(make_def_path("main", "Point"));
         let result = GeminiEngine::parse_json_value(json, &point_type, &context);
         assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
         let value = result.unwrap();
@@ -523,45 +548,24 @@ fn main(): () { return () }
 
     #[test]
     fn test_build_value_schema_parameterized_known_struct() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = r#"
-struct Task {
-    title: String,
-    steps: Int,
-}
-fn main(): () { return () }
-"#;
-        let context = make_context_with_struct(code);
-        let task_type = Type::Parameterized(
-            DefinitionPath::for_type(
-                DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-                "Task",
-            ),
-            vec![],
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Task".to_string(),
+            vec![
+                ("title".to_string(), Type::string()),
+                ("steps".to_string(), Type::int()),
+            ],
         );
+        let context = make_context(structs);
+        let task_type = Type::Parameterized(make_def_path("main", "Task"), vec![]);
         let result = GeminiEngine::build_value_schema(&task_type, &context);
         assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
     }
 
     #[test]
     fn test_build_value_schema_parameterized_unknown_returns_error() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = "fn main(): () { return () }";
-        let runtime = crate::runtime::Runtime::builder(crate::cli::config::ProgramSource::Inline(
-            code.to_string(),
-        ))
-        .build();
-        runtime.check().unwrap();
-        let context = crate::runtime::Context::with_runtime(std::sync::Arc::new(runtime));
-        let ghost_type = Type::Parameterized(
-            DefinitionPath::for_type(
-                DefinitionPath::for_module(NonEmpty::new("test".to_string())),
-                "Ghost",
-            ),
-            vec![],
-        );
+        let context = empty_context();
+        let ghost_type = Type::Parameterized(make_def_path("test", "Ghost"), vec![]);
         let result = GeminiEngine::build_value_schema(&ghost_type, &context);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Ghost"));
@@ -569,24 +573,17 @@ fn main(): () { return () }
 
     #[test]
     fn test_parse_json_value_parameterized_struct() {
-        use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
-        let code = r#"
-struct Point {
-    x: Int,
-    y: Int,
-}
-fn main(): () { return () }
-"#;
-        let context = make_context_with_struct(code);
-        let json = serde_json::json!({"x": 3, "y": 7});
-        let point_type = Type::Parameterized(
-            DefinitionPath::for_type(
-                DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-                "Point",
-            ),
-            vec![],
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Point".to_string(),
+            vec![
+                ("x".to_string(), Type::int()),
+                ("y".to_string(), Type::int()),
+            ],
         );
+        let context = make_context(structs);
+        let json = serde_json::json!({"x": 3, "y": 7});
+        let point_type = Type::Parameterized(make_def_path("main", "Point"), vec![]);
         let result = GeminiEngine::parse_json_value(json, &point_type, &context);
         assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
         let value = result.unwrap();

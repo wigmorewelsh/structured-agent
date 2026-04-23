@@ -1,0 +1,11 @@
+[package]
+name = "structured-agent-interpreter-runtime"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-runtime = { path = "../structured-agent-runtime" }
+async-trait = "0.1"
+arrow = { version = "57.2.0", default-features = false }
+schemars = "0.8"

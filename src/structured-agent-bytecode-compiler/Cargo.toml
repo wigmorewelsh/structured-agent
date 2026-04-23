@@ -1,0 +1,12 @@
+[package]
+name = "structured-agent-bytecode-compiler"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+structured-agent-il = { path = "../structured-agent-il" }
+structured-agent-typed-ast = { path = "../structured-agent-typed-ast" }
+structured-agent-vm = { path = "../structured-agent-vm" }
+structured-agent-interpreter-runtime = { path = "../structured-agent-interpreter-runtime" }
+structured-agent-runtime = { path = "../structured-agent-runtime" }
