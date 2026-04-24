@@ -54,6 +54,7 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         Instruction::StructNew { fields, .. } => fields.iter().map(|(_, src)| *src).collect(),
         Instruction::StructGet { src, .. } => vec![*src],
         Instruction::CallIndirect { params, .. } => params.clone(),
+        Instruction::LoadModule { params, .. } => params.clone(),
         _ => vec![],
     }
 }

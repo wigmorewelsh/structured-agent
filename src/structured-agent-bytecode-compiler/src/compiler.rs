@@ -279,6 +279,9 @@ impl BytecodeCompiler {
                 Self::compile_type_literal(ctx, ty, dest_var);
                 Ok(())
             }
+            typed_ast::Expression::ModuleInstance { path, params, .. } => {
+                self.compile_module_instance(ctx, path, params, dest_var)
+            }
             typed_ast::Expression::Variable { binding_id, .. } => {
                 Self::compile_variable_expression(ctx, binding_id, dest_var)
             }
@@ -339,7 +342,6 @@ impl BytecodeCompiler {
                     .binding_id_to_slot
                     .get(binding_id)
                     .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?;
-                params.insert(0, module_slot);
                 ctx.builder.emit(Instruction::CallIndirect {
                     module_param: module_slot,
                     fn_name: fn_path.clone(),
@@ -376,6 +378,7 @@ impl BytecodeCompiler {
             | structured_agent_runtime::Type::Parameterized(path, _) => {
                 ctx.builder.emit(Instruction::LoadModule {
                     name: path.clone(),
+                    params: vec![],
                     dest: dest_var,
                 });
             }
@@ -383,6 +386,27 @@ impl BytecodeCompiler {
                 ctx.builder.emit(Instruction::LdcUnit { dest: dest_var });
             }
         }
+    }
+
+    fn compile_module_instance(
+        &self,
+        ctx: &mut CompilerCtx,
+        path: &DefinitionPath,
+        params: &[typed_ast::Expression],
+        dest_var: Slot,
+    ) -> Result<(), String> {
+        let mut param_slots = Vec::new();
+        for param_expr in params {
+            let s = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, param_expr, s)?;
+            param_slots.push(s);
+        }
+        ctx.builder.emit(Instruction::LoadModule {
+            name: path.clone(),
+            params: param_slots,
+            dest: dest_var,
+        });
+        Ok(())
     }
 
     fn compile_variable_expression(
@@ -631,6 +655,11 @@ fn collect_from_expr(
     seen: &mut HashSet<BindingId>,
 ) {
     match expr {
+        typed_ast::Expression::ModuleInstance { params, .. } => {
+            for p in params {
+                collect_from_expr(p, result, seen);
+            }
+        }
         typed_ast::Expression::Select(select, _) => {
             for clause in &select.clauses {
                 if seen.insert(clause.result_variable_binding_id) {

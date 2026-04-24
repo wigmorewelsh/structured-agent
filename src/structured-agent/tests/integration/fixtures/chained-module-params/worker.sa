@@ -3,5 +3,5 @@ mod worker(log: logger)
 use log::info
 
 pub fn run(): String {
-    return info("hello")
+    return info("fake module called")
 }

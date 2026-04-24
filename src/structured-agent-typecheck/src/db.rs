@@ -416,8 +416,14 @@ impl ResolveSegment {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ModuleInstantiation {
+    pub path: DefinitionPath,
+    pub params: Vec<ModuleInstantiation>,
+}
+
 pub enum CallModuleArg {
-    Concrete(DefinitionPath),
+    Concrete(ModuleInstantiation),
     FromParam(String),
 }
 
@@ -659,6 +665,36 @@ pub fn resolve_type_as_use<'db>(
     None
 }
 
+fn build_module_instantiation<'db>(
+    db: &'db dyn TypeCheckDatabase,
+    tables: SymbolTablesInput,
+    current_module: InternedModuleName<'db>,
+    path: &NonEmpty<String>,
+) -> Option<ModuleInstantiation> {
+    let resolved = resolve_path_full(db, tables, current_module, path)?;
+    let params: Vec<ModuleInstantiation> = resolved
+        .path
+        .iter()
+        .flat_map(|seg| match seg {
+            ResolveSegment::Local(_, p)
+            | ResolveSegment::UseAlias(_, _, p)
+            | ResolveSegment::UseDirect(_, _, p)
+            | ResolveSegment::ModuleHeader(_, _, p) => p.iter(),
+        })
+        .filter_map(|use_param| {
+            let param_path = match use_param {
+                UseParam::Positional(p) => p,
+                UseParam::Named { path, .. } => path,
+            };
+            build_module_instantiation(db, tables, current_module, param_path)
+        })
+        .collect();
+    Some(ModuleInstantiation {
+        path: resolved.ty,
+        params,
+    })
+}
+
 pub fn resolve_call_routing<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,
@@ -695,7 +731,8 @@ pub fn resolve_call_routing<'db>(
                 }
             }) {
                 Some(param_name) => Some(CallModuleArg::FromParam(param_name)),
-                None => Some(CallModuleArg::Concrete(resolved.ty)),
+                None => build_module_instantiation(db, tables, current_module, path)
+                    .map(CallModuleArg::Concrete),
             }
         })
         .collect();

@@ -81,8 +81,8 @@ impl VM {
                     self.execute_external_call(state, function_name, params, *dest)
                         .await?
                 }
-                Instruction::LoadModule { name, dest } => {
-                    self.execute_load_module(state, name, *dest)
+                Instruction::LoadModule { name, params, dest } => {
+                    self.execute_load_module(state, name, params, *dest)?
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, *var)?,
                 Instruction::CtxChild => self.execute_ctx_child(state),
@@ -223,18 +223,29 @@ impl VM {
 
     async fn invoke_function(
         &self,
-        mut state: VMState,
+        state: VMState,
         func: Arc<dyn ExecutableFunction>,
         display_name: &str,
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
-        let function_params = func.parameters();
+        let args = params
+            .iter()
+            .map(|s| Self::read_slot(&state, *s))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.invoke_function_with_args(state, func, display_name, args, dest)
+            .await
+    }
 
-        let mut args = Vec::new();
-        for slot in params {
-            args.push(Self::read_slot(&state, *slot)?);
-        }
+    async fn invoke_function_with_args(
+        &self,
+        mut state: VMState,
+        func: Arc<dyn ExecutableFunction>,
+        display_name: &str,
+        args: Vec<ExpressionResult>,
+        dest: Slot,
+    ) -> Result<VMState, String> {
+        let function_params = func.parameters();
 
         let evaluated_parameters: Vec<ExpressionParameter> = args
             .iter()
@@ -371,14 +382,22 @@ impl VM {
         &self,
         mut state: VMState,
         name: &DefinitionPath,
+        param_slots: &[Slot],
         dest: Slot,
-    ) -> VMState {
+    ) -> Result<VMState, String> {
+        let params: Vec<ExpressionValue> = param_slots
+            .iter()
+            .map(|s| Ok(Self::read_slot(&state, *s)?.value))
+            .collect::<Result<_, String>>()?;
         Self::write_slot(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::module(name.clone())),
+            ExpressionResult::new(ExpressionValue::Module {
+                path: name.clone(),
+                params,
+            }),
         );
-        Self::advance_pc(state)
+        Ok(Self::advance_pc(state))
     }
 
     fn execute_list_create(
@@ -525,17 +544,23 @@ impl VM {
         dest: Slot,
     ) -> Result<VMState, String> {
         let module_val = Self::read_slot(&state, module_param)?;
-        let module_name = module_val
-            .value
-            .as_module()
-            .map_err(|e| format!("CallIndirect: {}", e))?
-            .clone();
-        let function_name = DefinitionPath::for_function(module_name, fn_name.last_name());
+        let (module_path, module_params) = match &module_val.value {
+            ExpressionValue::Module { path, params } => (path.clone(), params.clone()),
+            _ => return Err(format!("CallIndirect: expected Module")),
+        };
+        let function_name = DefinitionPath::for_function(module_path, fn_name.last_name());
         let func = self
             .runtime
             .get_bytecode_function(&function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        self.invoke_function(state, func, &function_name.to_string(), params, dest)
+        let mut args: Vec<ExpressionResult> = module_params
+            .into_iter()
+            .map(ExpressionResult::new)
+            .collect();
+        for slot in params {
+            args.push(Self::read_slot(&state, *slot)?);
+        }
+        self.invoke_function_with_args(state, func, &function_name.to_string(), args, dest)
             .await
     }
 

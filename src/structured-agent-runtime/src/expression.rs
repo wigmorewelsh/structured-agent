@@ -30,14 +30,26 @@ impl ExpressionParameter {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionValue {
-    Module(DefinitionPath),
+    Module {
+        path: DefinitionPath,
+        params: Vec<ExpressionValue>,
+    },
     Dynamic(Arc<dyn RuntimeValue>),
 }
 
 impl PartialEq for ExpressionValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ExpressionValue::Module(a), ExpressionValue::Module(b)) => a == b,
+            (
+                ExpressionValue::Module {
+                    path: a,
+                    params: ap,
+                },
+                ExpressionValue::Module {
+                    path: b,
+                    params: bp,
+                },
+            ) => a == b && ap == bp,
             (ExpressionValue::Dynamic(a), ExpressionValue::Dynamic(b)) => a.eq(b.as_any()),
             _ => false,
         }
@@ -103,8 +115,11 @@ impl ExpressionValue {
         Self::Dynamic(Arc::new(ListValue::new(arr)))
     }
 
-    pub fn module(name: DefinitionPath) -> Self {
-        Self::Module(name)
+    pub fn module(path: DefinitionPath) -> Self {
+        Self::Module {
+            path,
+            params: vec![],
+        }
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
@@ -161,7 +176,7 @@ impl ExpressionValue {
 
     pub fn to_arrow(&self) -> Arc<dyn Array> {
         match self {
-            ExpressionValue::Module(_) => panic!("expected value, got Module"),
+            ExpressionValue::Module { .. } => panic!("expected value, got Module"),
             ExpressionValue::Dynamic(v) => v.to_arrow(),
         }
     }
@@ -243,14 +258,14 @@ impl ExpressionValue {
 
     pub fn as_module(&self) -> Result<&DefinitionPath, String> {
         match self {
-            ExpressionValue::Module(name) => Ok(name),
+            ExpressionValue::Module { path, .. } => Ok(path),
             _ => Err(format!("expected Module, got {}", self.type_name())),
         }
     }
 
     pub fn type_name(&self) -> &str {
         match self {
-            ExpressionValue::Module(_) => "Module",
+            ExpressionValue::Module { .. } => "Module",
             ExpressionValue::Dynamic(v) => v.type_name(),
         }
     }
@@ -273,14 +288,14 @@ impl ExpressionValue {
 
     pub fn value_string(&self) -> String {
         match self {
-            ExpressionValue::Module(name) => format!("Module({})", name),
+            ExpressionValue::Module { path, .. } => format!("Module({})", path),
             ExpressionValue::Dynamic(v) => v.format_for_llm(),
         }
     }
 
     pub fn format_for_llm(&self) -> String {
         match self {
-            ExpressionValue::Module(name) => format!("Module({})", name),
+            ExpressionValue::Module { path, .. } => format!("Module({})", path),
             ExpressionValue::Dynamic(v) => v.format_for_llm(),
         }
     }

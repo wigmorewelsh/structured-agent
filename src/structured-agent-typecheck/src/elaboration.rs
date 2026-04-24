@@ -1,6 +1,7 @@
 use super::db::{
-    CallModuleArg, Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig,
-    get_struct_fields, resolve_call_routing, resolve_function_call, resolve_type_in_module,
+    CallModuleArg, Intern, ModuleInstantiation, SymbolTablesInput, TypeCheckDatabase,
+    get_function_sig, get_struct_fields, resolve_call_routing, resolve_function_call,
+    resolve_type_in_module,
 };
 use super::synthesize;
 use structured_agent_ast::ast::{Expression, Function, SelectClause, Statement};
@@ -295,11 +296,8 @@ fn elaborate_call(
     if let Some(routing) = &routing {
         for arg in &routing.module_args {
             match arg {
-                CallModuleArg::Concrete(path) => {
-                    all_args.push(typed_ast::Expression::TypeLiteral {
-                        ty: structured_agent_runtime::Type::Named(path.clone()),
-                        span,
-                    });
+                CallModuleArg::Concrete(instantiation) => {
+                    all_args.push(instantiation_to_expr(instantiation, span));
                 }
                 CallModuleArg::FromParam(name) => {
                     if let Some((ty, binding_id)) = env.lookup_variable(name) {
@@ -325,6 +323,22 @@ fn elaborate_call(
         ty: resolved_return,
         span,
     })
+}
+
+fn instantiation_to_expr(
+    inst: &ModuleInstantiation,
+    span: structured_agent_ast::types::Span,
+) -> typed_ast::Expression {
+    typed_ast::Expression::ModuleInstance {
+        path: inst.path.clone(),
+        params: inst
+            .params
+            .iter()
+            .map(|p| instantiation_to_expr(p, span))
+            .collect(),
+        ty: structured_agent_runtime::Type::Named(inst.path.clone()),
+        span,
+    }
 }
 
 fn elaborate_list_literal(

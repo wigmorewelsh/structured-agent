@@ -1,0 +1,7 @@
+mod worker(fmt: formatter)
+
+use fmt::format
+
+pub fn run(msg: String): String {
+    return format(msg)
+}

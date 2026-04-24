@@ -183,6 +183,12 @@ pub enum Expression {
         ty: Type,
         span: Span,
     },
+    ModuleInstance {
+        path: DefinitionPath,
+        params: Vec<Expression>,
+        ty: Type,
+        span: Span,
+    },
     Select(SelectExpression, Type),
     IfElse {
         condition: Box<Expression>,
@@ -207,6 +213,7 @@ impl Expression {
             Expression::Placeholder { ty, .. } => ty,
             Expression::UnitLiteral { ty, .. } => ty,
             Expression::TypeLiteral { ty, .. } => ty,
+            Expression::ModuleInstance { ty, .. } => ty,
             Expression::Select(_, ty) => ty,
             Expression::IfElse { ty, .. } => ty,
         }
@@ -225,6 +232,7 @@ impl Expression {
             Expression::Placeholder { span, .. } => *span,
             Expression::UnitLiteral { span, .. } => *span,
             Expression::TypeLiteral { span, .. } => *span,
+            Expression::ModuleInstance { span, .. } => *span,
             Expression::Select(s, _) => s.span,
             Expression::IfElse { span, .. } => *span,
         }

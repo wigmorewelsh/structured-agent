@@ -1,0 +1,3 @@
+pub fn format(msg: String): String {
+    return msg
+}

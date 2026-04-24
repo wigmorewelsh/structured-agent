@@ -60,6 +60,7 @@ pub enum Instruction {
     },
     LoadModule {
         name: DefinitionPath,
+        params: Vec<Slot>,
         dest: Slot,
     },
     CallIndirect {
@@ -170,8 +171,15 @@ impl fmt::Display for Instruction {
                 write!(f, "], {}", dest)
             }
 
-            Instruction::LoadModule { name, dest } => {
-                write!(f, "load.module {}, {}", name, dest)
+            Instruction::LoadModule { name, params, dest } => {
+                write!(f, "load.module {}, [", name)?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, "], {}", dest)
             }
             Instruction::CallIndirect {
                 module_param,
