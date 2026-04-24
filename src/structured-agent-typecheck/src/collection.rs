@@ -4,13 +4,13 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_ast::ast::{
-    Definition, Module, Parameter, ParsedModule, Type as AstType, TypeParam,
+    Definition, Module, Parameter, ParsedModule, PathSegment, Type as AstType, TypeParam,
 };
 use structured_agent_ast::types::{FileId, Span};
 use structured_agent_runtime::symbols::{
-    DefinitionPath, DefinitionSegment, ExportedName, FieldDefinition, FunctionDefinition,
-    GenericParameterDefinition, ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition,
-    SignatureEntry, SymbolQuery, TypeDefinition, TypeDefinitionKind, Visibility,
+    DefinitionPath, ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
+    ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, SignatureEntry, SymbolQuery,
+    TypeDefinition, TypeDefinitionKind, Visibility,
 };
 use structured_agent_runtime::types::Module as RuntimeModule;
 
@@ -150,7 +150,7 @@ impl SymbolTableBuilder {
         use structured_agent_runtime::types::Type as RT;
         match ty {
             RT::Parameterized(type_name, args) => AstType {
-                name: type_name.last_name().to_string(),
+                path: NonEmpty::new(PathSegment::simple(type_name.last_name())),
                 args: args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
             },
             RT::Named(tn) => AstType::simple(tn.last_name().to_string()),

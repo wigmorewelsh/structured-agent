@@ -268,19 +268,19 @@ pub fn compile_external_function(
 
 fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Type {
     if ast_type.args.is_empty() {
-        match ast_type.name.as_str() {
+        match ast_type.name() {
             "Boolean" => Type::boolean(),
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
             _ => Type::Named(DefinitionPath::for_type(
                 module.clone(),
-                ast_type.name.clone(),
+                ast_type.name().to_string(),
             )),
         }
     } else {
         Type::Parameterized(
-            DefinitionPath::for_type(module.clone(), ast_type.name.clone()),
+            DefinitionPath::for_type(module.clone(), ast_type.name().to_string()),
             ast_type
                 .args
                 .iter()

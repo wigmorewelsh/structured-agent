@@ -2,18 +2,17 @@ use std::sync::Arc;
 
 use nonempty::NonEmpty;
 
-
-use structured_agent_ast::ast::{
-    AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction, Function,
-    FunctionBody, Module, ModuleParam, Parameter, SelectClause, SelectExpression, SigFunction,
-    Statement, StructDefinition, StructField, Type, TypeParam, Use, UseParam, UseSegment,
-};
-use structured_agent_ast::types::{FileId, Span, Spanned};
 use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
-use combine::{Parser, Stream, attempt, between, not_followed_by, optional, position, sep_by1};
+use combine::{attempt, between, not_followed_by, optional, position, sep_by1, Parser, Stream};
+use structured_agent_ast::ast::{
+    AstPath, AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction,
+    Function, FunctionBody, Module, ModuleParam, Parameter, PathArg, PathSegment, SelectClause,
+    SelectExpression, SigFunction, Statement, StructDefinition, StructField, Type, TypeParam, Use,
+};
+use structured_agent_ast::types::{FileId, Span, Spanned};
 
 fn skip_spaces<Input>() -> impl Parser<Input, Output = ()>
 where
@@ -241,13 +240,12 @@ where
         position(),
         identifier(),
         lex_char(':'),
-        sep_by1::<Vec<String>, _, _, _>(identifier_raw(), attempt(string("::")))
-            .skip(skip_spaces()),
+        parse_ast_path().skip(skip_spaces()),
         position(),
     )
-        .map(|(start, name, _, path_vec, end)| ModuleParam {
+        .map(|(start, name, _, path, end)| ModuleParam {
             name,
-            path: NonEmpty::from_vec(path_vec).unwrap(),
+            path,
             span: Span::new(start, end),
         })
 }
@@ -501,54 +499,62 @@ where
     })
 }
 
-fn parse_use_param<Input>() -> impl Parser<Input, Output = UseParam>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(
-            (
-                identifier_raw().skip(skip_spaces()),
-                lex_char(':'),
-                sep_by1::<Vec<String>, _, _, _>(
+combine::parser! {
+    fn parse_path_arg[Input]()(Input) -> PathArg
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        choice((
+            attempt(
+                (
                     identifier_raw().skip(skip_spaces()),
-                    attempt(string("::")).skip(skip_spaces()),
-                ),
-            )
-                .map(|(name, _, path_vec)| UseParam::Named {
-                    name,
-                    path: NonEmpty::from_vec(path_vec).unwrap(),
-                }),
-        ),
-        sep_by1::<Vec<String>, _, _, _>(
-            identifier_raw().skip(skip_spaces()),
-            attempt(string("::")).skip(skip_spaces()),
-        )
-        .map(|path_vec| UseParam::Positional(NonEmpty::from_vec(path_vec).unwrap())),
-    ))
+                    lex_char(':'),
+                    parse_ast_path(),
+                )
+                    .map(|(name, _, path)| PathArg::Named { name, path }),
+            ),
+            parse_ast_path().map(PathArg::Positional),
+        ))
+    }
 }
 
-fn parse_use_segment<Input>() -> impl Parser<Input, Output = UseSegment>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        identifier_raw().skip(skip_spaces()),
-        optional(attempt(between(
-            lex_char('('),
-            lex_char(')'),
-            sep_by1(parse_use_param(), lex_char(',')),
-        ))),
-        position(),
-    )
-        .map(|(start, name, params, end)| UseSegment {
-            name,
-            params: params.unwrap_or_default(),
-            span: Span::new(start, end),
-        })
+combine::parser! {
+    fn parse_ast_path[Input]()(Input) -> AstPath
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            parse_path_segment(),
+            many::<Vec<PathSegment>, _, _>(
+                (string("::").skip(skip_spaces()), parse_path_segment()).map(|(_, seg)| seg),
+            ),
+        )
+            .map(|(first, rest)| {
+                let mut segments = vec![first];
+                segments.extend(rest);
+                NonEmpty::from_vec(segments).expect("at least one segment")
+            })
+    }
+}
+
+combine::parser! {
+    fn parse_path_segment[Input]()(Input) -> PathSegment
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            position(),
+            identifier_raw().skip(skip_spaces()),
+            optional(attempt(between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by1(parse_path_arg(), lex_char(',')),
+            ))),
+            position(),
+        )
+            .map(|(start, name, params, end)| PathSegment {
+                name,
+                params: params.unwrap_or_default(),
+                span: Span::new(start, end),
+            })
+    }
 }
 
 fn parse_use<Input>() -> impl Parser<Input, Output = Definition>
@@ -563,19 +569,13 @@ where
     ))
     .then(|(start, pub_kw, _): (usize, Option<&str>, &str)| {
         (
-            parse_use_segment(),
-            many::<Vec<UseSegment>, _, _>(
-                (string("::").skip(skip_spaces()), parse_use_segment()).map(|(_, seg)| seg),
-            ),
+            parse_ast_path(),
             optional(attempt(
                 (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
             )),
             position(),
         )
-            .map(move |(first_seg, rest, alias, end)| {
-                let mut segments = vec![first_seg];
-                segments.extend(rest);
-                let path = NonEmpty::from_vec(segments).expect("at least one segment");
+            .map(move |(path, alias, end)| {
                 Definition::Use(Arc::new(Use {
                     path,
                     alias,
@@ -623,7 +623,7 @@ combine::parser! {
                 .skip(skip_spaces())
                 .map(|(first, rest, args): (char, Vec<char>, Option<Vec<Type>>)| {
                     let name: String = std::iter::once(first).chain(rest).collect();
-                    Type { name, args: args.unwrap_or_default() }
+                    Type { path: NonEmpty::new(PathSegment::simple(name)), args: args.unwrap_or_default() }
                 }),
         ))
     }
@@ -1241,8 +1241,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use combine::Parser;
     use combine::stream::position::{IndexPositioner, Stream};
+    use combine::Parser;
 
     const TEST_FILE_ID: FileId = 0;
 
@@ -2400,9 +2400,9 @@ fn test_if_else_stmt(): () {
             assert_eq!(func.name, "get_first");
             assert_eq!(func.parameters.len(), 1);
             let param_type = &func.parameters[0].param_type;
-            assert_eq!(param_type.name, "List");
+            assert_eq!(param_type.name(), "List");
             assert_eq!(param_type.args[0], Type::simple("String"));
-            assert_eq!(func.return_type.name, "Option");
+            assert_eq!(func.return_type.name(), "Option");
             assert_eq!(func.return_type.args[0], Type::simple("String"));
         } else {
             panic!("Expected external function definition");
@@ -2734,7 +2734,7 @@ extern fn add(n: Int): Int
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
-            assert_eq!(s.fields[0].field_type.name, "List");
+            assert_eq!(s.fields[0].field_type.name(), "List");
             assert_eq!(s.fields[0].field_type.args[0], Type::simple("String"));
         } else {
             panic!("Expected struct definition");
@@ -3041,7 +3041,7 @@ fn main(): String {
         assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
-            assert_eq!(s.fields[0].field_type.name, "Option");
+            assert_eq!(s.fields[0].field_type.name(), "Option");
             assert_eq!(s.fields[0].field_type.args[0], Type::simple("Int"));
         } else {
             panic!("Expected struct definition");
@@ -3111,10 +3111,9 @@ fn main(): String {
                 assert_eq!(name, "db");
                 assert_eq!(params.len(), 1);
                 assert_eq!(params[0].name, "io");
-                assert_eq!(
-                    params[0].path,
-                    NonEmpty::from_vec(vec!["storage".to_string(), "Storage".to_string()]).unwrap()
-                );
+                assert_eq!(params[0].path.len(), 2);
+                assert_eq!(params[0].path[0].name, "storage");
+                assert_eq!(params[0].path[1].name, "Storage");
             }
             other => panic!("Expected ModuleHeader, got {:?}", other),
         }
@@ -3307,8 +3306,8 @@ fn main(): String {
                 assert_eq!(u.path[0].name, "worker");
                 assert_eq!(
                     u.path[0].params,
-                    vec![UseParam::Positional(nonempty::NonEmpty::new(
-                        "fakemodule".to_string()
+                    vec![PathArg::Positional(nonempty::NonEmpty::new(
+                        PathSegment::simple("fakemodule")
                     ))]
                 );
                 assert_eq!(u.path.last().name, "run");
@@ -3329,9 +3328,12 @@ fn main(): String {
                 assert_eq!(u.path[0].name, "db");
                 assert_eq!(
                     u.path[0].params,
-                    vec![UseParam::Named {
+                    vec![PathArg::Named {
                         name: "io".to_string(),
-                        path: nonempty::nonempty!["storage".to_string(), "disk".to_string()],
+                        path: nonempty::nonempty![
+                            PathSegment::simple("storage"),
+                            PathSegment::simple("disk")
+                        ],
                     }]
                 );
                 assert_eq!(u.path.last().name, "connect");
@@ -3353,11 +3355,11 @@ fn main(): String {
                 assert_eq!(u.path[0].params.len(), 2);
                 assert_eq!(
                     u.path[0].params[0],
-                    UseParam::Positional(nonempty::NonEmpty::new("realmodule".to_string()))
+                    PathArg::Positional(nonempty::NonEmpty::new(PathSegment::simple("realmodule")))
                 );
                 assert_eq!(
                     u.path[0].params[1],
-                    UseParam::Positional(nonempty::NonEmpty::new("logger".to_string()))
+                    PathArg::Positional(nonempty::NonEmpty::new(PathSegment::simple("logger")))
                 );
                 assert_eq!(u.path.last().name, "run");
             }
@@ -3378,18 +3380,51 @@ fn main(): String {
                 assert_eq!(u.path[0].name, "foo");
                 assert_eq!(
                     u.path[0].params,
-                    vec![UseParam::Positional(nonempty::NonEmpty::new(
-                        "x".to_string()
+                    vec![PathArg::Positional(nonempty::NonEmpty::new(
+                        PathSegment::simple("x")
                     ))]
                 );
                 assert_eq!(u.path[1].name, "bar");
                 assert_eq!(
                     u.path[1].params,
-                    vec![UseParam::Positional(nonempty::NonEmpty::new(
-                        "y".to_string()
+                    vec![PathArg::Positional(nonempty::NonEmpty::new(
+                        PathSegment::simple("y")
                     ))]
                 );
                 assert_eq!(u.path.last().name, "thing");
+            }
+            other => panic!("Expected Use, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_with_nested_positional_param() {
+        let input = "use m(other(yet::another)::module)::bar as ff\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        match &module.definitions[0] {
+            Definition::Use(u) => {
+                assert_eq!(u.path[0].name, "m");
+                assert_eq!(u.path[0].params.len(), 1);
+                match &u.path[0].params[0] {
+                    PathArg::Positional(inner_path) => {
+                        assert_eq!(inner_path[0].name, "other");
+                        assert_eq!(inner_path[0].params.len(), 1);
+                        match &inner_path[0].params[0] {
+                            PathArg::Positional(yet_path) => {
+                                assert_eq!(yet_path[0].name, "yet");
+                                assert_eq!(yet_path[1].name, "another");
+                            }
+                            other => panic!("Expected Positional, got {:?}", other),
+                        }
+                        assert_eq!(inner_path[1].name, "module");
+                    }
+                    other => panic!("Expected Positional, got {:?}", other),
+                }
+                assert_eq!(u.path[1].name, "bar");
+                assert_eq!(u.alias, Some("ff".to_string()));
             }
             other => panic!("Expected Use, got {:?}", other),
         }

@@ -7,7 +7,7 @@ use combine::stream::{easy, position};
 use dashmap::DashMap;
 use nonempty::NonEmpty;
 
-use crate::ast::{Definition, Module, ParsedModule, UseParam};
+use crate::ast::{Definition, Module, ParsedModule, PathArg};
 use crate::compiler::parser;
 use crate::types::{FileId, SourceFiles};
 
@@ -295,18 +295,18 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
                     dep.push(seg.name.clone());
                     for param in &seg.params {
                         match param {
-                            UseParam::Positional(names) => {
-                                for pname in names {
+                            PathArg::Positional(segments) => {
+                                for ps in segments {
                                     let mut pdep = base.to_vec();
-                                    pdep.push(pname.clone());
+                                    pdep.push(ps.name.clone());
                                     deps.push(pdep);
                                 }
                             }
-                            UseParam::Named {
+                            PathArg::Named {
                                 path: param_path, ..
                             } => {
                                 let mut pdep = base.to_vec();
-                                pdep.extend(param_path.iter().cloned());
+                                pdep.extend(param_path.iter().map(|s| s.name.clone()));
                                 deps.push(pdep);
                             }
                         }
@@ -316,7 +316,7 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
             }
             Definition::ModuleHeader { params, .. } => {
                 for param in params {
-                    deps.push(vec![param.path.first().clone()]);
+                    deps.push(vec![param.path.first().name.clone()]);
                 }
             }
             Definition::InlineModule {

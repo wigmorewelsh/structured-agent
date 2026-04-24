@@ -5,7 +5,7 @@ use super::refs::{
 use crate::TypeError;
 use crate::error::OrAccumulateError;
 use structured_agent_ast::ast::{
-    Definition, Module as AstModule, Type as AstType, TypeParam, Use, UseParam,
+    Definition, Module as AstModule, PathArg, PathSegment, Type as AstType, TypeParam, Use,
 };
 
 use nonempty::NonEmpty;
@@ -404,14 +404,14 @@ mod type_resolver {
     #[derive(Clone, PartialEq)]
     #[allow(dead_code)]
     pub enum ResolveSegment {
-        Local(DefinitionPath, Vec<UseParam>),
-        UseAlias(String, DefinitionPath, Vec<UseParam>),
-        UseDirect(String, DefinitionPath, Vec<UseParam>),
-        ModuleHeader(String, DefinitionPath, Vec<UseParam>),
+        Local(DefinitionPath, Vec<PathArg>),
+        UseAlias(String, DefinitionPath, Vec<PathArg>),
+        UseDirect(String, DefinitionPath, Vec<PathArg>),
+        ModuleHeader(String, DefinitionPath, Vec<PathArg>),
     }
 
     impl ResolveSegment {
-        fn inject_params(&mut self, params: Vec<UseParam>) {
+        fn inject_params(&mut self, params: Vec<PathArg>) {
             match self {
                 ResolveSegment::Local(_, p)
                 | ResolveSegment::UseAlias(_, _, p)
@@ -439,12 +439,13 @@ mod type_resolver {
 
     pub fn resolve_absolute_path<'db>(
         db: &'db dyn TypeCheckDatabase,
-        use_path: NonEmpty<String>,
+        use_path: NonEmpty<PathSegment>,
     ) -> Option<DefinitionPath> {
         let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
         let mut last_type_name = None;
         for symbol in use_path.iter() {
-            let resolved = resolve_type_in_module(db, search_module, symbol.clone().intern(db))?;
+            let resolved =
+                resolve_type_in_module(db, search_module, symbol.name.clone().intern(db))?;
             let type_def = lookup_type_def_in_symbol_tables(
                 db,
                 InternedTypeName::new(db, resolved.ty.clone()),
@@ -657,7 +658,7 @@ type DefKind = TypeDefinitionKind<CheckerRefs>;
 fn build_module_instantiation<'db>(
     db: &'db dyn TypeCheckDatabase,
     current_module: InternedModuleName<'db>,
-    path: &NonEmpty<String>,
+    path: &NonEmpty<PathSegment>,
 ) -> Option<ModuleInstantiation> {
     let resolved = resolve_path_full(db, current_module, path)?;
     let params: Vec<ModuleInstantiation> = resolved
@@ -671,8 +672,8 @@ fn build_module_instantiation<'db>(
         })
         .filter_map(|use_param| {
             let param_path = match use_param {
-                UseParam::Positional(p) => p,
-                UseParam::Named { path, .. } => path,
+                PathArg::Positional(p) => p,
+                PathArg::Named { path, .. } => path,
             };
             build_module_instantiation(db, current_module, param_path)
         })
@@ -706,8 +707,8 @@ pub fn resolve_call_routing<'db>(
         })
         .filter_map(|use_param| {
             let path = match use_param {
-                UseParam::Positional(path_segs) => path_segs,
-                UseParam::Named { path, .. } => path,
+                PathArg::Positional(path_segs) => path_segs,
+                PathArg::Named { path, .. } => path,
             };
             let resolved = resolve_path_full(db, current_module, path)?;
             match resolved.path.iter().find_map(|s| {
@@ -751,13 +752,13 @@ pub fn resolve_function_call<'db>(
 fn resolve_path_full<'db>(
     db: &'db dyn TypeCheckDatabase,
     current_module: InternedModuleName<'db>,
-    path: &NonEmpty<String>,
+    path: &NonEmpty<PathSegment>,
 ) -> Option<ResolvedType> {
     let mut search = current_module;
     let mut accumulated: Vec<ResolveSegment> = vec![];
     let mut last_ty = None;
     for seg in path.iter() {
-        let sym = seg.clone().intern(db);
+        let sym = seg.name.clone().intern(db);
         let resolved = resolve_type_in_module(db, search, sym)?;
         accumulated.extend(resolved.path);
         if let Some(type_def) =
@@ -778,7 +779,7 @@ fn resolve_path_full<'db>(
 fn resolve_path_to_module<'db>(
     db: &'db dyn TypeCheckDatabase,
     current_module: InternedModuleName<'db>,
-    path: &NonEmpty<String>,
+    path: &NonEmpty<PathSegment>,
 ) -> Option<DefinitionPath> {
     resolve_path_full(db, current_module, path).map(|r| r.ty)
 }
@@ -789,10 +790,10 @@ pub fn ast_type_to_type_name(
     module_name: &DefinitionPath,
 ) -> DefinitionPath {
     let interned_mod = InternedModuleName::new(db, module_name.clone());
-    let interned_name = ty.name.clone().intern(db);
+    let interned_name = ty.name().to_string().intern(db);
     resolve_type_in_module(db, interned_mod, interned_name)
         .map(|r| r.ty)
-        .unwrap_or_else(|| DefinitionPath::for_type(module_name.clone(), ty.name.clone()))
+        .unwrap_or_else(|| DefinitionPath::for_type(module_name.clone(), ty.name().to_string()))
 }
 
 fn convert_generic_params(
@@ -1022,11 +1023,11 @@ pub fn elaborate_metadata(
             module: impl_def.module.clone(),
             type_name: DefinitionPath::for_type(
                 impl_def.module.clone(),
-                impl_def.type_name.name.clone(),
+                impl_def.type_name.name().to_string(),
             ),
             trait_name: DefinitionPath::for_type(
                 impl_def.module.clone(),
-                impl_def.trait_name.name.clone(),
+                impl_def.trait_name.name().to_string(),
             ),
             source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),

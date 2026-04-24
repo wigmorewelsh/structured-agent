@@ -25,7 +25,7 @@ pub struct Module {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleParam {
     pub name: String,
-    pub path: NonEmpty<String>,
+    pub path: AstPath,
     pub span: Span,
 }
 
@@ -116,25 +116,42 @@ pub struct AstTrait {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum UseParam {
-    Positional(NonEmpty<String>),
-    Named {
-        name: String,
-        path: NonEmpty<String>,
-    },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathArg {
+    Positional(AstPath),
+    Named { name: String, path: AstPath },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct UseSegment {
+#[derive(Debug, Clone)]
+pub struct PathSegment {
     pub name: String,
-    pub params: Vec<UseParam>,
+    pub params: Vec<PathArg>,
     pub span: Span,
 }
 
+impl PartialEq for PathSegment {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.params == other.params
+    }
+}
+
+impl Eq for PathSegment {}
+
+impl PathSegment {
+    pub fn simple(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            params: vec![],
+            span: Span::dummy(),
+        }
+    }
+}
+
+pub type AstPath = NonEmpty<PathSegment>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Use {
-    pub path: NonEmpty<UseSegment>,
+    pub path: AstPath,
     pub alias: Option<String>,
     pub is_pub: bool,
     pub span: Span,
@@ -223,15 +240,26 @@ pub struct ExternalFunction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
-    pub name: std::string::String,
+    pub path: AstPath,
     pub args: Vec<Type>,
 }
 
 impl Type {
     pub fn simple(name: impl Into<std::string::String>) -> Self {
         Self {
-            name: name.into(),
+            path: NonEmpty::new(PathSegment::simple(name)),
             args: vec![],
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.path.first().name
+    }
+
+    pub fn parameterized(name: impl Into<std::string::String>, args: Vec<Type>) -> Self {
+        Self {
+            path: NonEmpty::new(PathSegment::simple(name)),
+            args,
         }
     }
 }
@@ -387,15 +415,48 @@ impl Spanned for SelectClause {
     }
 }
 
+impl fmt::Display for PathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if !self.params.is_empty() {
+            write!(f, "(")?;
+            for (i, p) in self.params.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", p)?;
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for PathArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PathArg::Positional(path) => {
+                let s: Vec<String> = path.iter().map(|seg| seg.to_string()).collect();
+                write!(f, "{}", s.join("::"))
+            }
+            PathArg::Named { name, path } => {
+                let s: Vec<String> = path.iter().map(|seg| seg.to_string()).collect();
+                write!(f, "{}: {}", name, s.join("::"))
+            }
+        }
+    }
+}
+
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path_str: Vec<String> = self.path.iter().map(|seg| seg.to_string()).collect();
         if self.args.is_empty() {
-            write!(f, "{}", self.name)
+            write!(f, "{}", path_str.join("::"))
         } else {
             write!(
                 f,
                 "{}<{}>",
-                self.name,
+                path_str.join("::"),
                 self.args
                     .iter()
                     .map(|a| a.to_string())
@@ -537,33 +598,7 @@ impl fmt::Display for Definition {
                     if i > 0 {
                         write!(f, "::")?;
                     }
-                    write!(f, "{}", seg.name)?;
-                    if !seg.params.is_empty() {
-                        write!(f, "(")?;
-                        for (j, p) in seg.params.iter().enumerate() {
-                            if j > 0 {
-                                write!(f, ", ")?;
-                            }
-                            match p {
-                                UseParam::Positional(path) => {
-                                    write!(
-                                        f,
-                                        "{}",
-                                        path.iter().cloned().collect::<Vec<_>>().join("::")
-                                    )?;
-                                }
-                                UseParam::Named { name, path } => {
-                                    write!(
-                                        f,
-                                        "{}: {}",
-                                        name,
-                                        path.iter().cloned().collect::<Vec<_>>().join("::")
-                                    )?;
-                                }
-                            }
-                        }
-                        write!(f, ")")?;
-                    }
+                    write!(f, "{}", seg)?;
                 }
                 if let Some(a) = alias {
                     write!(f, " as {}", a)?;
@@ -578,16 +613,9 @@ impl fmt::Display for Definition {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        write!(
-                            f,
-                            "{}: {}",
-                            p.name,
-                            p.path
-                                .iter()
-                                .map(String::as_str)
-                                .collect::<Vec<_>>()
-                                .join("::")
-                        )?;
+                        let path_str: Vec<String> =
+                            p.path.iter().map(|seg| seg.to_string()).collect();
+                        write!(f, "{}: {}", p.name, path_str.join("::"))?;
                     }
                     write!(f, ")")?;
                 }

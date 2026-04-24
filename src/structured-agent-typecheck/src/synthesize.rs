@@ -154,7 +154,8 @@ pub fn resolve(
     span: Span,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    let AstType { name, args } = t;
+    let name = t.name().to_string();
+    let args = &t.args;
 
     if name == "Self" {
         if let Some(ref self_type) = env.self_type {
@@ -162,7 +163,7 @@ pub fn resolve(
         }
     }
 
-    if env.lookup_type_param(name) {
+    if env.lookup_type_param(&name) {
         return Some(RT::Generic(name.to_string()));
     }
 

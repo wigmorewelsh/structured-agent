@@ -820,25 +820,25 @@ mod vm_execution_tests {
         use structured_agent_runtime::DefinitionPath;
         use structured_agent_runtime::Type as RT;
         if t.args.is_empty() {
-            match t.name.as_str() {
+            match t.name() {
                 "Boolean" => RT::boolean(),
                 "String" => RT::string(),
                 "Int" => RT::int(),
                 "Unit" => RT::unit(),
                 _ => RT::Named(DefinitionPath::for_type(
                     DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-                    t.name.clone(),
+                    t.name().to_string(),
                 )),
             }
         } else {
-            let module_str = match t.name.as_str() {
+            let module_str = match t.name() {
                 "List" | "Option" => "prelude",
                 _ => "main",
             };
             RT::Parameterized(
                 DefinitionPath::for_type(
                     DefinitionPath::for_module(NonEmpty::new(module_str.to_string())),
-                    t.name.clone(),
+                    t.name().to_string(),
                 ),
                 t.args.iter().map(ast_type_to_rt).collect(),
             )

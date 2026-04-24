@@ -1304,24 +1304,15 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("T")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("T")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
             vec![],
         );
         let caller = create_test_function(
             "caller",
             vec![create_parameter("s", AstType::simple("String"))],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("String")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1351,20 +1342,14 @@ mod tests {
             name: "wrap".to_string(),
             type_params: vec!["T".into()],
             parameters: vec![create_parameter("value", AstType::simple("T"))],
-            return_type: AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            return_type: AstType::parameterized("Option", vec![AstType::simple("T")]),
             is_pub: false,
             span: crate::types::Span::dummy(),
         };
         let caller = create_test_function(
             "main",
             vec![create_parameter("s", AstType::simple("String"))],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("String")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "wrap".to_string(),
                 arguments: vec![Expression::Variable {
@@ -1387,10 +1372,7 @@ mod tests {
             "make_none",
             vec!["T".into()],
             vec![],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
             vec![],
         );
         let caller = create_test_function(
@@ -1420,25 +1402,16 @@ mod tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("T")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("T")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
             vec![],
         );
         let consume = create_test_function(
             "consume",
             vec![create_parameter(
                 "item",
-                AstType {
-                    name: "Option".to_string(),
-                    args: vec![AstType::simple("String")],
-                },
+                AstType::parameterized("Option", vec![AstType::simple("String")]),
             )],
             AstType::simple("Unit"),
             vec![],
@@ -1447,10 +1420,7 @@ mod tests {
             "main",
             vec![create_parameter(
                 "xs",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("String")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("String")]),
             )],
             AstType::simple("Unit"),
             vec![
@@ -1576,10 +1546,7 @@ mod tests {
             ],
             span: crate::types::Span::dummy(),
         }));
-        let pair_string = AstType {
-            name: "Pair".to_string(),
-            args: vec![AstType::simple("String")],
-        };
+        let pair_string = AstType::parameterized("Pair", vec![AstType::simple("String")]);
         let func = create_test_function(
             "identity",
             vec![create_parameter("x", pair_string.clone())],
@@ -2028,10 +1995,7 @@ mod typed_ast_tests {
         let func = create_test_function(
             "f",
             vec![],
-            AstType {
-                name: "List".to_string(),
-                args: vec![AstType::simple("Int")],
-            },
+            AstType::parameterized("List", vec![AstType::simple("Int")]),
             vec![Statement::Return(Expression::ListLiteral {
                 elements: vec![
                     Expression::IntLiteral {
@@ -2278,30 +2242,18 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("T")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("T")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("String")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("String")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("String")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2337,30 +2289,18 @@ mod typed_ast_tests {
             vec!["T".into()],
             vec![create_parameter(
                 "list",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("T")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("T")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("T")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
             vec![],
         );
         let caller = create_test_function(
             "f",
             vec![create_parameter(
                 "xs",
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("Int")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("Int")]),
             )],
-            AstType {
-                name: "Option".to_string(),
-                args: vec![AstType::simple("Int")],
-            },
+            AstType::parameterized("Option", vec![AstType::simple("Int")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
                 arguments: vec![Expression::Variable {
@@ -2397,23 +2337,14 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "a",
-                    AstType {
-                        name: "List".to_string(),
-                        args: vec![AstType::simple("A")],
-                    },
+                    AstType::parameterized("List", vec![AstType::simple("A")]),
                 ),
                 create_parameter(
                     "b",
-                    AstType {
-                        name: "List".to_string(),
-                        args: vec![AstType::simple("B")],
-                    },
+                    AstType::parameterized("List", vec![AstType::simple("B")]),
                 ),
             ],
-            AstType {
-                name: "List".to_string(),
-                args: vec![AstType::simple("A")],
-            },
+            AstType::parameterized("List", vec![AstType::simple("A")]),
             vec![],
         );
         let caller = create_test_function(
@@ -2421,23 +2352,14 @@ mod typed_ast_tests {
             vec![
                 create_parameter(
                     "strs",
-                    AstType {
-                        name: "List".to_string(),
-                        args: vec![AstType::simple("String")],
-                    },
+                    AstType::parameterized("List", vec![AstType::simple("String")]),
                 ),
                 create_parameter(
                     "ints",
-                    AstType {
-                        name: "List".to_string(),
-                        args: vec![AstType::simple("Int")],
-                    },
+                    AstType::parameterized("List", vec![AstType::simple("Int")]),
                 ),
             ],
-            AstType {
-                name: "List".to_string(),
-                args: vec![AstType::simple("String")],
-            },
+            AstType::parameterized("List", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "zip".to_string(),
                 arguments: vec![
@@ -2955,10 +2877,7 @@ mod metadata_query_tests {
             create_test_module(vec![Definition::Function(Arc::new(create_test_function(
                 "get_items",
                 vec![],
-                AstType {
-                    name: "List".to_string(),
-                    args: vec![AstType::simple("Int")],
-                },
+                AstType::parameterized("List", vec![AstType::simple("Int")]),
                 vec![Statement::Return(Expression::ListLiteral {
                     elements: vec![Expression::IntLiteral {
                         value: 1,

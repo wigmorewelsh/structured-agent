@@ -8,7 +8,7 @@ pub struct BindingId(pub u32);
 pub mod refs;
 pub use refs::{NoBody, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
-use structured_agent_ast::ast::{ExternalFunction, StructDefinition, UseSegment};
+use structured_agent_ast::ast::{ExternalFunction, PathSegment, StructDefinition};
 use structured_agent_ast::types::{FileId, Span};
 
 use structured_agent_runtime::Type;
@@ -27,7 +27,7 @@ pub enum Definition {
     ExternalFunction(ExternalFunction),
     Struct(StructDefinition),
     Use {
-        path: Vec<UseSegment>,
+        path: Vec<PathSegment>,
         name: String,
         alias: Option<String>,
         is_pub: bool,
