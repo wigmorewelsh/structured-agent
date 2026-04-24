@@ -599,7 +599,7 @@ impl Clone for Runtime {
 fn field_type_name_to_type(
     type_name: &structured_agent_runtime::symbols::DefinitionPath,
 ) -> crate::types::Type {
-    crate::types::Type::Struct(type_name.clone())
+    crate::types::Type::Named(type_name.clone())
 }
 
 fn build_cached_program(compiled: CompiledProgram) -> Result<CachedProgram, String> {

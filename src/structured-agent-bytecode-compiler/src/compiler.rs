@@ -270,21 +270,15 @@ impl BytecodeCompiler {
     ) -> Result<(), String> {
         match expr {
             typed_ast::Expression::Call {
-                resolved,
+                binding,
                 kind,
                 arguments,
-                module_params,
-                via_module_param,
                 ..
-            } => self.compile_call_expression(
-                ctx,
-                resolved,
-                kind.clone(),
-                arguments,
-                module_params,
-                *via_module_param,
-                dest_var,
-            ),
+            } => self.compile_call_expression(ctx, binding, kind.clone(), arguments, dest_var),
+            typed_ast::Expression::TypeLiteral { ty, .. } => {
+                Self::compile_type_literal(ctx, ty, dest_var);
+                Ok(())
+            }
             typed_ast::Expression::Variable { binding_id, .. } => {
                 Self::compile_variable_expression(ctx, binding_id, dest_var)
             }
@@ -327,66 +321,68 @@ impl BytecodeCompiler {
     fn compile_call_expression(
         &self,
         ctx: &mut CompilerCtx,
-        function: &DefinitionPath,
+        binding: &typed_ast::MethodBinding,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
-        module_params: &[typed_ast::ModuleArg],
-        via_module_param: Option<BindingId>,
         dest_var: Slot,
     ) -> Result<(), String> {
         let mut params: Vec<Slot> = Vec::new();
-        for module_arg in module_params {
-            let slot = match module_arg {
-                typed_ast::ModuleArg::Concrete(path) => {
-                    let s = ctx.builder.next_temp_slot();
-                    ctx.builder.emit(Instruction::LoadModule {
-                        name: path.clone(),
-                        dest: s,
-                    });
-                    s
-                }
-                typed_ast::ModuleArg::FromParam(binding_id) => *ctx
-                    .binding_id_to_slot
-                    .get(binding_id)
-                    .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?,
-            };
-            params.push(slot);
-        }
-
         for arg_expr in arguments {
             let temp = ctx.builder.next_temp_slot();
             self.compile_expression(ctx, arg_expr, temp)?;
             params.push(temp);
         }
 
-        if let Some(binding_id) = via_module_param {
-            let module_slot = *ctx
-                .binding_id_to_slot
-                .get(&binding_id)
-                .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?;
-            params.insert(0, module_slot);
-            ctx.builder.emit(Instruction::CallIndirect {
-                module_param: module_slot,
-                fn_name: function.last_name().to_string(),
-                params,
-                dest: dest_var,
-            });
-        } else {
-            let instruction = match kind {
-                FunctionKind::Bytecode => Instruction::CallBytecode {
-                    function_name: function.clone(),
+        match binding {
+            typed_ast::MethodBinding::Late(binding_id, fn_path) => {
+                let module_slot = *ctx
+                    .binding_id_to_slot
+                    .get(binding_id)
+                    .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?;
+                params.insert(0, module_slot);
+                ctx.builder.emit(Instruction::CallIndirect {
+                    module_param: module_slot,
+                    fn_name: fn_path.clone(),
                     params,
                     dest: dest_var,
-                },
-                FunctionKind::External => Instruction::CallExternal {
-                    function_name: function.clone(),
-                    params,
-                    dest: dest_var,
-                },
-            };
-            ctx.builder.emit(instruction);
+                });
+            }
+            typed_ast::MethodBinding::Early(fn_path) => {
+                let instruction = match kind {
+                    FunctionKind::Bytecode => Instruction::CallBytecode {
+                        function_name: fn_path.clone(),
+                        params,
+                        dest: dest_var,
+                    },
+                    FunctionKind::External => Instruction::CallExternal {
+                        function_name: fn_path.clone(),
+                        params,
+                        dest: dest_var,
+                    },
+                };
+                ctx.builder.emit(instruction);
+            }
         }
         Ok(())
+    }
+
+    fn compile_type_literal(
+        ctx: &mut CompilerCtx,
+        ty: &structured_agent_runtime::Type,
+        dest_var: Slot,
+    ) {
+        match ty {
+            structured_agent_runtime::Type::Named(path)
+            | structured_agent_runtime::Type::Parameterized(path, _) => {
+                ctx.builder.emit(Instruction::LoadModule {
+                    name: path.clone(),
+                    dest: dest_var,
+                });
+            }
+            structured_agent_runtime::Type::Generic(_) => {
+                ctx.builder.emit(Instruction::LdcUnit { dest: dest_var });
+            }
+        }
     }
 
     fn compile_variable_expression(
@@ -496,10 +492,13 @@ impl BytecodeCompiler {
             let label = format!("clause_{}_{}", i, label_id);
             clause_labels.push(label.clone());
 
-            let function_name = if let typed_ast::Expression::Call { resolved, .. } =
+            let function_name = if let typed_ast::Expression::Call { binding, .. } =
                 &select.clauses[i].expression_to_run
             {
-                resolved.clone()
+                match binding {
+                    typed_ast::MethodBinding::Early(path) => path.clone(),
+                    typed_ast::MethodBinding::Late(_, path) => path.clone(),
+                }
             } else {
                 return Err(format!("select clause {} expression is not a Call", i));
             };

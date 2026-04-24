@@ -825,7 +825,7 @@ mod vm_execution_tests {
                 "String" => RT::string(),
                 "Int" => RT::int(),
                 "Unit" => RT::unit(),
-                _ => RT::Struct(DefinitionPath::for_type(
+                _ => RT::Named(DefinitionPath::for_type(
                     DefinitionPath::for_module(NonEmpty::new("main".to_string())),
                     t.name.clone(),
                 )),
@@ -885,15 +885,12 @@ mod vm_execution_tests {
                 span,
             } => typed_ast::Expression::Call {
                 function: function.clone(),
-                resolved: DefinitionPath::for_function(
+                binding: typed_ast::MethodBinding::Early(DefinitionPath::for_function(
                     DefinitionPath::for_module(NonEmpty::new("test".to_string())),
                     function.to_string(),
-                ),
+                )),
                 kind: crate::typecheck::FunctionKind::External,
-                type_arguments: vec![],
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
-                module_params: vec![],
-                via_module_param: None,
                 ty: Type::unit(),
                 span: *span,
             },

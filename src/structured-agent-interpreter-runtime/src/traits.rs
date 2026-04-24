@@ -32,16 +32,10 @@ pub trait ExecutableFunction: Function + std::fmt::Debug + Send + Sync {
 #[async_trait]
 pub trait LanguageEngine: Send + Sync {
     async fn untyped(&self, context: &Context) -> String;
-    async fn typed(
-        &self,
-        context: &Context,
-        return_type: &Type,
-    ) -> Result<ExpressionValue, String>;
-    async fn select(
-        &self,
-        context: &Context,
-        options: &[ExpressionValue],
-    ) -> Result<usize, String>;
+    async fn typed(&self, context: &Context, return_type: &Type)
+    -> Result<ExpressionValue, String>;
+    async fn select(&self, context: &Context, options: &[ExpressionValue])
+    -> Result<usize, String>;
     async fn fill_parameter(
         &self,
         context: &Context,
@@ -121,7 +115,7 @@ impl LanguageEngine for PrintEngine {
                     Ok(ExpressionValue::string(value))
                 }
             }
-            Type::Struct(_) => Ok(ExpressionValue::unit()),
+            Type::Named(_) => Ok(ExpressionValue::unit()),
             Type::Generic(_) => Ok(ExpressionValue::unit()),
         }
     }
@@ -157,7 +151,7 @@ impl LanguageEngine for PrintEngine {
                     Ok(ExpressionValue::string(value))
                 }
             }
-            Type::Struct(_) | Type::Generic(_) => Ok(ExpressionValue::unit()),
+            Type::Named(_) | Type::Generic(_) => Ok(ExpressionValue::unit()),
         }
     }
 }

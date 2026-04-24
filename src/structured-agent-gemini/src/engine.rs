@@ -74,11 +74,11 @@ impl GeminiEngine {
                 }
                 Ok(obj)
             }
-            Type::Struct(tn) if tn.last_name() == "Unit" => {
+            Type::Named(tn) if tn.last_name() == "Unit" => {
                 Err("Unit type cannot be used in schema".to_string())
             }
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
-            Type::Struct(type_name) => {
+            Type::Named(type_name) => {
                 let fields = context
                     .runtime()
                     .get_struct(type_name)
@@ -164,7 +164,7 @@ impl GeminiEngine {
                     Ok(ExpressionValue::option_some(inner))
                 }
             }
-            Type::Struct(type_name) => {
+            Type::Named(type_name) => {
                 let obj = json_value.as_object().ok_or_else(|| {
                     format!("Expected JSON object for struct {}", type_name.last_name())
                 })?;
@@ -218,7 +218,7 @@ impl GeminiEngine {
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
         match return_type {
-            Type::Struct(_) if !return_type.is_unit() => {
+            Type::Named(_) if !return_type.is_unit() => {
                 Self::parse_json_value(response_json, return_type, context)
             }
             _ => {
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn test_build_value_schema_struct_unknown_returns_error() {
         let context = empty_context();
-        let ghost_type = Type::Struct(make_def_path("test", "Ghost"));
+        let ghost_type = Type::Named(make_def_path("test", "Ghost"));
         let result = GeminiEngine::build_value_schema(&ghost_type, &context);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Ghost"));
@@ -515,7 +515,7 @@ mod tests {
             ],
         );
         let context = make_context(structs);
-        let task_type = Type::Struct(make_def_path("main", "Task"));
+        let task_type = Type::Named(make_def_path("main", "Task"));
         let result = GeminiEngine::build_value_schema(&task_type, &context);
         assert!(result.is_ok(), "Expected schema, got: {:?}", result.err());
     }
@@ -532,7 +532,7 @@ mod tests {
         );
         let context = make_context(structs);
         let json = serde_json::json!({"x": 10, "y": 20});
-        let point_type = Type::Struct(make_def_path("main", "Point"));
+        let point_type = Type::Named(make_def_path("main", "Point"));
         let result = GeminiEngine::parse_json_value(json, &point_type, &context);
         assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
         let value = result.unwrap();

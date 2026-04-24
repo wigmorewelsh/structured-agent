@@ -297,7 +297,7 @@ where
             let inner_dt = type_to_arrow_datatype(&args[0], metadata);
             DataType::List(Arc::new(Field::new("item", inner_dt, true)))
         }
-        Type::Struct(type_name) => type_name_to_arrow_datatype(type_name, &[], metadata),
+        Type::Named(type_name) => type_name_to_arrow_datatype(type_name, &[], metadata),
         Type::Parameterized(type_name, args) => {
             let subst: Vec<(String, &Type)> = metadata
                 .type_def(type_name)

@@ -160,7 +160,7 @@ pub fn resolve(
 
     if name == "Self" {
         if let Some(ref self_type) = env.self_type {
-            return Some(RT::Struct(self_type.clone()));
+            return Some(RT::Named(self_type.clone()));
         }
     }
 
@@ -182,7 +182,7 @@ pub fn resolve(
 
     match &td.kind {
         TypeDefinitionKind::Struct { .. } | TypeDefinitionKind::Primitive if args.is_empty() => {
-            Some(RT::Struct(type_name))
+            Some(RT::Named(type_name))
         }
         TypeDefinitionKind::Native { .. } => {
             let inner_rt = resolve(db, tables, &args[0], env, span, ctx)?;
@@ -867,7 +867,7 @@ fn synthesize_struct_literal(
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     if type_params.is_empty() {
-        Some(RT::Struct(resolved_type_name))
+        Some(RT::Named(resolved_type_name))
     } else {
         let args: Vec<RT> = type_params
             .iter()
@@ -893,7 +893,7 @@ fn synthesize_field_access(
 ) -> Option<RT> {
     let base_type = synthesize_expression(db, tables, base, env, ctx)?;
     match base_type {
-        RT::Struct(type_name) => {
+        RT::Named(type_name) => {
             let (definition, type_params) =
                 get_struct_fields(db, tables, type_name.last_name(), ctx.module_name)
                     .or_accumulate(

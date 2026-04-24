@@ -33,7 +33,7 @@ use crate::symbols::DefinitionPath;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Struct(DefinitionPath),
+    Named(DefinitionPath),
     Parameterized(DefinitionPath, Vec<Type>),
     Generic(std::string::String),
 }
@@ -61,35 +61,35 @@ impl Type {
     }
 
     pub fn string() -> Self {
-        Self::Struct(Self::prelude("String"))
+        Self::Named(Self::prelude("String"))
     }
 
     pub fn unit() -> Self {
-        Self::Struct(Self::prelude("Unit"))
+        Self::Named(Self::prelude("Unit"))
     }
 
     pub fn boolean() -> Self {
-        Self::Struct(Self::prelude("Boolean"))
+        Self::Named(Self::prelude("Boolean"))
     }
 
     pub fn int() -> Self {
-        Self::Struct(Self::prelude("Int"))
+        Self::Named(Self::prelude("Int"))
     }
 
     pub fn is_string(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.last_name() == "String")
+        matches!(self, Type::Named(tn) if tn.last_name() == "String")
     }
 
     pub fn is_boolean(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.last_name() == "Boolean")
+        matches!(self, Type::Named(tn) if tn.last_name() == "Boolean")
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.last_name() == "Int")
+        matches!(self, Type::Named(tn) if tn.last_name() == "Int")
     }
 
     pub fn is_unit(&self) -> bool {
-        matches!(self, Type::Struct(tn) if tn.last_name() == "Unit")
+        matches!(self, Type::Named(tn) if tn.last_name() == "Unit")
     }
 
     pub fn list(inner: Type) -> Self {
@@ -114,7 +114,7 @@ impl Type {
 
     pub fn name(&self) -> String {
         match self {
-            Type::Struct(tn) => tn.last_name().to_string(),
+            Type::Named(tn) => tn.last_name().to_string(),
             Type::Parameterized(type_name, args) => {
                 let arg_names: Vec<String> = args.iter().map(|a| a.name()).collect();
                 format!("{}<{}>", type_name.last_name(), arg_names.join(", "))
@@ -127,7 +127,7 @@ impl Type {
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Struct(tn) => write!(f, "{}", tn.last_name()),
+            Type::Named(tn) => write!(f, "{}", tn.last_name()),
             Type::Parameterized(type_name, args) => {
                 let arg_strs: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 write!(f, "{}<{}>", type_name.last_name(), arg_strs.join(", "))

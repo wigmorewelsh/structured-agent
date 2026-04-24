@@ -1865,14 +1865,14 @@ mod typed_ast_tests {
 
         let stmt = f.body.statements.first().unwrap();
         let crate::typed_ast::Statement::ExpressionStatement(crate::typed_ast::Expression::Call {
-            type_arguments,
+            arguments,
             ..
         }) = stmt
         else {
             panic!()
         };
 
-        assert_eq!(type_arguments.len(), 1);
+        assert_eq!(arguments.len(), 1);
     }
 
     #[test]
@@ -1932,10 +1932,14 @@ mod typed_ast_tests {
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
         assert_eq!(expr.ty(), &RT::string());
+        let expected_path = DefinitionPath::for_function(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "get_value",
+        );
         assert!(matches!(
             expr,
-            typed_ast::Expression::Call { resolved, kind: FunctionKind::Bytecode, .. }
-            if resolved == &DefinitionPath::for_function(DefinitionPath::for_module(NonEmpty::new("main".to_string())), "get_value")
+            typed_ast::Expression::Call { binding: typed_ast::MethodBinding::Early(path), kind: FunctionKind::Bytecode, .. }
+            if path == &expected_path
         ));
     }
 
@@ -2168,7 +2172,7 @@ mod typed_ast_tests {
         let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
         assert_eq!(
             expr.ty(),
-            &RT::Struct(DefinitionPath::for_type(
+            &RT::Named(DefinitionPath::for_type(
                 DefinitionPath::for_module(nonempty::NonEmpty::new("main".to_string())),
                 "Point",
             ))
@@ -2560,10 +2564,13 @@ mod typed_ast_tests {
             .iter()
             .find_map(|s| {
                 if let typed_ast::Statement::Return(typed_ast::Expression::Call {
-                    resolved, ..
+                    binding, ..
                 }) = s
                 {
-                    Some(resolved.clone())
+                    Some(match binding {
+                        typed_ast::MethodBinding::Early(path) => path.clone(),
+                        typed_ast::MethodBinding::Late(_, path) => path.clone(),
+                    })
                 } else {
                     None
                 }

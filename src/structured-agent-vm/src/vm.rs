@@ -520,7 +520,7 @@ impl VM {
         &self,
         state: VMState,
         module_param: Slot,
-        fn_name: &str,
+        fn_name: &DefinitionPath,
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
@@ -530,7 +530,7 @@ impl VM {
             .as_module()
             .map_err(|e| format!("CallIndirect: {}", e))?
             .clone();
-        let function_name = DefinitionPath::for_function(module_name, fn_name);
+        let function_name = DefinitionPath::for_function(module_name, fn_name.last_name());
         let func = self
             .runtime
             .get_bytecode_function(&function_name)

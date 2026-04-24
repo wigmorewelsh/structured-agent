@@ -153,7 +153,7 @@ impl SymbolTableBuilder {
                 name: type_name.last_name().to_string(),
                 args: args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
             },
-            RT::Struct(tn) => AstType::simple(tn.last_name().to_string()),
+            RT::Named(tn) => AstType::simple(tn.last_name().to_string()),
             RT::Generic(name) => AstType::simple(name.clone()),
         }
     }

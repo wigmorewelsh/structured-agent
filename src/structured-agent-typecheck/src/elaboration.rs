@@ -25,7 +25,7 @@ pub fn elaborate_function(
     }
     let mut typed_parameters = Vec::new();
     for (name, module_type_path) in module_params {
-        let rt_type = structured_agent_runtime::Type::Struct(module_type_path.clone());
+        let rt_type = structured_agent_runtime::Type::Named(module_type_path.clone());
         let binding_id = env.declare_variable(name.clone(), rt_type.clone(), func.span);
         typed_parameters.push(typed_ast::Parameter {
             name: name.clone(),
@@ -265,14 +265,6 @@ fn elaborate_call(
                 .map(|arc| (fn_name, arc.get().clone()))
         })?;
 
-    let solved_constraints = crate::solver::solve_constraints(db, ctx.program, tables);
-    let type_arguments = solved_constraints
-        .resolved
-        .get(&ctx.module_name.to_string())
-        .and_then(|callees| callees.get(function))
-        .cloned()
-        .unwrap_or_default();
-
     let mut typed_args = Vec::new();
 
     let mut unifier = synthesize::Unifier::new();
@@ -290,31 +282,46 @@ fn elaborate_call(
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
     let routing = resolve_call_routing(db, tables, interned_current, interned_fn);
-    let via_module_param = routing
+
+    let binding = routing
         .as_ref()
         .and_then(|r| r.via_module_param.as_deref())
-        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id));
-    let module_params = routing
-        .map(|r| {
-            r.module_args
-                .into_iter()
-                .filter_map(|arg| match arg {
-                    CallModuleArg::Concrete(path) => Some(typed_ast::ModuleArg::Concrete(path)),
-                    CallModuleArg::FromParam(name) => env
-                        .lookup_variable(&name)
-                        .map(|(_, id)| typed_ast::ModuleArg::FromParam(id)),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id))
+        .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
+        .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name.clone()));
+
+    let mut all_args: Vec<typed_ast::Expression> = Vec::new();
+
+    if let Some(routing) = &routing {
+        for arg in &routing.module_args {
+            match arg {
+                CallModuleArg::Concrete(path) => {
+                    all_args.push(typed_ast::Expression::TypeLiteral {
+                        ty: structured_agent_runtime::Type::Named(path.clone()),
+                        span,
+                    });
+                }
+                CallModuleArg::FromParam(name) => {
+                    if let Some((ty, binding_id)) = env.lookup_variable(name) {
+                        all_args.push(typed_ast::Expression::Variable {
+                            name: name.clone(),
+                            binding_id,
+                            ty,
+                            span,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    all_args.extend(typed_args);
+
     Some(typed_ast::Expression::Call {
         function: function.to_string(),
-        resolved: resolved_fn_name,
+        binding,
         kind: sig.kind,
-        type_arguments,
-        arguments: typed_args,
-        module_params,
-        via_module_param,
+        arguments: all_args,
         ty: resolved_return,
         span,
     })
@@ -462,7 +469,7 @@ fn elaborate_struct_literal(
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
     let ty = if type_params.is_empty() {
-        RT::Struct(resolved_type_name)
+        RT::Named(resolved_type_name)
     } else {
         let args: Vec<RT> = type_params
             .iter()
@@ -495,7 +502,7 @@ fn elaborate_field_access(
     let typed_base = elaborate_expression(db, tables, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     let struct_type_name = match &base_type {
-        RT::Struct(tn) => tn.last_name().to_string(),
+        RT::Named(tn) => tn.last_name().to_string(),
         RT::Generic(name) => name.clone(),
         _ => return None,
     };

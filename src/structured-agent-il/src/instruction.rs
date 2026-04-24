@@ -64,7 +64,7 @@ pub enum Instruction {
     },
     CallIndirect {
         module_param: Slot,
-        fn_name: String,
+        fn_name: DefinitionPath,
         params: Vec<Slot>,
         dest: Slot,
     },

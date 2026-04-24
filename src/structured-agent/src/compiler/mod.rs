@@ -273,7 +273,7 @@ fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Typ
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
-            _ => Type::Struct(DefinitionPath::for_type(
+            _ => Type::Named(DefinitionPath::for_type(
                 module.clone(),
                 ast_type.name.clone(),
             )),

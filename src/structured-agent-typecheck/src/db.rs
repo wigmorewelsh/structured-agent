@@ -426,6 +426,7 @@ pub struct CallRouting {
     pub module_args: Vec<CallModuleArg>,
 }
 
+// TODO: this should be changed to return Option<ResolvedType>
 fn resolve_absolute_path<'db>(
     db: &'db dyn TypeCheckDatabase,
     tables: SymbolTablesInput,

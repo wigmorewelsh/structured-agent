@@ -5,12 +5,6 @@ use structured_agent_runtime::DefinitionPath;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum ModuleArg {
-    Concrete(DefinitionPath),
-    FromParam(BindingId),
-}
-
 pub mod refs;
 pub use refs::{NoBody, NoWitness, SourceLocation, TypedCheckerAstRef, TypedRefs};
 
@@ -124,15 +118,18 @@ pub struct SelectClause {
 }
 
 #[derive(Clone, Debug)]
+pub enum MethodBinding {
+    Early(DefinitionPath),
+    Late(BindingId, DefinitionPath),
+}
+
+#[derive(Clone, Debug)]
 pub enum Expression {
     Call {
         function: String,
-        resolved: DefinitionPath,
+        binding: MethodBinding,
         kind: FunctionKind,
-        type_arguments: Vec<Type>,
         arguments: Vec<Expression>,
-        module_params: Vec<ModuleArg>,
-        via_module_param: Option<BindingId>,
         ty: Type,
         span: Span,
     },
@@ -182,6 +179,10 @@ pub enum Expression {
         ty: Type,
         span: Span,
     },
+    TypeLiteral {
+        ty: Type,
+        span: Span,
+    },
     Select(SelectExpression, Type),
     IfElse {
         condition: Box<Expression>,
@@ -205,6 +206,7 @@ impl Expression {
             Expression::ListLiteral { ty, .. } => ty,
             Expression::Placeholder { ty, .. } => ty,
             Expression::UnitLiteral { ty, .. } => ty,
+            Expression::TypeLiteral { ty, .. } => ty,
             Expression::Select(_, ty) => ty,
             Expression::IfElse { ty, .. } => ty,
         }
@@ -222,6 +224,7 @@ impl Expression {
             Expression::ListLiteral { span, .. } => *span,
             Expression::Placeholder { span, .. } => *span,
             Expression::UnitLiteral { span, .. } => *span,
+            Expression::TypeLiteral { span, .. } => *span,
             Expression::Select(s, _) => s.span,
             Expression::IfElse { span, .. } => *span,
         }
