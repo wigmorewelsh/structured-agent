@@ -312,7 +312,7 @@ pub struct ImplDefinition<R: References> {
     pub key: DefinitionPath,
     pub module: DefinitionPath,
     pub type_name: R::TypeAnnotation,
-    pub trait_name: R::TypeAnnotation,
+    pub trait_name: Option<R::TypeAnnotation>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
 }

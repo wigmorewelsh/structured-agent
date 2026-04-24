@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
+use std::collections::HashMap;
 use structured_agent_ast::ast::{Definition, Expression, Module, Statement, Type};
 use structured_agent_ast::types::FileId;
-use std::collections::HashMap;
 
 pub struct UnusedReturnValueAnalyzer {
     warnings: Vec<Warning>,
@@ -117,6 +117,12 @@ impl UnusedReturnValueAnalyzer {
                 }
             }
             Expression::FieldAccess { .. } => {}
+            Expression::MethodCall { receiver, args, .. } => {
+                self.analyze_expression(receiver);
+                for arg in args {
+                    self.analyze_expression(arg);
+                }
+            }
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

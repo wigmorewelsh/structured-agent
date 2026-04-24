@@ -39,6 +39,29 @@ fn main(): () {
 }
 
 #[tokio::test]
+async fn test_method_call_on_struct() {
+    let code = r#"
+struct Counter {
+    value: Int,
+}
+
+impl Counter {
+    pub fn get(self): Int {
+        return self.value
+    }
+}
+
+fn main(): Int {
+    let c = Counter { value: 42 }
+    return c.get()
+}
+"#;
+
+    let value = run_program(code).await;
+    assert_eq!(value.as_integer().unwrap(), 42);
+}
+
+#[tokio::test]
 async fn test_variable_injection_after_assignment() {
     let code = r#"
 fn test_var_injection(): () {

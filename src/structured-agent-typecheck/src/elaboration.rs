@@ -1,5 +1,5 @@
 use super::db::{
-    CallModuleArg, Intern, ModuleInstantiation, TypeCheckDatabase, get_function_sig,
+    CallModuleArg, Intern, ModuleInstantiation, TypeCheckDatabase, find_impl_fn, get_function_sig,
     get_struct_fields, resolve_call_routing, resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
@@ -229,7 +229,50 @@ pub fn elaborate_expression(
         Expression::FieldAccess { base, field, span } => {
             elaborate_field_access(db, base, field, *span, env, ctx)
         }
+        Expression::MethodCall {
+            receiver,
+            method,
+            args,
+            span,
+        } => elaborate_method_call(db, receiver, method, args, *span, env, ctx),
     }
+}
+
+fn elaborate_method_call(
+    db: &dyn TypeCheckDatabase,
+    receiver: &Expression,
+    method: &str,
+    args: &[Expression],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<typed_ast::Expression> {
+    let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
+    let receiver_type = typed_receiver.ty().clone();
+    let struct_type_name = match &receiver_type {
+        RT::Named(tn) => tn.last_name().to_string(),
+        _ => return None,
+    };
+    let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name)?;
+    let sig = get_function_sig(
+        db,
+        InternedFunctionName::new(db, impl_fn_path.clone()),
+        ctx.program,
+    )?
+    .get()
+    .clone();
+    let mut typed_args = vec![typed_receiver];
+    for arg in args {
+        typed_args.push(elaborate_expression(db, arg, env, ctx)?);
+    }
+    Some(typed_ast::Expression::Call {
+        function: method.to_string(),
+        binding: typed_ast::MethodBinding::Early(impl_fn_path),
+        kind: sig.kind,
+        arguments: typed_args,
+        ty: sig.return_type,
+        span,
+    })
 }
 
 fn elaborate_call(

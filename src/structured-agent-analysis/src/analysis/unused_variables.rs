@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
+use std::collections::HashMap;
 use structured_agent_ast::ast::{Expression, Function, Statement};
 use structured_agent_ast::types::{FileId, Span};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 struct VariableInfo {
@@ -114,6 +114,12 @@ impl UnusedVariableAnalyzer {
             }
             Expression::FieldAccess { base, .. } => {
                 self.analyze_expression(base);
+            }
+            Expression::MethodCall { receiver, args, .. } => {
+                self.analyze_expression(receiver);
+                for arg in args {
+                    self.analyze_expression(arg);
+                }
             }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

@@ -34,6 +34,7 @@ impl UnusedExpressionAnalyzer {
                 | Expression::IfElse { .. }
                 | Expression::StructLiteral { .. }
                 | Expression::FieldAccess { .. }
+                | Expression::MethodCall { .. }
                 | Expression::Placeholder { .. } => {
                     self.analyze_expression(expr);
                 }
@@ -106,6 +107,12 @@ impl UnusedExpressionAnalyzer {
                 }
             }
             Expression::FieldAccess { .. } => {}
+            Expression::MethodCall { receiver, args, .. } => {
+                self.analyze_expression(receiver);
+                for arg in args {
+                    self.analyze_expression(arg);
+                }
+            }
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

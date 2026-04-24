@@ -41,7 +41,7 @@ pub enum Definition {
     },
     TraitImpl {
         type_name: String,
-        trait_name: String,
+        trait_name: Option<String>,
         functions: Vec<Function>,
         span: Span,
     },

@@ -477,7 +477,6 @@ impl SymbolTableBuilder {
         discriminator: u32,
     ) {
         let type_name = &impl_arc.type_name;
-        let trait_name = &impl_arc.trait_name;
         let functions = &impl_arc.functions;
         let span = &impl_arc.span;
 
@@ -486,7 +485,10 @@ impl SymbolTableBuilder {
             key: key.clone(),
             module: module_name.clone(),
             type_name: AstType::simple(type_name.clone()),
-            trait_name: AstType::simple(trait_name.clone()),
+            trait_name: impl_arc
+                .trait_name
+                .as_ref()
+                .map(|t| AstType::simple(t.clone())),
             source_ref: SourceLocation(file_id, *span),
             ast_ref: CheckerAstRef::Impl(Arc::clone(impl_arc)),
         };
@@ -527,10 +529,17 @@ impl SymbolTableBuilder {
         let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
             .parameters
             .iter()
-            .map(|p| ParameterDefinition {
-                name: p.name.clone(),
-                type_name: p.param_type.clone(),
-                source_ref: SourceLocation(file_id, p.span),
+            .map(|p| {
+                let param_type = if p.name == "self" {
+                    AstType::simple(type_name.to_string())
+                } else {
+                    p.param_type.clone()
+                };
+                ParameterDefinition {
+                    name: p.name.clone(),
+                    type_name: param_type,
+                    source_ref: SourceLocation(file_id, p.span),
+                }
             })
             .collect();
         let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func

@@ -930,6 +930,7 @@ mod vm_execution_tests {
                 ty: Type::unit(),
                 span: *span,
             },
+            AE::MethodCall { .. } => unimplemented!("MethodCall not supported in test helper"),
             AE::Select(select) => typed_ast::Expression::Select(
                 typed_ast::SelectExpression {
                     clauses: select

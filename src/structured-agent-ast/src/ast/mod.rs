@@ -97,7 +97,7 @@ pub struct SigFunction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstTraitImpl {
     pub type_name: String,
-    pub trait_name: String,
+    pub trait_name: Option<String>,
     pub functions: Vec<Arc<Function>>,
     pub span: Span,
 }
@@ -353,6 +353,12 @@ pub enum Expression {
         field: String,
         span: Span,
     },
+    MethodCall {
+        receiver: Box<Expression>,
+        method: String,
+        args: Vec<Expression>,
+        span: Span,
+    },
     StringLiteral {
         value: String,
         span: Span,
@@ -399,6 +405,7 @@ impl Spanned for Expression {
             Expression::IfElse { span, .. } => *span,
             Expression::StructLiteral { span, .. } => *span,
             Expression::FieldAccess { span, .. } => *span,
+            Expression::MethodCall { span, .. } => *span,
         }
     }
 }
@@ -651,7 +658,10 @@ impl fmt::Display for Definition {
                 write!(f, "\n}}")
             }
             Definition::TraitImpl(t) => {
-                write!(f, "impl {}: {}", t.type_name, t.trait_name)?;
+                match &t.trait_name {
+                    Some(tn) => write!(f, "impl {}: {}", t.type_name, tn)?,
+                    None => write!(f, "impl {}", t.type_name)?,
+                }
                 write!(f, " {{")?;
                 for func in &t.functions {
                     write!(f, "\n    {}", func)?;
@@ -758,6 +768,21 @@ impl fmt::Display for Expression {
                 write!(f, " }}")
             }
             Expression::FieldAccess { base, field, .. } => write!(f, "{}.{}", base, field),
+            Expression::MethodCall {
+                receiver,
+                method,
+                args,
+                ..
+            } => {
+                write!(f, "{}.{}(", receiver, method)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }

@@ -330,6 +330,20 @@ pub fn get_struct_fields(
     })
 }
 
+pub fn find_impl_fn(
+    db: &dyn TypeCheckDatabase,
+    type_name: &str,
+    method_name: &str,
+    current_module: &DefinitionPath,
+) -> Option<DefinitionPath> {
+    let impls = db.symbol_tables().impls(db);
+    let impl_entry = impls
+        .get()
+        .values()
+        .find(|i| i.type_name.name() == type_name && i.module == *current_module)?;
+    Some(DefinitionPath::for_impl_fn(&impl_entry.key, method_name))
+}
+
 #[salsa::tracked]
 pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput) {
     for parsed in program.modules(db) {
@@ -1025,10 +1039,10 @@ pub fn elaborate_metadata(
                 impl_def.module.clone(),
                 impl_def.type_name.name().to_string(),
             ),
-            trait_name: DefinitionPath::for_type(
-                impl_def.module.clone(),
-                impl_def.trait_name.name().to_string(),
-            ),
+            trait_name: impl_def
+                .trait_name
+                .as_ref()
+                .map(|t| DefinitionPath::for_type(impl_def.module.clone(), t.name().to_string())),
             source_ref: SourceLocation(impl_def.source_ref.0, impl_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(impl_def.ast_ref.clone()),
         };

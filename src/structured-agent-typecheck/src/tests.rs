@@ -1658,6 +1658,102 @@ mod tests {
             errors
         );
     }
+
+    #[test]
+    fn test_method_call_type_checks() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn get(self): Int {\n",
+            "        return self.x\n",
+            "    }\n",
+            "}\n",
+            "fn main(): Int {\n",
+            "    let foo = Foo { x: 42 }\n",
+            "    return foo.get()\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "method call should type check: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_method_call_unknown_method_is_error() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn get(self): Int {\n",
+            "        return self.x\n",
+            "    }\n",
+            "}\n",
+            "fn main(): Int {\n",
+            "    let foo = Foo { x: 42 }\n",
+            "    return foo.nonexistent()\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_err(),
+            "unknown method should produce a type error"
+        );
+    }
+
+    #[test]
+    fn test_impl_method_body_type_error_is_reported() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn get(self): String {\n",
+            "        return self.x\n",
+            "    }\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_err(),
+            "return type mismatch in impl body should be a type error, got {:?}",
+            result
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::ReturnTypeMismatch { .. })),
+            "expected ReturnTypeMismatch, got {:?}",
+            errors
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2818,15 +2914,34 @@ mod metadata_query_tests {
         let metadata = TypeChecker::new()
             .check(&[parsed], &std::collections::HashMap::new())
             .unwrap();
-        let impl_def = metadata
-            .impls
-            .values()
-            .find(|v| v.type_name.last_name() == "Foo" && v.trait_name.last_name() == "Add");
+        let impl_def = metadata.impls.values().find(|v| {
+            v.type_name.last_name() == "Foo"
+                && v.trait_name.as_ref().map(|t| t.last_name()) == Some("Add")
+        });
         assert!(impl_def.is_some());
         assert!(matches!(
             impl_def.unwrap().ast_ref,
             TypedCheckerAstRef::Other(CheckerAstRef::Impl(_))
         ));
+    }
+
+    #[test]
+    fn test_bare_impl_is_registered() {
+        let input = "struct Foo {\n    x: Int,\n}\nimpl Foo {\n    pub fn get(self: Foo): Int {\n        return self.x\n    }\n}\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let metadata = check_meta(module);
+        let impl_def = metadata
+            .impls
+            .values()
+            .find(|v| v.type_name.last_name() == "Foo");
+        assert!(impl_def.is_some());
+        assert!(impl_def.unwrap().trait_name.is_none());
     }
 
     #[test]

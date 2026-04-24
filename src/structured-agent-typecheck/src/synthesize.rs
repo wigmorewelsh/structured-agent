@@ -1,6 +1,6 @@
 use super::db::{
-    Intern, TypeCheckDatabase, get_function_sig, get_struct_fields, lookup_function_def,
-    resolve_function_call, resolve_type_in_module,
+    Intern, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
+    lookup_function_def, resolve_function_call, resolve_type_in_module,
 };
 use super::error::OrAccumulateError;
 use crate::ensure_or_accumulate;
@@ -308,11 +308,54 @@ pub fn check_definition(
             Some(())
         }
         Definition::Use(_) | Definition::Trait(_) => Some(()),
-        Definition::TraitImpl(_t) => Some(()),
+        Definition::TraitImpl(t) => {
+            let impls = db.symbol_tables().impls(db);
+            let impl_entry = impls
+                .get()
+                .values()
+                .find(|i| i.type_name.name() == t.type_name && i.module == *ctx.module_name)
+                .or_accumulate(
+                    db,
+                    TypeError::UnsupportedType {
+                        type_name: t.type_name.clone(),
+                        span: t.span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
+            let impl_key = impl_entry.key.clone();
+            for func in &t.functions {
+                check_impl_function(db, func, &impl_key, ctx)?;
+            }
+            Some(())
+        }
         Definition::ModuleHeader { .. }
         | Definition::Signature(_)
         | Definition::InlineModule { .. } => unreachable!(),
     }
+}
+
+fn check_impl_function(
+    db: &dyn TypeCheckDatabase,
+    func: &Function,
+    impl_key: &DefinitionPath,
+    ctx: &CheckContext,
+) -> Option<()> {
+    let impl_fn_path = DefinitionPath::for_impl_fn(impl_key, func.name.clone());
+    let sig = get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?
+        .get()
+        .clone();
+    let mut env = TypeEnvironment::new();
+    for param in &sig.parameters {
+        env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
+    }
+    check_block(
+        db,
+        &func.body.statements,
+        env,
+        &func.name,
+        &sig.return_type,
+        ctx,
+    )
 }
 
 fn check_function(db: &dyn TypeCheckDatabase, func: &Function, ctx: &CheckContext) -> Option<()> {
@@ -563,6 +606,33 @@ pub fn synthesize_expression(
         } => synthesize_struct_literal(db, struct_name, fields, *span, env, ctx),
         Expression::FieldAccess { base, field, span } => {
             synthesize_field_access(db, base, field, *span, env, ctx)
+        }
+        Expression::MethodCall {
+            receiver,
+            method,
+            args,
+            span,
+        } => {
+            let receiver_type = synthesize_expression(db, receiver, env, ctx)?;
+            let struct_type_name = match &receiver_type {
+                RT::Named(tn) => tn.last_name().to_string(),
+                _ => return None,
+            };
+            let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name)
+                .or_accumulate(
+                    db,
+                    TypeError::UnknownFunction {
+                        name: method.clone(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
+            for arg in args {
+                synthesize_expression(db, arg, env, ctx)?;
+            }
+            let sig =
+                get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?;
+            Some(sig.get().return_type.clone())
         }
     }
 }

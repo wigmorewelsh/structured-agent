@@ -474,8 +474,7 @@ where
     attempt((position(), lex_string("impl"))).then(|(start, _)| {
         (
             identifier(),
-            lex_char(':'),
-            identifier(),
+            optional(attempt((lex_char(':'), identifier())).map(|(_, name)| name)),
             between(
                 lex_char('{'),
                 lex_char('}'),
@@ -487,7 +486,7 @@ where
             ),
             position(),
         )
-            .map(move |(type_name, _, trait_name, functions, end)| {
+            .map(move |(type_name, trait_name, functions, end)| {
                 let functions: Vec<Function> = functions;
                 Definition::TraitImpl(Arc::new(AstTraitImpl {
                     type_name,
@@ -594,14 +593,19 @@ where
     (
         position(),
         identifier(),
-        lex_char(':'),
-        parse_type(),
+        optional(attempt((lex_char(':'), parse_type()))),
         position(),
     )
-        .map(|(start, name, _, param_type, end)| Parameter {
-            name,
-            param_type,
-            span: Span::new(start, end),
+        .map(|(start, name, type_annotation, end)| {
+            let param_type = match type_annotation {
+                Some((_, t)) => t,
+                None => Type::simple("Self".to_string()),
+            };
+            Parameter {
+                name,
+                param_type,
+                span: Span::new(start, end),
+            }
         })
 }
 
@@ -791,18 +795,45 @@ combine::parser! {
             parse_variable(),
         ));
 
-        (primary, many(attempt((char('.'), identifier_raw(), position()))))
+        (
+            primary,
+            many(attempt((
+                char('.'),
+                identifier_raw(),
+                optional(attempt(between(
+                    lex_char('('),
+                    char(')'),
+                    sep_by(parse_argument(), lex_char(',')),
+                ))),
+                position(),
+            ))),
+        )
             .skip(skip_spaces())
-            .map(|(base, suffixes): (Expression, Vec<(char, String, usize)>)| {
-                suffixes.into_iter().fold(base, |acc, (_, field, end)| {
-                    let span_start = acc.span().start;
-                    Expression::FieldAccess {
-                        base: Box::new(acc),
-                        field,
-                        span: Span::new(span_start, end),
-                    }
-                })
-            })
+            .map(
+                |(base, suffixes): (
+                    Expression,
+                    Vec<(char, String, Option<Vec<Expression>>, usize)>,
+                )| {
+                    suffixes
+                        .into_iter()
+                        .fold(base, |acc, (_, name, maybe_args, end)| {
+                            let span_start = acc.span().start;
+                            match maybe_args {
+                                Some(args) => Expression::MethodCall {
+                                    receiver: Box::new(acc),
+                                    method: name,
+                                    args,
+                                    span: Span::new(span_start, end),
+                                },
+                                None => Expression::FieldAccess {
+                                    base: Box::new(acc),
+                                    field: name,
+                                    span: Span::new(span_start, end),
+                                },
+                            }
+                        })
+                },
+            )
     }
 }
 
@@ -3449,6 +3480,100 @@ fn main(): String {
     }
 
     #[test]
+    fn test_parse_self_parameter_without_type_annotation() {
+        let input = "struct Foo {\n    x: Int,\n}\nimpl Foo {\n    pub fn get(self): Int {\n        return self.x\n    }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::TraitImpl(t) = &module.definitions[1] {
+            let self_param = &t.functions[0].parameters[0];
+            assert_eq!(self_param.name, "self");
+            assert_eq!(self_param.param_type.path[0].name, "Self");
+        } else {
+            panic!("expected trait impl");
+        }
+    }
+
+    #[test]
+    fn test_parse_bare_impl() {
+        let input = "struct Foo {\n    x: Int,\n}\nimpl Foo {\n    pub fn get(self: Foo): Int {\n        return self.x\n    }\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 2);
+        if let Definition::TraitImpl(t) = &module.definitions[1] {
+            assert_eq!(t.type_name, "Foo");
+            assert_eq!(t.trait_name, None);
+            assert_eq!(t.functions.len(), 1);
+            assert_eq!(t.functions[0].name, "get");
+        } else {
+            panic!("expected trait impl, got {:?}", module.definitions[1]);
+        }
+    }
+
+    #[test]
+    fn test_parse_method_call_no_args() {
+        let input = "fn f(foo: Foo): Int {\n    return foo.get()\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::MethodCall { method, args, .. } = expr else {
+            panic!("expected MethodCall, got {:?}", expr)
+        };
+        assert_eq!(method, "get");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn test_parse_method_call_with_args() {
+        let input = "fn f(foo: Foo, x: Int): Int {\n    return foo.add(x)\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        let Expression::MethodCall { method, args, .. } = expr else {
+            panic!("expected MethodCall, got {:?}", expr)
+        };
+        assert_eq!(method, "add");
+        assert_eq!(args.len(), 1);
+    }
+
+    #[test]
+    fn test_field_access_not_method_call() {
+        let input = "fn f(foo: Foo): Int {\n    return foo.value\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let Definition::Function(f) = &module.definitions[0] else {
+            panic!()
+        };
+        let Statement::Return(expr) = &f.body.statements[0] else {
+            panic!()
+        };
+        assert!(
+            matches!(expr, Expression::FieldAccess { .. }),
+            "expected FieldAccess, got {:?}",
+            expr
+        );
+    }
+
+    #[test]
     fn test_parse_trait_impl() {
         let input = "struct Foo {\n    x: Int,\n}\nimpl Foo: Add {\n    fn add(self: Foo, other: Foo): Foo {\n        return self\n    }\n}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
@@ -3458,10 +3583,10 @@ fn main(): String {
         assert_eq!(module.definitions.len(), 2);
         if let Definition::TraitImpl(t) = &module.definitions[1] {
             let type_name = &t.type_name;
-            let trait_name = &t.trait_name;
+            let trait_name = t.trait_name.as_deref();
             let functions = &t.functions;
             assert_eq!(type_name, "Foo");
-            assert_eq!(trait_name, "Add");
+            assert_eq!(trait_name, Some("Add"));
             assert_eq!(functions.len(), 1);
             assert_eq!(functions[0].name, "add");
         } else {
