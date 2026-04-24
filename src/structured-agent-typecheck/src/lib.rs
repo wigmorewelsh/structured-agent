@@ -22,7 +22,7 @@ pub(crate) use structured_agent_typed_ast as typed_ast;
 
 use crate::db::ProgramInput;
 use collection::SymbolTableBuilder;
-use db::{ParsedModuleInput, SymbolTablesInput, TypeCheckDb};
+use db::{ParsedModuleInput, TypeCheckDatabase, TypeCheckDb};
 use structured_agent_ast::ast::{ParsedModule, TypeParam};
 
 use std::collections::HashMap;
@@ -32,7 +32,6 @@ use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
     db: TypeCheckDb,
-    symbol_tables: Option<SymbolTablesInput>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +54,6 @@ impl TypeChecker {
     pub fn new() -> Self {
         Self {
             db: TypeCheckDb::default(),
-            symbol_tables: None,
         }
     }
 
@@ -67,19 +65,18 @@ impl TypeChecker {
         self.populate_symbol_tables(modules, native_modules);
         let parsed_inputs = self.make_parsed_inputs(modules);
         let program_input = ProgramInput::new(&self.db, parsed_inputs);
-        let tables = self.symbol_tables.expect("symbol tables not populated");
 
         let check_errors = self.run_check_pass(program_input);
         if !check_errors.is_empty() {
             return Err(check_errors);
         }
 
-        let solver_errors = self.run_solve_pass(program_input, tables);
+        let solver_errors = self.run_solve_pass(program_input);
         if !solver_errors.is_empty() {
             return Err(solver_errors);
         }
 
-        let (meta_data, elaborate_errors) = self.run_elaborate_pass(program_input, tables);
+        let (meta_data, elaborate_errors) = self.run_elaborate_pass(program_input);
         if !elaborate_errors.is_empty() {
             return Err(elaborate_errors);
         }
@@ -90,39 +87,28 @@ impl TypeChecker {
     fn run_elaborate_pass(
         &mut self,
         program_input: ProgramInput,
-        tables: SymbolTablesInput,
     ) -> (MetaData<TypedRefs>, Vec<TypeError>) {
-        let meta_data = db::elaborate_metadata(&self.db, tables, program_input)
+        let meta_data = db::elaborate_metadata(&self.db, program_input)
             .get()
             .clone();
 
-        let errors = db::elaborate_metadata::accumulated::<TypeErrorAccumulator>(
-            &self.db,
-            tables,
-            program_input,
-        )
-        .into_iter()
-        .map(|e| e.0.clone())
-        .collect::<Vec<_>>();
+        let errors =
+            db::elaborate_metadata::accumulated::<TypeErrorAccumulator>(&self.db, program_input)
+                .into_iter()
+                .map(|e| e.0.clone())
+                .collect::<Vec<_>>();
 
         (meta_data, errors)
     }
 
-    fn run_solve_pass(
-        &mut self,
-        program_input: ProgramInput,
-        tables: SymbolTablesInput,
-    ) -> Vec<TypeError> {
-        let _ = solver::solve_constraints(&self.db, program_input, tables);
+    fn run_solve_pass(&mut self, program_input: ProgramInput) -> Vec<TypeError> {
+        let _ = solver::solve_constraints(&self.db, program_input);
 
-        let solver_errors = solver::solve_constraints::accumulated::<TypeErrorAccumulator>(
-            &self.db,
-            program_input,
-            tables,
-        )
-        .into_iter()
-        .map(|e| e.0.clone())
-        .collect();
+        let solver_errors =
+            solver::solve_constraints::accumulated::<TypeErrorAccumulator>(&self.db, program_input)
+                .into_iter()
+                .map(|e| e.0.clone())
+                .collect();
 
         solver_errors
     }
@@ -132,8 +118,9 @@ impl TypeChecker {
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) {
-        self.symbol_tables =
-            Some(SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules));
+        let tables =
+            SymbolTableBuilder::new().build_symbol_tables(&self.db, modules, native_modules);
+        self.db.set_symbol_tables(tables);
     }
 
     fn make_parsed_inputs(&mut self, modules: &[ParsedModule]) -> Vec<ParsedModuleInput> {
@@ -152,22 +139,19 @@ impl TypeChecker {
     }
 
     fn run_check_pass(&self, program: ProgramInput) -> Vec<TypeError> {
-        let tables = self.symbol_tables.expect("symbol tables not populated");
+        db::check_program(&self.db, program);
 
-        db::check_program(&self.db, program, tables);
-
-        let all_errors =
-            db::check_program::accumulated::<TypeErrorAccumulator>(&self.db, program, tables)
-                .into_iter()
-                .map(|e| e.0.clone())
-                .collect();
+        let all_errors = db::check_program::accumulated::<TypeErrorAccumulator>(&self.db, program)
+            .into_iter()
+            .map(|e| e.0.clone())
+            .collect();
 
         all_errors
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
-        let tables = self.symbol_tables.expect("symbol tables not populated");
-        tables
+        self.db
+            .symbol_tables()
             .functions(&self.db)
             .get()
             .values()

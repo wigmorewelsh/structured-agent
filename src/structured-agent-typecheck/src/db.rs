@@ -23,19 +23,40 @@ use structured_agent_runtime::symbols::{
 };
 
 #[salsa::db]
-pub trait TypeCheckDatabase: salsa::Database {}
+pub trait TypeCheckDatabase: salsa::Database {
+    fn symbol_tables(&self) -> SymbolTablesInput;
+}
 
 #[salsa::db]
-#[derive(Default)]
 pub struct TypeCheckDb {
     storage: salsa::Storage<Self>,
+    symbol_tables: Option<SymbolTablesInput>,
+}
+
+impl Default for TypeCheckDb {
+    fn default() -> Self {
+        Self {
+            storage: Default::default(),
+            symbol_tables: None,
+        }
+    }
 }
 
 #[salsa::db]
 impl salsa::Database for TypeCheckDb {}
 
 #[salsa::db]
-impl TypeCheckDatabase for TypeCheckDb {}
+impl TypeCheckDatabase for TypeCheckDb {
+    fn symbol_tables(&self) -> SymbolTablesInput {
+        self.symbol_tables.expect("symbol tables not set")
+    }
+}
+
+impl TypeCheckDb {
+    pub fn set_symbol_tables(&mut self, tables: SymbolTablesInput) {
+        self.symbol_tables = Some(tables);
+    }
+}
 
 #[salsa::input]
 pub struct ParsedModuleInput {
@@ -172,11 +193,10 @@ impl<'db> Intern<'db> for &str {
 #[salsa::tracked]
 pub fn lookup_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     key: InternedFunctionName<'db>,
 ) -> Option<ArcPtr<FunctionDefinition<CheckerRefs>>> {
     let name = key.name(db);
-    tables
+    db.symbol_tables()
         .functions(db)
         .get()
         .get(&name)
@@ -186,11 +206,10 @@ pub fn lookup_function_def<'db>(
 #[salsa::tracked]
 pub fn lookup_type_def_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     key: InternedTypeName<'db>,
 ) -> Option<ArcPtr<TypeDefinition<CheckerRefs>>> {
     let name = key.name(db);
-    tables
+    db.symbol_tables()
         .types(db)
         .get()
         .get(&name)
@@ -200,12 +219,11 @@ pub fn lookup_type_def_in_symbol_tables<'db>(
 #[salsa::tracked]
 pub fn get_function_sig<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
     program: ProgramInput,
 ) -> Option<ArcPtr<super::FunctionSignature>> {
     let fn_name = name.name(db);
-    let fn_def = lookup_function_def(db, tables, name).or_accumulate(
+    let fn_def = lookup_function_def(db, name).or_accumulate(
         db,
         TypeError::UndefinedType {
             name: fn_name.to_string(),
@@ -219,7 +237,7 @@ pub fn get_function_sig<'db>(
     };
 
     let type_key = InternedTypeName::new(db, fn_def.get().type_name.clone());
-    let type_def = lookup_type_def_in_symbol_tables(db, tables, type_key).or_accumulate(
+    let type_def = lookup_type_def_in_symbol_tables(db, type_key).or_accumulate(
         db,
         TypeError::UndefinedType {
             name: fn_def.get().type_name.last_name().to_string(),
@@ -257,14 +275,8 @@ pub fn get_function_sig<'db>(
             module_name: &fn_name.module_prefix(),
             program,
         };
-        let param_type = super::synthesize::resolve(
-            db,
-            tables,
-            &p.type_name,
-            &type_env,
-            p.source_ref.1,
-            &param_ctx,
-        )?;
+        let param_type =
+            super::synthesize::resolve(db, &p.type_name, &type_env, p.source_ref.1, &param_ctx)?;
         resolved_params.push(crate::typed_ast::Parameter {
             name: p.name.clone(),
             param_type,
@@ -279,7 +291,6 @@ pub fn get_function_sig<'db>(
     };
     let resolved_return = super::synthesize::resolve(
         db,
-        tables,
         return_type,
         &type_env,
         type_def.get().source_ref.1,
@@ -295,17 +306,16 @@ pub fn get_function_sig<'db>(
 
 pub fn get_struct_fields(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     name: &str,
     current_module: &DefinitionPath,
 ) -> Option<(Vec<(String, AstType)>, Vec<TypeParam>)> {
     let interned_mod = InternedModuleName::new(db, current_module.clone());
     let interned_name = name.intern(db);
-    let resolved = resolve_type_in_module(db, tables, interned_mod, interned_name)
+    let resolved = resolve_type_in_module(db, interned_mod, interned_name)
         .map(|r| r.ty)
         .unwrap_or_else(|| DefinitionPath::for_type(current_module.clone(), name));
     let key = InternedTypeName::new(db, resolved);
-    lookup_type_def_in_symbol_tables(db, tables, key).and_then(|arc_ptr| {
+    lookup_type_def_in_symbol_tables(db, key).and_then(|arc_ptr| {
         if let CheckerAstRef::Struct(s) = &arc_ptr.get().ast_ref {
             let fields = s
                 .fields
@@ -321,19 +331,14 @@ pub fn get_struct_fields(
 }
 
 #[salsa::tracked]
-pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput, tables: SymbolTablesInput) {
+pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput) {
     for parsed in program.modules(db) {
-        check_module(db, parsed, tables, program);
+        check_module(db, parsed, program);
     }
 }
 
 #[salsa::tracked]
-pub fn check_module(
-    db: &dyn TypeCheckDatabase,
-    parsed: ParsedModuleInput,
-    tables: SymbolTablesInput,
-    program: ProgramInput,
-) {
+pub fn check_module(db: &dyn TypeCheckDatabase, parsed: ParsedModuleInput, program: ProgramInput) {
     let module_name = DefinitionPath::for_module(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
@@ -347,22 +352,21 @@ pub fn check_module(
             Definition::ModuleHeader { .. } | Definition::Signature(_)
         )
     }) {
-        super::synthesize::check_definition(db, tables, def, &ctx);
+        super::synthesize::check_definition(db, def, &ctx);
     }
 }
 
 #[salsa::tracked]
 pub fn lookup_type_in_symbol_tables<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
     let key = DefinitionPath::for_type(module.name(db), symbol.value(db));
-    tables.types(db).get().get(&key).map(|_| key)
+    db.symbol_tables().types(db).get().get(&key).map(|_| key)
 }
 
-// --- new type resolution
+mod type_resolver {}
 
 type DefKind = TypeDefinitionKind<CheckerRefs>;
 
@@ -432,22 +436,16 @@ pub struct CallRouting {
     pub module_args: Vec<CallModuleArg>,
 }
 
-// TODO: this should be changed to return Option<ResolvedType>
 fn resolve_absolute_path<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     use_path: NonEmpty<String>,
 ) -> Option<DefinitionPath> {
     let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
     let mut last_type_name = None;
     for symbol in use_path.iter() {
-        let resolved =
-            resolve_type_in_module(db, tables, search_module, symbol.clone().intern(db))?;
-        let type_def = lookup_type_def_in_symbol_tables(
-            db,
-            tables,
-            InternedTypeName::new(db, resolved.ty.clone()),
-        )?;
+        let resolved = resolve_type_in_module(db, search_module, symbol.clone().intern(db))?;
+        let type_def =
+            lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, resolved.ty.clone()))?;
         if let DefKind::Signature { .. } = type_def.get().kind {
             search_module = InternedModuleName::new(db, resolved.ty.clone());
         }
@@ -458,7 +456,6 @@ fn resolve_absolute_path<'db>(
 
 fn resolve_local_use_path<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     use_path: Arc<Use>,
 ) -> Option<ResolvedType> {
@@ -467,19 +464,16 @@ fn resolve_local_use_path<'db>(
     let mut last_ty = None;
     for seg in use_path.path.iter() {
         let symbol = seg.name.clone().intern(db);
-        let mut resolved = resolve_type_in_module(db, tables, search_module, symbol)?;
-        // NOTE: this looks like it may cause issue, the intent it to match up the params with the right segment
+        let mut resolved = resolve_type_in_module(db, search_module, symbol)?;
         if !seg.params.is_empty() {
             if let Some(last_seg) = resolved.path.last_mut() {
                 last_seg.inject_params(seg.params.clone());
             }
         }
         accumulated.extend(resolved.path);
-        if let Some(type_def) = lookup_type_def_in_symbol_tables(
-            db,
-            tables,
-            InternedTypeName::new(db, resolved.ty.clone()),
-        ) {
+        if let Some(type_def) =
+            lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, resolved.ty.clone()))
+        {
             if let DefKind::Signature { .. } = type_def.get().kind {
                 search_module = InternedModuleName::new(db, resolved.ty.clone());
             }
@@ -495,7 +489,6 @@ fn resolve_local_use_path<'db>(
 fn resolve_type_cycle_recovery<'db>(
     _db: &'db dyn TypeCheckDatabase,
     _id: salsa::Id,
-    _tables: SymbolTablesInput,
     _current_module: InternedModuleName<'db>,
     _symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
@@ -505,7 +498,6 @@ fn resolve_type_cycle_recovery<'db>(
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
 pub fn resolve_type_in_module<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
@@ -517,33 +509,32 @@ pub fn resolve_type_in_module<'db>(
         db,
         DefinitionPath::for_module(NonEmpty::new("unstable".to_string())),
     );
-    lookup_type_in_symbol_tables(db, tables, current_module, symbol)
+    lookup_type_in_symbol_tables(db, current_module, symbol)
         .map(|ty| {
             ResolvedType::new(ty.clone())
                 .with_segment(ResolveSegment::Local(current_module.name(db), vec![]))
         })
-        .or_else(|| resolve_type_as_mod_param(db, tables, current_module, symbol))
-        .or_else(|| resolve_type_as_alias(db, tables, current_module, symbol))
-        .or_else(|| resolve_type_as_use(db, tables, current_module, symbol))
+        .or_else(|| resolve_type_as_mod_param(db, current_module, symbol))
+        .or_else(|| resolve_type_as_alias(db, current_module, symbol))
+        .or_else(|| resolve_type_as_use(db, current_module, symbol))
         .or_else(|| {
-            lookup_type_in_symbol_tables(db, tables, prelude, symbol).map(|ty| {
+            lookup_type_in_symbol_tables(db, prelude, symbol).map(|ty| {
                 ResolvedType::new(ty.clone())
                     .with_segment(ResolveSegment::Local(prelude.name(db), vec![]))
             })
         })
         .or_else(|| {
-            lookup_type_in_symbol_tables(db, tables, unstable, symbol).map(|ty| {
+            lookup_type_in_symbol_tables(db, unstable, symbol).map(|ty| {
                 ResolvedType::new(ty.clone())
                     .with_segment(ResolveSegment::Local(unstable.name(db), vec![]))
             })
         })
-        .or_else(|| resolve_type_as_sibling_module(db, tables, current_module, symbol))
+        .or_else(|| resolve_type_as_sibling_module(db, current_module, symbol))
 }
 
 fn resolve_relative_module_cycle_recovery<'db>(
     _db: &'db dyn TypeCheckDatabase,
     _id: salsa::Id,
-    _tables: SymbolTablesInput,
     _current_module: InternedModuleName<'db>,
     _symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
@@ -553,18 +544,16 @@ fn resolve_relative_module_cycle_recovery<'db>(
 #[salsa::tracked(cycle_result = resolve_relative_module_cycle_recovery)]
 fn resolve_type_as_relative_module<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
     let key = current_module.name(db).with_module(symbol.value(db));
-    tables.types(db).get().get(&key).map(|_| key)
+    db.symbol_tables().types(db).get().get(&key).map(|_| key)
 }
 
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
 fn resolve_type_as_sibling_module<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
@@ -572,7 +561,7 @@ fn resolve_type_as_sibling_module<'db>(
         .name(db)
         .parent()
         .with_module(symbol.value(db));
-    tables.types(db).get().get(&key).map(|_| {
+    db.symbol_tables().types(db).get().get(&key).map(|_| {
         ResolvedType::new(key.clone()).with_segment(ResolveSegment::Local(
             current_module.name(db).parent(),
             vec![],
@@ -583,11 +572,11 @@ fn resolve_type_as_sibling_module<'db>(
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
 pub fn resolve_type_as_mod_param<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
-    let module_def = tables
+    let module_def = db
+        .symbol_tables()
         .modules(db)
         .get()
         .get(&current_module.name(db))?
@@ -599,7 +588,7 @@ pub fn resolve_type_as_mod_param<'db>(
         if let Definition::ModuleHeader { params, .. } = def {
             for param in params {
                 if param.name == symbol.value(db) {
-                    let ty = resolve_absolute_path(db, tables, param.path.clone())?;
+                    let ty = resolve_absolute_path(db, param.path.clone())?;
                     return Some(
                         ResolvedType::new(ty).with_segment(ResolveSegment::ModuleHeader(
                             param.name.clone(),
@@ -617,12 +606,16 @@ pub fn resolve_type_as_mod_param<'db>(
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
 pub fn resolve_type_as_alias<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
     let module_name = current_module.name(db);
-    let module_def = tables.modules(db).get().get(&module_name)?.clone();
+    let module_def = db
+        .symbol_tables()
+        .modules(db)
+        .get()
+        .get(&module_name)?
+        .clone();
     let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
         return None;
     };
@@ -632,7 +625,7 @@ pub fn resolve_type_as_alias<'db>(
             && let Some(use_alias) = &u.alias
         {
             if use_alias == alias_str.as_str() {
-                return resolve_local_use_path(db, tables, current_module, u.clone());
+                return resolve_local_use_path(db, current_module, u.clone());
             }
         }
     }
@@ -642,12 +635,16 @@ pub fn resolve_type_as_alias<'db>(
 #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
 pub fn resolve_type_as_use<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<ResolvedType> {
     let module_name = current_module.name(db);
-    let module_def = tables.modules(db).get().get(&module_name)?.clone();
+    let module_def = db
+        .symbol_tables()
+        .modules(db)
+        .get()
+        .get(&module_name)?
+        .clone();
     let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
         return None;
     };
@@ -658,7 +655,7 @@ pub fn resolve_type_as_use<'db>(
         {
             let last = u.path.last();
             if last.name == symbol_str.as_str() {
-                return resolve_local_use_path(db, tables, current_module, u.clone());
+                return resolve_local_use_path(db, current_module, u.clone());
             }
         }
     }
@@ -667,11 +664,10 @@ pub fn resolve_type_as_use<'db>(
 
 fn build_module_instantiation<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<String>,
 ) -> Option<ModuleInstantiation> {
-    let resolved = resolve_path_full(db, tables, current_module, path)?;
+    let resolved = resolve_path_full(db, current_module, path)?;
     let params: Vec<ModuleInstantiation> = resolved
         .path
         .iter()
@@ -686,7 +682,7 @@ fn build_module_instantiation<'db>(
                 UseParam::Positional(p) => p,
                 UseParam::Named { path, .. } => path,
             };
-            build_module_instantiation(db, tables, current_module, param_path)
+            build_module_instantiation(db, current_module, param_path)
         })
         .collect();
     Some(ModuleInstantiation {
@@ -697,11 +693,10 @@ fn build_module_instantiation<'db>(
 
 pub fn resolve_call_routing<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     alias: InternedString<'db>,
 ) -> Option<CallRouting> {
-    let resolved = resolve_type_in_module(db, tables, current_module, alias)?;
+    let resolved = resolve_type_in_module(db, current_module, alias)?;
     let via_module_param =
         if let Some(ResolveSegment::ModuleHeader(name, _, _)) = resolved.path.first() {
             Some(name.clone())
@@ -722,7 +717,7 @@ pub fn resolve_call_routing<'db>(
                 UseParam::Positional(path_segs) => path_segs,
                 UseParam::Named { path, .. } => path,
             };
-            let resolved = resolve_path_full(db, tables, current_module, path)?;
+            let resolved = resolve_path_full(db, current_module, path)?;
             match resolved.path.iter().find_map(|s| {
                 if let ResolveSegment::ModuleHeader(name, _, _) = s {
                     Some(name.clone())
@@ -731,7 +726,7 @@ pub fn resolve_call_routing<'db>(
                 }
             }) {
                 Some(param_name) => Some(CallModuleArg::FromParam(param_name)),
-                None => build_module_instantiation(db, tables, current_module, path)
+                None => build_module_instantiation(db, current_module, path)
                     .map(CallModuleArg::Concrete),
             }
         })
@@ -742,18 +737,15 @@ pub fn resolve_call_routing<'db>(
     })
 }
 
-// --- new type resolution -- end
-
 #[salsa::tracked]
 pub fn resolve_function_call<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     symbol: InternedString<'db>,
 ) -> Option<DefinitionPath> {
-    let type_name = resolve_type_in_module(db, tables, current_module, symbol)?.ty;
+    let type_name = resolve_type_in_module(db, current_module, symbol)?.ty;
     let type_def =
-        lookup_type_def_in_symbol_tables(db, tables, InternedTypeName::new(db, type_name.clone()))?;
+        lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, type_name.clone()))?;
     if let DefKind::Function { .. } = type_def.get().kind {
         Some(DefinitionPath::for_function(
             type_name.module_prefix(),
@@ -766,7 +758,6 @@ pub fn resolve_function_call<'db>(
 
 fn resolve_path_full<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<String>,
 ) -> Option<ResolvedType> {
@@ -775,13 +766,11 @@ fn resolve_path_full<'db>(
     let mut last_ty = None;
     for seg in path.iter() {
         let sym = seg.clone().intern(db);
-        let resolved = resolve_type_in_module(db, tables, search, sym)?;
+        let resolved = resolve_type_in_module(db, search, sym)?;
         accumulated.extend(resolved.path);
-        if let Some(type_def) = lookup_type_def_in_symbol_tables(
-            db,
-            tables,
-            InternedTypeName::new(db, resolved.ty.clone()),
-        ) {
+        if let Some(type_def) =
+            lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, resolved.ty.clone()))
+        {
             if let DefKind::Signature { .. } = type_def.get().kind {
                 search = InternedModuleName::new(db, resolved.ty.clone());
             }
@@ -796,29 +785,26 @@ fn resolve_path_full<'db>(
 
 fn resolve_path_to_module<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<String>,
 ) -> Option<DefinitionPath> {
-    resolve_path_full(db, tables, current_module, path).map(|r| r.ty)
+    resolve_path_full(db, current_module, path).map(|r| r.ty)
 }
 
 pub fn ast_type_to_type_name(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     ty: &AstType,
     module_name: &DefinitionPath,
 ) -> DefinitionPath {
     let interned_mod = InternedModuleName::new(db, module_name.clone());
     let interned_name = ty.name.clone().intern(db);
-    resolve_type_in_module(db, tables, interned_mod, interned_name)
+    resolve_type_in_module(db, interned_mod, interned_name)
         .map(|r| r.ty)
         .unwrap_or_else(|| DefinitionPath::for_type(module_name.clone(), ty.name.clone()))
 }
 
 fn convert_generic_params(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     generic_parameters: &[GenericParameterDefinition<super::refs::CheckerRefs>],
     module: &DefinitionPath,
 ) -> Vec<GenericParameterDefinition<TypedRefs>> {
@@ -829,7 +815,7 @@ fn convert_generic_params(
             constraints: gp
                 .constraints
                 .iter()
-                .map(|c| ast_type_to_type_name(db, tables, c, module))
+                .map(|c| ast_type_to_type_name(db, c, module))
                 .collect(),
         })
         .collect()
@@ -837,7 +823,6 @@ fn convert_generic_params(
 
 fn convert_type_kind(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     kind: &TypeDefinitionKind<super::refs::CheckerRefs>,
     module: &DefinitionPath,
 ) -> TypeDefinitionKind<TypedRefs> {
@@ -850,10 +835,10 @@ fn convert_type_kind(
                 .iter()
                 .map(|f| FieldDefinition {
                     name: f.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &f.type_name, module),
+                    type_name: ast_type_to_type_name(db, &f.type_name, module),
                 })
                 .collect(),
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+            generic_parameters: convert_generic_params(db, generic_parameters, module),
         },
         TypeDefinitionKind::Function {
             parameters,
@@ -864,12 +849,12 @@ fn convert_type_kind(
                 .iter()
                 .map(|p| ParameterDefinition {
                     name: p.name.clone(),
-                    type_name: ast_type_to_type_name(db, tables, &p.type_name, module),
+                    type_name: ast_type_to_type_name(db, &p.type_name, module),
                     source_ref: p.source_ref.clone(),
                 })
                 .collect(),
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
-            return_type: ast_type_to_type_name(db, tables, return_type, module),
+            generic_parameters: convert_generic_params(db, generic_parameters, module),
+            return_type: ast_type_to_type_name(db, return_type, module),
         },
         TypeDefinitionKind::Signature { entries } => TypeDefinitionKind::Signature {
             entries: entries.clone(),
@@ -883,7 +868,7 @@ fn convert_type_kind(
             generic_parameters,
             factory,
         } => TypeDefinitionKind::Native {
-            generic_parameters: convert_generic_params(db, tables, generic_parameters, module),
+            generic_parameters: convert_generic_params(db, generic_parameters, module),
             factory: factory.clone(),
         },
     }
@@ -891,24 +876,28 @@ fn convert_type_kind(
 
 fn get_module_header_params<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     module: InternedModuleName<'db>,
 ) -> Vec<(String, DefinitionPath)> {
-    collect_module_params_for_path(db, tables, &module.name(db))
+    collect_module_params_for_path(db, &module.name(db))
 }
 
 fn collect_module_params_for_path(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     module_name: &DefinitionPath,
 ) -> Vec<(String, DefinitionPath)> {
-    let module_def = match tables.modules(db).get().get(module_name).cloned() {
+    let module_def = match db
+        .symbol_tables()
+        .modules(db)
+        .get()
+        .get(module_name)
+        .cloned()
+    {
         Some(d) => d,
         None => return vec![],
     };
 
     let mut params = if let Some(parent) = &module_def.parent_module {
-        collect_module_params_for_path(db, tables, parent)
+        collect_module_params_for_path(db, parent)
     } else {
         vec![]
     };
@@ -925,7 +914,7 @@ fn collect_module_params_for_path(
             let own: Vec<(String, DefinitionPath)> = header_params
                 .iter()
                 .filter_map(|p| {
-                    let path = resolve_absolute_path(db, tables, p.path.clone())?;
+                    let path = resolve_absolute_path(db, p.path.clone())?;
                     Some((p.name.clone(), path))
                 })
                 .collect();
@@ -938,17 +927,16 @@ fn collect_module_params_for_path(
 
 pub fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     name: InternedFunctionName<'db>,
     program: ProgramInput,
 ) -> Option<ArcPtr<typed_ast::Function>> {
-    let fn_def_ptr = lookup_function_def(db, tables, name)?;
+    let fn_def_ptr = lookup_function_def(db, name)?;
     let fn_def = fn_def_ptr.get();
     match &fn_def.ast_ref {
         CheckerAstRef::Function(arc_fn, _) => {
             let module_name = fn_def.name.module_prefix();
             let interned_module = InternedModuleName::new(db, module_name.clone());
-            let module_params = get_module_header_params(db, tables, interned_module);
+            let module_params = get_module_header_params(db, interned_module);
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
                 module_name: &module_name,
@@ -956,7 +944,6 @@ pub fn elaborate_function_def<'db>(
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
                 db,
-                tables,
                 arc_fn,
                 &ctx,
                 None,
@@ -973,7 +960,6 @@ pub fn elaborate_function_def<'db>(
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
                 db,
-                tables,
                 arc_fn,
                 &ctx,
                 Some(self_type),
@@ -987,22 +973,21 @@ pub fn elaborate_function_def<'db>(
 #[salsa::tracked]
 pub fn elaborate_metadata(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     program: ProgramInput,
 ) -> ArcPtr<MetaData<TypedRefs>> {
     let mut typed_metadata: MetaData<TypedRefs> = MetaData::default();
 
-    for fn_def in tables.functions(db).get().values() {
+    for fn_def in db.symbol_tables().functions(db).get().values() {
         let interned_name = InternedFunctionName::new(db, fn_def.name.clone());
         let typed_ast_ref = match &fn_def.ast_ref {
             CheckerAstRef::Function(_, kind) => {
-                match elaborate_function_def(db, tables, interned_name, program) {
+                match elaborate_function_def(db, interned_name, program) {
                     Some(ptr) => TypedCheckerAstRef::Function(Arc::clone(&ptr.0), kind.clone()),
                     None => TypedCheckerAstRef::Other(fn_def.ast_ref.clone()),
                 }
             }
             CheckerAstRef::ImplFunction(_, type_name_str, kind) => {
-                match elaborate_function_def(db, tables, interned_name, program) {
+                match elaborate_function_def(db, interned_name, program) {
                     Some(ptr) => TypedCheckerAstRef::ImplFunction(
                         Arc::clone(&ptr.0),
                         type_name_str.clone(),
@@ -1026,8 +1011,8 @@ pub fn elaborate_metadata(
             .insert(fn_def.name.clone(), Arc::new(typed_fn_def));
     }
 
-    for type_def in tables.types(db).get().values() {
-        let kind = convert_type_kind(db, tables, &type_def.kind, &type_def.name.module_prefix());
+    for type_def in db.symbol_tables().types(db).get().values() {
+        let kind = convert_type_kind(db, &type_def.kind, &type_def.name.module_prefix());
         let new_def = TypeDefinition {
             name: type_def.name.clone(),
             kind,
@@ -1039,7 +1024,7 @@ pub fn elaborate_metadata(
             .insert(type_def.name.clone(), Arc::new(new_def));
     }
 
-    for (impl_key, impl_def) in tables.impls(db).get() {
+    for (impl_key, impl_def) in db.symbol_tables().impls(db).get() {
         let new_def = ImplDefinition {
             key: impl_def.key.clone(),
             module: impl_def.module.clone(),
@@ -1059,7 +1044,7 @@ pub fn elaborate_metadata(
             .insert(impl_key.clone(), Arc::new(new_def));
     }
 
-    for (module_key, module_def) in tables.modules(db).get() {
+    for (module_key, module_def) in db.symbol_tables().modules(db).get() {
         let new_def = ModuleDefinition {
             name: module_def.name.clone(),
             visibility: module_def.visibility.clone(),

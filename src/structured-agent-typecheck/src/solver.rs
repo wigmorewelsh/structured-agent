@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use structured_agent_runtime::Type;
 use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
 
-use crate::db::{ProgramInput, SymbolTablesInput, TypeCheckDatabase, check_program};
+use crate::db::{ProgramInput, TypeCheckDatabase, check_program};
 use crate::{TypeError, TypeErrorAccumulator};
 use structured_agent_ast::types::Span;
 
@@ -36,12 +36,8 @@ pub struct SolvedConstraints {
 }
 
 #[salsa::tracked]
-pub fn solve_constraints(
-    db: &dyn TypeCheckDatabase,
-    program: ProgramInput,
-    tables: SymbolTablesInput,
-) -> SolvedConstraints {
-    let constraints = check_program::accumulated::<Constraint>(db, program, tables);
+pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> SolvedConstraints {
+    let constraints = check_program::accumulated::<Constraint>(db, program);
     let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
 
     for constraint in constraints {
@@ -50,7 +46,7 @@ pub fn solve_constraints(
                 check_type_bound(db, &constraint, &mut resolved);
             }
             ConstraintKind::SigCheck { .. } => {
-                check_sig_constraint(db, tables, &constraint);
+                check_sig_constraint(db, &constraint);
             }
         }
     }
@@ -91,11 +87,7 @@ fn check_type_bound(
     }
 }
 
-fn check_sig_constraint(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    constraint: &Constraint,
-) {
+fn check_sig_constraint(db: &dyn TypeCheckDatabase, constraint: &Constraint) {
     let ConstraintKind::SigCheck {
         module_type,
         sig_type,
@@ -103,7 +95,7 @@ fn check_sig_constraint(
     else {
         return;
     };
-    let types_arc = tables.types(db);
+    let types_arc = db.symbol_tables().types(db);
     let type_map = types_arc.get();
     match (type_map.get(module_type), type_map.get(sig_type)) {
         (Some(module_td), Some(sig_td)) => {

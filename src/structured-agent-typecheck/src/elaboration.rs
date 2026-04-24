@@ -1,7 +1,6 @@
 use super::db::{
-    CallModuleArg, Intern, ModuleInstantiation, SymbolTablesInput, TypeCheckDatabase,
-    get_function_sig, get_struct_fields, resolve_call_routing, resolve_function_call,
-    resolve_type_in_module,
+    CallModuleArg, Intern, ModuleInstantiation, TypeCheckDatabase, get_function_sig,
+    get_struct_fields, resolve_call_routing, resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
 use structured_agent_ast::ast::{Expression, Function, SelectClause, Statement};
@@ -14,7 +13,6 @@ use structured_agent_runtime::symbols::DefinitionPath;
 
 pub fn elaborate_function(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     func: &Function,
     ctx: &synthesize::CheckContext,
     self_type: Option<DefinitionPath>,
@@ -36,8 +34,7 @@ pub fn elaborate_function(
         });
     }
     for param in &func.parameters {
-        let runtime_type =
-            synthesize::resolve(db, tables, &param.param_type, &env, param.span, ctx)?;
+        let runtime_type = synthesize::resolve(db, &param.param_type, &env, param.span, ctx)?;
         let binding_id = env.declare_variable(param.name.clone(), runtime_type.clone(), param.span);
         typed_parameters.push(typed_ast::Parameter {
             name: param.name.clone(),
@@ -46,9 +43,8 @@ pub fn elaborate_function(
             span: param.span,
         });
     }
-    let runtime_return_type =
-        synthesize::resolve(db, tables, &func.return_type, &env, func.span, ctx)?;
-    let typed_stmts = elaborate_block(db, tables, &func.body.statements, env, ctx)?;
+    let runtime_return_type = synthesize::resolve(db, &func.return_type, &env, func.span, ctx)?;
+    let typed_stmts = elaborate_block(db, &func.body.statements, env, ctx)?;
     Some(typed_ast::Function {
         name: func.name.clone(),
         parameters: typed_parameters,
@@ -65,14 +61,13 @@ pub fn elaborate_function(
 
 fn elaborate_statement(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     statement: &Statement,
     mut env: synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<(typed_ast::Statement, synthesize::TypeEnvironment)> {
     match statement {
         Statement::Injection(expr) => {
-            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, expr, &env, ctx)?;
             Some((typed_ast::Statement::Injection(typed_expr), env))
         }
         Statement::Assignment {
@@ -80,7 +75,7 @@ fn elaborate_statement(
             expression,
             span,
         } => {
-            let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, expression, &env, ctx)?;
             let expr_type = typed_expr.ty().clone();
             let binding_id = env.declare_variable(variable.clone(), expr_type, expression.span());
             Some((
@@ -98,7 +93,7 @@ fn elaborate_statement(
             expression,
             span,
         } => {
-            let typed_expr = elaborate_expression(db, tables, expression, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, expression, &env, ctx)?;
             let binding_id = env.lookup_variable(variable)?.1;
             Some((
                 typed_ast::Statement::VariableAssignment {
@@ -111,7 +106,7 @@ fn elaborate_statement(
             ))
         }
         Statement::ExpressionStatement(expr) => {
-            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, expr, &env, ctx)?;
             Some((typed_ast::Statement::ExpressionStatement(typed_expr), env))
         }
         Statement::If {
@@ -120,16 +115,10 @@ fn elaborate_statement(
             else_body,
             span,
         } => {
-            let typed_condition = elaborate_expression(db, tables, condition, &env, ctx)?;
-            let typed_body = elaborate_block(db, tables, body, env.create_child(), ctx)?;
+            let typed_condition = elaborate_expression(db, condition, &env, ctx)?;
+            let typed_body = elaborate_block(db, body, env.create_child(), ctx)?;
             let typed_else = if let Some(else_stmts) = else_body {
-                Some(elaborate_block(
-                    db,
-                    tables,
-                    else_stmts,
-                    env.create_child(),
-                    ctx,
-                )?)
+                Some(elaborate_block(db, else_stmts, env.create_child(), ctx)?)
             } else {
                 None
             };
@@ -148,8 +137,8 @@ fn elaborate_statement(
             body,
             span,
         } => {
-            let typed_condition = elaborate_expression(db, tables, condition, &env, ctx)?;
-            let typed_body = elaborate_block(db, tables, body, env.create_child(), ctx)?;
+            let typed_condition = elaborate_expression(db, condition, &env, ctx)?;
+            let typed_body = elaborate_block(db, body, env.create_child(), ctx)?;
             Some((
                 typed_ast::Statement::While {
                     condition: typed_condition,
@@ -160,7 +149,7 @@ fn elaborate_statement(
             ))
         }
         Statement::Return(expr) => {
-            let typed_expr = elaborate_expression(db, tables, expr, &env, ctx)?;
+            let typed_expr = elaborate_expression(db, expr, &env, ctx)?;
             Some((typed_ast::Statement::Return(typed_expr), env))
         }
     }
@@ -168,14 +157,13 @@ fn elaborate_statement(
 
 fn elaborate_block(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     statements: &[Statement],
     mut env: synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Statement>> {
     let mut typed_stmts = Vec::new();
     for stmt in statements {
-        let (typed_stmt, new_env) = elaborate_statement(db, tables, stmt, env, ctx)?;
+        let (typed_stmt, new_env) = elaborate_statement(db, stmt, env, ctx)?;
         typed_stmts.push(typed_stmt);
         env = new_env;
     }
@@ -184,7 +172,6 @@ fn elaborate_block(
 
 pub fn elaborate_expression(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     expression: &Expression,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
@@ -194,7 +181,7 @@ pub fn elaborate_expression(
             function,
             arguments,
             span,
-        } => elaborate_call(db, tables, function, arguments, *span, env, ctx),
+        } => elaborate_call(db, function, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
             let (ty, binding_id) = env.lookup_variable(name)?;
             Some(typed_ast::Expression::Variable {
@@ -225,31 +212,28 @@ pub fn elaborate_expression(
         }),
         Expression::Placeholder { .. } => None,
         Expression::ListLiteral { elements, span } => {
-            elaborate_list_literal(db, tables, elements, *span, env, ctx)
+            elaborate_list_literal(db, elements, *span, env, ctx)
         }
-        Expression::Select(select) => {
-            elaborate_select(db, tables, &select.clauses, select.span, env, ctx)
-        }
+        Expression::Select(select) => elaborate_select(db, &select.clauses, select.span, env, ctx),
         Expression::IfElse {
             condition,
             then_expr,
             else_expr,
             span,
-        } => elaborate_if_else(db, tables, condition, then_expr, else_expr, *span, env, ctx),
+        } => elaborate_if_else(db, condition, then_expr, else_expr, *span, env, ctx),
         Expression::StructLiteral {
             struct_name,
             fields,
             span,
-        } => elaborate_struct_literal(db, tables, struct_name, fields, *span, env, ctx),
+        } => elaborate_struct_literal(db, struct_name, fields, *span, env, ctx),
         Expression::FieldAccess { base, field, span } => {
-            elaborate_field_access(db, tables, base, field, *span, env, ctx)
+            elaborate_field_access(db, base, field, *span, env, ctx)
         }
     }
 }
 
 fn elaborate_call(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     function: &str,
     arguments: &[Expression],
     span: Span,
@@ -259,11 +243,10 @@ fn elaborate_call(
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 
-    let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
+    let (resolved_fn_name, sig) = resolve_function_call(db, interned_current, interned_fn)
         .and_then(|fn_name| {
             let interned = InternedFunctionName::new(db, fn_name.clone());
-            get_function_sig(db, tables, interned, ctx.program)
-                .map(|arc| (fn_name, arc.get().clone()))
+            get_function_sig(db, interned, ctx.program).map(|arc| (fn_name, arc.get().clone()))
         })?;
 
     let mut typed_args = Vec::new();
@@ -277,12 +260,12 @@ fn elaborate_call(
             });
             continue;
         }
-        let typed_arg = elaborate_expression(db, tables, arg, env, ctx)?;
+        let typed_arg = elaborate_expression(db, arg, env, ctx)?;
         let _ = unifier.unify_type(&param.param_type, typed_arg.ty());
         typed_args.push(typed_arg);
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
-    let routing = resolve_call_routing(db, tables, interned_current, interned_fn);
+    let routing = resolve_call_routing(db, interned_current, interned_fn);
 
     let binding = routing
         .as_ref()
@@ -343,7 +326,6 @@ fn instantiation_to_expr(
 
 fn elaborate_list_literal(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     elements: &[Expression],
     span: Span,
     env: &synthesize::TypeEnvironment,
@@ -352,11 +334,11 @@ fn elaborate_list_literal(
     if elements.is_empty() {
         return None;
     }
-    let typed_first = elaborate_expression(db, tables, &elements[0], env, ctx)?;
+    let typed_first = elaborate_expression(db, &elements[0], env, ctx)?;
     let first_type = typed_first.ty().clone();
     let mut typed_elements = vec![typed_first];
     for elem in elements.iter().skip(1) {
-        let typed_elem = elaborate_expression(db, tables, elem, env, ctx)?;
+        let typed_elem = elaborate_expression(db, elem, env, ctx)?;
         typed_elements.push(typed_elem);
     }
     Some(typed_ast::Expression::ListLiteral {
@@ -368,7 +350,6 @@ fn elaborate_list_literal(
 
 fn elaborate_select(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     clauses: &[SelectClause],
     span: Span,
     env: &synthesize::TypeEnvironment,
@@ -378,15 +359,14 @@ fn elaborate_select(
         return None;
     }
     let first = &clauses[0];
-    let typed_first_run = elaborate_expression(db, tables, &first.expression_to_run, env, ctx)?;
+    let typed_first_run = elaborate_expression(db, &first.expression_to_run, env, ctx)?;
     let mut first_env = env.create_child();
     let first_result_bid = first_env.declare_variable(
         first.result_variable.clone(),
         typed_first_run.ty().clone(),
         first.expression_to_run.span(),
     );
-    let typed_first_next =
-        elaborate_expression(db, tables, &first.expression_next, &first_env, ctx)?;
+    let typed_first_next = elaborate_expression(db, &first.expression_next, &first_env, ctx)?;
     let first_type = typed_first_next.ty().clone();
     let mut typed_clauses = vec![typed_ast::SelectClause {
         expression_to_run: typed_first_run,
@@ -396,15 +376,14 @@ fn elaborate_select(
         span: first.span,
     }];
     for clause in clauses.iter().skip(1) {
-        let typed_run = elaborate_expression(db, tables, &clause.expression_to_run, env, ctx)?;
+        let typed_run = elaborate_expression(db, &clause.expression_to_run, env, ctx)?;
         let mut clause_env = env.create_child();
         let clause_result_bid = clause_env.declare_variable(
             clause.result_variable.clone(),
             typed_run.ty().clone(),
             clause.expression_to_run.span(),
         );
-        let typed_next =
-            elaborate_expression(db, tables, &clause.expression_next, &clause_env, ctx)?;
+        let typed_next = elaborate_expression(db, &clause.expression_next, &clause_env, ctx)?;
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
             result_variable: clause.result_variable.clone(),
@@ -424,7 +403,6 @@ fn elaborate_select(
 
 fn elaborate_if_else(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     condition: &Expression,
     then_expr: &Expression,
     else_expr: &Expression,
@@ -432,9 +410,9 @@ fn elaborate_if_else(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let typed_condition = elaborate_expression(db, tables, condition, env, ctx)?;
-    let typed_then = elaborate_expression(db, tables, then_expr, env, ctx)?;
-    let typed_else = elaborate_expression(db, tables, else_expr, env, ctx)?;
+    let typed_condition = elaborate_expression(db, condition, env, ctx)?;
+    let typed_then = elaborate_expression(db, then_expr, env, ctx)?;
+    let typed_else = elaborate_expression(db, else_expr, env, ctx)?;
     let ty = typed_then.ty().clone();
     Some(typed_ast::Expression::IfElse {
         condition: Box::new(typed_condition),
@@ -447,14 +425,13 @@ fn elaborate_if_else(
 
 fn elaborate_struct_literal(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     struct_name: &str,
     fields: &[(String, Expression)],
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let (definition, type_params) = get_struct_fields(db, tables, struct_name, ctx.module_name)?;
+    let (definition, type_params) = get_struct_fields(db, struct_name, ctx.module_name)?;
     let type_env = synthesize::TypeEnvironment::with_type_params(&type_params);
     let mut typed_fields = Vec::new();
     let mut unifier = synthesize::Unifier::new();
@@ -463,22 +440,16 @@ fn elaborate_struct_literal(
             .iter()
             .find(|(n, _)| n == field_name)
             .map(|(_, t)| t.clone())?;
-        let declared_type = synthesize::resolve(
-            db,
-            tables,
-            &declared_ast_type,
-            &type_env,
-            value_expr.span(),
-            ctx,
-        )?;
-        let typed_value = elaborate_expression(db, tables, value_expr, env, ctx)?;
+        let declared_type =
+            synthesize::resolve(db, &declared_ast_type, &type_env, value_expr.span(), ctx)?;
+        let typed_value = elaborate_expression(db, value_expr, env, ctx)?;
         let _ = unifier.unify_type(&declared_type, typed_value.ty());
         typed_fields.push((field_name.clone(), typed_value));
     }
     let resolved_type_name = {
         let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
-        resolve_type_in_module(db, tables, interned_mod, interned_name)
+        resolve_type_in_module(db, interned_mod, interned_name)
             .map(|r| r.ty)
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
@@ -506,27 +477,26 @@ fn elaborate_struct_literal(
 
 fn elaborate_field_access(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     base: &Expression,
     field: &str,
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let typed_base = elaborate_expression(db, tables, base, env, ctx)?;
+    let typed_base = elaborate_expression(db, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
     let struct_type_name = match &base_type {
         RT::Named(tn) => tn.last_name().to_string(),
         RT::Generic(name) => name.clone(),
         _ => return None,
     };
-    let (definition, _) = get_struct_fields(db, tables, &struct_type_name, ctx.module_name)?;
+    let (definition, _) = get_struct_fields(db, &struct_type_name, ctx.module_name)?;
     let field_ast_type = definition
         .iter()
         .find(|(n, _)| n == field)
         .map(|(_, t)| t.clone())?;
     let empty_env = synthesize::TypeEnvironment::new();
-    let field_ty = synthesize::resolve(db, tables, &field_ast_type, &empty_env, span, ctx)?;
+    let field_ty = synthesize::resolve(db, &field_ast_type, &empty_env, span, ctx)?;
     Some(typed_ast::Expression::FieldAccess {
         base: Box::new(typed_base),
         field: field.to_string(),

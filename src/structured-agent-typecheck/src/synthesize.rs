@@ -1,6 +1,6 @@
 use super::db::{
-    Intern, SymbolTablesInput, TypeCheckDatabase, get_function_sig, get_struct_fields,
-    lookup_function_def, resolve_function_call, resolve_type_in_module,
+    Intern, TypeCheckDatabase, get_function_sig, get_struct_fields, lookup_function_def,
+    resolve_function_call, resolve_type_in_module,
 };
 use super::error::OrAccumulateError;
 use crate::ensure_or_accumulate;
@@ -128,7 +128,6 @@ impl TypeEnvironment {
 
 fn resolve_type_name(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     name: &str,
     span: Span,
     ctx: &CheckContext,
@@ -136,7 +135,7 @@ fn resolve_type_name(
     let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_name = name.intern(db);
 
-    let type_name = resolve_type_in_module(db, tables, interned_mod, interned_name).map(|r| r.ty);
+    let type_name = resolve_type_in_module(db, interned_mod, interned_name).map(|r| r.ty);
 
     type_name.or_accumulate(
         db,
@@ -150,7 +149,6 @@ fn resolve_type_name(
 
 pub fn resolve(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     t: &AstType,
     env: &TypeEnvironment,
     span: Span,
@@ -168,9 +166,9 @@ pub fn resolve(
         return Some(RT::Generic(name.to_string()));
     }
 
-    let type_name = resolve_type_name(db, tables, name.as_str(), span, ctx)?;
+    let type_name = resolve_type_name(db, name.as_str(), span, ctx)?;
 
-    let types_table = tables.types(db);
+    let types_table = db.symbol_tables().types(db);
     let td = types_table.get().get(&type_name).or_accumulate(
         db,
         TypeError::UndefinedType {
@@ -185,7 +183,7 @@ pub fn resolve(
             Some(RT::Named(type_name))
         }
         TypeDefinitionKind::Native { .. } => {
-            let inner_rt = resolve(db, tables, &args[0], env, span, ctx)?;
+            let inner_rt = resolve(db, &args[0], env, span, ctx)?;
             Some(RT::Parameterized(type_name, vec![inner_rt]))
         }
         TypeDefinitionKind::Struct {
@@ -193,7 +191,7 @@ pub fn resolve(
         } => {
             let resolved_args: Vec<RT> = args
                 .iter()
-                .map(|a| resolve(db, tables, a, env, span, ctx))
+                .map(|a| resolve(db, a, env, span, ctx))
                 .collect::<Option<Vec<_>>>()?;
             ensure_or_accumulate!(
                 resolved_args.len() == generic_parameters.len(),
@@ -288,24 +286,23 @@ impl Unifier {
 
 pub fn check_definition(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     definition: &Definition,
     ctx: &CheckContext,
 ) -> Option<()> {
     match definition {
-        Definition::Function(func) => check_function(db, tables, func, ctx),
+        Definition::Function(func) => check_function(db, func, ctx),
         Definition::ExternalFunction(f) => {
             let env = TypeEnvironment::with_type_params(&f.type_params);
-            resolve(db, tables, &f.return_type, &env, f.span, ctx)?;
+            resolve(db, &f.return_type, &env, f.span, ctx)?;
             for param in &f.parameters {
-                resolve(db, tables, &param.param_type, &env, param.span, ctx)?;
+                resolve(db, &param.param_type, &env, param.span, ctx)?;
             }
             Some(())
         }
         Definition::Struct(s) => {
             let env = TypeEnvironment::with_type_params(&s.type_params);
             for f in &s.fields {
-                resolve(db, tables, &f.field_type, &env, f.span, ctx)?;
+                resolve(db, &f.field_type, &env, f.span, ctx)?;
             }
             Some(())
         }
@@ -317,28 +314,17 @@ pub fn check_definition(
     }
 }
 
-fn check_function(
-    db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
-    func: &Function,
-    ctx: &CheckContext,
-) -> Option<()> {
+fn check_function(db: &dyn TypeCheckDatabase, func: &Function, ctx: &CheckContext) -> Option<()> {
     let fn_name = DefinitionPath::for_function(ctx.module_name.clone(), func.name.clone());
-    let sig = get_function_sig(
-        db,
-        tables,
-        InternedFunctionName::new(db, fn_name),
-        ctx.program,
-    )?
-    .get()
-    .clone();
+    let sig = get_function_sig(db, InternedFunctionName::new(db, fn_name), ctx.program)?
+        .get()
+        .clone();
     let mut env = TypeEnvironment::new();
     for param in &sig.parameters {
         env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
     }
     check_block(
         db,
-        tables,
         &func.body.statements,
         env,
         &func.name,
@@ -349,7 +335,6 @@ fn check_function(
 
 fn check_statement(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     statement: &Statement,
     mut env: TypeEnvironment,
     function_name: &str,
@@ -358,7 +343,7 @@ fn check_statement(
 ) -> Option<TypeEnvironment> {
     match statement {
         Statement::Injection(expr) => {
-            synthesize_expression(db, tables, expr, &env, ctx)?;
+            synthesize_expression(db, expr, &env, ctx)?;
             Some(env)
         }
         Statement::Assignment {
@@ -366,7 +351,7 @@ fn check_statement(
             expression,
             span: _,
         } => {
-            let ty = synthesize_expression(db, tables, expression, &env, ctx)?;
+            let ty = synthesize_expression(db, expression, &env, ctx)?;
             env.declare_variable(variable.clone(), ty, expression.span());
             Some(env)
         }
@@ -375,7 +360,7 @@ fn check_statement(
             expression,
             span,
         } => {
-            let ty = synthesize_expression(db, tables, expression, &env, ctx)?;
+            let ty = synthesize_expression(db, expression, &env, ctx)?;
             let (existing_type, _, declaration_span) =
                 env.lookup_variable_with_span(variable).or_accumulate(
                     db,
@@ -400,7 +385,7 @@ fn check_statement(
             Some(env)
         }
         Statement::ExpressionStatement(expr) => {
-            synthesize_expression(db, tables, expr, &env, ctx)?;
+            synthesize_expression(db, expr, &env, ctx)?;
             Some(env)
         }
         Statement::If {
@@ -409,10 +394,9 @@ fn check_statement(
             else_body,
             span: _,
         } => {
-            check_boolean_condition(db, tables, condition, &env, ctx)?;
+            check_boolean_condition(db, condition, &env, ctx)?;
             check_block(
                 db,
-                tables,
                 body,
                 env.create_child(),
                 function_name,
@@ -422,7 +406,6 @@ fn check_statement(
             if let Some(else_stmts) = else_body {
                 check_block(
                     db,
-                    tables,
                     else_stmts,
                     env.create_child(),
                     function_name,
@@ -437,10 +420,9 @@ fn check_statement(
             body,
             span: _,
         } => {
-            check_boolean_condition(db, tables, condition, &env, ctx)?;
+            check_boolean_condition(db, condition, &env, ctx)?;
             check_block(
                 db,
-                tables,
                 body,
                 env.create_child(),
                 function_name,
@@ -450,7 +432,7 @@ fn check_statement(
             Some(env)
         }
         Statement::Return(expr) => {
-            let ty = synthesize_expression(db, tables, expr, &env, ctx)?;
+            let ty = synthesize_expression(db, expr, &env, ctx)?;
             ensure_or_accumulate!(
                 ty == *return_type,
                 db,
@@ -469,7 +451,6 @@ fn check_statement(
 
 fn check_expression(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     expression: &Expression,
     expected: &RT,
     env: &TypeEnvironment,
@@ -482,12 +463,12 @@ fn check_expression(
             else_expr,
             ..
         } => {
-            check_boolean_condition(db, tables, condition, env, ctx)?;
-            check_expression(db, tables, then_expr, expected, env, ctx)?;
-            check_expression(db, tables, else_expr, expected, env, ctx)
+            check_boolean_condition(db, condition, env, ctx)?;
+            check_expression(db, then_expr, expected, env, ctx)?;
+            check_expression(db, else_expr, expected, env, ctx)
         }
         _ => {
-            let got = synthesize_expression(db, tables, expression, env, ctx)?;
+            let got = synthesize_expression(db, expression, env, ctx)?;
             ensure_or_accumulate!(
                 got == *expected,
                 db,
@@ -505,17 +486,15 @@ fn check_expression(
 
 fn check_boolean_condition(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     condition: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<()> {
-    check_expression(db, tables, condition, &RT::boolean(), env, ctx)
+    check_expression(db, condition, &RT::boolean(), env, ctx)
 }
 
 fn check_block(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     stmts: &[Statement],
     mut env: TypeEnvironment,
     function_name: &str,
@@ -523,14 +502,13 @@ fn check_block(
     ctx: &CheckContext,
 ) -> Option<()> {
     for stmt in stmts {
-        env = check_statement(db, tables, stmt, env, function_name, return_type, ctx)?;
+        env = check_statement(db, stmt, env, function_name, return_type, ctx)?;
     }
     Some(())
 }
 
 pub fn synthesize_expression(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     expression: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
@@ -540,7 +518,7 @@ pub fn synthesize_expression(
             function,
             arguments,
             span,
-        } => synthesize_call(db, tables, function, arguments, *span, env, ctx),
+        } => synthesize_call(db, function, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
             env.lookup_variable(name).map(|(ty, _)| ty).or_accumulate(
                 db,
@@ -566,31 +544,30 @@ pub fn synthesize_expression(
             None
         }
         Expression::ListLiteral { elements, span } => {
-            synthesize_list_literal(db, tables, elements, *span, env, ctx)
+            synthesize_list_literal(db, elements, *span, env, ctx)
         }
         Expression::Select(select_expr) => {
-            synthesize_select(db, tables, &select_expr.clauses, select_expr.span, env, ctx)
+            synthesize_select(db, &select_expr.clauses, select_expr.span, env, ctx)
         }
         Expression::IfElse {
             condition,
             then_expr,
             else_expr,
             span,
-        } => synthesize_if_else(db, tables, condition, then_expr, else_expr, *span, env, ctx),
+        } => synthesize_if_else(db, condition, then_expr, else_expr, *span, env, ctx),
         Expression::StructLiteral {
             struct_name,
             fields,
             span,
-        } => synthesize_struct_literal(db, tables, struct_name, fields, *span, env, ctx),
+        } => synthesize_struct_literal(db, struct_name, fields, *span, env, ctx),
         Expression::FieldAccess { base, field, span } => {
-            synthesize_field_access(db, tables, base, field, *span, env, ctx)
+            synthesize_field_access(db, base, field, *span, env, ctx)
         }
     }
 }
 
 fn synthesize_call(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     function: &str,
     arguments: &[Expression],
     span: Span,
@@ -600,11 +577,10 @@ fn synthesize_call(
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 
-    let (resolved_fn_name, sig) = resolve_function_call(db, tables, interned_current, interned_fn)
+    let (resolved_fn_name, sig) = resolve_function_call(db, interned_current, interned_fn)
         .and_then(|fn_name| {
             let interned = InternedFunctionName::new(db, fn_name.clone());
-            get_function_sig(db, tables, interned, ctx.program)
-                .map(|arc| (fn_name, arc.get().clone()))
+            get_function_sig(db, interned, ctx.program).map(|arc| (fn_name, arc.get().clone()))
         })
         .or_accumulate(
             db,
@@ -615,7 +591,7 @@ fn synthesize_call(
             },
         )?;
 
-    check_visibility(db, tables, &resolved_fn_name, span, ctx)?;
+    check_visibility(db, &resolved_fn_name, span, ctx)?;
 
     ensure_or_accumulate!(
         arguments.len() == sig.parameters.len(),
@@ -634,7 +610,7 @@ fn synthesize_call(
         if matches!(arg, Expression::Placeholder { .. }) {
             continue;
         }
-        let arg_ty = synthesize_expression(db, tables, arg, env, ctx)?;
+        let arg_ty = synthesize_expression(db, arg, env, ctx)?;
         ensure_or_accumulate!(
             unifier.unify_type(&param.param_type, &arg_ty).is_ok(),
             db,
@@ -654,7 +630,7 @@ fn synthesize_call(
         }
         if let Some(actual) = unifier.get(&tp.name) {
             for bound in &tp.bounds {
-                if let Some(bound_type) = resolve(db, tables, bound, env, span, ctx) {
+                if let Some(bound_type) = resolve(db, bound, env, span, ctx) {
                     Constraint {
                         kind: ConstraintKind::TypeBound {
                             caller: ctx.module_name.to_string(),
@@ -679,7 +655,6 @@ fn synthesize_call(
 
 fn synthesize_list_literal(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     elements: &[Expression],
     span: Span,
     env: &TypeEnvironment,
@@ -695,16 +670,15 @@ fn synthesize_list_literal(
             file_id: ctx.file_id,
         }
     );
-    let first_type = synthesize_expression(db, tables, &elements[0], env, ctx)?;
+    let first_type = synthesize_expression(db, &elements[0], env, ctx)?;
     for elem in elements.iter().skip(1) {
-        check_expression(db, tables, elem, &first_type, env, ctx)?;
+        check_expression(db, elem, &first_type, env, ctx)?;
     }
     Some(RT::list(first_type))
 }
 
 fn synthesize_select(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     clauses: &[SelectClause],
     span: Span,
     env: &TypeEnvironment,
@@ -721,16 +695,16 @@ fn synthesize_select(
         }
     );
     let first = &clauses[0];
-    let first_result_type = synthesize_expression(db, tables, &first.expression_to_run, env, ctx)?;
+    let first_result_type = synthesize_expression(db, &first.expression_to_run, env, ctx)?;
     let mut first_env = env.create_child();
     first_env.declare_variable(
         first.result_variable.clone(),
         first_result_type,
         first.expression_to_run.span(),
     );
-    let first_type = synthesize_expression(db, tables, &first.expression_next, &first_env, ctx)?;
+    let first_type = synthesize_expression(db, &first.expression_next, &first_env, ctx)?;
     for (i, clause) in clauses.iter().enumerate().skip(1) {
-        let result_type = synthesize_expression(db, tables, &clause.expression_to_run, env, ctx)?;
+        let result_type = synthesize_expression(db, &clause.expression_to_run, env, ctx)?;
         let mut clause_env = env.create_child();
         clause_env.declare_variable(
             clause.result_variable.clone(),
@@ -738,19 +712,11 @@ fn synthesize_select(
             clause.expression_to_run.span(),
         );
         ensure_or_accumulate!(
-            check_expression(
-                db,
-                tables,
-                &clause.expression_next,
-                &first_type,
-                &clause_env,
-                ctx,
-            )
-            .is_some(),
+            check_expression(db, &clause.expression_next, &first_type, &clause_env, ctx,).is_some(),
             db,
             TypeError::SelectBranchTypeMismatch {
                 expected: first_type.name(),
-                found: synthesize_expression(db, tables, &clause.expression_next, &clause_env, ctx)
+                found: synthesize_expression(db, &clause.expression_next, &clause_env, ctx)
                     .map(|t| t.name())
                     .unwrap_or_default(),
                 branch_index: i,
@@ -765,7 +731,6 @@ fn synthesize_select(
 
 fn synthesize_if_else(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     condition: &Expression,
     then_expr: &Expression,
     else_expr: &Expression,
@@ -774,22 +739,21 @@ fn synthesize_if_else(
     ctx: &CheckContext,
 ) -> Option<RT> {
     let _ = span;
-    check_boolean_condition(db, tables, condition, env, ctx)?;
-    let then_type = synthesize_expression(db, tables, then_expr, env, ctx)?;
-    check_expression(db, tables, else_expr, &then_type, env, ctx)?;
+    check_boolean_condition(db, condition, env, ctx)?;
+    let then_type = synthesize_expression(db, then_expr, env, ctx)?;
+    check_expression(db, else_expr, &then_type, env, ctx)?;
     Some(then_type)
 }
 
 fn synthesize_struct_literal(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     struct_name: &str,
     fields: &[(String, Expression)],
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    let (definition, type_params) = get_struct_fields(db, tables, struct_name, ctx.module_name)
+    let (definition, type_params) = get_struct_fields(db, struct_name, ctx.module_name)
         .or_accumulate(
             db,
             TypeError::UnsupportedType {
@@ -825,15 +789,8 @@ fn synthesize_struct_literal(
                     file_id: ctx.file_id,
                 },
             )?;
-        let declared_type = resolve(
-            db,
-            tables,
-            &declared_ast_type,
-            &type_env,
-            value_expr.span(),
-            ctx,
-        )?;
-        let value_type = synthesize_expression(db, tables, value_expr, env, ctx)?;
+        let declared_type = resolve(db, &declared_ast_type, &type_env, value_expr.span(), ctx)?;
+        let value_type = synthesize_expression(db, value_expr, env, ctx)?;
         ensure_or_accumulate!(
             unifier.unify_type(&declared_type, &value_type).is_ok(),
             db,
@@ -862,7 +819,7 @@ fn synthesize_struct_literal(
     let resolved_type_name = {
         let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
         let interned_name = struct_name.intern(db);
-        resolve_type_in_module(db, tables, interned_mod, interned_name)
+        resolve_type_in_module(db, interned_mod, interned_name)
             .map(|r| r.ty)
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
@@ -884,26 +841,24 @@ fn synthesize_struct_literal(
 
 fn synthesize_field_access(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     base: &Expression,
     field: &str,
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    let base_type = synthesize_expression(db, tables, base, env, ctx)?;
+    let base_type = synthesize_expression(db, base, env, ctx)?;
     match base_type {
         RT::Named(type_name) => {
             let (definition, type_params) =
-                get_struct_fields(db, tables, type_name.last_name(), ctx.module_name)
-                    .or_accumulate(
-                        db,
-                        TypeError::UnsupportedType {
-                            type_name: type_name.last_name().to_string(),
-                            span,
-                            file_id: ctx.file_id,
-                        },
-                    )?;
+                get_struct_fields(db, type_name.last_name(), ctx.module_name).or_accumulate(
+                    db,
+                    TypeError::UnsupportedType {
+                        type_name: type_name.last_name().to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
             let type_env = super::TypeEnvironment::with_type_params(&type_params);
             let field_ast_type = definition
                 .iter()
@@ -918,18 +873,18 @@ fn synthesize_field_access(
                         file_id: ctx.file_id,
                     },
                 )?;
-            resolve(db, tables, &field_ast_type, &type_env, span, ctx)
+            resolve(db, &field_ast_type, &type_env, span, ctx)
         }
         RT::Generic(name) => {
-            let (definition, type_params) = get_struct_fields(db, tables, &name, ctx.module_name)
+            let (definition, type_params) = get_struct_fields(db, &name, ctx.module_name)
                 .or_accumulate(
-                db,
-                TypeError::UnsupportedType {
-                    type_name: name.clone(),
-                    span,
-                    file_id: ctx.file_id,
-                },
-            )?;
+                    db,
+                    TypeError::UnsupportedType {
+                        type_name: name.clone(),
+                        span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
             let type_env = super::TypeEnvironment::with_type_params(&type_params);
             let field_ast_type = definition
                 .iter()
@@ -944,7 +899,7 @@ fn synthesize_field_access(
                         file_id: ctx.file_id,
                     },
                 )?;
-            resolve(db, tables, &field_ast_type, &type_env, span, ctx)
+            resolve(db, &field_ast_type, &type_env, span, ctx)
         }
         other => {
             TypeErrorAccumulator(TypeError::TypeMismatch {
@@ -961,7 +916,6 @@ fn synthesize_field_access(
 
 fn check_visibility(
     db: &dyn TypeCheckDatabase,
-    tables: SymbolTablesInput,
     fn_name: &DefinitionPath,
     span: Span,
     ctx: &CheckContext,
@@ -970,7 +924,7 @@ fn check_visibility(
         return Some(());
     }
     let interned = InternedFunctionName::new(db, fn_name.clone());
-    let is_visible = lookup_function_def(db, tables, interned)
+    let is_visible = lookup_function_def(db, interned)
         .map(|arc_ptr| matches!(arc_ptr.get().visibility, Visibility::Public))
         .unwrap_or(true);
     ensure_or_accumulate!(
