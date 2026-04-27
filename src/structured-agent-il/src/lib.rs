@@ -7,6 +7,6 @@ pub mod slot;
 
 pub use bytecode_ref::{BytecodeRef, CompiledFunction};
 pub use instruction::Instruction;
-pub use module_trait::Module;
+pub use module_trait::{Module, NativeImplDecl, NativeTraitDecl, NativeTraitFnDecl};
 pub use native_function_def::NativeFunctionDef;
 pub use slot::{Slot, SlotInfo, SlotKind, SlotTable};
