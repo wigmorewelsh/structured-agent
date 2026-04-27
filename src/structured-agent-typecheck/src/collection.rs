@@ -121,6 +121,107 @@ impl SymbolTableBuilder {
                     SourceLocation(0, Span::dummy()),
                 );
             }
+            for trait_decl in native_mod.native_traits() {
+                let trait_type_name =
+                    DefinitionPath::for_type(module_name.clone(), &trait_decl.name);
+                let mut entries: Vec<SignatureEntry> = vec![];
+                for fn_decl in &trait_decl.functions {
+                    let fn_type_path =
+                        DefinitionPath::for_function(trait_type_name.clone(), &fn_decl.name);
+                    let parameters: Vec<ParameterDefinition<CheckerRefs>> = fn_decl
+                        .parameters
+                        .iter()
+                        .map(|p| ParameterDefinition {
+                            name: p.name.clone(),
+                            type_name: Self::runtime_type_to_ast(&p.param_type),
+                            source_ref: SourceLocation(0, Span::dummy()),
+                        })
+                        .collect();
+                    let return_type = Self::runtime_type_to_ast(&fn_decl.return_type);
+                    let fn_type_def = TypeDefinition {
+                        name: fn_type_path.clone(),
+                        kind: TypeDefinitionKind::Function {
+                            parameters,
+                            generic_parameters: vec![],
+                            return_type,
+                        },
+                        source_ref: SourceLocation(0, Span::dummy()),
+                        ast_ref: CheckerAstRef::Primitive,
+                    };
+                    self.metadata
+                        .register_type(fn_type_path.clone(), Arc::new(fn_type_def));
+                    entries.push(SignatureEntry {
+                        name: fn_decl.name.clone(),
+                        type_name: fn_type_path,
+                    });
+                }
+                let trait_def = TypeDefinition {
+                    name: trait_type_name.clone(),
+                    kind: TypeDefinitionKind::Trait {
+                        functions: entries,
+                        witness_ref: NoWitness,
+                    },
+                    source_ref: SourceLocation(0, Span::dummy()),
+                    ast_ref: CheckerAstRef::Primitive,
+                };
+                self.metadata
+                    .register_type(trait_type_name, Arc::new(trait_def));
+            }
+
+            for (idx, impl_decl) in native_mod.native_impls().iter().enumerate() {
+                let impl_key = DefinitionPath::for_impl(module_name.clone(), Some(idx as u32));
+                let impl_entry = ImplDefinition {
+                    key: impl_key.clone(),
+                    module: module_name.clone(),
+                    type_name: AstType::simple(impl_decl.type_name.clone()),
+                    trait_name: impl_decl
+                        .trait_name
+                        .as_ref()
+                        .map(|t| AstType::simple(t.clone())),
+                    source_ref: SourceLocation(0, Span::dummy()),
+                    ast_ref: CheckerAstRef::Primitive,
+                };
+                self.metadata
+                    .impls
+                    .insert(impl_key.clone(), Arc::new(impl_entry));
+                for func in &impl_decl.functions {
+                    let fn_key = DefinitionPath::for_impl_fn(&impl_key, &func.name);
+                    let fn_type_name =
+                        DefinitionPath::for_type(fn_key.module_prefix(), fn_key.last_name());
+                    let parameters: Vec<ParameterDefinition<CheckerRefs>> = func
+                        .parameters
+                        .iter()
+                        .map(|p| ParameterDefinition {
+                            name: p.name.clone(),
+                            type_name: Self::runtime_type_to_ast(&p.param_type),
+                            source_ref: SourceLocation(0, Span::dummy()),
+                        })
+                        .collect();
+                    let return_type = Self::runtime_type_to_ast(&func.return_type);
+                    let fn_def = FunctionDefinition {
+                        name: fn_key.clone(),
+                        visibility: Visibility::Public,
+                        type_name: fn_type_name.clone(),
+                        source_ref: SourceLocation(0, Span::dummy()),
+                        ast_ref: CheckerAstRef::Primitive,
+                        body_ref: None,
+                    };
+                    self.metadata.register_function(fn_key, Arc::new(fn_def));
+                    let fn_type_def = TypeDefinition {
+                        name: fn_type_name.clone(),
+                        kind: TypeDefinitionKind::Function {
+                            parameters,
+                            generic_parameters: vec![],
+                            return_type,
+                        },
+                        source_ref: SourceLocation(0, Span::dummy()),
+                        ast_ref: CheckerAstRef::Primitive,
+                    };
+                    self.metadata
+                        .register_type(fn_type_name, Arc::new(fn_type_def));
+                }
+            }
+
             let exports = self
                 .metadata
                 .functions_in_module(&module_name)

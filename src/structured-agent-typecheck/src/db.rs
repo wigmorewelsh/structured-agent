@@ -1050,10 +1050,16 @@ pub fn elaborate_metadata(
         let new_def = ImplDefinition {
             key: impl_def.key.clone(),
             module: impl_def.module.clone(),
-            type_name: DefinitionPath::for_type(
-                impl_def.module.clone(),
-                impl_def.type_name.name().to_string(),
-            ),
+            type_name: {
+                let name = impl_def.type_name.name().to_string();
+                let local = DefinitionPath::for_type(impl_def.module.clone(), &name);
+                if db.symbol_tables().types(db).get().contains_key(&local) {
+                    local
+                } else {
+                    let prelude = DefinitionPath::for_module(NonEmpty::new("prelude".to_string()));
+                    DefinitionPath::for_type(prelude, &name)
+                }
+            },
             trait_name: impl_def
                 .trait_name
                 .as_ref()
