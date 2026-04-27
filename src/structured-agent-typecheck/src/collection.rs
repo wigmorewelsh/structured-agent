@@ -116,7 +116,7 @@ impl SymbolTableBuilder {
                     parameters,
                     return_type,
                     type_params,
-                    FunctionKind::External,
+                    FunctionKind::Bytecode,
                     Visibility::Public,
                     SourceLocation(0, Span::dummy()),
                 );

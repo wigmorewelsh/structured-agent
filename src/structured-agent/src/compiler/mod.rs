@@ -19,10 +19,11 @@ use crate::ast::ParsedModule;
 use combine::Parser as CombineParser;
 use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover_all};
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use std::sync::Arc;
-use structured_agent_il::Module as RuntimeModule;
-use structured_agent_runtime::symbols::{DefinitionPath, MetaData};
+use structured_agent_il::{Module as RuntimeModule, SlotKind, SlotTable};
+use structured_agent_runtime::symbols::{DefinitionPath, FunctionDefinition, MetaData};
 
 use tracing::{debug, error, warn};
 
@@ -217,6 +218,37 @@ impl Compiler {
         let bytecode_metadata = compile_metadata(typed_metadata)
             .map_err(|e| format!("Bytecode compilation failed: {}", e))?;
         compiled.metadata = bytecode_metadata;
+
+        for (mod_name, module) in &self.modules {
+            let module_path = DefinitionPath::for_module(NonEmpty::new(mod_name.clone()));
+            for def in module.native_functions() {
+                let fn_key = DefinitionPath::for_function(module_path.clone(), &def.name);
+                let mut slot_table = SlotTable::new();
+                slot_table.push(SlotKind::ReturnSlot, "__ret");
+                for param in &def.parameters {
+                    slot_table.push(SlotKind::ValueParam, &param.name);
+                }
+                let bytecode_ref = BytecodeRef {
+                    instructions: def.body.clone(),
+                    labels: HashMap::new(),
+                    parameters: def.parameters.clone(),
+                    return_type: def.return_type.clone(),
+                    documentation: def.documentation.clone(),
+                    slot_table,
+                };
+                if let Some(existing) = compiled.metadata.functions.get(&fn_key) {
+                    let updated = Arc::new(FunctionDefinition {
+                        name: existing.name.clone(),
+                        visibility: existing.visibility.clone(),
+                        type_name: existing.type_name.clone(),
+                        source_ref: existing.source_ref.clone(),
+                        ast_ref: existing.ast_ref.clone(),
+                        body_ref: Some(bytecode_ref),
+                    });
+                    compiled.metadata.functions.insert(fn_key, updated);
+                }
+            }
+        }
 
         for name in compiled.metadata.functions.keys() {
             if compiled

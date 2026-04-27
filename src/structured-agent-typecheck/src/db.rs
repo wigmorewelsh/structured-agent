@@ -232,7 +232,7 @@ pub fn get_function_sig<'db>(
         },
     )?;
     let kind = match &fn_def.get().ast_ref {
-        CheckerAstRef::ExternalFn { .. } => FunctionKind::External,
+        CheckerAstRef::ExternalFn { kind, .. } => kind.clone(),
         _ => FunctionKind::Bytecode,
     };
 
