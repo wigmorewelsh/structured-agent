@@ -348,6 +348,17 @@ pub fn find_impl_fn(
     Some(DefinitionPath::for_impl_fn(&impl_entry.key, method_name))
 }
 
+pub fn impl_for_type_and_trait(
+    solved: &crate::solver::SolvedConstraints,
+    type_path: &DefinitionPath,
+    trait_path: &DefinitionPath,
+) -> Option<DefinitionPath> {
+    solved
+        .impls
+        .get(&(type_path.clone(), trait_path.clone()))
+        .cloned()
+}
+
 #[salsa::tracked]
 pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput) {
     for parsed in program.modules(db) {

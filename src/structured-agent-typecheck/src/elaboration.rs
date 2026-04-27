@@ -1,15 +1,35 @@
 use super::db::{
-    CallModuleArg, Intern, ModuleInstantiation, TypeCheckDatabase, find_impl_fn, get_function_sig,
-    get_struct_fields, resolve_call_routing, resolve_function_call, resolve_type_in_module,
+    CallModuleArg, Intern, InternedFunctionName, InternedModuleName, InternedTypeName,
+    ModuleInstantiation, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
+    impl_for_type_and_trait, lookup_type_def_in_symbol_tables, resolve_call_routing,
+    resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
 use structured_agent_ast::ast::{Expression, Function, SelectClause, Statement};
 use structured_agent_ast::types::{Span, Spanned};
+use structured_agent_runtime::Type as RT;
+use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
 use structured_agent_typed_ast as typed_ast;
 
-use super::db::{InternedFunctionName, InternedModuleName};
-use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::DefinitionPath;
+fn implicit_param_name(type_param: &str, trait_name: &str) -> String {
+    format!("__{}__{}", type_param, trait_name)
+}
+
+fn find_implicit_param(
+    env: &synthesize::TypeEnvironment,
+    prefix: &str,
+) -> Option<(RT, typed_ast::BindingId)> {
+    for (name, (ty, id, _)) in &env.variables {
+        if name.starts_with(prefix) {
+            return Some((ty.clone(), *id));
+        }
+    }
+    if let Some(parent) = &env.parent {
+        find_implicit_param(parent, prefix)
+    } else {
+        None
+    }
+}
 
 pub fn elaborate_function(
     db: &dyn TypeCheckDatabase,
@@ -32,6 +52,33 @@ pub fn elaborate_function(
             binding_id,
             span: func.span,
         });
+    }
+    let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
+    for tp in &func.type_params {
+        for bound in &tp.bounds {
+            let bound_interned = bound.name().to_string().intern(db);
+            let Some(resolved) = resolve_type_in_module(db, interned_mod, bound_interned) else {
+                continue;
+            };
+            let trait_path = resolved.ty;
+            let Some(type_def) =
+                lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, trait_path.clone()))
+            else {
+                continue;
+            };
+            if !matches!(type_def.get().kind, TypeDefinitionKind::Trait { .. }) {
+                continue;
+            }
+            let param_name = implicit_param_name(&tp.name, bound.name());
+            let rt_type = RT::Named(trait_path.clone());
+            let binding_id = env.declare_variable(param_name.clone(), rt_type.clone(), func.span);
+            typed_parameters.push(typed_ast::Parameter {
+                name: param_name,
+                param_type: rt_type,
+                binding_id,
+                span: func.span,
+            });
+        }
     }
     for param in &func.parameters {
         let runtime_type = synthesize::resolve(db, &param.param_type, &env, param.span, ctx)?;
@@ -249,6 +296,29 @@ fn elaborate_method_call(
 ) -> Option<typed_ast::Expression> {
     let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
     let receiver_type = typed_receiver.ty().clone();
+
+    if let RT::Generic(param_name) = &receiver_type {
+        let prefix = format!("__{}__", param_name);
+        if let Some((trait_type, binding_id)) = find_implicit_param(env, &prefix) {
+            if let RT::Named(trait_path) = trait_type {
+                let impl_fn_path = DefinitionPath::for_impl_fn(&trait_path, method);
+                let mut typed_args = vec![typed_receiver];
+                for arg in args {
+                    typed_args.push(elaborate_expression(db, arg, env, ctx)?);
+                }
+                return Some(typed_ast::Expression::Call {
+                    function: method.to_string(),
+                    binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
+                    kind: FunctionKind::Bytecode,
+                    arguments: typed_args,
+                    ty: RT::Generic(param_name.clone()),
+                    span,
+                });
+            }
+        }
+        return None;
+    }
+
     let struct_type_name = match &receiver_type {
         RT::Named(tn) => tn.last_name().to_string(),
         _ => return None,
@@ -310,6 +380,51 @@ fn elaborate_call(
     let resolved_return = unifier.apply_subst(&sig.return_type);
     let routing = resolve_call_routing(db, interned_current, interned_fn);
 
+    let solved = crate::solver::solve_constraints(db, ctx.program);
+    let mut implicit_args: Vec<typed_ast::Expression> = Vec::new();
+    let interned_mod_call = InternedModuleName::new(db, ctx.module_name.clone());
+    for tp in &sig.type_params {
+        if tp.bounds.is_empty() {
+            continue;
+        }
+        let Some(actual) = unifier.get(&tp.name) else {
+            continue;
+        };
+        if matches!(actual, RT::Generic(_)) {
+            continue;
+        }
+        let type_path = match actual {
+            RT::Named(p) => p.clone(),
+            RT::Parameterized(p, _) => p.clone(),
+            _ => continue,
+        };
+        for bound in &tp.bounds {
+            let bound_interned = bound.name().to_string().intern(db);
+            let Some(resolved) = resolve_type_in_module(db, interned_mod_call, bound_interned)
+            else {
+                continue;
+            };
+            let trait_path = resolved.ty;
+            let Some(type_def) =
+                lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, trait_path.clone()))
+            else {
+                continue;
+            };
+            if !matches!(type_def.get().kind, TypeDefinitionKind::Trait { .. }) {
+                continue;
+            }
+            let Some(impl_path) = impl_for_type_and_trait(&solved, &type_path, &trait_path) else {
+                continue;
+            };
+            implicit_args.push(typed_ast::Expression::ModuleInstance {
+                path: impl_path.clone(),
+                params: vec![],
+                ty: RT::Named(impl_path),
+                span,
+            });
+        }
+    }
+
     let binding = routing
         .as_ref()
         .and_then(|r| r.via_module_param.as_deref())
@@ -317,7 +432,7 @@ fn elaborate_call(
         .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
         .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name.clone()));
 
-    let mut all_args: Vec<typed_ast::Expression> = Vec::new();
+    let mut all_args: Vec<typed_ast::Expression> = implicit_args;
 
     if let Some(routing) = &routing {
         for arg in &routing.module_args {

@@ -2585,8 +2585,7 @@ mod typed_ast_tests {
     }
 
     #[test]
-    #[ignore = "requires witness table dispatch which is not yet implemented"]
-    fn test_impl_function_call_resolves_to_qualified_name() {
+    fn generic_function_body_has_late_binding_for_trait_method() {
         let input = concat!(
             "struct Vec2 {\n",
             "    x: Int,\n",
@@ -2600,10 +2599,78 @@ mod typed_ast_tests {
             "        return self\n",
             "    }\n",
             "}\n",
+            "fn combine<T: Add>(a: T, b: T): T {\n",
+            "    return a.add(b)\n",
+            "}\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let combine_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "combine" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert!(
+            combine_fn.parameters[0].name.starts_with("__T__"),
+            "expected implicit param starting with __T__, got {:?}",
+            combine_fn.parameters[0].name
+        );
+        let return_expr = combine_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        match return_expr {
+            typed_ast::Expression::Call {
+                binding: typed_ast::MethodBinding::Late(_, path),
+                ..
+            } => {
+                assert_eq!(path.last_name(), "add");
+            }
+            other => panic!("expected Call with MethodBinding::Late, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn call_site_of_generic_function_prepends_module_instance() {
+        let input = concat!(
+            "struct Vec2 {\n",
+            "    x: Int,\n",
+            "    y: Int,\n",
+            "}\n",
+            "trait Add {\n",
+            "    fn add(self: Self, other: Self): Self\n",
+            "}\n",
+            "impl Vec2: Add {\n",
+            "    fn add(self: Vec2, other: Vec2): Vec2 {\n",
+            "        return self\n",
+            "    }\n",
+            "}\n",
+            "fn combine<T: Add>(a: T, b: T): T {\n",
+            "    return a.add(b)\n",
+            "}\n",
             "fn main(): Vec2 {\n",
-            "    let v1 = Vec2 { x: 1, y: 2 }\n",
-            "    let v2 = Vec2 { x: 3, y: 4 }\n",
-            "    return add(v1, v2)\n",
+            "    let v = Vec2 { x: 1, y: 2 }\n",
+            "    return combine(v, v)\n",
             "}\n"
         );
         let module = parse_program(0)
@@ -2625,29 +2692,31 @@ mod typed_ast_tests {
                 }
             })
             .unwrap();
-        let resolved = main_fn
+        let return_expr = main_fn
             .body
             .statements
             .iter()
             .find_map(|s| {
-                if let typed_ast::Statement::Return(typed_ast::Expression::Call {
-                    binding, ..
-                }) = s
-                {
-                    Some(match binding {
-                        typed_ast::MethodBinding::Early(path) => path.clone(),
-                        typed_ast::MethodBinding::Late(_, path) => path.clone(),
-                    })
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
                 } else {
                     None
                 }
             })
             .unwrap();
-        assert_eq!(resolved, {
-            let mn = DefinitionPath::for_module(NonEmpty::new("main".to_string()));
-            let key = DefinitionPath::for_impl(mn, Some(0));
-            DefinitionPath::for_impl_fn(&key, "add")
-        });
+        match return_expr {
+            typed_ast::Expression::Call { arguments, .. } => {
+                let mn = DefinitionPath::for_module(NonEmpty::new("main".to_string()));
+                let expected_impl = DefinitionPath::for_impl(mn, Some(0));
+                match &arguments[0] {
+                    typed_ast::Expression::ModuleInstance { path, .. } => {
+                        assert_eq!(path, &expected_impl);
+                    }
+                    other => panic!("expected ModuleInstance as first arg, got {:?}", other),
+                }
+            }
+            other => panic!("expected Call, got {:?}", other),
+        }
     }
 
     #[test]
