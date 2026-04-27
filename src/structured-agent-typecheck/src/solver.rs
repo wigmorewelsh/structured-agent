@@ -20,6 +20,18 @@ pub enum ConstraintKind {
         module_type: DefinitionPath,
         sig_type: DefinitionPath,
     },
+    TraitImpl {
+        type_path: DefinitionPath,
+        trait_path: DefinitionPath,
+        impl_key: DefinitionPath,
+    },
+    TraitBound {
+        type_path: DefinitionPath,
+        trait_path: DefinitionPath,
+        type_name: String,
+        trait_name: String,
+        param_name: String,
+    },
 }
 
 #[salsa::accumulator]
@@ -33,25 +45,116 @@ pub struct Constraint {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolvedConstraints {
     pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
+    pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
 }
 
 #[salsa::tracked]
 pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> SolvedConstraints {
     let constraints = check_program::accumulated::<Constraint>(db, program);
     let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
+    let mut impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath> = HashMap::new();
 
-    for constraint in constraints {
+    for constraint in &constraints {
         match &constraint.kind {
             ConstraintKind::TypeBound { .. } => {
-                check_type_bound(db, &constraint, &mut resolved);
+                check_type_bound(db, constraint, &mut resolved);
             }
             ConstraintKind::SigCheck { .. } => {
-                check_sig_constraint(db, &constraint);
+                check_sig_constraint(db, constraint);
+            }
+            ConstraintKind::TraitImpl { .. } => {
+                check_trait_impl(db, constraint, &mut impls);
+            }
+            ConstraintKind::TraitBound { .. } => {}
+        }
+    }
+
+    for constraint in &constraints {
+        if let ConstraintKind::TraitBound {
+            type_path,
+            trait_path,
+            type_name,
+            trait_name,
+            param_name,
+        } = &constraint.kind
+        {
+            if !impls.contains_key(&(type_path.clone(), trait_path.clone())) {
+                TypeErrorAccumulator(TypeError::TraitBoundNotSatisfied {
+                    type_name: type_name.clone(),
+                    trait_name: trait_name.clone(),
+                    param_name: param_name.clone(),
+                    span: constraint.span,
+                    file_id: constraint.file_id,
+                })
+                .accumulate(db);
             }
         }
     }
 
-    SolvedConstraints { resolved }
+    SolvedConstraints { resolved, impls }
+}
+
+fn check_trait_impl(
+    db: &dyn TypeCheckDatabase,
+    constraint: &Constraint,
+    impls: &mut HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
+) {
+    let ConstraintKind::TraitImpl {
+        type_path,
+        trait_path,
+        impl_key,
+    } = &constraint.kind
+    else {
+        return;
+    };
+
+    let types = db.symbol_tables().types(db);
+    let type_map = types.get();
+
+    let trait_td = match type_map.get(trait_path) {
+        Some(td) if matches!(&td.kind, TypeDefinitionKind::Trait { .. }) => td,
+        _ => {
+            TypeErrorAccumulator(TypeError::UnknownTrait {
+                name: trait_path.last_name().to_string(),
+                span: constraint.span,
+                file_id: constraint.file_id,
+            })
+            .accumulate(db);
+            return;
+        }
+    };
+
+    let TypeDefinitionKind::Trait { functions, .. } = &trait_td.kind else {
+        return;
+    };
+
+    let impls_table = db.symbol_tables().impls(db);
+    let Some(impl_def) = impls_table.get().get(impl_key) else {
+        return;
+    };
+
+    let fn_table = db.symbol_tables().functions(db);
+    for sig_entry in functions {
+        let has_fn = fn_table.get().keys().any(|fn_path| {
+            fn_path.impl_key() == Some(impl_def.key.clone())
+                && fn_path.last_name() == sig_entry.name
+        });
+        if !has_fn {
+            TypeErrorAccumulator(TypeError::TraitImplMissingFunction {
+                type_name: type_path.last_name().to_string(),
+                trait_name: trait_path.last_name().to_string(),
+                function_name: sig_entry.name.clone(),
+                span: constraint.span,
+                file_id: constraint.file_id,
+            })
+            .accumulate(db);
+        }
+    }
+
+    impls.insert(
+        (type_path.clone(), trait_path.clone()),
+        impl_def.key.clone(),
+    );
 }
 
 fn check_type_bound(

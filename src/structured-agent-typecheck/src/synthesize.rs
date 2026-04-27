@@ -326,6 +326,51 @@ pub fn check_definition(
             for func in &t.functions {
                 check_impl_function(db, func, &impl_key, ctx)?;
             }
+            if let Some(trait_name_str) = &t.trait_name {
+                let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
+                let type_path =
+                    resolve_type_in_module(db, interned_mod, t.type_name.clone().intern(db))
+                        .map(|r| r.ty)
+                        .or_accumulate(
+                            db,
+                            TypeError::UndefinedType {
+                                name: t.type_name.clone(),
+                                span: t.span,
+                                file_id: ctx.file_id,
+                            },
+                        )?;
+                let trait_path =
+                    resolve_type_in_module(db, interned_mod, trait_name_str.clone().intern(db))
+                        .and_then(|r| {
+                            let types = db.symbol_tables().types(db);
+                            if matches!(
+                                types.get().get(&r.ty)?.kind,
+                                TypeDefinitionKind::Trait { .. }
+                            ) {
+                                Some(r.ty)
+                            } else {
+                                None
+                            }
+                        })
+                        .or_accumulate(
+                            db,
+                            TypeError::UnknownTrait {
+                                name: trait_name_str.clone(),
+                                span: t.span,
+                                file_id: ctx.file_id,
+                            },
+                        )?;
+                Constraint {
+                    kind: ConstraintKind::TraitImpl {
+                        type_path,
+                        trait_path,
+                        impl_key: impl_key.clone(),
+                    },
+                    span: t.span,
+                    file_id: ctx.file_id,
+                }
+                .accumulate(db);
+            }
             Some(())
         }
         Definition::ModuleHeader { .. }
@@ -700,8 +745,39 @@ fn synthesize_call(
             continue;
         }
         if let Some(actual) = unifier.get(&tp.name) {
+            let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
+            let type_path = match actual {
+                RT::Named(path) => Some(path.clone()),
+                RT::Parameterized(path, _) => Some(path.clone()),
+                RT::Generic(_) => None,
+            };
             for bound in &tp.bounds {
-                if let Some(bound_type) = resolve(db, bound, env, span, ctx) {
+                let bound_name = bound.name().to_string();
+                let bound_path =
+                    resolve_type_in_module(db, interned_mod, bound_name.clone().intern(db))
+                        .map(|r| r.ty);
+                let types_table = db.symbol_tables().types(db);
+                let is_trait = bound_path
+                    .as_ref()
+                    .and_then(|p| types_table.get().get(p))
+                    .map(|td| matches!(&td.kind, TypeDefinitionKind::Trait { .. }))
+                    .unwrap_or(false);
+                if is_trait {
+                    if let (Some(type_path), Some(trait_path)) = (type_path.clone(), bound_path) {
+                        Constraint {
+                            kind: ConstraintKind::TraitBound {
+                                type_path,
+                                trait_path,
+                                type_name: actual.name().to_string(),
+                                trait_name: bound_name,
+                                param_name: tp.name.clone(),
+                            },
+                            span,
+                            file_id: ctx.file_id,
+                        }
+                        .accumulate(db);
+                    }
+                } else if let Some(bound_type) = resolve(db, bound, env, span, ctx) {
                     Constraint {
                         kind: ConstraintKind::TypeBound {
                             caller: ctx.module_name.to_string(),
