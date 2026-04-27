@@ -13,6 +13,7 @@ quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 
 [dev-dependencies]
+structured-agent-il = { path = "../structured-agent-il" }
 structured-agent-runtime = { path = "../structured-agent-runtime" }
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"

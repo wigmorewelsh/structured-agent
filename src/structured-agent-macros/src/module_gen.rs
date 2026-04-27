@@ -2,7 +2,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{Item, ItemMod};
 
-use crate::fn_gen::{fn_struct_ident, generate_native_function, to_pascal_case};
+use crate::fn_gen::{generate_native_function, to_pascal_case};
 
 pub fn generate_module(input: ItemMod) -> syn::Result<TokenStream2> {
     let mod_name = &input.ident;
@@ -20,11 +20,11 @@ pub fn generate_module(input: ItemMod) -> syn::Result<TokenStream2> {
         }
     };
 
-    let (generated_fns, fn_struct_names, other_items) = partition_items(items)?;
+    let (generated_fns, fn_def_fn_names, other_items) = partition_items(items)?;
 
-    let arc_constructions: Vec<TokenStream2> = fn_struct_names
+    let def_constructions: Vec<TokenStream2> = fn_def_fn_names
         .iter()
-        .map(|name| quote! { ::std::sync::Arc::new(#name::new()) })
+        .map(|name| quote! { #name() })
         .collect();
 
     Ok(quote! {
@@ -34,13 +34,13 @@ pub fn generate_module(input: ItemMod) -> syn::Result<TokenStream2> {
 
             pub struct #module_struct;
 
-            impl ::structured_agent_runtime::Module for #module_struct {
+            impl ::structured_agent_il::Module for #module_struct {
                 fn name(&self) -> &str {
                     #mod_name_str
                 }
 
-                fn functions(&self) -> Vec<::std::sync::Arc<dyn ::structured_agent_runtime::NativeFunction>> {
-                    vec![#(#arc_constructions),*]
+                fn native_functions(&self) -> Vec<::structured_agent_il::NativeFunctionDef> {
+                    vec![#(#def_constructions),*]
                 }
             }
         }
@@ -55,7 +55,7 @@ fn partition_items(
     Vec<TokenStream2>,
 )> {
     let mut generated_fns = Vec::new();
-    let mut fn_struct_names = Vec::new();
+    let mut fn_def_fn_names = Vec::new();
     let mut other_items = Vec::new();
 
     for item in items {
@@ -70,7 +70,8 @@ fn partition_items(
                     _ => proc_macro2::TokenStream::new(),
                 };
                 item_fn.attrs.remove(pos);
-                fn_struct_names.push(fn_struct_ident(&item_fn.sig.ident.to_string()));
+                let fn_name = item_fn.sig.ident.to_string();
+                fn_def_fn_names.push(format_ident!("{}_native_def", fn_name));
                 generated_fns.push(generate_native_function(attr_tokens, item_fn)?);
                 continue;
             }
@@ -80,5 +81,5 @@ fn partition_items(
         }
     }
 
-    Ok((generated_fns, fn_struct_names, other_items))
+    Ok((generated_fns, fn_def_fn_names, other_items))
 }

@@ -7,12 +7,12 @@ use structured_agent_ast::ast::{
     Definition, Module, Parameter, ParsedModule, PathSegment, Type as AstType, TypeParam,
 };
 use structured_agent_ast::types::{FileId, Span};
+use structured_agent_il::Module as RuntimeModule;
 use structured_agent_runtime::symbols::{
     DefinitionPath, ExportedName, FieldDefinition, FunctionDefinition, GenericParameterDefinition,
     ImplDefinition, MetaData, ModuleDefinition, ParameterDefinition, SignatureEntry, SymbolQuery,
     TypeDefinition, TypeDefinitionKind, Visibility,
 };
-use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct SymbolTableBuilder {
     metadata: MetaData<CheckerRefs>,
@@ -94,10 +94,10 @@ impl SymbolTableBuilder {
     ) {
         for (mod_name, native_mod) in native_modules {
             let module_name = DefinitionPath::for_module(NonEmpty::new(mod_name.clone()));
-            for func in native_mod.functions() {
-                let fn_key = DefinitionPath::for_function(module_name.clone(), func.name());
+            for func in native_mod.native_functions() {
+                let fn_key = DefinitionPath::for_function(module_name.clone(), func.name.as_str());
                 let parameters = func
-                    .parameters()
+                    .parameters
                     .iter()
                     .map(|p| Parameter {
                         name: p.name.clone(),
@@ -105,9 +105,9 @@ impl SymbolTableBuilder {
                         span: Span::dummy(),
                     })
                     .collect();
-                let return_type = Self::runtime_type_to_ast(func.return_type());
+                let return_type = Self::runtime_type_to_ast(&func.return_type);
                 let type_params = func
-                    .type_params()
+                    .type_params
                     .iter()
                     .map(|s| TypeParam::from(s.as_str()))
                     .collect();

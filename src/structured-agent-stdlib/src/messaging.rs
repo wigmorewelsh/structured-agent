@@ -33,58 +33,71 @@ pub mod messaging {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use structured_agent_runtime::{AgentHandle, ExpressionValue, Module, NativeFunction};
+        use structured_agent_il::{Instruction, Module};
+        use structured_agent_runtime::{AgentHandle, ExpressionValue};
+
+        fn get_fn_ptr(
+            def: &structured_agent_il::NativeFunctionDef,
+        ) -> structured_agent_runtime::NativeFnPtr {
+            if let Instruction::CallNative { f, .. } = &def.body[0] {
+                f.clone()
+            } else {
+                panic!("expected CallNative instruction");
+            }
+        }
 
         #[tokio::test]
         async fn test_receive_properties() {
-            let f = ReceiveFunction::new();
-            assert_eq!(f.name(), "receive");
-            assert_eq!(f.parameters().len(), 0);
-            assert_eq!(f.return_type().name(), "String");
+            let def = receive_native_def();
+            assert_eq!(def.name, "receive");
+            assert_eq!(def.parameters.len(), 0);
+            assert_eq!(def.return_type.name(), "String");
         }
 
         #[tokio::test]
         async fn test_receive_wrong_args_count() {
-            let f = ReceiveFunction::new();
+            let def = receive_native_def();
+            let f = get_fn_ptr(&def);
             let result = f
-                .execute(vec![ExpressionValue::string("x")], &AgentHandle::detached())
+                .call(vec![ExpressionValue::string("x")], AgentHandle::detached())
                 .await;
             assert!(result.is_err());
         }
 
         #[test]
-        fn test_receive_default() {
-            let f = ReceiveFunction::default();
-            assert_eq!(f.name(), "receive");
+        fn test_receive_def_name() {
+            let def = receive_native_def();
+            assert_eq!(def.name, "receive");
         }
 
         #[tokio::test]
         async fn test_try_receive_properties() {
-            let f = TryReceiveFunction::new();
-            assert_eq!(f.name(), "try_receive");
-            assert_eq!(f.parameters().len(), 0);
-            assert_eq!(f.return_type().name(), "String");
+            let def = try_receive_native_def();
+            assert_eq!(def.name, "try_receive");
+            assert_eq!(def.parameters.len(), 0);
+            assert_eq!(def.return_type.name(), "String");
         }
 
         #[tokio::test]
         async fn test_try_receive_channel_empty() {
-            let f = TryReceiveFunction::new();
-            let result = f.execute(vec![], &AgentHandle::detached()).await.unwrap();
+            let def = try_receive_native_def();
+            let f = get_fn_ptr(&def);
+            let result = f.call(vec![], AgentHandle::detached()).await.unwrap();
             assert_eq!(result, ExpressionValue::string("No prompt received"));
         }
 
         #[test]
-        fn test_try_receive_default() {
-            let f = TryReceiveFunction::default();
-            assert_eq!(f.name(), "try_receive");
+        fn test_try_receive_def_name() {
+            let def = try_receive_native_def();
+            assert_eq!(def.name, "try_receive");
         }
 
         #[tokio::test]
         async fn test_messaging_module_functions() {
             let module = MessagingModule;
-            let fns = module.functions();
+            let fns = module.native_functions();
             assert_eq!(fns.len(), 2);
-            let names: Vec<_> = fns.iter().map(|f| f.name().to_string()).collect();
+            let names: Vec<_> = fns.iter().map(|def| def.name.clone()).collect();
             assert!(names.contains(&"receive".to_string()));
             assert!(names.contains(&"try_receive".to_string()));
         }

@@ -1,5 +1,6 @@
+use structured_agent_il::Instruction;
 use structured_agent_macros::sa_fn;
-use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction as _, Type};
+use structured_agent_runtime::{AgentHandle, ExpressionValue, Type};
 
 #[sa_fn]
 async fn greet(name: String) -> String {
@@ -37,30 +38,42 @@ async fn option_return(flag: bool) -> Option<String> {
     if flag { Some("yes".to_string()) } else { None }
 }
 
+fn call_native_fn(
+    def: &structured_agent_il::NativeFunctionDef,
+) -> structured_agent_runtime::NativeFnPtr {
+    if let Instruction::CallNative { f, .. } = &def.body[0] {
+        f.clone()
+    } else {
+        panic!("expected CallNative instruction");
+    }
+}
+
 #[tokio::test]
 async fn test_greet_name() {
-    assert_eq!(GreetFunction::new().name(), "greet");
+    assert_eq!(greet_native_def().name, "greet");
 }
 
 #[tokio::test]
 async fn test_greet_parameters() {
-    let f = GreetFunction::new();
-    assert_eq!(f.parameters().len(), 1);
-    assert_eq!(f.parameters()[0].name, "name");
-    assert_eq!(f.parameters()[0].param_type, Type::string());
+    let def = greet_native_def();
+    assert_eq!(def.parameters.len(), 1);
+    assert_eq!(def.parameters[0].name, "name");
+    assert_eq!(def.parameters[0].param_type, Type::string());
 }
 
 #[tokio::test]
 async fn test_greet_return_type() {
-    assert_eq!(GreetFunction::new().return_type(), &Type::string());
+    assert_eq!(greet_native_def().return_type, Type::string());
 }
 
 #[tokio::test]
 async fn test_greet_execute() {
-    let result = GreetFunction::new()
-        .execute(
+    let def = greet_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![ExpressionValue::string("World")],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -69,10 +82,9 @@ async fn test_greet_execute() {
 
 #[tokio::test]
 async fn test_greet_wrong_arg_count() {
-    let err = GreetFunction::new()
-        .execute(vec![], &AgentHandle::detached())
-        .await
-        .unwrap_err();
+    let def = greet_native_def();
+    let f = call_native_fn(&def);
+    let err = f.call(vec![], AgentHandle::detached()).await.unwrap_err();
     assert!(
         err.contains("greet expects 1 argument(s), got 0"),
         "{}",
@@ -82,27 +94,28 @@ async fn test_greet_wrong_arg_count() {
 
 #[tokio::test]
 async fn test_no_args_parameters() {
-    assert_eq!(NoArgsFunction::new().parameters().len(), 0);
+    assert_eq!(no_args_native_def().parameters.len(), 0);
 }
 
 #[tokio::test]
 async fn test_no_args_execute() {
-    let result = NoArgsFunction::new()
-        .execute(vec![], &AgentHandle::detached())
-        .await
-        .unwrap();
+    let def = no_args_native_def();
+    let f = call_native_fn(&def);
+    let result = f.call(vec![], AgentHandle::detached()).await.unwrap();
     assert_eq!(result.as_string().unwrap(), "hello");
 }
 
 #[tokio::test]
 async fn test_unit_return_type() {
-    assert_eq!(UnitReturnFunction::new().return_type(), &Type::unit());
+    assert_eq!(unit_return_native_def().return_type, Type::unit());
 }
 
 #[tokio::test]
 async fn test_unit_return_execute() {
-    let result = UnitReturnFunction::new()
-        .execute(vec![ExpressionValue::string("x")], &AgentHandle::detached())
+    let def = unit_return_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(vec![ExpressionValue::string("x")], AgentHandle::detached())
         .await
         .unwrap();
     assert_eq!(result, ExpressionValue::unit());
@@ -110,14 +123,16 @@ async fn test_unit_return_execute() {
 
 #[tokio::test]
 async fn test_multi_param_execute() {
-    let result = MultiParamFunction::new()
-        .execute(
+    let def = multi_param_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![
                 ExpressionValue::string("hello"),
                 ExpressionValue::integer(42),
                 ExpressionValue::boolean(true),
             ],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -126,10 +141,11 @@ async fn test_multi_param_execute() {
 
 #[tokio::test]
 async fn test_documented_function() {
-    assert!(DocumentedFunction::new().documentation().is_some());
+    let def = documented_native_def();
+    assert!(def.documentation.is_some());
     assert!(
-        DocumentedFunction::new()
-            .documentation()
+        def.documentation
+            .as_ref()
             .unwrap()
             .contains("Documented function")
     );
@@ -137,10 +153,12 @@ async fn test_documented_function() {
 
 #[tokio::test]
 async fn test_option_param_some() {
-    let result = OptionParamFunction::new()
-        .execute(
+    let def = option_param_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![ExpressionValue::option_some(ExpressionValue::string("hi"))],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -149,10 +167,12 @@ async fn test_option_param_some() {
 
 #[tokio::test]
 async fn test_option_param_none() {
-    let result = OptionParamFunction::new()
-        .execute(
+    let def = option_param_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![ExpressionValue::option_none()],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -161,10 +181,12 @@ async fn test_option_param_none() {
 
 #[tokio::test]
 async fn test_option_return_some() {
-    let result = OptionReturnFunction::new()
-        .execute(
+    let def = option_return_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![ExpressionValue::boolean(true)],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -174,10 +196,12 @@ async fn test_option_return_some() {
 
 #[tokio::test]
 async fn test_option_return_none() {
-    let result = OptionReturnFunction::new()
-        .execute(
+    let def = option_return_native_def();
+    let f = call_native_fn(&def);
+    let result = f
+        .call(
             vec![ExpressionValue::boolean(false)],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();

@@ -21,8 +21,8 @@ use combine::stream::{easy, position};
 use discovery::{Discoverer, FileDiscoverer, InMemoryDiscoverer, discover_all};
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_il::Module as RuntimeModule;
 use structured_agent_runtime::symbols::{DefinitionPath, MetaData};
-use structured_agent_runtime::types::Module as RuntimeModule;
 
 use tracing::{debug, error, warn};
 

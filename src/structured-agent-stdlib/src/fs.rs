@@ -18,37 +18,50 @@ pub mod fs {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction};
+        use structured_agent_il::Instruction;
+        use structured_agent_runtime::{AgentHandle, ExpressionValue};
+
+        fn get_fn_ptr(
+            def: &structured_agent_il::NativeFunctionDef,
+        ) -> structured_agent_runtime::NativeFnPtr {
+            if let Instruction::CallNative { f, .. } = &def.body[0] {
+                f.clone()
+            } else {
+                panic!("expected CallNative instruction");
+            }
+        }
 
         #[test]
         fn test_get_working_dir_properties() {
-            let f = GetWorkingDirFunction::new();
-            assert_eq!(f.name(), "get_working_dir");
-            assert_eq!(f.parameters().len(), 0);
-            assert_eq!(f.return_type().name(), "String");
+            let def = get_working_dir_native_def();
+            assert_eq!(def.name, "get_working_dir");
+            assert_eq!(def.parameters.len(), 0);
+            assert_eq!(def.return_type.name(), "String");
         }
 
         #[test]
         fn test_set_working_dir_properties() {
-            let f = SetWorkingDirFunction::new();
-            assert_eq!(f.name(), "set_working_dir");
-            assert_eq!(f.parameters().len(), 1);
-            assert_eq!(f.parameters()[0].name, "path");
-            assert_eq!(f.return_type().name(), "Unit");
+            let def = set_working_dir_native_def();
+            assert_eq!(def.name, "set_working_dir");
+            assert_eq!(def.parameters.len(), 1);
+            assert_eq!(def.parameters[0].name, "path");
+            assert_eq!(def.return_type.name(), "Unit");
         }
 
         #[tokio::test]
         async fn test_get_working_dir_returns_string() {
-            let f = GetWorkingDirFunction::new();
-            let result = f.execute(vec![], &AgentHandle::detached()).await.unwrap();
+            let def = get_working_dir_native_def();
+            let f = get_fn_ptr(&def);
+            let result = f.call(vec![], AgentHandle::detached()).await.unwrap();
             assert!(!result.value_string().is_empty());
         }
 
         #[tokio::test]
         async fn test_get_working_dir_wrong_args() {
-            let f = GetWorkingDirFunction::new();
+            let def = get_working_dir_native_def();
+            let f = get_fn_ptr(&def);
             let result = f
-                .execute(vec![ExpressionValue::string("x")], &AgentHandle::detached())
+                .call(vec![ExpressionValue::string("x")], AgentHandle::detached())
                 .await;
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("get_working_dir expects"));
@@ -56,8 +69,9 @@ pub mod fs {
 
         #[tokio::test]
         async fn test_set_working_dir_wrong_args() {
-            let f = SetWorkingDirFunction::new();
-            let result = f.execute(vec![], &AgentHandle::detached()).await;
+            let def = set_working_dir_native_def();
+            let f = get_fn_ptr(&def);
+            let result = f.call(vec![], AgentHandle::detached()).await;
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("set_working_dir expects"));
         }
@@ -65,19 +79,21 @@ pub mod fs {
         #[tokio::test]
         async fn test_set_working_dir_roundtrip() {
             let original = std::env::current_dir().unwrap();
-            let get_fn = GetWorkingDirFunction::new();
-            let set_fn = SetWorkingDirFunction::new();
+            let get_def = get_working_dir_native_def();
+            let set_def = set_working_dir_native_def();
+            let get_f = get_fn_ptr(&get_def);
+            let set_f = get_fn_ptr(&set_def);
 
-            let current = get_fn
-                .execute(vec![], &AgentHandle::detached())
+            let current = get_f
+                .call(vec![], AgentHandle::detached())
                 .await
                 .unwrap()
                 .value_string();
 
-            let result = set_fn
-                .execute(
+            let result = set_f
+                .call(
                     vec![ExpressionValue::string(&current)],
-                    &AgentHandle::detached(),
+                    AgentHandle::detached(),
                 )
                 .await
                 .unwrap();
@@ -87,13 +103,14 @@ pub mod fs {
 
         #[tokio::test]
         async fn test_set_working_dir_invalid_path() {
-            let f = SetWorkingDirFunction::new();
+            let def = set_working_dir_native_def();
+            let f = get_fn_ptr(&def);
             let result = f
-                .execute(
+                .call(
                     vec![ExpressionValue::string(
                         "/nonexistent/path/that/does/not/exist",
                     )],
-                    &AgentHandle::detached(),
+                    AgentHandle::detached(),
                 )
                 .await;
             assert!(result.is_err());

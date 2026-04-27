@@ -17,23 +17,35 @@ pub mod io {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction};
+        use structured_agent_il::Instruction;
+        use structured_agent_runtime::{AgentHandle, ExpressionValue};
+
+        fn get_fn_ptr(
+            def: &structured_agent_il::NativeFunctionDef,
+        ) -> structured_agent_runtime::NativeFnPtr {
+            if let Instruction::CallNative { f, .. } = &def.body[0] {
+                f.clone()
+            } else {
+                panic!("expected CallNative instruction");
+            }
+        }
 
         #[tokio::test]
         async fn test_print_properties() {
-            let f = PrintFunction::new();
-            assert_eq!(f.name(), "print");
-            assert_eq!(f.parameters().len(), 1);
-            assert_eq!(f.parameters()[0].name, "value");
+            let def = print_native_def();
+            assert_eq!(def.name, "print");
+            assert_eq!(def.parameters.len(), 1);
+            assert_eq!(def.parameters[0].name, "value");
         }
 
         #[tokio::test]
         async fn test_print_execute() {
-            let f = PrintFunction::new();
+            let def = print_native_def();
+            let f = get_fn_ptr(&def);
             let result = f
-                .execute(
+                .call(
                     vec![ExpressionValue::string("hello")],
-                    &AgentHandle::detached(),
+                    AgentHandle::detached(),
                 )
                 .await
                 .unwrap();
@@ -42,17 +54,18 @@ pub mod io {
 
         #[tokio::test]
         async fn test_print_wrong_args() {
-            let f = PrintFunction::new();
-            let result = f.execute(vec![], &AgentHandle::detached()).await;
+            let def = print_native_def();
+            let f = get_fn_ptr(&def);
+            let result = f.call(vec![], AgentHandle::detached()).await;
             assert!(result.is_err());
         }
 
         #[tokio::test]
         async fn test_input_properties() {
-            let f = InputFunction::new();
-            assert_eq!(f.name(), "input");
-            assert_eq!(f.parameters().len(), 0);
-            assert_eq!(f.return_type().name(), "String");
+            let def = input_native_def();
+            assert_eq!(def.name, "input");
+            assert_eq!(def.parameters.len(), 0);
+            assert_eq!(def.return_type.name(), "String");
         }
     }
 }

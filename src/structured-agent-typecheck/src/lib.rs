@@ -27,8 +27,8 @@ use structured_agent_ast::ast::{ParsedModule, TypeParam};
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_il::Module as RuntimeModule;
 use structured_agent_runtime::symbols::MetaData;
-use structured_agent_runtime::types::Module as RuntimeModule;
 
 pub struct TypeChecker {
     db: TypeCheckDb,

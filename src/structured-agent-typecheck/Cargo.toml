@@ -8,6 +8,7 @@ license.workspace = true
 structured-agent-ast = { path = "../structured-agent-ast" }
 structured-agent-typed-ast = { path = "../structured-agent-typed-ast" }
 structured-agent-runtime = { path = "../structured-agent-runtime" }
+structured-agent-il = { path = "../structured-agent-il" }
 salsa = "0.26.0"
 nonempty = "0.10"
 codespan-reporting = "0.11"

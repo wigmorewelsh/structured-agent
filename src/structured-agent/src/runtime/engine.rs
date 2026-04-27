@@ -11,8 +11,9 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use structured_agent_il::Module;
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
-use structured_agent_runtime::{DefinitionPath, Module, SymbolQuery};
+use structured_agent_runtime::{DefinitionPath, SymbolQuery};
 use structured_agent_stdlib::{
     fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
 };
@@ -40,7 +41,7 @@ pub struct RuntimeBuilder {
     compiler: Option<Arc<Compiler>>,
     program_source: ProgramSource,
     mcp_working_dir: Option<String>,
-    modules: Vec<Arc<dyn Module>>,
+    modules: Vec<Arc<dyn structured_agent_il::Module>>,
 }
 
 pub use structured_agent_runtime::RuntimeError;
@@ -87,8 +88,8 @@ impl RuntimeBuilder {
     }
 
     pub fn with_module(mut self, module: Arc<dyn Module>) -> Self {
-        for func in module.functions() {
-            self.native_provider.add_dyn_function(func);
+        for def in module.native_functions() {
+            self.native_provider.add_native_fn_def(def);
         }
         self.modules.push(module);
         self

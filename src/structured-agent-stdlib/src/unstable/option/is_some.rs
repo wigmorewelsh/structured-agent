@@ -7,26 +7,38 @@ fn is_some<T>(value: Option<T>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::IsSomeFunction;
-    use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFunction};
+    use super::is_some_native_def;
+    use structured_agent_il::Instruction;
+    use structured_agent_runtime::{AgentHandle, ExpressionValue};
+
+    fn get_fn_ptr(
+        def: &structured_agent_il::NativeFunctionDef,
+    ) -> structured_agent_runtime::NativeFnPtr {
+        if let Instruction::CallNative { f, .. } = &def.body[0] {
+            f.clone()
+        } else {
+            panic!("expected CallNative instruction");
+        }
+    }
 
     #[tokio::test]
     async fn test_is_some_properties() {
-        let f = IsSomeFunction::new();
-        assert_eq!(f.name(), "is_some");
-        assert_eq!(f.parameters().len(), 1);
-        assert_eq!(f.parameters()[0].name, "value");
-        assert_eq!(f.return_type().name(), "Boolean");
-        assert_eq!(f.type_params(), &["T"]);
+        let def = is_some_native_def();
+        assert_eq!(def.name, "is_some");
+        assert_eq!(def.parameters.len(), 1);
+        assert_eq!(def.parameters[0].name, "value");
+        assert_eq!(def.return_type.name(), "Boolean");
+        assert_eq!(def.type_params, &["T"]);
     }
 
     #[tokio::test]
     async fn test_is_some_with_some() {
-        let f = IsSomeFunction::new();
+        let def = is_some_native_def();
+        let f = get_fn_ptr(&def);
         let result = f
-            .execute(
+            .call(
                 vec![ExpressionValue::option_some(ExpressionValue::string("val"))],
-                &AgentHandle::detached(),
+                AgentHandle::detached(),
             )
             .await
             .unwrap();
@@ -35,11 +47,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_some_with_none() {
-        let f = IsSomeFunction::new();
+        let def = is_some_native_def();
+        let f = get_fn_ptr(&def);
         let result = f
-            .execute(
+            .call(
                 vec![ExpressionValue::option_none()],
-                &AgentHandle::detached(),
+                AgentHandle::detached(),
             )
             .await
             .unwrap();
@@ -48,11 +61,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_some_wrong_type() {
-        let f = IsSomeFunction::new();
+        let def = is_some_native_def();
+        let f = get_fn_ptr(&def);
         let result = f
-            .execute(
+            .call(
                 vec![ExpressionValue::string("not an option")],
-                &AgentHandle::detached(),
+                AgentHandle::detached(),
             )
             .await;
         assert!(result.is_err());
@@ -60,8 +74,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_some_wrong_arg_count() {
-        let f = IsSomeFunction::new();
-        let result = f.execute(vec![], &AgentHandle::detached()).await;
+        let def = is_some_native_def();
+        let f = get_fn_ptr(&def);
+        let result = f.call(vec![], AgentHandle::detached()).await;
         assert!(result.is_err());
     }
 }

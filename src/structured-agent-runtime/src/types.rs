@@ -275,8 +275,3 @@ mod tests {
         assert_eq!(result, ExpressionValue::string("hello"));
     }
 }
-
-pub trait Module: Send + Sync {
-    fn name(&self) -> &str;
-    fn functions(&self) -> Vec<std::sync::Arc<dyn NativeFunction>>;
-}

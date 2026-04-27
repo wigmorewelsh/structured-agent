@@ -1,5 +1,6 @@
+use structured_agent_il::{Instruction, Module};
 use structured_agent_macros::sa_module;
-use structured_agent_runtime::{AgentHandle, ExpressionValue, Module};
+use structured_agent_runtime::{AgentHandle, ExpressionValue};
 
 #[sa_module]
 mod math {
@@ -23,25 +24,30 @@ fn test_module_name() {
 
 #[test]
 fn test_module_function_count() {
-    assert_eq!(math::MathModule.functions().len(), 2);
+    assert_eq!(math::MathModule.native_functions().len(), 2);
 }
 
 #[test]
 fn test_module_function_names() {
-    let fns = math::MathModule.functions();
-    let names: Vec<&str> = fns.iter().map(|f| f.name()).collect();
+    let fns = math::MathModule.native_functions();
+    let names: Vec<&str> = fns.iter().map(|def| def.name.as_str()).collect();
     assert!(names.contains(&"add"));
     assert!(names.contains(&"negate"));
 }
 
 #[tokio::test]
 async fn test_add_via_module() {
-    let fns = math::MathModule.functions();
-    let add = fns.iter().find(|f| f.name() == "add").unwrap();
-    let result = add
-        .execute(
+    let fns = math::MathModule.native_functions();
+    let add = fns.iter().find(|def| def.name == "add").unwrap();
+    let f = if let Instruction::CallNative { f, .. } = &add.body[0] {
+        f.clone()
+    } else {
+        panic!("expected CallNative instruction");
+    };
+    let result = f
+        .call(
             vec![ExpressionValue::integer(3), ExpressionValue::integer(4)],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -50,12 +56,17 @@ async fn test_add_via_module() {
 
 #[tokio::test]
 async fn test_negate_via_module() {
-    let fns = math::MathModule.functions();
-    let negate = fns.iter().find(|f| f.name() == "negate").unwrap();
-    let result = negate
-        .execute(
+    let fns = math::MathModule.native_functions();
+    let negate = fns.iter().find(|def| def.name == "negate").unwrap();
+    let f = if let Instruction::CallNative { f, .. } = &negate.body[0] {
+        f.clone()
+    } else {
+        panic!("expected CallNative instruction");
+    };
+    let result = f
+        .call(
             vec![ExpressionValue::boolean(true)],
-            &AgentHandle::detached(),
+            AgentHandle::detached(),
         )
         .await
         .unwrap();
@@ -64,8 +75,13 @@ async fn test_negate_via_module() {
 
 #[test]
 fn test_add_documentation() {
-    let fns = math::MathModule.functions();
-    let add = fns.iter().find(|f| f.name() == "add").unwrap();
-    assert!(add.documentation().is_some());
-    assert!(add.documentation().unwrap().contains("Add two integers"));
+    let fns = math::MathModule.native_functions();
+    let add = fns.iter().find(|def| def.name == "add").unwrap();
+    assert!(add.documentation.is_some());
+    assert!(
+        add.documentation
+            .as_ref()
+            .unwrap()
+            .contains("Add two integers")
+    );
 }

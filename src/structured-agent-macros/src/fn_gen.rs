@@ -45,10 +45,6 @@ fn capitalize_first(word: &str) -> String {
     }
 }
 
-pub fn fn_struct_ident(fn_name: &str) -> Ident {
-    format_ident!("{}Function", to_pascal_case(fn_name))
-}
-
 fn doc_line(attr: &Attribute) -> Option<String> {
     if !attr.path().is_ident("doc") {
         return None;
@@ -145,7 +141,7 @@ pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Resul
     let type_params = &args.type_params;
 
     let fn_name = input.sig.ident.to_string();
-    let struct_name = fn_struct_ident(&fn_name);
+    let fn_def_name = format_ident!("{}_native_def", fn_name);
     let params = extract_params(&input.sig.inputs);
     let param_count = params.len();
     let doc = extract_doc(&input.attrs);
@@ -158,86 +154,59 @@ pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Resul
     )?;
     let arg_extractions = build_arg_extractions(&params, type_params)?;
     let return_conversion = build_return_conversion(ret_ty, &input.block, type_params)?;
-    let doc_fn = doc
-        .map(|d| quote! { fn documentation(&self) -> Option<&str> { Some(#d) } })
-        .unwrap_or_default();
 
-    let type_params_field = if !type_params.is_empty() {
-        quote! { type_params: Vec<String>, }
-    } else {
-        quote! {}
+    let doc_value = match doc {
+        Some(ref d) => quote! { Some(#d.to_string()) },
+        None => quote! { None },
     };
 
-    let type_params_init = if !type_params.is_empty() {
+    let type_params_vec = if type_params.is_empty() {
+        quote! { vec![] }
+    } else {
         let tp_strs: Vec<&str> = type_params.iter().map(|s| s.as_str()).collect();
-        quote! { type_params: vec![#(#tp_strs.to_string()),*], }
-    } else {
-        quote! {}
+        quote! { vec![#(#tp_strs.to_string()),*] }
     };
 
-    let type_params_fn = if !type_params.is_empty() {
-        quote! {
-            fn type_params(&self) -> &[String] {
-                &self.type_params
-            }
-        }
+    let slot_indices: Vec<u32> = (1..=(param_count as u32)).collect();
+    let params_slots = if slot_indices.is_empty() {
+        quote! { vec![] }
     } else {
-        quote! {}
+        quote! { vec![#(::structured_agent_il::Slot(#slot_indices)),*] }
     };
 
     Ok(quote! {
-        #[derive(Debug)]
-        pub struct #struct_name {
-            parameters: Vec<::structured_agent_runtime::Parameter>,
-            return_type: ::structured_agent_runtime::Type,
-            #type_params_field
-        }
-
-        impl Default for #struct_name {
-            fn default() -> Self { Self::new() }
-        }
-
-        impl #struct_name {
-            pub fn new() -> Self {
-                Self {
-                    parameters: vec![#(#param_constructions),*],
-                    return_type: #return_type_expr,
-                    #type_params_init
+        pub fn #fn_def_name() -> ::structured_agent_il::NativeFunctionDef {
+            let f = ::structured_agent_runtime::NativeFnPtr::new(
+                move |args: Vec<::structured_agent_runtime::ExpressionValue>, agent: ::structured_agent_runtime::AgentHandle| -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::structured_agent_runtime::ExpressionValue, String>> + Send>> {
+                    Box::pin(async move {
+                        let _ = &agent;
+                        if args.len() != #param_count {
+                            return Err(format!(
+                                "{} expects {} argument(s), got {}",
+                                #fn_name, #param_count, args.len()
+                            ));
+                        }
+                        #(#arg_extractions)*
+                        #return_conversion
+                    })
                 }
-            }
-        }
-
-        #[::async_trait::async_trait]
-        impl ::structured_agent_runtime::NativeFunction for #struct_name {
-            fn name(&self) -> &str { #fn_name }
-
-            fn parameters(&self) -> &[::structured_agent_runtime::Parameter] {
-                &self.parameters
-            }
-
-            fn return_type(&self) -> &::structured_agent_runtime::Type {
-                &self.return_type
-            }
-
-            #type_params_fn
-
-            #doc_fn
-
-            async fn execute(
-                &self,
-                args: Vec<::structured_agent_runtime::ExpressionValue>,
-                agent: &::structured_agent_runtime::AgentHandle,
-            ) -> Result<::structured_agent_runtime::ExpressionValue, String> {
-                let _ = &agent;
-                if args.len() != #param_count {
-                    return Err(format!(
-                        "{} expects {} argument(s), got {}",
-                        #fn_name, #param_count, args.len()
-                    ));
-                }
-                #(#arg_extractions)*
-                #return_conversion
-            }
+            );
+            let body = vec![
+                ::structured_agent_il::Instruction::CallNative {
+                    f,
+                    params: #params_slots,
+                    dest: ::structured_agent_il::Slot(0),
+                },
+                ::structured_agent_il::Instruction::Ret { var: ::structured_agent_il::Slot(0) },
+            ];
+            ::structured_agent_il::NativeFunctionDef::new(
+                #fn_name.to_string(),
+                vec![#(#param_constructions),*],
+                #return_type_expr,
+                #type_params_vec,
+                #doc_value,
+                body,
+            )
         }
     })
 }

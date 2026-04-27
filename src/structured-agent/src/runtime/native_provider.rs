@@ -1,12 +1,15 @@
 use crate::expressions::NativeFunctionExpr;
-use crate::runtime::{AgentHandle, ExpressionValue, RuntimeError};
+use crate::runtime::{AgentHandle, Context, ExpressionResult, ExpressionValue, RuntimeError};
 use crate::types::{
-    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, NativeFunction, Parameter,
-    Type,
+    ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, NativeFunction,
+    Parameter, Type,
 };
 use async_trait::async_trait;
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use structured_agent_il::{Instruction, NativeFunctionDef};
+use structured_agent_runtime::NativeFnPtr;
 
 #[derive(Debug)]
 struct DynNativeFunctionWrapper(Arc<dyn NativeFunction>);
@@ -38,6 +41,67 @@ impl NativeFunction for DynNativeFunctionWrapper {
     }
 }
 
+struct NativeFnPtrExpr {
+    name: String,
+    parameters: Vec<Parameter>,
+    return_type: Type,
+    documentation: Option<String>,
+    f: NativeFnPtr,
+}
+
+impl std::fmt::Debug for NativeFnPtrExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeFnPtrExpr")
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+#[async_trait]
+impl Function for NativeFnPtrExpr {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn parameters(&self) -> &[Parameter] {
+        &self.parameters
+    }
+
+    fn function_return_type(&self) -> &Type {
+        &self.return_type
+    }
+
+    async fn execute(
+        &self,
+        context: Context,
+        args: Vec<ExpressionResult>,
+    ) -> Result<(Context, ExpressionResult), String> {
+        let values: Vec<ExpressionValue> = args.into_iter().map(|r| r.value).collect();
+        let handle = context.agent_handle().clone();
+        let result = self.f.call(values, handle).await?;
+        Ok((context, ExpressionResult::new(result)))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Function> {
+        panic!("NativeFnPtrExpr cannot be cloned")
+    }
+
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_deref()
+    }
+}
+
+#[async_trait]
+impl ExecutableFunction for NativeFnPtrExpr {
+    fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
+        panic!("NativeFnPtrExpr cannot be cloned")
+    }
+}
+
 pub struct NativeFunctionProvider {
     pub native_functions: HashMap<String, Arc<dyn ExecutableFunction>>,
 }
@@ -57,6 +121,19 @@ impl NativeFunctionProvider {
 
     pub fn add_dyn_function(&mut self, native_function: Arc<dyn NativeFunction>) {
         self.add_function(Arc::new(DynNativeFunctionWrapper(native_function)));
+    }
+
+    pub fn add_native_fn_def(&mut self, def: NativeFunctionDef) {
+        if let Some(Instruction::CallNative { f, .. }) = def.body.into_iter().next() {
+            let expr = NativeFnPtrExpr {
+                name: def.name.clone(),
+                parameters: def.parameters,
+                return_type: def.return_type,
+                documentation: def.documentation,
+                f,
+            };
+            self.native_functions.insert(def.name, Arc::new(expr));
+        }
     }
 }
 
