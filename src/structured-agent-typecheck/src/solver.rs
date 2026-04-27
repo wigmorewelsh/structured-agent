@@ -1,5 +1,7 @@
+use nonempty::NonEmpty;
 use salsa::Accumulator;
 use std::collections::HashMap;
+use structured_agent_ast::CheckerAstRef;
 use structured_agent_runtime::Type;
 use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
 
@@ -67,6 +69,28 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
             }
             ConstraintKind::TraitBound { .. } => {}
         }
+    }
+
+    for (impl_key, impl_def) in db.symbol_tables().impls(db).get().iter() {
+        if !matches!(impl_def.ast_ref, CheckerAstRef::Primitive) {
+            continue;
+        }
+        let Some(trait_type) = &impl_def.trait_name else {
+            continue;
+        };
+        let type_name = impl_def.type_name.name().to_string();
+        let trait_name = trait_type.name().to_string();
+        let local_type = DefinitionPath::for_type(impl_def.module.clone(), &type_name);
+        let type_path = if db.symbol_tables().types(db).get().contains_key(&local_type) {
+            local_type
+        } else {
+            DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
+                &type_name,
+            )
+        };
+        let trait_path = DefinitionPath::for_type(impl_def.module.clone(), &trait_name);
+        impls.insert((type_path, trait_path), impl_key.clone());
     }
 
     for constraint in &constraints {
