@@ -1,6 +1,7 @@
 use super::db::{
-    Intern, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
-    lookup_function_def, resolve_function_call, resolve_type_in_module,
+    Intern, InternedTypeName, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
+    lookup_function_def, lookup_type_def_in_symbol_tables, resolve_function_call,
+    resolve_type_in_module,
 };
 use super::error::OrAccumulateError;
 use crate::ensure_or_accumulate;
@@ -22,7 +23,7 @@ use super::db::{InternedFunctionName, InternedModuleName};
 #[derive(Debug, Clone)]
 pub struct TypeEnvironment {
     pub variables: HashMap<String, (structured_agent_runtime::Type, BindingId, Span)>,
-    pub type_params: HashMap<String, ()>,
+    pub type_params: HashMap<String, Vec<AstType>>,
     pub self_type: Option<DefinitionPath>,
     pub parent: Option<Box<TypeEnvironment>>,
     id_alloc: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -48,7 +49,7 @@ impl TypeEnvironment {
     pub fn with_type_params(type_params: &[TypeParam]) -> Self {
         let mut env = Self::new();
         for tp in type_params {
-            env.add_type_param(tp.name.clone());
+            env.add_type_param(tp.name.clone(), tp.bounds.clone());
         }
         env
     }
@@ -63,8 +64,19 @@ impl TypeEnvironment {
         }
     }
 
-    fn add_type_param(&mut self, name: String) {
-        self.type_params.insert(name, ());
+    fn add_type_param(&mut self, name: String, bounds: Vec<AstType>) {
+        self.type_params.insert(name, bounds);
+    }
+
+    pub fn get_type_param_bounds(&self, name: &str) -> Option<&Vec<AstType>> {
+        if let Some(bounds) = self.type_params.get(name) {
+            return Some(bounds);
+        }
+        if let Some(parent) = &self.parent {
+            parent.get_type_param_bounds(name)
+        } else {
+            None
+        }
     }
 
     pub fn lookup_type_param(&self, name: &str) -> bool {
@@ -659,6 +671,53 @@ pub fn synthesize_expression(
             span,
         } => {
             let receiver_type = synthesize_expression(db, receiver, env, ctx)?;
+            if let RT::Generic(param_name) = &receiver_type {
+                let bounds = match env.get_type_param_bounds(param_name) {
+                    Some(b) => b.clone(),
+                    None => return None,
+                };
+                let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
+                for bound in &bounds {
+                    let interned_bound = bound.name().to_string().intern(db);
+                    let Some(resolved) = resolve_type_in_module(db, interned_mod, interned_bound)
+                    else {
+                        continue;
+                    };
+                    let Some(trait_def) = lookup_type_def_in_symbol_tables(
+                        db,
+                        InternedTypeName::new(db, resolved.ty),
+                    ) else {
+                        continue;
+                    };
+                    let functions = match &trait_def.get().kind {
+                        TypeDefinitionKind::Trait { functions, .. } => functions.clone(),
+                        _ => continue,
+                    };
+                    let Some(entry) = functions.iter().find(|e| e.name == *method) else {
+                        continue;
+                    };
+                    let fn_type_name = entry.type_name.clone();
+                    let Some(fn_def) = lookup_type_def_in_symbol_tables(
+                        db,
+                        InternedTypeName::new(db, fn_type_name),
+                    ) else {
+                        continue;
+                    };
+                    let return_type = match &fn_def.get().kind {
+                        TypeDefinitionKind::Function { return_type, .. } => return_type.clone(),
+                        _ => continue,
+                    };
+                    for arg in args {
+                        synthesize_expression(db, arg, env, ctx)?;
+                    }
+                    if return_type.name() == "Self" {
+                        return Some(RT::Generic(param_name.clone()));
+                    } else {
+                        return resolve(db, &return_type, env, *span, ctx);
+                    }
+                }
+                return None;
+            }
             let struct_type_name = match &receiver_type {
                 RT::Named(tn) => tn.last_name().to_string(),
                 _ => return None,

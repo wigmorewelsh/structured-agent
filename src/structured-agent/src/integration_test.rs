@@ -358,4 +358,74 @@ fn main(): Int {
 
         assert_eq!(runtime_result.as_integer().unwrap(), 10);
     }
+
+    #[test]
+    fn test_trait_dispatch_compiles() {
+        let code = r#"
+struct Container {
+    value: Int,
+}
+trait Valuable {
+    fn value_of(self: Self): Int
+}
+impl Container: Valuable {
+    fn value_of(self: Container): Int {
+        return self.value
+    }
+}
+fn extract<T: Valuable>(x: T): Int {
+    return x.value_of()
+}
+fn main(): Int {
+    let c = Container { value: 42 }
+    return extract(c)
+}
+"#;
+        let result = compile(code);
+        if let Err(ref e) = result {
+            println!("Compilation error: {}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Trait dispatch should compile: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_dispatch_runs() {
+        let code = r#"
+struct Container {
+    value: Int,
+}
+trait Valuable {
+    fn value_of(self: Self): Int
+}
+impl Container: Valuable {
+    fn value_of(self: Container): Int {
+        return self.value
+    }
+}
+fn extract<T: Valuable>(x: T): Int {
+    return x.value_of()
+}
+fn main(): Int {
+    let c = Container { value: 42 }
+    return extract(c)
+}
+"#;
+        let result = compile(code);
+        assert!(result.is_ok(), "Trait dispatch should compile");
+
+        let runtime_result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(
+                Runtime::builder(ProgramSource::Inline(code.to_string()))
+                    .build()
+                    .run(),
+            )
+            .unwrap();
+
+        assert_eq!(runtime_result.as_integer().unwrap(), 42);
+    }
 }
