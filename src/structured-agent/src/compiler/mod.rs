@@ -250,6 +250,40 @@ impl Compiler {
             }
         }
 
+        for (mod_name, module) in &self.modules {
+            let module_path = DefinitionPath::for_module(NonEmpty::new(mod_name.clone()));
+            for (idx, impl_decl) in module.native_impls().iter().enumerate() {
+                let impl_key = DefinitionPath::for_impl(module_path.clone(), Some(idx as u32));
+                for def in &impl_decl.functions {
+                    let fn_key = DefinitionPath::for_impl_fn(&impl_key, &def.name);
+                    let mut slot_table = SlotTable::new();
+                    slot_table.push(SlotKind::ReturnSlot, "__ret");
+                    for param in &def.parameters {
+                        slot_table.push(SlotKind::ValueParam, &param.name);
+                    }
+                    let bytecode_ref = BytecodeRef {
+                        instructions: def.body.clone(),
+                        labels: HashMap::new(),
+                        parameters: def.parameters.clone(),
+                        return_type: def.return_type.clone(),
+                        documentation: def.documentation.clone(),
+                        slot_table,
+                    };
+                    if let Some(existing) = compiled.metadata.functions.get(&fn_key) {
+                        let updated = Arc::new(FunctionDefinition {
+                            name: existing.name.clone(),
+                            visibility: existing.visibility.clone(),
+                            type_name: existing.type_name.clone(),
+                            source_ref: existing.source_ref.clone(),
+                            ast_ref: existing.ast_ref.clone(),
+                            body_ref: Some(bytecode_ref),
+                        });
+                        compiled.metadata.functions.insert(fn_key, updated);
+                    }
+                }
+            }
+        }
+
         for name in compiled.metadata.functions.keys() {
             if compiled
                 .metadata
