@@ -28,8 +28,6 @@ pub trait Spanned {
     fn span(&self) -> Span;
 }
 
-use async_trait::async_trait;
-
 pub struct NativeFnPtr(
     pub  Arc<
         dyn Fn(
@@ -221,25 +219,6 @@ impl ExternalFunctionDefinition {
             return_type,
             documentation,
         }
-    }
-}
-
-#[async_trait]
-pub trait NativeFunction: std::fmt::Debug + Send + Sync {
-    fn name(&self) -> &str;
-    fn parameters(&self) -> &[Parameter];
-    fn return_type(&self) -> &Type;
-    async fn execute(
-        &self,
-        args: Vec<ExpressionValue>,
-        agent: &AgentHandle,
-    ) -> Result<ExpressionValue, String>;
-    fn documentation(&self) -> Option<&str> {
-        None
-    }
-
-    fn type_params(&self) -> &[String] {
-        &[]
     }
 }
 

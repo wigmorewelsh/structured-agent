@@ -4,7 +4,7 @@ pub use structured_agent_ast::types::{FileId, Span, Spanned};
 pub use structured_agent_interpreter_runtime::{
     ExecutableFunction, Function, FunctionProvider, LanguageEngine, PrintEngine, format_event,
 };
-pub use structured_agent_runtime::{ExternalFunctionDefinition, NativeFunction, Parameter, Type};
+pub use structured_agent_runtime::{ExternalFunctionDefinition, Parameter, Type};
 
 #[derive(Debug, Clone)]
 pub struct SourceFiles {

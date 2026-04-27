@@ -1,139 +1,47 @@
 use super::*;
 use crate::runtime::ExpressionValue;
-use crate::types::{NativeFunction, Parameter, Type};
-use async_trait::async_trait;
-use std::sync::Mutex;
-
 use std::sync::Arc;
+use structured_agent_macros::sa_module;
 use tokio;
 
-#[derive(Debug)]
-struct LoggingFunction {
-    messages: Arc<Mutex<Vec<String>>>,
-    parameters: Vec<Parameter>,
-    return_type: Type,
-}
+#[sa_module]
+mod control_fns {
+    use std::sync::Mutex;
 
-impl LoggingFunction {
-    fn new() -> Self {
-        Self {
-            messages: Arc::new(Mutex::new(Vec::new())),
-            parameters: vec![Parameter::new("message".to_string(), Type::string())],
-            return_type: Type::unit(),
-        }
+    pub static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    #[sa_fn]
+    async fn log(message: String) {
+        MESSAGES.lock().unwrap().push(message);
     }
 
-    fn clear(&self) {
-        self.messages.lock().unwrap().clear();
-    }
-
-    fn messages_vec(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+    #[sa_fn]
+    async fn get_bool() -> bool {
+        true
     }
 }
 
-#[async_trait]
-impl NativeFunction for LoggingFunction {
-    fn name(&self) -> &str {
-        "log"
-    }
+const USE_IMPORTS: &str = "use control_fns::log\nuse control_fns::get_bool\n\n";
 
-    fn parameters(&self) -> &[Parameter] {
-        &self.parameters
-    }
-
-    fn return_type(&self) -> &Type {
-        &self.return_type
-    }
-
-    async fn execute(
-        &self,
-        args: Vec<ExpressionValue>,
-        _agent: &crate::runtime::AgentHandle,
-    ) -> Result<ExpressionValue, String> {
-        if args.len() != 1 {
-            return Err("Expected 1 argument".to_string());
-        }
-
-        match args[0].as_string() {
-            Ok(s) => {
-                self.messages.lock().unwrap().push(s.to_string());
-                Ok(ExpressionValue::unit())
-            }
-            Err(_) => Err("Expected string argument".to_string()),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct BooleanFunction {
-    return_value: bool,
-    parameters: Vec<Parameter>,
-    return_type: Type,
-}
-
-impl BooleanFunction {
-    fn new(return_value: bool) -> Self {
-        Self {
-            return_value,
-            parameters: vec![],
-            return_type: Type::boolean(),
-        }
-    }
-}
-
-#[async_trait]
-impl NativeFunction for BooleanFunction {
-    fn name(&self) -> &str {
-        "get_bool"
-    }
-
-    fn parameters(&self) -> &[Parameter] {
-        &self.parameters
-    }
-
-    fn return_type(&self) -> &Type {
-        &self.return_type
-    }
-
-    async fn execute(
-        &self,
-        args: Vec<ExpressionValue>,
-        _agent: &crate::runtime::AgentHandle,
-    ) -> Result<ExpressionValue, String> {
-        if !args.is_empty() {
-            return Err("Expected 0 arguments".to_string());
-        }
-
-        Ok(ExpressionValue::boolean(self.return_value))
-    }
-}
-
-async fn run_logged(source: &str, logger: &Arc<LoggingFunction>) -> (ExpressionValue, Vec<String>) {
-    let runtime = Runtime::builder(program(source))
-        .with_native_function(logger.clone())
+async fn run_logged(source: &str) -> (ExpressionValue, Vec<String>) {
+    let prefixed = format!("{}{}", USE_IMPORTS, source);
+    let runtime = Runtime::builder(program(&prefixed))
+        .with_module(Arc::new(control_fns::ControlFnsModule))
         .build();
     let result = runtime.run().await.unwrap();
-    let messages = logger.messages_vec();
+    let messages = control_fns::MESSAGES.lock().unwrap().clone();
     (result, messages)
 }
 
 #[tokio::test]
 async fn test_if_statement_true_condition() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     if true {
         log("if body executed")
     }
     log("after if")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -143,20 +51,13 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_if_statement_false_condition() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     if false {
         log("if body not executed")
     }
     log("after if")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -166,21 +67,14 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_if_statement_with_variable_condition() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     let condition = true
     if condition {
         log("condition was true")
     }
     log("after if")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -190,12 +84,8 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_if_statement_with_function_condition() {
-    let logger = Arc::new(LoggingFunction::new());
-    let bool_func = Arc::new(BooleanFunction::new(true));
-
-    let program_source = r#"
-extern fn log(message: String): ()
-extern fn get_bool(): Boolean
+    let program_source = r#"use control_fns::log
+use control_fns::get_bool
 
 fn main(): () {
     if get_bool() {
@@ -206,33 +96,25 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
-        .with_native_function(bool_func.clone())
+        .with_module(Arc::new(control_fns::ControlFnsModule))
         .build();
 
     let result = runtime.run().await.unwrap();
 
-    let messages = logger.messages_vec();
+    let messages = control_fns::MESSAGES.lock().unwrap().clone();
     assert_eq!(messages, vec!["function returned true", "after if"]);
     assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
 async fn test_while_statement_false_condition() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     while false {
         log("never executed")
     }
     log("after while")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -242,22 +124,15 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_while_statement_with_counter() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     let continue_loop = true
     while continue_loop {
         log("loop iteration")
         continue_loop = false
     }
     log("after while")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -267,13 +142,8 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_nested_if_statements() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     if true {
         log("outer if")
         if true {
@@ -282,9 +152,7 @@ fn main(): () {
         log("after inner if")
     }
     log("after outer if")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -297,13 +165,8 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_if_and_while_combined() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     let should_run = true
     if should_run {
         log("starting loop")
@@ -315,9 +178,7 @@ fn main(): () {
         log("loop done")
     }
     log("all done")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -330,10 +191,7 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_if_statement_non_boolean_condition_error() {
-    let logger = Arc::new(LoggingFunction::new());
-
-    let program_source = r#"
-extern fn log(message: String): ()
+    let program_source = r#"use control_fns::log
 
 fn main(): () {
     if "not a boolean" {
@@ -343,24 +201,23 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(control_fns::ControlFnsModule))
         .build();
 
     let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    println!("Actual error: {}", error_message);
     assert!(error_message.contains("Type error"));
-    assert_eq!(logger.messages_vec(), Vec::<String>::new());
+    assert_eq!(
+        control_fns::MESSAGES.lock().unwrap().clone(),
+        Vec::<String>::new()
+    );
 }
 
 #[tokio::test]
 async fn test_while_statement_non_boolean_condition_error() {
-    let logger = Arc::new(LoggingFunction::new());
-
-    let program_source = r#"
-extern fn log(message: String): ()
+    let program_source = r#"use control_fns::log
 
 fn main(): () {
     while "not a boolean" {
@@ -370,35 +227,30 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(control_fns::ControlFnsModule))
         .build();
 
     let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    println!("Actual error: {}", error_message);
     assert!(error_message.contains("Type error"));
-    assert_eq!(logger.messages_vec(), Vec::<String>::new());
+    assert_eq!(
+        control_fns::MESSAGES.lock().unwrap().clone(),
+        Vec::<String>::new()
+    );
 }
 
 #[tokio::test]
 async fn test_if_with_variable_assignment_in_body() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     if true {
         let message = "assigned in if"
         log(message)
     }
     log("after if")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -408,13 +260,8 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_while_with_variable_assignment_in_body() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let (result, messages) = run_logged(
-        r#"
-extern fn log(message: String): ()
-
-fn main(): () {
+        r#"fn main(): () {
     let run_once = true
     while run_once {
         let message = "assigned in while"
@@ -422,9 +269,7 @@ fn main(): () {
         run_once = false
     }
     log("after while")
-}
-"#,
-        &logger,
+}"#,
     )
     .await;
 
@@ -434,10 +279,7 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_else_branch_type_checking() {
-    let logger = Arc::new(LoggingFunction::new());
-
-    let program_source = r#"
-extern fn log(message: String): ()
+    let program_source = r#"use control_fns::log
 
 fn main(): () {
     if true {
@@ -451,14 +293,16 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(control_fns::ControlFnsModule))
         .build();
 
     let result = runtime.run().await;
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    println!("Actual error: {}", error_message);
     assert!(error_message.contains("Type error"));
-    assert_eq!(logger.messages_vec(), Vec::<String>::new());
+    assert_eq!(
+        control_fns::MESSAGES.lock().unwrap().clone(),
+        Vec::<String>::new()
+    );
 }

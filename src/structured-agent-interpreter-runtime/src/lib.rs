@@ -10,6 +10,6 @@ pub use traits::{
 
 pub use structured_agent_runtime::{
     AgentError, AgentHandle, AgentId, AgentMessage, AgentMessageContent, DefinitionPath,
-    ExpressionParameter, ExpressionResult, ExpressionValue, ExternalFunctionDefinition,
-    NativeFunction, Parameter, RuntimeError, Type,
+    ExpressionParameter, ExpressionResult, ExpressionValue, ExternalFunctionDefinition, Parameter,
+    RuntimeError, Type,
 };

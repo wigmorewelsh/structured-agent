@@ -1,65 +1,25 @@
 use super::*;
-use crate::runtime::ExpressionValue;
-use crate::types::{NativeFunction, Parameter, Type};
-use async_trait::async_trait;
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use structured_agent_macros::sa_module;
 use tokio;
 
-#[derive(Debug)]
-struct TestExternFunction {
-    call_count: std::sync::atomic::AtomicUsize,
-    return_type: Type,
-}
+#[sa_module]
+mod call_fns {
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-impl TestExternFunction {
-    fn new() -> Self {
-        Self {
-            call_count: std::sync::atomic::AtomicUsize::new(0),
-            return_type: Type::unit(),
-        }
-    }
+    pub static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-    fn get_call_count(&self) -> usize {
-        self.call_count.load(std::sync::atomic::Ordering::Relaxed)
-    }
-}
-
-#[async_trait]
-impl NativeFunction for TestExternFunction {
-    fn name(&self) -> &str {
-        "to_call"
-    }
-
-    fn parameters(&self) -> &[Parameter] {
-        &[]
-    }
-
-    fn return_type(&self) -> &Type {
-        &self.return_type
-    }
-
-    async fn execute(
-        &self,
-        args: Vec<ExpressionValue>,
-        _agent: &crate::runtime::AgentHandle,
-    ) -> Result<ExpressionValue, String> {
-        if !args.is_empty() {
-            return Err("Expected no arguments".to_string());
-        }
-
-        self.call_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(ExpressionValue::unit())
+    #[sa_fn]
+    async fn to_call() {
+        CALL_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[tokio::test]
 async fn test_function_call_with_assignment() {
-    let extern_fn = Arc::new(TestExternFunction::new());
-
-    let program_source = r#"
-extern fn to_call(): ()
+    let program_source = r#"use call_fns::to_call
 
 fn assign_result(): () {
     let result = to_call()
@@ -71,20 +31,17 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(extern_fn.clone())
+        .with_module(Arc::new(call_fns::CallFnsModule))
         .build();
 
     let result = runtime.run().await;
     assert!(result.is_ok());
-    assert_eq!(extern_fn.get_call_count(), 1);
+    assert_eq!(call_fns::CALL_COUNT.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
 async fn test_function_call_with_prompt_result() {
-    let extern_fn = Arc::new(TestExternFunction::new());
-
-    let program_source = r#"
-extern fn to_call(): ()
+    let program_source = r#"use call_fns::to_call
 
 fn prompt_result(): () {
     to_call()!
@@ -96,20 +53,17 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(extern_fn.clone())
+        .with_module(Arc::new(call_fns::CallFnsModule))
         .build();
 
     let result = runtime.run().await;
     assert!(result.is_ok());
-    assert_eq!(extern_fn.get_call_count(), 1);
+    assert_eq!(call_fns::CALL_COUNT.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
 async fn test_function_call_ignore_result() {
-    let extern_fn = Arc::new(TestExternFunction::new());
-
-    let program_source = r#"
-extern fn to_call(): ()
+    let program_source = r#"use call_fns::to_call
 
 fn ignore_result(): () {
     to_call()
@@ -121,10 +75,10 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(extern_fn.clone())
+        .with_module(Arc::new(call_fns::CallFnsModule))
         .build();
 
     let result = runtime.run().await;
     assert!(result.is_ok());
-    assert_eq!(extern_fn.get_call_count(), 1);
+    assert_eq!(call_fns::CALL_COUNT.load(Ordering::Relaxed), 1);
 }

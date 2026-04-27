@@ -1,74 +1,25 @@
 use super::*;
-use crate::cli::config::ProgramSource;
 use crate::runtime::ExpressionValue;
-use crate::types::{NativeFunction, Parameter, Type};
-use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use structured_agent_macros::sa_module;
 use tokio;
 
-fn test_runtime() -> Runtime {
-    Runtime::builder(ProgramSource::Inline("fn main(): () {}".to_string())).build()
-}
+#[sa_module]
+mod log_fns {
+    use std::sync::Mutex;
 
-#[derive(Debug)]
-struct LoggingFunction {
-    messages: Arc<Mutex<Vec<String>>>,
-    parameters: Vec<Parameter>,
-    return_type: Type,
-}
+    pub static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-impl LoggingFunction {
-    fn new() -> Self {
-        Self {
-            messages: Arc::new(Mutex::new(Vec::new())),
-            parameters: vec![Parameter::new("message".to_string(), Type::string())],
-            return_type: Type::unit(),
-        }
-    }
-
-    fn clear(&self) {
-        self.messages.lock().unwrap().clear();
-    }
-}
-
-#[async_trait]
-impl NativeFunction for LoggingFunction {
-    fn name(&self) -> &str {
-        "log"
-    }
-
-    fn parameters(&self) -> &[Parameter] {
-        &self.parameters
-    }
-
-    fn return_type(&self) -> &Type {
-        &self.return_type
-    }
-
-    async fn execute(
-        &self,
-        args: Vec<ExpressionValue>,
-        _agent: &crate::runtime::AgentHandle,
-    ) -> Result<ExpressionValue, String> {
-        if args.len() != 1 {
-            return Err("Expected 1 argument".to_string());
-        }
-
-        let s = args[0]
-            .as_string()
-            .map_err(|_| "Expected string argument")?;
-        self.messages.lock().unwrap().push(s.to_string());
-
-        Ok(ExpressionValue::unit())
+    #[sa_fn]
+    async fn log(message: String) {
+        MESSAGES.lock().unwrap().push(message);
     }
 }
 
 #[tokio::test]
 async fn test_calling_log_should_receive_literals() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let program_source = r#"
-extern fn log(message: String): ()
+use log_fns::log
 
 fn main(): () {
     let result = log("value1")
@@ -77,24 +28,19 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(log_fns::LogFnsModule))
         .build();
 
-    let result = runtime.run().await;
-    let result = result.unwrap();
-
-    let messages = logger.messages.lock().unwrap().clone();
+    let result = runtime.run().await.unwrap();
+    let messages = log_fns::MESSAGES.lock().unwrap().clone();
     assert_eq!(messages, vec!["value1"]);
-
     assert_eq!(result, ExpressionValue::unit());
 }
 
 #[tokio::test]
 async fn test_variable_assignment_in_if_block() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let program_source = r#"
-extern fn log(message: String): ()
+use log_fns::log
 
 fn main(): String {
     let val = "initial"
@@ -113,19 +59,16 @@ fn main(): String {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(log_fns::LogFnsModule))
         .build();
 
-    let result = runtime.run().await;
-    let result = result.unwrap();
-
-    let messages = logger.messages.lock().unwrap().clone();
+    let result = runtime.run().await.unwrap();
+    let messages = log_fns::MESSAGES.lock().unwrap().clone();
 
     assert!(messages.contains(&"step1".to_string()));
     assert!(messages.contains(&"step2".to_string()));
     assert!(messages.contains(&"step3".to_string()));
     assert!(messages.contains(&"step4".to_string()));
-
     assert!(messages.contains(&"initial".to_string()));
     assert!(messages.contains(&"modified".to_string()));
 
@@ -140,10 +83,8 @@ fn main(): String {
 
 #[tokio::test]
 async fn test_variable_assignment_in_while_loop() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let program_source = r#"
-extern fn log(message: String): ()
+use log_fns::log
 
 fn main(): String {
     let counter = true
@@ -161,28 +102,21 @@ fn main(): String {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(log_fns::LogFnsModule))
         .build();
 
-    let result = runtime.run().await;
-    let result = result.unwrap();
+    let result = runtime.run().await.unwrap();
+    let messages = log_fns::MESSAGES.lock().unwrap().clone();
 
-    let messages = logger.messages.lock().unwrap().clone();
-
-    // Check that the variable was modified inside the while loop
-    assert!(messages.contains(&"0".to_string())); // Initial value in loop
-    assert!(messages.contains(&"1".to_string())); // Modified value after loop
-
-    // The function should return the modified value from inside the loop
+    assert!(messages.contains(&"0".to_string()));
+    assert!(messages.contains(&"1".to_string()));
     assert_eq!(result, ExpressionValue::string("1"));
 }
 
 #[tokio::test]
 async fn test_variable_scoping_with_boolean_assignment() {
-    let logger = Arc::new(LoggingFunction::new());
-
     let program_source = r#"
-extern fn log(message: String): ()
+use log_fns::log
 
 fn main(): () {
     let val = true
@@ -204,21 +138,16 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(program(program_source))
-        .with_native_function(logger.clone())
+        .with_module(Arc::new(log_fns::LogFnsModule))
         .build();
 
     let result = runtime.run().await;
     assert!(result.is_ok());
 
-    let messages = logger.messages.lock().unwrap().clone();
+    let messages = log_fns::MESSAGES.lock().unwrap().clone();
 
-    // Should see the initial true check and the assignment working
     assert!(messages.contains(&"before assignment".to_string()));
     assert!(messages.contains(&"after assignment".to_string()));
-
-    // Should NOT see the error message if scoping worked
     assert!(!messages.contains(&"ERROR still true".to_string()));
-
-    // Should not see the false branch
     assert!(!messages.contains(&"this should not print".to_string()));
 }

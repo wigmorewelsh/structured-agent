@@ -3,11 +3,10 @@ use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
-use crate::runtime::{Context, ExpressionValue, NativeFunctionProvider, RuntimeService};
+use crate::runtime::{Context, ExpressionValue, RuntimeService};
 use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
-    NativeFunction,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -36,7 +35,6 @@ pub struct Runtime {
 
 pub struct RuntimeBuilder {
     providers: Vec<Arc<dyn FunctionProvider>>,
-    native_provider: NativeFunctionProvider,
     language_engine: Option<Arc<dyn LanguageEngine>>,
     compiler: Option<Arc<Compiler>>,
     program_source: ProgramSource,
@@ -50,7 +48,6 @@ impl RuntimeBuilder {
     pub fn new(source: ProgramSource) -> Self {
         Self {
             providers: Vec::new(),
-            native_provider: NativeFunctionProvider::new(),
             language_engine: None,
             compiler: None,
             program_source: source,
@@ -79,18 +76,7 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn with_native_function<F: NativeFunction + 'static>(
-        mut self,
-        native_function: Arc<F>,
-    ) -> Self {
-        self.native_provider.add_function(native_function);
-        self
-    }
-
     pub fn with_module(mut self, module: Arc<dyn Module>) -> Self {
-        for def in module.native_functions() {
-            self.native_provider.add_native_fn_def(def);
-        }
         self.modules.push(module);
         self
     }
@@ -129,11 +115,6 @@ impl RuntimeBuilder {
             }
         }
         Ok(self)
-    }
-
-    pub fn with_native_provider(mut self, provider: NativeFunctionProvider) -> Self {
-        self.providers.push(Arc::new(provider));
-        self
     }
 
     pub async fn with_config(mut self, config: &Config) -> Result<Runtime, String> {
@@ -199,11 +180,9 @@ impl RuntimeBuilder {
     }
 
     pub fn build(self) -> Runtime {
-        let native_provider_rc = Arc::new(self.native_provider);
-        let mut providers = self.providers;
-        providers.push(native_provider_rc.clone());
+        let providers = self.providers;
 
-        let function_registry = native_provider_rc.native_functions.clone();
+        let function_registry = HashMap::new();
 
         let default_compiler = self
             .modules

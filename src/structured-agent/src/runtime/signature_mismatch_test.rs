@@ -1,54 +1,76 @@
 use super::*;
 use crate::cli::config::ProgramSource;
-use crate::types::{NativeFunction, Parameter, Type};
+use crate::types::{
+    ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 
-#[derive(Debug)]
-struct WrongSignatureFunction {
-    parameters: Vec<Parameter>,
-    return_type: Type,
-}
+struct WrongParamNameProvider;
 
-impl WrongSignatureFunction {
-    fn new() -> Self {
-        Self {
-            parameters: vec![Parameter::new(
+#[async_trait]
+impl FunctionProvider for WrongParamNameProvider {
+    async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
+        Ok(vec![ExternalFunctionDefinition::new(
+            "log".to_string(),
+            vec![Parameter::new(
                 "wrong_param_name".to_string(),
                 Type::string(),
             )],
-            return_type: Type::unit(),
-        }
+            Type::unit(),
+        )])
+    }
+
+    async fn create_expression(
+        &self,
+        _definition: &ExternalFunctionDefinition,
+    ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
+        Err(RuntimeError::FunctionNotFound("unreachable".to_string()))
     }
 }
 
+struct WrongParamTypeProvider;
+
 #[async_trait]
-impl NativeFunction for WrongSignatureFunction {
-    fn name(&self) -> &str {
-        "log"
+impl FunctionProvider for WrongParamTypeProvider {
+    async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
+        Ok(vec![ExternalFunctionDefinition::new(
+            "log".to_string(),
+            vec![Parameter::new("message".to_string(), Type::boolean())],
+            Type::unit(),
+        )])
     }
 
-    fn parameters(&self) -> &[Parameter] {
-        &self.parameters
-    }
-
-    fn return_type(&self) -> &Type {
-        &self.return_type
-    }
-
-    async fn execute(
+    async fn create_expression(
         &self,
-        _args: Vec<ExpressionValue>,
-        _agent: &crate::runtime::AgentHandle,
-    ) -> Result<ExpressionValue, String> {
-        Ok(ExpressionValue::unit())
+        _definition: &ExternalFunctionDefinition,
+    ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
+        Err(RuntimeError::FunctionNotFound("unreachable".to_string()))
+    }
+}
+
+struct WrongReturnTypeProvider;
+
+#[async_trait]
+impl FunctionProvider for WrongReturnTypeProvider {
+    async fn list_functions(&self) -> Result<Vec<ExternalFunctionDefinition>, RuntimeError> {
+        Ok(vec![ExternalFunctionDefinition::new(
+            "log".to_string(),
+            vec![Parameter::new("message".to_string(), Type::string())],
+            Type::string(),
+        )])
+    }
+
+    async fn create_expression(
+        &self,
+        _definition: &ExternalFunctionDefinition,
+    ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError> {
+        Err(RuntimeError::FunctionNotFound("unreachable".to_string()))
     }
 }
 
 #[tokio::test]
 async fn test_signature_mismatch_error_message() {
-    let wrong_func = Arc::new(WrongSignatureFunction::new());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -58,7 +80,7 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
-        .with_native_function(wrong_func)
+        .with_provider(Arc::new(WrongParamNameProvider))
         .build();
 
     let result = runtime.run().await;
@@ -76,46 +98,6 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_wrong_parameter_type_error_message() {
-    #[derive(Debug)]
-    struct WrongTypeFunction {
-        parameters: Vec<Parameter>,
-        return_type: Type,
-    }
-
-    impl WrongTypeFunction {
-        fn new() -> Self {
-            Self {
-                parameters: vec![Parameter::new("message".to_string(), Type::boolean())],
-                return_type: Type::unit(),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl NativeFunction for WrongTypeFunction {
-        fn name(&self) -> &str {
-            "log"
-        }
-
-        fn parameters(&self) -> &[Parameter] {
-            &self.parameters
-        }
-
-        fn return_type(&self) -> &Type {
-            &self.return_type
-        }
-
-        async fn execute(
-            &self,
-            _args: Vec<ExpressionValue>,
-            _agent: &crate::runtime::AgentHandle,
-        ) -> Result<ExpressionValue, String> {
-            Ok(ExpressionValue::unit())
-        }
-    }
-
-    let wrong_func = Arc::new(WrongTypeFunction::new());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -125,7 +107,7 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
-        .with_native_function(wrong_func)
+        .with_provider(Arc::new(WrongParamTypeProvider))
         .build();
 
     let result = runtime.run().await;
@@ -140,46 +122,6 @@ fn main(): () {
 
 #[tokio::test]
 async fn test_wrong_return_type_error_message() {
-    #[derive(Debug)]
-    struct WrongReturnFunction {
-        parameters: Vec<Parameter>,
-        return_type: Type,
-    }
-
-    impl WrongReturnFunction {
-        fn new() -> Self {
-            Self {
-                parameters: vec![Parameter::new("message".to_string(), Type::string())],
-                return_type: Type::string(),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl NativeFunction for WrongReturnFunction {
-        fn name(&self) -> &str {
-            "log"
-        }
-
-        fn parameters(&self) -> &[Parameter] {
-            &self.parameters
-        }
-
-        fn return_type(&self) -> &Type {
-            &self.return_type
-        }
-
-        async fn execute(
-            &self,
-            _args: Vec<ExpressionValue>,
-            _agent: &crate::runtime::AgentHandle,
-        ) -> Result<ExpressionValue, String> {
-            Ok(ExpressionValue::string("test"))
-        }
-    }
-
-    let wrong_func = Arc::new(WrongReturnFunction::new());
-
     let program_source = r#"
 extern fn log(message: String): ()
 
@@ -189,7 +131,7 @@ fn main(): () {
 "#;
 
     let runtime = Runtime::builder(ProgramSource::Inline(program_source.to_string()))
-        .with_native_function(wrong_func)
+        .with_provider(Arc::new(WrongReturnTypeProvider))
         .build();
 
     let result = runtime.run().await;

@@ -3,7 +3,7 @@ use super::test_helpers::TestAgent;
 #[tokio::test]
 async fn test_session_starts_and_runs() {
     let program = r#"
-        extern fn print(value: String): ()
+        use io::print
 
         fn main(): () {
             print("Hello from session")
@@ -27,7 +27,7 @@ async fn test_session_starts_and_runs() {
 #[tokio::test]
 async fn test_multiple_sessions_independent_tracing() {
     let program1 = r#"
-        extern fn print(value: String): ()
+        use io::print
 
         fn main(): () {
             print("Session 1 message")
@@ -35,7 +35,7 @@ async fn test_multiple_sessions_independent_tracing() {
     "#;
 
     let program2 = r#"
-        extern fn print(value: String): ()
+        use io::print
 
         fn main(): () {
             print("Session 2 message")

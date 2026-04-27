@@ -1,6 +1,5 @@
 pub mod actor;
 mod engine;
-mod native_provider;
 mod types;
 
 #[cfg(test)]
@@ -20,7 +19,6 @@ mod signature_mismatch_test;
 
 pub use actor::{Agent, AgentError, AgentHandle, AgentId, AgentMessage, AgentMessageContent};
 pub use engine::{Runtime, RuntimeError};
-pub use native_provider::NativeFunctionProvider;
 pub use structured_agent_interpreter_runtime::{Context, Event, RuntimeService};
 pub use types::{ExpressionParameter, ExpressionResult, ExpressionValue};
 

@@ -136,7 +136,7 @@ mod tests {
     async fn test_build_runtime_with_default_functions() {
         let config = Config {
             program_source: crate::cli::config::ProgramSource::Inline(
-                "fn main(): () {}".to_string(),
+                "use io::print\n\nfn main(): () { print(\"hello\") }".to_string(),
             ),
             mcp_servers: vec![],
             engine: EngineType::Print,
@@ -151,16 +151,15 @@ mod tests {
             .await
             .unwrap();
 
-        let functions = runtime.list_functions();
-        assert!(functions.contains(&"input"));
-        assert!(functions.contains(&"print"));
+        let result = runtime.run().await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_build_runtime_without_default_functions() {
         let config = Config {
             program_source: crate::cli::config::ProgramSource::Inline(
-                "fn main(): () {}".to_string(),
+                "use io::print\n\nfn main(): () { print(\"hello\") }".to_string(),
             ),
             mcp_servers: vec![],
             engine: EngineType::Print,
@@ -175,8 +174,7 @@ mod tests {
             .await
             .unwrap();
 
-        let functions = runtime.list_functions();
-        assert!(!functions.contains(&"input"));
-        assert!(!functions.contains(&"print"));
+        let result = runtime.run().await;
+        assert!(result.is_err());
     }
 }

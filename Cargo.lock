@@ -2177,6 +2177,7 @@ dependencies = [
  "structured-agent-il",
  "structured-agent-il-analysis",
  "structured-agent-interpreter-runtime",
+ "structured-agent-macros",
  "structured-agent-parser",
  "structured-agent-runtime",
  "structured-agent-stdlib",

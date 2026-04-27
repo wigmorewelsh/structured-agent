@@ -54,6 +54,7 @@ dirs = "5.0"
 tempfile = "3.0"
 rstest = "0.18"
 structured-agent-runtime = { path = "../structured-agent-runtime" }
+structured-agent-macros = { path = "../structured-agent-macros" }
 
 [package.metadata.release]
 pre-release-replacements = [

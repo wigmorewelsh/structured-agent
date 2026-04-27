@@ -142,7 +142,28 @@ impl SymbolTableBuilder {
             };
             self.metadata
                 .modules
-                .insert(module_name, Arc::new(module_def));
+                .insert(module_name.clone(), Arc::new(module_def));
+
+            let entries: Vec<SignatureEntry> = native_mod
+                .native_functions()
+                .iter()
+                .map(|func| SignatureEntry {
+                    name: func.name.clone(),
+                    type_name: DefinitionPath::for_type(module_name.clone(), func.name.clone()),
+                })
+                .collect();
+            let module_type = TypeDefinition {
+                name: module_name.clone(),
+                kind: TypeDefinitionKind::Signature { entries },
+                source_ref: SourceLocation(0, Span::dummy()),
+                ast_ref: CheckerAstRef::Module(Arc::new(Module {
+                    definitions: vec![],
+                    span: Span::dummy(),
+                    file_id: 0,
+                })),
+            };
+            self.metadata
+                .register_type(module_name, Arc::new(module_type));
         }
     }
 
