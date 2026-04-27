@@ -7,7 +7,7 @@ use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
     ExpressionValue, RuntimeService,
 };
-use structured_agent_runtime::DefinitionPath;
+use structured_agent_runtime::{DefinitionPath, NativeFnPtr};
 
 pub struct VMState {
     pc: usize,
@@ -125,6 +125,9 @@ impl VM {
                 } => {
                     self.execute_indirect_call(state, *module_param, fn_name, params, *dest)
                         .await?
+                }
+                Instruction::CallNative { f, params, dest } => {
+                    self.execute_native_call(state, f, params, *dest).await?
                 }
             };
         }
@@ -535,6 +538,23 @@ impl VM {
         }
     }
 
+    async fn execute_native_call(
+        &self,
+        mut state: VMState,
+        f: &NativeFnPtr,
+        params: &[Slot],
+        dest: Slot,
+    ) -> Result<VMState, String> {
+        let args: Vec<ExpressionValue> = params
+            .iter()
+            .map(|s| Self::read_slot(&state, *s).map(|r| r.value))
+            .collect::<Result<Vec<_>, _>>()?;
+        let agent_handle = state.context.agent_handle().clone();
+        let result = f.call(args, agent_handle).await?;
+        Self::write_slot(&mut state, dest, ExpressionResult::new(result));
+        Ok(Self::advance_pc(state))
+    }
+
     async fn execute_indirect_call(
         &self,
         state: VMState,
@@ -594,5 +614,83 @@ impl VM {
         let field_value = src_val.value.get_struct_field(field)?;
         Self::write_slot(&mut state, dest, ExpressionResult::new(field_value));
         Ok(Self::advance_pc(state))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use structured_agent_il::Instruction;
+    use structured_agent_il::slot::Slot;
+    use structured_agent_interpreter_runtime::{Context, ExpressionValue, RuntimeService};
+    use structured_agent_runtime::{DefinitionPath, NativeFnPtr};
+
+    use crate::vm::VM;
+
+    struct NoopRuntime;
+
+    impl RuntimeService for NoopRuntime {
+        fn get_native_function(
+            &self,
+            _name: &str,
+        ) -> Option<Arc<dyn structured_agent_interpreter_runtime::ExecutableFunction>> {
+            None
+        }
+        fn get_bytecode_function(
+            &self,
+            _name: &DefinitionPath,
+        ) -> Option<Arc<dyn structured_agent_interpreter_runtime::ExecutableFunction>> {
+            None
+        }
+        fn engine(&self) -> &dyn structured_agent_interpreter_runtime::LanguageEngine {
+            unimplemented!()
+        }
+        fn type_to_arrow_datatype(
+            &self,
+            _ty: &structured_agent_runtime::Type,
+        ) -> arrow::datatypes::DataType {
+            arrow::datatypes::DataType::Null
+        }
+        fn get_struct(
+            &self,
+            _type_name: &DefinitionPath,
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+        fn get_struct_with_args(
+            &self,
+            _type_name: &DefinitionPath,
+            _args: &[structured_agent_runtime::Type],
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+    }
+
+    fn make_context() -> Context {
+        Context::with_runtime(Arc::new(NoopRuntime))
+    }
+
+    #[tokio::test]
+    async fn execute_call_native_writes_result_to_dest() {
+        let f = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::string("ok")) }));
+
+        let instructions = vec![
+            Instruction::LdcStr {
+                dest: Slot(1),
+                value: "input".to_string(),
+            },
+            Instruction::CallNative {
+                f,
+                params: vec![Slot(1)],
+                dest: Slot(0),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let frame = vec![None, None];
+        let context = make_context();
+        let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
+        assert_eq!(result.value, ExpressionValue::string("ok"));
     }
 }

@@ -1,3 +1,7 @@
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
 pub type FileId = usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,6 +29,58 @@ pub trait Spanned {
 }
 
 use async_trait::async_trait;
+
+pub struct NativeFnPtr(
+    pub  Arc<
+        dyn Fn(
+                Vec<ExpressionValue>,
+                AgentHandle,
+            ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>>
+            + Send
+            + Sync,
+    >,
+);
+
+impl NativeFnPtr {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(
+                Vec<ExpressionValue>,
+                AgentHandle,
+            ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        args: Vec<ExpressionValue>,
+        handle: AgentHandle,
+    ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>> {
+        (self.0)(args, handle)
+    }
+}
+
+impl Clone for NativeFnPtr {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl std::fmt::Debug for NativeFnPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<native fn>")
+    }
+}
+
+impl PartialEq for NativeFnPtr {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
 use nonempty::NonEmpty;
 
 use crate::actor::AgentHandle;
@@ -184,6 +240,39 @@ pub trait NativeFunction: std::fmt::Debug + Send + Sync {
 
     fn type_params(&self) -> &[String] {
         &[]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_fn_ptr_clone_is_equal() {
+        let ptr = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
+        let cloned = ptr.clone();
+        assert_eq!(ptr, cloned);
+    }
+
+    #[test]
+    fn native_fn_ptr_debug_format() {
+        let ptr = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
+        assert_eq!(format!("{:?}", ptr), "<native fn>");
+    }
+
+    #[test]
+    fn native_fn_ptr_different_instances_are_not_equal() {
+        let a = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
+        let b = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
+        assert_ne!(a, b);
+    }
+
+    #[tokio::test]
+    async fn native_fn_ptr_call_invokes_closure() {
+        let ptr = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::string("hello")) }));
+        let handle = AgentHandle::detached();
+        let result = ptr.call(vec![], handle).await.unwrap();
+        assert_eq!(result, ExpressionValue::string("hello"));
     }
 }
 

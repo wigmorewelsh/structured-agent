@@ -2336,10 +2336,12 @@ dependencies = [
 name = "structured-agent-vm"
 version = "0.1.0"
 dependencies = [
+ "arrow",
  "async-trait",
  "structured-agent-il",
  "structured-agent-interpreter-runtime",
  "structured-agent-runtime",
+ "tokio",
 ]
 
 [[package]]

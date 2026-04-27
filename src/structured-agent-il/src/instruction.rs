@@ -1,5 +1,5 @@
 use std::fmt;
-use structured_agent_runtime::{DefinitionPath, Type};
+use structured_agent_runtime::{DefinitionPath, NativeFnPtr, Type};
 
 use crate::slot::Slot;
 
@@ -109,6 +109,12 @@ pub enum Instruction {
         dest: Slot,
         src: Slot,
         field: String,
+    },
+
+    CallNative {
+        f: NativeFnPtr,
+        params: Vec<Slot>,
+        dest: Slot,
     },
 }
 
@@ -264,6 +270,45 @@ impl fmt::Display for Instruction {
             Instruction::StructGet { dest, src, field } => {
                 write!(f, "struct.get {}, {}, {}", dest, src, field)
             }
+            Instruction::CallNative { params, dest, .. } => {
+                write!(f, "call.native [")?;
+                for (i, var) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_call_native_no_params() {
+        let instr = Instruction::CallNative {
+            f: NativeFnPtr::new(|_, _| {
+                Box::pin(async { Ok(structured_agent_runtime::ExpressionValue::unit()) })
+            }),
+            params: vec![],
+            dest: Slot(0),
+        };
+        assert_eq!(format!("{}", instr), "call.native [], s0");
+    }
+
+    #[test]
+    fn display_call_native_with_params() {
+        let instr = Instruction::CallNative {
+            f: NativeFnPtr::new(|_, _| {
+                Box::pin(async { Ok(structured_agent_runtime::ExpressionValue::unit()) })
+            }),
+            params: vec![Slot(1), Slot(2)],
+            dest: Slot(0),
+        };
+        assert_eq!(format!("{}", instr), "call.native [s1, s2], s0");
     }
 }

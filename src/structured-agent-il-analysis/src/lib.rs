@@ -31,6 +31,9 @@ mod unreachable_instructions_test;
 #[cfg(test)]
 mod variable_allocation_test;
 
+#[cfg(test)]
+mod call_native_analysis_test;
+
 pub use branch_target::BranchTargetAnalyzer;
 pub use call_arity::CallArityAnalyzer;
 pub use context_balance::ContextBalanceAnalyzer;
@@ -54,6 +57,7 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         Instruction::StructNew { fields, .. } => fields.iter().map(|(_, src)| *src).collect(),
         Instruction::StructGet { src, .. } => vec![*src],
         Instruction::CallIndirect { params, .. } => params.clone(),
+        Instruction::CallNative { params, .. } => params.clone(),
         Instruction::LoadModule { params, .. } => params.clone(),
         _ => vec![],
     }
@@ -71,6 +75,7 @@ pub fn instruction_writes(instruction: &Instruction) -> Option<Slot> {
         }
         Instruction::LoadModule { dest, .. } => Some(*dest),
         Instruction::CallIndirect { dest, .. } => Some(*dest),
+        Instruction::CallNative { dest, .. } => Some(*dest),
         Instruction::MetaFunction { dest, .. } => Some(*dest),
         Instruction::ListCreate { dest, .. } => Some(*dest),
         Instruction::LlmPlaceholder { dest, .. } => Some(*dest),
