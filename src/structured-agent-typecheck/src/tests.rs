@@ -3235,4 +3235,43 @@ mod metadata_query_tests {
             )
         );
     }
+    #[test]
+    fn trait_witness_ref_populated_after_elaboration() {
+        use structured_agent_runtime::symbols::WitnessTable;
+        let input = concat!(
+            "struct Vec2 {\n",
+            "    x: Int,\n",
+            "}\n",
+            "trait Add {\n",
+            "    fn add(self: Vec2, other: Vec2): Vec2\n",
+            "}\n",
+            "impl Vec2: Add {\n",
+            "    fn add(self: Vec2, other: Vec2): Vec2 {\n",
+            "        return self\n",
+            "    }\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let metadata = check_meta(module);
+        let main_module = DefinitionPath::for_module(NonEmpty::new("main".to_string()));
+        let add_path = DefinitionPath::for_type(main_module.clone(), "Add");
+        let vec2_path = DefinitionPath::for_type(main_module.clone(), "Vec2");
+        let impl_key = DefinitionPath::for_impl(main_module.clone(), Some(0));
+        let trait_def = metadata.type_def(&add_path).expect("Add trait not found");
+        let TypeDefinitionKind::Trait { witness_ref, .. } = &trait_def.kind else {
+            panic!("expected Trait kind");
+        };
+        let WitnessTable(map) = witness_ref;
+        assert_eq!(
+            map.get(&vec2_path),
+            Some(&impl_key),
+            "witness_ref should map Vec2 -> impl key"
+        );
+    }
 }

@@ -192,6 +192,11 @@ impl DefinitionPath {
 
 impl TypeAnnotation for DefinitionPath {}
 
+#[derive(Debug, Clone, Default)]
+pub struct WitnessTable(pub HashMap<DefinitionPath, DefinitionPath>);
+
+impl WitnessRef for WitnessTable {}
+
 impl fmt::Display for DefinitionPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;

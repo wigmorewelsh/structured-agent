@@ -1,12 +1,12 @@
 use super::refs::{
-    CheckerAstRef, CheckerRefs, FunctionKind, NoWitness, SourceLocation, TypedCheckerAstRef,
-    TypedRefs,
+    CheckerAstRef, CheckerRefs, FunctionKind, SourceLocation, TypedCheckerAstRef, TypedRefs,
 };
 use crate::TypeError;
 use crate::error::OrAccumulateError;
 use structured_agent_ast::ast::{
     Definition, Module as AstModule, PathArg, PathSegment, Type as AstType, TypeParam, Use,
 };
+use structured_agent_runtime::symbols::WitnessTable;
 
 use nonempty::NonEmpty;
 use structured_agent_ast::types::{FileId, Span};
@@ -883,7 +883,7 @@ fn convert_type_kind(
         },
         TypeDefinitionKind::Trait { functions, .. } => TypeDefinitionKind::Trait {
             functions: functions.clone(),
-            witness_ref: NoWitness,
+            witness_ref: WitnessTable::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
         TypeDefinitionKind::Native {
@@ -1079,6 +1079,19 @@ pub fn elaborate_metadata(
         typed_metadata
             .modules
             .insert(module_key.clone(), Arc::new(new_def));
+    }
+
+    for impl_def in typed_metadata.impls.values() {
+        if let Some(trait_path) = &impl_def.trait_name
+            && let Some(trait_entry) = typed_metadata.types.get_mut(trait_path)
+        {
+            let td = Arc::make_mut(trait_entry);
+            if let TypeDefinitionKind::Trait { witness_ref, .. } = &mut td.kind {
+                witness_ref
+                    .0
+                    .insert(impl_def.type_name.clone(), impl_def.key.clone());
+            }
+        }
     }
 
     ArcPtr::new(typed_metadata)
