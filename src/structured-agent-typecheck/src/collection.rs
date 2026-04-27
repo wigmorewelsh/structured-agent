@@ -529,17 +529,10 @@ impl SymbolTableBuilder {
         let fn_parameters: Vec<ParameterDefinition<CheckerRefs>> = func
             .parameters
             .iter()
-            .map(|p| {
-                let param_type = if p.name == "self" {
-                    AstType::simple(type_name.to_string())
-                } else {
-                    p.param_type.clone()
-                };
-                ParameterDefinition {
-                    name: p.name.clone(),
-                    type_name: param_type,
-                    source_ref: SourceLocation(file_id, p.span),
-                }
+            .map(|p| ParameterDefinition {
+                name: p.name.clone(),
+                type_name: p.param_type.clone(),
+                source_ref: SourceLocation(file_id, p.span),
             })
             .collect();
         let fn_generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func

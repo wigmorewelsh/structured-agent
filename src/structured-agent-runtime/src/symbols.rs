@@ -167,6 +167,21 @@ impl DefinitionPath {
             .any(|s| matches!(s, DefinitionSegment::Impl { .. }))
     }
 
+    pub fn impl_key(&self) -> Option<DefinitionPath> {
+        let mut segs = Vec::new();
+        for seg in self.segments.iter() {
+            segs.push(seg.clone());
+            if matches!(seg, DefinitionSegment::Impl { .. }) {
+                break;
+            }
+        }
+        if matches!(segs.last(), Some(DefinitionSegment::Impl { .. })) {
+            NonEmpty::from_vec(segs).map(|segments| DefinitionPath { segments })
+        } else {
+            None
+        }
+    }
+
     pub fn impl_discriminator(&self) -> Option<u32> {
         match self.segments.last() {
             DefinitionSegment::Impl { discriminator } => *discriminator,

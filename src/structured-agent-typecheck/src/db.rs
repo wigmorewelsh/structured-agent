@@ -261,12 +261,16 @@ pub fn get_function_sig<'db>(
         })
         .collect();
     let mut type_env = super::TypeEnvironment::with_type_params(&type_params_vec);
-    if fn_name.is_impl_fn() {
-        type_env.set_self_type(DefinitionPath::for_type(
-            fn_name.module_prefix(),
-            fn_name.last_name(),
-        ));
-    };
+    if let Some(impl_key) = fn_name.impl_key() {
+        let impls = db.symbol_tables().impls(db);
+        if let Some(impl_def) = impls.get().get(&impl_key) {
+            let self_type = DefinitionPath::for_type(
+                impl_def.module.clone(),
+                impl_def.type_name.name().to_string(),
+            );
+            type_env.set_self_type(self_type);
+        }
+    }
 
     let mut resolved_params = Vec::with_capacity(parameters.len());
     for p in parameters {

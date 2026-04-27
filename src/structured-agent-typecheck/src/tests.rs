@@ -1754,6 +1754,60 @@ mod tests {
             errors
         );
     }
+
+    #[test]
+    fn test_impl_fn_with_self_typed_parameter_type_checks() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn combine(self: Self, other: Self): Int {\n",
+            "        return other.x\n",
+            "    }\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "impl fn with Self-typed parameter should type check: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_impl_fn_with_self_return_type_type_checks() {
+        let input = concat!(
+            "struct Foo {\n",
+            "    x: Int,\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn clone_self(self: Self): Self {\n",
+            "        return self\n",
+            "    }\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "impl fn with Self return type should type check: {:?}",
+            result
+        );
+    }
 }
 
 #[cfg(test)]
