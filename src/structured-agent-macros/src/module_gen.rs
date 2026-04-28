@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{Item, ItemMod, ItemTrait, Token, TraitItem};
+use syn::{Item, ItemImpl, ItemMod, ItemTrait, Token, TraitItem};
 
 use crate::fn_gen::{generate_native_function, to_pascal_case};
 use crate::types::map_type_to_runtime;
@@ -100,6 +100,14 @@ pub fn generate_module(input: ItemMod) -> syn::Result<TokenStream2> {
 }
 
 fn partition_items(items: Vec<Item>) -> syn::Result<PartitionResult> {
+    let outer_use_items: Vec<TokenStream2> = items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Use(u) => Some(quote! { #u }),
+            _ => None,
+        })
+        .collect();
+
     let mut mod_items = Vec::new();
     let mut fn_def_calls = Vec::new();
     let mut trait_constructions = Vec::new();
@@ -159,6 +167,31 @@ fn partition_items(items: Vec<Item>) -> syn::Result<PartitionResult> {
                     continue;
                 }
                 mod_items.push(quote! { #item_mod });
+            }
+            Item::Impl(mut item_impl) => {
+                let sa_impl_pos = item_impl
+                    .attrs
+                    .iter()
+                    .position(|a| a.path().is_ident("sa_impl"));
+                if let Some(pos) = sa_impl_pos {
+                    let attr_tokens = match &item_impl.attrs[pos].meta {
+                        syn::Meta::Path(_) => proc_macro2::TokenStream::new(),
+                        syn::Meta::List(ml) => ml.tokens.clone(),
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                &*item_impl.self_ty,
+                                "#[sa_impl] should be bare or #[sa_impl(Type for Trait)]",
+                            ));
+                        }
+                    };
+                    item_impl.attrs.remove(pos);
+                    let (submod_code, construction) =
+                        impl_block_to_decl(attr_tokens, item_impl, &outer_use_items)?;
+                    mod_items.push(submod_code);
+                    impl_constructions.push(construction);
+                    continue;
+                }
+                mod_items.push(quote! { #item_impl });
             }
             other => {
                 mod_items.push(quote! { #other });
@@ -293,6 +326,148 @@ fn impl_mod_to_decl(
     let submod_code = quote! {
         mod #mod_ident {
             #(#use_items)*
+            #(#generated_fns)*
+        }
+    };
+
+    let construction = quote! {
+        ::structured_agent_il::NativeImplDecl {
+            type_name: #type_name.to_string(),
+            trait_name: #trait_name_expr,
+            functions: vec![#(#def_constructions),*],
+        }
+    };
+
+    Ok((submod_code, construction))
+}
+
+fn impl_self_ident(item_impl: &ItemImpl) -> syn::Result<syn::Ident> {
+    if let syn::Type::Path(tp) = item_impl.self_ty.as_ref()
+        && let Some(seg) = tp.path.segments.last()
+    {
+        return Ok(seg.ident.clone());
+    }
+    Err(syn::Error::new_spanned(
+        &*item_impl.self_ty,
+        "#[sa_impl] on an impl block requires a simple type name",
+    ))
+}
+
+fn rust_type_to_sa_name(ident: &syn::Ident) -> String {
+    let name = ident.to_string();
+    name.strip_suffix("Value").unwrap_or(&name).to_string()
+}
+
+fn rust_trait_to_sa_name(ident: &syn::Ident) -> String {
+    ident.to_string()
+}
+
+fn replace_self_tokens(stream: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    use proc_macro2::TokenTree;
+    let replacement = format_ident!("__sa_self");
+    stream
+        .into_iter()
+        .map(|tt| match tt {
+            TokenTree::Ident(ref ident) if ident == "self" => TokenTree::Ident(replacement.clone()),
+            TokenTree::Group(group) => {
+                let new_stream = replace_self_tokens(group.stream());
+                TokenTree::Group(proc_macro2::Group::new(group.delimiter(), new_stream))
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn impl_method_to_item_fn(
+    method: syn::ImplItemFn,
+    self_ty: &syn::Type,
+) -> syn::Result<syn::ItemFn> {
+    let sa_self = format_ident!("__sa_self");
+    let has_receiver = matches!(method.sig.inputs.first(), Some(syn::FnArg::Receiver(_)));
+
+    let mut new_inputs = syn::punctuated::Punctuated::new();
+    for arg in method.sig.inputs.iter() {
+        match arg {
+            syn::FnArg::Receiver(_) => {
+                let typed: syn::FnArg = syn::parse_quote! { #sa_self: #self_ty };
+                new_inputs.push(typed);
+            }
+            other => new_inputs.push(other.clone()),
+        }
+    }
+
+    let block = if has_receiver {
+        let orig_block = method.block;
+        let block_tokens = replace_self_tokens(quote! { #orig_block });
+        syn::parse2::<syn::Block>(block_tokens)?
+    } else {
+        method.block
+    };
+
+    let mut sig = method.sig;
+    sig.inputs = new_inputs;
+    Ok(syn::ItemFn {
+        attrs: method.attrs,
+        vis: method.vis,
+        sig,
+        block: Box::new(block),
+    })
+}
+
+fn impl_block_to_decl(
+    attr_tokens: TokenStream2,
+    item_impl: ItemImpl,
+    outer_use_items: &[TokenStream2],
+) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let self_ident = impl_self_ident(&item_impl)?;
+    let trait_ident = item_impl
+        .trait_
+        .as_ref()
+        .and_then(|(_, path, _)| path.segments.last())
+        .map(|s| s.ident.clone());
+
+    let (type_name, trait_name) = if attr_tokens.is_empty() {
+        (
+            rust_type_to_sa_name(&self_ident),
+            trait_ident.as_ref().map(rust_trait_to_sa_name),
+        )
+    } else {
+        let impl_args: SaImplArgs = syn::parse2(attr_tokens)?;
+        (impl_args.type_name, impl_args.trait_name)
+    };
+
+    let mut generated_fns = Vec::new();
+    let mut fn_def_names = Vec::new();
+
+    for item in item_impl.items {
+        if let syn::ImplItem::Fn(method) = item {
+            let fn_name = method.sig.ident.to_string();
+            fn_def_names.push(format_ident!("{}_native_def", fn_name));
+            let item_fn = impl_method_to_item_fn(method, &item_impl.self_ty)?;
+            generated_fns.push(generate_native_function(
+                proc_macro2::TokenStream::new(),
+                item_fn,
+            )?);
+        }
+    }
+
+    let type_part = type_name.to_lowercase();
+    let trait_part = trait_name.as_deref().unwrap_or("inherent").to_lowercase();
+    let submod_name = format_ident!("{}_{}_impl", type_part, trait_part);
+
+    let def_constructions: Vec<TokenStream2> = fn_def_names
+        .iter()
+        .map(|name| quote! { #submod_name::#name() })
+        .collect();
+
+    let trait_name_expr = match trait_name {
+        Some(ref t) => quote! { Some(#t.to_string()) },
+        None => quote! { None },
+    };
+
+    let submod_code = quote! {
+        mod #submod_name {
+            #(#outer_use_items)*
             #(#generated_fns)*
         }
     };

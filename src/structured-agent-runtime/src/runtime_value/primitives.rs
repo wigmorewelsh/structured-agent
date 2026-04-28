@@ -93,6 +93,13 @@ impl RuntimeValue for StringValue {
 #[derive(Debug, Clone)]
 pub struct IntValue(pub i64);
 
+impl Deref for IntValue {
+    type Target = i64;
+    fn deref(&self) -> &i64 {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for IntValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -138,6 +145,13 @@ impl RuntimeValue for IntValue {
 
 #[derive(Debug, Clone)]
 pub struct BooleanValue(pub bool);
+
+impl Deref for BooleanValue {
+    type Target = bool;
+    fn deref(&self) -> &bool {
+        &self.0
+    }
+}
 
 impl std::fmt::Display for BooleanValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

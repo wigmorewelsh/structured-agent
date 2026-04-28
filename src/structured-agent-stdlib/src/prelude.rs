@@ -2,34 +2,30 @@ use structured_agent_macros::sa_module;
 
 #[sa_module]
 pub mod prelude {
+    use structured_agent_runtime::{IntValue, StringValue};
+
     #[sa_trait]
     trait ToString {
         fn to_string(self: Self) -> StringValue;
     }
 
-    #[sa_impl(Int for ToString)]
-    mod int_impl {
-        use structured_agent_runtime::{IntValue, StringValue};
-
-        #[sa_fn]
-        fn to_string(value: IntValue) -> StringValue {
-            value.to_string().into()
+    #[sa_impl]
+    impl ToString for IntValue {
+        fn to_string(&self) -> StringValue {
+            self.to_string().into()
         }
     }
 
-    #[sa_impl(String for ToString)]
-    mod string_impl {
-        use structured_agent_runtime::StringValue;
-
-        #[sa_fn]
-        fn to_string(value: StringValue) -> StringValue {
-            value
+    #[sa_impl]
+    impl ToString for StringValue {
+        fn to_string(&self) -> StringValue {
+            self.clone()
         }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::{int_impl, string_impl};
+        use super::{int_tostring_impl, string_tostring_impl};
         use structured_agent_il::Instruction;
         use structured_agent_runtime::{AgentHandle, ExpressionValue, NativeFnPtr};
 
@@ -43,7 +39,7 @@ pub mod prelude {
 
         #[tokio::test]
         async fn test_int_to_string() {
-            let def = int_impl::to_string_native_def();
+            let def = int_tostring_impl::to_string_native_def();
             let f = get_fn_ptr(&def);
             let result = f
                 .call(vec![ExpressionValue::integer(42)], AgentHandle::detached())
@@ -54,7 +50,7 @@ pub mod prelude {
 
         #[tokio::test]
         async fn test_string_to_string() {
-            let def = string_impl::to_string_native_def();
+            let def = string_tostring_impl::to_string_native_def();
             let f = get_fn_ptr(&def);
             let result = f
                 .call(
