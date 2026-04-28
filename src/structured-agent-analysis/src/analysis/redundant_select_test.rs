@@ -10,7 +10,7 @@ extern fn compute(): String
 
 fn test(): () {
     let result = select {
-        compute() as x => x
+        compute()
     }
 }
 "#;
@@ -30,8 +30,8 @@ extern fn option2(): String
 
 fn test(): () {
     let result = select {
-        option1() as x => x,
-        option2() as y => y
+        option1(),
+        option2()
     }
 }
 "#;
@@ -52,9 +52,9 @@ extern fn c(): String
 
 fn test(): () {
     let result = select {
-        a() as x => x,
-        b() as y => y,
-        c() as z => z
+        a(),
+        b(),
+        c()
     }
 }
 "#;
@@ -74,7 +74,7 @@ extern fn single(): String
 fn test(): () {
     if true {
         let nested = select {
-            single() as x => x
+            single()
         }
     }
 }

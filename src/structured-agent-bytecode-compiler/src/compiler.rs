@@ -549,24 +549,7 @@ impl BytecodeCompiler {
         for (i, clause) in select.clauses.iter().enumerate() {
             ctx.builder.emit_label(&clause_labels[i]);
 
-            let temp_result = ctx.builder.next_temp_slot();
-            self.compile_expression(ctx, &clause.expression_to_run, temp_result)?;
-
-            let result_slot = *ctx
-                .binding_id_to_slot
-                .get(&clause.result_variable_binding_id)
-                .ok_or_else(|| {
-                    format!(
-                        "select result binding {:?} not found",
-                        clause.result_variable_binding_id
-                    )
-                })?;
-            ctx.builder.emit(Instruction::Mov {
-                dest: result_slot,
-                src: temp_result,
-            });
-
-            self.compile_expression(ctx, &clause.expression_next, dest_var)?;
+            self.compile_expression(ctx, &clause.expression_to_run, dest_var)?;
 
             ctx.builder.emit_br(&end_label);
         }
@@ -662,14 +645,7 @@ fn collect_from_expr(
         }
         typed_ast::Expression::Select(select, _) => {
             for clause in &select.clauses {
-                if seen.insert(clause.result_variable_binding_id) {
-                    result.push((
-                        clause.result_variable_binding_id,
-                        clause.result_variable.clone(),
-                    ));
-                }
                 collect_from_expr(&clause.expression_to_run, result, seen);
-                collect_from_expr(&clause.expression_next, result, seen);
             }
         }
         typed_ast::Expression::Call { arguments, .. } => {

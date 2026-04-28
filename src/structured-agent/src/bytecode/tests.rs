@@ -172,8 +172,8 @@ fn subtract(a: String, b: String): String {
 
 fn calculator(x: String, y: String): String {
     let result = select {
-        add(x, y) as sum => sum,
-        subtract(x, y) as diff => diff
+        add(x, y),
+        subtract(x, y)
     }
     result
 }
@@ -497,8 +497,8 @@ fn greet(name: String): () {
             extern fn summarize(text: String): String
             fn test(): String {
                 return select {
-                    analyze("code") as result => result,
-                    summarize("text") as summary => summary
+                    analyze("code"),
+                    summarize("text")
                 }
             }
         "#;
@@ -507,25 +507,21 @@ fn greet(name: String): () {
 
 ): String {
   select_start_0:
-      0: meta.function test::analyze, s4
-      1: meta.function test::summarize, s5
-      2: llm.select [s4, s5], s6
-      3: switch s6, [4, 9]
+      0: meta.function test::analyze, s2
+      1: meta.function test::summarize, s3
+      2: llm.select [s2, s3], s4
+      3: switch s4, [4, 7]
   clause_0_1:
-      4: ldc.str s8, "code"
-      5: call.external test::analyze, [s8], s7
-      6: mov s1, s7
-      7: mov s3, s1
-      8: br 14
+      4: ldc.str s5, "code"
+      5: call.external test::analyze, [s5], s1
+      6: br 10
   clause_1_2:
-      9: ldc.str s10, "text"
-     10: call.external test::summarize, [s10], s9
-     11: mov s2, s9
-     12: mov s3, s2
-     13: br 14
+      7: ldc.str s6, "text"
+      8: call.external test::summarize, [s6], s1
+      9: br 10
   select_end_3:
-     14: nop
-     15: ret s3
+     10: nop
+     11: ret s1
 }
 "#;
         compile_and_check(code, expected);
@@ -938,9 +934,6 @@ mod vm_execution_tests {
                         .iter()
                         .map(|c| typed_ast::SelectClause {
                             expression_to_run: ast_expr_to_typed(&c.expression_to_run),
-                            result_variable: c.result_variable.clone(),
-                            result_variable_binding_id: typed_ast::BindingId(0),
-                            expression_next: ast_expr_to_typed(&c.expression_next),
                             span: c.span,
                         })
                         .collect(),

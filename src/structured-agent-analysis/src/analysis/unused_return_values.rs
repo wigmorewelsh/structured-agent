@@ -98,7 +98,6 @@ impl UnusedReturnValueAnalyzer {
             Expression::Select(select_expr) => {
                 for clause in &select_expr.clauses {
                     self.analyze_expression(&clause.expression_to_run);
-                    self.analyze_expression(&clause.expression_next);
                 }
             }
             Expression::IfElse {

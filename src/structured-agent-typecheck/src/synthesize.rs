@@ -901,33 +901,19 @@ fn synthesize_select(
         }
     );
     let first = &clauses[0];
-    let first_result_type = synthesize_expression(db, &first.expression_to_run, env, ctx)?;
-    let mut first_env = env.create_child();
-    first_env.declare_variable(
-        first.result_variable.clone(),
-        first_result_type,
-        first.expression_to_run.span(),
-    );
-    let first_type = synthesize_expression(db, &first.expression_next, &first_env, ctx)?;
+    let first_type = synthesize_expression(db, &first.expression_to_run, env, ctx)?;
     for (i, clause) in clauses.iter().enumerate().skip(1) {
-        let result_type = synthesize_expression(db, &clause.expression_to_run, env, ctx)?;
-        let mut clause_env = env.create_child();
-        clause_env.declare_variable(
-            clause.result_variable.clone(),
-            result_type,
-            clause.expression_to_run.span(),
-        );
         ensure_or_accumulate!(
-            check_expression(db, &clause.expression_next, &first_type, &clause_env, ctx,).is_some(),
+            check_expression(db, &clause.expression_to_run, &first_type, env, ctx).is_some(),
             db,
             TypeError::SelectBranchTypeMismatch {
                 expected: first_type.name(),
-                found: synthesize_expression(db, &clause.expression_next, &clause_env, ctx)
+                found: synthesize_expression(db, &clause.expression_to_run, env, ctx)
                     .map(|t| t.name())
                     .unwrap_or_default(),
                 branch_index: i,
-                span: clause.expression_next.span(),
-                first_branch_span: first.expression_next.span(),
+                span: clause.expression_to_run.span(),
+                first_branch_span: first.expression_to_run.span(),
                 file_id: ctx.file_id,
             }
         );

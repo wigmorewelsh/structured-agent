@@ -114,8 +114,8 @@ fn get_another_string(): String {
 
 fn main(): String {
     let result = select {
-        get_string() as s1 => s1,
-        get_another_string() as s2 => s2
+        get_string(),
+        get_another_string()
     }
     return result
 }
@@ -142,8 +142,8 @@ fn get_boolean(): Boolean {
 
 fn main(): String {
     let result = select {
-        get_string() as s => s,
-        get_boolean() as b => b
+        get_string(),
+        get_boolean()
     }
     return result
 }

@@ -475,8 +475,8 @@ fn subtract(a: String, b: String): String {
 
 fn calculator(x: String, y: String): String {
     let result = select {
-        add(x, y) as sum => sum,
-        subtract(x, y) as diff => diff
+        add(x, y),
+        subtract(x, y)
     }
     result
 }

@@ -458,11 +458,6 @@ mod tests {
                             ],
                             span: crate::types::Span::dummy(),
                         },
-                        result_variable: "sum".to_string(),
-                        expression_next: Expression::Variable {
-                            name: "sum".to_string(),
-                            span: crate::types::Span::dummy(),
-                        },
                         span: crate::types::Span::dummy(),
                     },
                     SelectClause {
@@ -476,11 +471,6 @@ mod tests {
                                     span: crate::types::Span::dummy(),
                                 },
                             ],
-                            span: crate::types::Span::dummy(),
-                        },
-                        result_variable: "text".to_string(),
-                        expression_next: Expression::Variable {
-                            name: "text".to_string(),
                             span: crate::types::Span::dummy(),
                         },
                         span: crate::types::Span::dummy(),
@@ -533,22 +523,12 @@ mod tests {
                             arguments: vec![],
                             span: crate::types::Span::dummy(),
                         },
-                        result_variable: "str_result".to_string(),
-                        expression_next: Expression::Variable {
-                            name: "str_result".to_string(),
-                            span: crate::types::Span::dummy(),
-                        },
                         span: crate::types::Span::dummy(),
                     },
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "get_bool".to_string(),
                             arguments: vec![],
-                            span: crate::types::Span::dummy(),
-                        },
-                        result_variable: "bool_result".to_string(),
-                        expression_next: Expression::Variable {
-                            name: "bool_result".to_string(),
                             span: crate::types::Span::dummy(),
                         },
                         span: crate::types::Span::dummy(),
@@ -2348,11 +2328,6 @@ mod typed_ast_tests {
                     expression_to_run: Expression::Call {
                         function: "get_str".to_string(),
                         arguments: vec![],
-                        span: crate::types::Span::dummy(),
-                    },
-                    result_variable: "s".to_string(),
-                    expression_next: Expression::Variable {
-                        name: "s".to_string(),
                         span: crate::types::Span::dummy(),
                     },
                     span: crate::types::Span::dummy(),

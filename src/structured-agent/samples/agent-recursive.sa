@@ -31,9 +31,9 @@ fn agent_loop(): () {
     "what is the next action to perform?"!
 
     let result = select {
-        edit_file(_) as r => r,
-        read_file(_) as r => r,
-        write_file_content(_, _) as r => r
+        edit_file(_),
+        read_file(_),
+        write_file_content(_, _)
     }
 
     result!

@@ -111,9 +111,6 @@ pub struct SelectExpression {
 #[derive(Clone, Debug)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
-    pub result_variable: String,
-    pub result_variable_binding_id: BindingId,
-    pub expression_next: Expression,
     pub span: Span,
 }
 

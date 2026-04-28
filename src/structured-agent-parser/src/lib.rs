@@ -1187,24 +1187,10 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        parse_call()
-            .skip(skip_spaces())
-            .skip(lex_string("as"))
-            .and(identifier())
-            .skip(lex_string("=>"))
-            .and(parse_expression()),
-        position(),
-    )
-        .map(
-            |(start, ((expression_to_run, result_variable), expression_next), end)| SelectClause {
-                expression_to_run,
-                result_variable,
-                expression_next,
-                span: Span::new(start, end),
-            },
-        )
+    (position(), parse_call(), position()).map(|(start, expression_to_run, end)| SelectClause {
+        expression_to_run,
+        span: Span::new(start, end),
+    })
 }
 
 fn parse_if_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -1719,8 +1705,8 @@ fn calculator_agent(ctx: String, request: String): String {
     request!
 
     let result = select {
-        add(ctx, _, _) as sum => sum,
-        subtract(ctx, _, _) as diff => diff
+        add(ctx, _, _),
+        subtract(ctx, _, _)
     }
 
     result
@@ -1754,7 +1740,6 @@ fn calculator_agent(ctx: String, request: String): String {
         assert_eq!(select_stmt.clauses.len(), 2);
 
         let first_clause = &select_stmt.clauses[0];
-        assert_eq!(first_clause.result_variable, "sum");
 
         let Expression::Call {
             function,
@@ -1770,7 +1755,6 @@ fn calculator_agent(ctx: String, request: String): String {
         assert!(matches!(arguments[2], Expression::Placeholder { .. }));
 
         let second_clause = &select_stmt.clauses[1];
-        assert_eq!(second_clause.result_variable, "diff");
 
         let Expression::Call { function, .. } = &second_clause.expression_to_run else {
             panic!("Expected call expression");
@@ -1783,9 +1767,9 @@ fn calculator_agent(ctx: String, request: String): String {
         let input = r#"
 fn calculator_agent(ctx: String, request: String): String {
     let result = select {
-        add(ctx, _, _) as sum => sum,
-        # subtract(ctx, _, _) as diff => diff,
-        multiply(ctx, _, _) as product => product
+        add(ctx, _, _),
+        # subtract(ctx, _, _),
+        multiply(ctx, _, _)
     }
     result
 }
@@ -1816,7 +1800,6 @@ fn calculator_agent(ctx: String, request: String): String {
         assert_eq!(select_stmt.clauses.len(), 2);
 
         let first_clause = &select_stmt.clauses[0];
-        assert_eq!(first_clause.result_variable, "sum");
 
         let Expression::Call { function, .. } = &first_clause.expression_to_run else {
             panic!("Expected call expression");
@@ -1824,7 +1807,6 @@ fn calculator_agent(ctx: String, request: String): String {
         assert_eq!(function, "add");
 
         let second_clause = &select_stmt.clauses[1];
-        assert_eq!(second_clause.result_variable, "product");
 
         let Expression::Call { function, .. } = &second_clause.expression_to_run else {
             panic!("Expected call expression");
@@ -1837,10 +1819,10 @@ fn calculator_agent(ctx: String, request: String): String {
         let input = r#"
 fn test_agent(ctx: String): String {
     let result = select {
-        add(ctx, _, _) as sum => sum,
-        # subtract(ctx, _, _) as diff => diff,
-        # divide(ctx, _, _) as quotient => quotient,
-        multiply(ctx, _, _) as product => product
+        add(ctx, _, _),
+        # subtract(ctx, _, _),
+        # divide(ctx, _, _),
+        multiply(ctx, _, _)
     }
     result
 }
@@ -1871,10 +1853,16 @@ fn test_agent(ctx: String): String {
         assert_eq!(select_stmt.clauses.len(), 2);
 
         let first_clause = &select_stmt.clauses[0];
-        assert_eq!(first_clause.result_variable, "sum");
+        assert!(matches!(
+            first_clause.expression_to_run,
+            Expression::Call { .. }
+        ));
 
         let second_clause = &select_stmt.clauses[1];
-        assert_eq!(second_clause.result_variable, "product");
+        assert!(matches!(
+            second_clause.expression_to_run,
+            Expression::Call { .. }
+        ));
     }
 
     #[test]
@@ -1882,8 +1870,8 @@ fn test_agent(ctx: String): String {
         let input = r#"
 fn test_agent(ctx: String): String {
     let result = select {
-        add(ctx, _, _) as sum => sum,
-        subtract(ctx, _, _) as diff => diff
+        add(ctx, _, _),
+        subtract(ctx, _, _)
         # This is a trailing comment
     }
     result
@@ -1915,10 +1903,16 @@ fn test_agent(ctx: String): String {
         assert_eq!(select_stmt.clauses.len(), 2);
 
         let first_clause = &select_stmt.clauses[0];
-        assert_eq!(first_clause.result_variable, "sum");
+        assert!(matches!(
+            first_clause.expression_to_run,
+            Expression::Call { .. }
+        ));
 
         let second_clause = &select_stmt.clauses[1];
-        assert_eq!(second_clause.result_variable, "diff");
+        assert!(matches!(
+            second_clause.expression_to_run,
+            Expression::Call { .. }
+        ));
     }
 
     #[test]

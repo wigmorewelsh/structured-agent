@@ -5,7 +5,7 @@ use super::db::{
     resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
-use structured_agent_ast::ast::{Expression, Function, SelectClause, Statement};
+use structured_agent_ast::ast::{Expression, Function, Statement};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
@@ -540,7 +540,7 @@ fn elaborate_list_literal(
 
 fn elaborate_select(
     db: &dyn TypeCheckDatabase,
-    clauses: &[SelectClause],
+    clauses: &[structured_agent_ast::ast::SelectClause],
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
@@ -550,35 +550,15 @@ fn elaborate_select(
     }
     let first = &clauses[0];
     let typed_first_run = elaborate_expression(db, &first.expression_to_run, env, ctx)?;
-    let mut first_env = env.create_child();
-    let first_result_bid = first_env.declare_variable(
-        first.result_variable.clone(),
-        typed_first_run.ty().clone(),
-        first.expression_to_run.span(),
-    );
-    let typed_first_next = elaborate_expression(db, &first.expression_next, &first_env, ctx)?;
-    let first_type = typed_first_next.ty().clone();
+    let first_type = typed_first_run.ty().clone();
     let mut typed_clauses = vec![typed_ast::SelectClause {
         expression_to_run: typed_first_run,
-        result_variable: first.result_variable.clone(),
-        result_variable_binding_id: first_result_bid,
-        expression_next: typed_first_next,
         span: first.span,
     }];
     for clause in clauses.iter().skip(1) {
         let typed_run = elaborate_expression(db, &clause.expression_to_run, env, ctx)?;
-        let mut clause_env = env.create_child();
-        let clause_result_bid = clause_env.declare_variable(
-            clause.result_variable.clone(),
-            typed_run.ty().clone(),
-            clause.expression_to_run.span(),
-        );
-        let typed_next = elaborate_expression(db, &clause.expression_next, &clause_env, ctx)?;
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
-            result_variable: clause.result_variable.clone(),
-            result_variable_binding_id: clause_result_bid,
-            expression_next: typed_next,
             span: clause.span,
         });
     }

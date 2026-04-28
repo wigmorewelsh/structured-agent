@@ -49,10 +49,10 @@ fn main(): () {
     "Based on the reasoning chose from the following standard processes to follow:"!
 
     let result = select {
-        brainstorm() as ideas => ideas,
-        analyze_codebase() as analysis => analysis,
-        fix_bug() as fix => fix,
-        implement_feature(_) as implementation => implementation
+        brainstorm(),
+        analyze_codebase(),
+        fix_bug(),
+        implement_feature(_)
     }
 
     print(result)

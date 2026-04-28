@@ -37,7 +37,6 @@ impl PlaceholderOveruseAnalyzer {
             Expression::Select(select_expr) => {
                 for clause in &select_expr.clauses {
                     self.analyze_expression(&clause.expression_to_run, file_id, warnings);
-                    self.analyze_expression(&clause.expression_next, file_id, warnings);
                 }
             }
             Expression::IfElse {

@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
+use std::collections::HashMap;
 use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
 use structured_agent_ast::types::{FileId, Spanned};
-use std::collections::HashMap;
 
 pub struct ConstantConditionAnalyzer;
 
@@ -67,12 +67,6 @@ impl ConstantConditionAnalyzer {
                 for clause in &select_expr.clauses {
                     self.analyze_expression(
                         &clause.expression_to_run,
-                        file_id,
-                        variable_values,
-                        warnings,
-                    );
-                    self.analyze_expression(
-                        &clause.expression_next,
                         file_id,
                         variable_values,
                         warnings,

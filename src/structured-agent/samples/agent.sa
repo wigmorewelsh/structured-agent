@@ -111,16 +111,16 @@ fn agent_loop(): String {
     "what is the next action to perform?"!
 
     let result = select {
-        plan() as r => r,
-        edit_file(_) as r => r,
-        safe_read_file(_) as r => r,
-        write_file_content(_, _) as r => r,
-        list_directory(_) as r => r,
-        grep(_, _, _, _, _) as r => r,
-        copy_path(_, _) as r => r,
-        execute_command(_) as r => r,
-        ask_for_more_info(_) as r => r
-        # sub_tasks() as r => r
+        plan(),
+        edit_file(_),
+        safe_read_file(_),
+        write_file_content(_, _),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        copy_path(_, _),
+        execute_command(_),
+        ask_for_more_info(_)
+        # sub_tasks()
     }
 
     result!

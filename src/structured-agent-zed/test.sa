@@ -24,8 +24,8 @@ fn calculator(ctx: Context, request: String): i32 {
     request!
 
     let result = select {
-        add(_, _) as sum => sum,
-        subtract(_, _) as diff => diff
+        add(_, _),
+        subtract(_, _)
     }
 
     return result

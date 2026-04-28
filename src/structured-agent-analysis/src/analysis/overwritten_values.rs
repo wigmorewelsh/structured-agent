@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
+use std::collections::{HashMap, HashSet};
 use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
 use structured_agent_ast::types::{FileId, Span};
-use std::collections::{HashMap, HashSet};
 
 pub struct OverwrittenValueAnalyzer;
 
@@ -23,7 +23,6 @@ impl OverwrittenValueAnalyzer {
             Expression::Select(select_expr) => {
                 for clause in &select_expr.clauses {
                     Self::collect_reads_in_expression(&clause.expression_to_run, reads);
-                    Self::collect_reads_in_expression(&clause.expression_next, reads);
                 }
             }
             Expression::IfElse {

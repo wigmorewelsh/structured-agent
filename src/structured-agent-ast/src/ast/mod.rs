@@ -327,8 +327,6 @@ pub struct SelectExpression {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
-    pub result_variable: String,
-    pub expression_next: Expression,
     pub span: Span,
 }
 
@@ -553,11 +551,7 @@ impl fmt::Display for SelectExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "select {{")?;
         for clause in &self.clauses {
-            writeln!(
-                f,
-                "    {} as {} => {},",
-                clause.expression_to_run, clause.result_variable, clause.expression_next
-            )?;
+            writeln!(f, "    {},", clause.expression_to_run)?;
         }
         write!(f, "}}")
     }
