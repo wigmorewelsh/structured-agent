@@ -78,6 +78,21 @@ pub struct RunArgs {
         help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
     )]
     pub gemini_model: Option<String>,
+
+    #[arg(long, value_name = "KEY", help = "OpenAI API key")]
+    pub openai_api_key: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "OpenAI model name")]
+    pub openai_model: Option<String>,
+
+    #[arg(long, value_name = "URL", help = "OpenAI-compatible base URL")]
+    pub openai_base_url: Option<String>,
+
+    #[arg(long, value_name = "TOKEN", help = "Hugging Face API token")]
+    pub hf_token: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "Hugging Face model name")]
+    pub hf_model: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -155,6 +170,21 @@ pub struct AcpArgs {
         help = "Gemini model to use: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-flash-preview, gemini-3-pro-preview, or custom model name"
     )]
     pub gemini_model: Option<String>,
+
+    #[arg(long, value_name = "KEY", help = "OpenAI API key")]
+    pub openai_api_key: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "OpenAI model name")]
+    pub openai_model: Option<String>,
+
+    #[arg(long, value_name = "URL", help = "OpenAI-compatible base URL")]
+    pub openai_base_url: Option<String>,
+
+    #[arg(long, value_name = "TOKEN", help = "Hugging Face API token")]
+    pub hf_token: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "Hugging Face model name")]
+    pub hf_model: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -168,6 +198,11 @@ pub struct FileConfig {
     pub with_acp_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
     pub gemini_model: Option<String>,
+    pub openai_api_key: Option<String>,
+    pub openai_model: Option<String>,
+    pub openai_base_url: Option<String>,
+    pub hf_token: Option<String>,
+    pub hf_model: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

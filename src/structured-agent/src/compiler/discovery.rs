@@ -64,7 +64,7 @@ impl DiscoveredModule {
 }
 
 #[salsa::input]
-struct ModuleSource {
+pub struct ModuleSource {
     logical: Vec<String>,
     contents: String,
     base: Vec<String>,

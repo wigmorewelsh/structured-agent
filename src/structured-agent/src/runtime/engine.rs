@@ -11,6 +11,7 @@ use crate::types::{
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_il::Module;
+use structured_agent_openai::{HF_BASE_URL, OpenAIEngine};
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{DefinitionPath, SymbolQuery};
 use structured_agent_stdlib::{
@@ -122,6 +123,14 @@ impl RuntimeBuilder {
 
         let engine: Arc<dyn LanguageEngine> = match &config.engine {
             EngineType::Print => Arc::new(crate::types::PrintEngine {}),
+            EngineType::OpenAI {
+                api_key,
+                model,
+                base_url,
+            } => Arc::new(OpenAIEngine::new(api_key, base_url, model)),
+            EngineType::HuggingFace { token, model } => {
+                Arc::new(OpenAIEngine::new(token, HF_BASE_URL, model))
+            }
             EngineType::Gemini { api_key, model } => {
                 let gemini_config = if let Some(key) = api_key {
                     GeminiConfig::default().with_api_key_auth(key.clone())

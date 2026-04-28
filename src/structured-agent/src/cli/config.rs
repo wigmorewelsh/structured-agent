@@ -1,4 +1,21 @@
 use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, FileConfig, RunArgs};
+
+struct EngineArgs {
+    file: Option<String>,
+    inline: Option<String>,
+    mcp_server: Vec<String>,
+    engine: String,
+    gemini_api_key: Option<String>,
+    gemini_model: Option<String>,
+    openai_api_key: Option<String>,
+    openai_model: Option<String>,
+    openai_base_url: Option<String>,
+    hf_token: Option<String>,
+    hf_model: Option<String>,
+    with_default_functions: bool,
+    with_unstable_functions: bool,
+    with_acp_functions: bool,
+}
 use std::env;
 use std::fs;
 use std::process;
@@ -34,6 +51,15 @@ pub enum EngineType {
         api_key: Option<String>,
         model: Option<String>,
     },
+    OpenAI {
+        api_key: String,
+        model: String,
+        base_url: String,
+    },
+    HuggingFace {
+        token: String,
+        model: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -60,15 +86,22 @@ impl Config {
 
     fn from_run_args(args: RunArgs, file_config: &FileConfig) -> Self {
         Self::from_engine_args(
-            args.file,
-            args.inline,
-            args.mcp_server,
-            &args.engine,
-            args.gemini_api_key,
-            args.gemini_model,
-            args.with_default_functions,
-            args.with_unstable_functions,
-            args.with_acp_functions,
+            EngineArgs {
+                file: args.file,
+                inline: args.inline,
+                mcp_server: args.mcp_server,
+                engine: args.engine,
+                gemini_api_key: args.gemini_api_key,
+                gemini_model: args.gemini_model,
+                openai_api_key: args.openai_api_key,
+                openai_model: args.openai_model,
+                openai_base_url: args.openai_base_url,
+                hf_token: args.hf_token,
+                hf_model: args.hf_model,
+                with_default_functions: args.with_default_functions,
+                with_unstable_functions: args.with_unstable_functions,
+                with_acp_functions: args.with_acp_functions,
+            },
             file_config,
             Mode::Run,
         )
@@ -97,45 +130,60 @@ impl Config {
 
     fn from_acp_args(args: AcpArgs, file_config: &FileConfig) -> Self {
         Self::from_engine_args(
-            args.file,
-            args.inline,
-            args.mcp_server,
-            &args.engine,
-            args.gemini_api_key,
-            args.gemini_model,
-            args.with_default_functions,
-            args.with_unstable_functions,
-            args.with_acp_functions,
+            EngineArgs {
+                file: args.file,
+                inline: args.inline,
+                mcp_server: args.mcp_server,
+                engine: args.engine,
+                gemini_api_key: args.gemini_api_key,
+                gemini_model: args.gemini_model,
+                openai_api_key: args.openai_api_key,
+                openai_model: args.openai_model,
+                openai_base_url: args.openai_base_url,
+                hf_token: args.hf_token,
+                hf_model: args.hf_model,
+                with_default_functions: args.with_default_functions,
+                with_unstable_functions: args.with_unstable_functions,
+                with_acp_functions: args.with_acp_functions,
+            },
             file_config,
             Mode::Acp,
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn from_engine_args(
-        file: Option<String>,
-        inline: Option<String>,
-        mcp_server: Vec<String>,
-        engine: &str,
-        gemini_api_key: Option<String>,
-        gemini_model: Option<String>,
-        with_default_functions: bool,
-        with_unstable_functions: bool,
-        with_acp_functions: bool,
-        file_config: &FileConfig,
-        mode: Mode,
-    ) -> Self {
-        let program_source = Self::merge_program_source(&file, &inline, file_config);
-        let mcp_servers = Self::merge_mcp_servers(&mcp_server, file_config);
-        let gemini_api_key = gemini_api_key.or_else(|| file_config.gemini_api_key.clone());
-        let gemini_model = gemini_model.or_else(|| file_config.gemini_model.clone());
-        let engine = Self::merge_engine(engine, file_config, gemini_api_key, gemini_model);
+    fn from_engine_args(ea: EngineArgs, file_config: &FileConfig, mode: Mode) -> Self {
+        let program_source = Self::merge_program_source(&ea.file, &ea.inline, file_config);
+        let mcp_servers = Self::merge_mcp_servers(&ea.mcp_server, file_config);
+        let gemini_api_key = ea
+            .gemini_api_key
+            .or_else(|| file_config.gemini_api_key.clone());
+        let gemini_model = ea.gemini_model.or_else(|| file_config.gemini_model.clone());
+        let openai_api_key = ea
+            .openai_api_key
+            .or_else(|| file_config.openai_api_key.clone());
+        let openai_model = ea.openai_model.or_else(|| file_config.openai_model.clone());
+        let openai_base_url = ea
+            .openai_base_url
+            .or_else(|| file_config.openai_base_url.clone());
+        let hf_token = ea.hf_token.or_else(|| file_config.hf_token.clone());
+        let hf_model = ea.hf_model.or_else(|| file_config.hf_model.clone());
+        let engine = Self::merge_engine(
+            &ea.engine,
+            file_config,
+            gemini_api_key,
+            gemini_model,
+            openai_api_key,
+            openai_model,
+            openai_base_url,
+            hf_token,
+            hf_model,
+        );
         let with_default_functions =
-            with_default_functions || file_config.with_default_functions.unwrap_or(false);
+            ea.with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
-            with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
+            ea.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
         let with_acp_functions =
-            with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
+            ea.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
 
         Config {
             program_source,
@@ -244,8 +292,13 @@ impl Config {
     fn merge_engine(
         engine: &str,
         file_config: &FileConfig,
-        api_key: Option<String>,
-        model: Option<String>,
+        gemini_api_key: Option<String>,
+        gemini_model: Option<String>,
+        openai_api_key: Option<String>,
+        openai_model: Option<String>,
+        openai_base_url: Option<String>,
+        hf_token: Option<String>,
+        hf_model: Option<String>,
     ) -> EngineType {
         let engine_str = if engine != "print" {
             engine
@@ -256,7 +309,26 @@ impl Config {
         };
 
         match engine_str {
-            "gemini" => EngineType::Gemini { api_key, model },
+            "gemini" => EngineType::Gemini {
+                api_key: gemini_api_key,
+                model: gemini_model,
+            },
+            "openai" => {
+                let api_key = openai_api_key.unwrap_or_default();
+                let model = openai_model.unwrap_or_else(|| "gpt-4o-mini".to_string());
+                let base_url = openai_base_url
+                    .unwrap_or_else(|| structured_agent_openai::OPENAI_BASE_URL.to_string());
+                EngineType::OpenAI {
+                    api_key,
+                    model,
+                    base_url,
+                }
+            }
+            "huggingface" => {
+                let token = hf_token.unwrap_or_default();
+                let model = hf_model.unwrap_or_default();
+                EngineType::HuggingFace { token, model }
+            }
             _ => EngineType::Print,
         }
     }
