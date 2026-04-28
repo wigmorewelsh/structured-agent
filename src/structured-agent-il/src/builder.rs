@@ -2,6 +2,8 @@ use crate::Instruction;
 use crate::slot::{Slot, SlotKind, SlotTable};
 use std::collections::HashMap;
 
+pub type BuildOutput = (Vec<Instruction>, HashMap<String, usize>, SlotTable);
+
 pub struct InstructionBuilder {
     instructions: Vec<Instruction>,
     labels: HashMap<String, usize>,
@@ -82,9 +84,7 @@ impl InstructionBuilder {
         self.slot_table.push(kind, name)
     }
 
-    pub fn build(
-        mut self,
-    ) -> Result<(Vec<Instruction>, HashMap<String, usize>, SlotTable), String> {
+    pub fn build(mut self) -> Result<BuildOutput, String> {
         for (position, label, kind) in self.pending_labels {
             let target = self
                 .labels

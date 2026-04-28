@@ -4,6 +4,13 @@ use std::sync::Arc;
 
 pub type FileId = usize;
 
+pub type NativeFn = dyn Fn(
+        Vec<ExpressionValue>,
+        AgentHandle,
+    ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>>
+    + Send
+    + Sync;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
@@ -28,16 +35,7 @@ pub trait Spanned {
     fn span(&self) -> Span;
 }
 
-pub struct NativeFnPtr(
-    pub  Arc<
-        dyn Fn(
-                Vec<ExpressionValue>,
-                AgentHandle,
-            ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>>
-            + Send
-            + Sync,
-    >,
-);
+pub struct NativeFnPtr(pub Arc<NativeFn>);
 
 impl NativeFnPtr {
     pub fn new<F>(f: F) -> Self

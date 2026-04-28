@@ -27,19 +27,11 @@ pub trait TypeCheckDatabase: salsa::Database {
     fn symbol_tables(&self) -> SymbolTablesInput;
 }
 
+#[derive(Default)]
 #[salsa::db]
 pub struct TypeCheckDb {
     storage: salsa::Storage<Self>,
     symbol_tables: Option<SymbolTablesInput>,
-}
-
-impl Default for TypeCheckDb {
-    fn default() -> Self {
-        Self {
-            storage: Default::default(),
-            symbol_tables: None,
-        }
-    }
 }
 
 #[salsa::db]
@@ -308,11 +300,13 @@ pub fn get_function_sig<'db>(
     }))
 }
 
+pub type StructFields = (Vec<(String, AstType)>, Vec<TypeParam>);
+
 pub fn get_struct_fields(
     db: &dyn TypeCheckDatabase,
     name: &str,
     current_module: &DefinitionPath,
-) -> Option<(Vec<(String, AstType)>, Vec<TypeParam>)> {
+) -> Option<StructFields> {
     let interned_mod = InternedModuleName::new(db, current_module.clone());
     let interned_name = name.intern(db);
     let resolved = resolve_type_in_module(db, interned_mod, interned_name)

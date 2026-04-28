@@ -14,6 +14,12 @@ use structured_agent_runtime::symbols::{
     TypeDefinition, TypeDefinitionKind, Visibility,
 };
 
+struct FnMeta {
+    kind: FunctionKind,
+    visibility: Visibility,
+    source_ref: SourceLocation,
+}
+
 pub struct SymbolTableBuilder {
     metadata: MetaData<CheckerRefs>,
 }
@@ -116,9 +122,11 @@ impl SymbolTableBuilder {
                     parameters,
                     return_type,
                     type_params,
-                    FunctionKind::Bytecode,
-                    Visibility::Public,
-                    SourceLocation(0, Span::dummy()),
+                    FnMeta {
+                        kind: FunctionKind::Bytecode,
+                        visibility: Visibility::Public,
+                        source_ref: SourceLocation(0, Span::dummy()),
+                    },
                 );
             }
             for trait_decl in native_mod.native_traits() {
@@ -286,10 +294,11 @@ impl SymbolTableBuilder {
         params: Vec<crate::ast::Parameter>,
         return_type: AstType,
         type_params: Vec<TypeParam>,
-        kind: FunctionKind,
-        visibility: Visibility,
-        source_ref: SourceLocation,
+        meta: FnMeta,
     ) {
+        let kind = meta.kind;
+        let visibility = meta.visibility;
+        let source_ref = meta.source_ref;
         let fn_type_name = DefinitionPath::for_type(name.module_prefix(), name.last_name());
         let parameters: Vec<ParameterDefinition<CheckerRefs>> = params
             .iter()
@@ -555,13 +564,15 @@ impl SymbolTableBuilder {
             ext_func.parameters.to_vec(),
             ext_func.return_type.clone(),
             ext_func.type_params.clone(),
-            FunctionKind::External,
-            if ext_func.is_pub {
-                Visibility::Public
-            } else {
-                Visibility::Private
+            FnMeta {
+                kind: FunctionKind::External,
+                visibility: if ext_func.is_pub {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                },
+                source_ref: SourceLocation(file_id, ext_func.span),
             },
-            SourceLocation(file_id, ext_func.span),
         );
     }
 
