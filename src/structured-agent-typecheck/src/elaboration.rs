@@ -296,20 +296,17 @@ fn trait_method_return_type(
 ) -> RT {
     let types_arcptr = db.symbol_tables().types(db);
     let types_map = types_arcptr.get();
-    if let Some(trait_def) = types_map.get(trait_path) {
-        if let TypeDefinitionKind::Trait { functions, .. } = &trait_def.kind {
-            if let Some(entry) = functions.iter().find(|e| e.name == method) {
-                if let Some(fn_type_def) = types_map.get(&entry.type_name) {
-                    if let TypeDefinitionKind::Function { return_type, .. } = &fn_type_def.kind {
-                        if return_type.name() == "Self" {
-                            return RT::Generic(param_name.to_string());
-                        }
-                        if let Some(rt) = synthesize::resolve(db, return_type, env, span, ctx) {
-                            return rt;
-                        }
-                    }
-                }
-            }
+    if let Some(trait_def) = types_map.get(trait_path)
+        && let TypeDefinitionKind::Trait { functions, .. } = &trait_def.kind
+        && let Some(entry) = functions.iter().find(|e| e.name == method)
+        && let Some(fn_type_def) = types_map.get(&entry.type_name)
+        && let TypeDefinitionKind::Function { return_type, .. } = &fn_type_def.kind
+    {
+        if return_type.name() == "Self" {
+            return RT::Generic(param_name.to_string());
+        }
+        if let Some(rt) = synthesize::resolve(db, return_type, env, span, ctx) {
+            return rt;
         }
     }
     RT::Generic(param_name.to_string())
@@ -329,24 +326,24 @@ fn elaborate_method_call(
 
     if let RT::Generic(param_name) = &receiver_type {
         let prefix = format!("__{}__", param_name);
-        if let Some((trait_type, binding_id)) = find_implicit_param(env, &prefix) {
-            if let RT::Named(trait_path) = trait_type {
-                let impl_fn_path = DefinitionPath::for_impl_fn(&trait_path, method);
-                let mut typed_args = vec![typed_receiver];
-                for arg in args {
-                    typed_args.push(elaborate_expression(db, arg, env, ctx)?);
-                }
-                let return_ty =
-                    trait_method_return_type(db, &trait_path, method, param_name, env, span, ctx);
-                return Some(typed_ast::Expression::Call {
-                    function: method.to_string(),
-                    binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
-                    kind: FunctionKind::Bytecode,
-                    arguments: typed_args,
-                    ty: return_ty,
-                    span,
-                });
+        if let Some((trait_type, binding_id)) = find_implicit_param(env, &prefix)
+            && let RT::Named(trait_path) = trait_type
+        {
+            let impl_fn_path = DefinitionPath::for_impl_fn(&trait_path, method);
+            let mut typed_args = vec![typed_receiver];
+            for arg in args {
+                typed_args.push(elaborate_expression(db, arg, env, ctx)?);
             }
+            let return_ty =
+                trait_method_return_type(db, &trait_path, method, param_name, env, span, ctx);
+            return Some(typed_ast::Expression::Call {
+                function: method.to_string(),
+                binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
+                kind: FunctionKind::Bytecode,
+                arguments: typed_args,
+                ty: return_ty,
+                span,
+            });
         }
         return None;
     }

@@ -120,10 +120,10 @@ fn return_type(output: &ReturnType) -> Option<&SynType> {
 
 fn type_contains_param(ty: &SynType, type_params: &[String]) -> bool {
     use crate::types::{generic_arg, path_ident};
-    if let Ok(ident) = path_ident(ty) {
-        if type_params.contains(&ident.to_string()) {
-            return true;
-        }
+    if let Ok(ident) = path_ident(ty)
+        && type_params.contains(&ident.to_string())
+    {
+        return true;
     }
     if let Ok(inner) = generic_arg(ty) {
         return type_contains_param(inner, type_params);

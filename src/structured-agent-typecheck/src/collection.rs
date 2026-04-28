@@ -273,7 +273,7 @@ impl SymbolTableBuilder {
         match ty {
             RT::Parameterized(type_name, args) => AstType {
                 path: NonEmpty::new(PathSegment::simple(type_name.last_name())),
-                args: args.iter().map(|a| Self::runtime_type_to_ast(a)).collect(),
+                args: args.iter().map(Self::runtime_type_to_ast).collect(),
             },
             RT::Named(tn) => AstType::simple(tn.last_name().to_string()),
             RT::Generic(name) => AstType::simple(name.clone()),
@@ -552,7 +552,7 @@ impl SymbolTableBuilder {
         let fn_key = DefinitionPath::for_function(module_name.clone(), ext_func.name.to_string());
         self.insert_fn(
             fn_key,
-            ext_func.parameters.iter().cloned().collect(),
+            ext_func.parameters.to_vec(),
             ext_func.return_type.clone(),
             ext_func.type_params.clone(),
             FunctionKind::External,
@@ -696,14 +696,13 @@ impl SymbolTableBuilder {
             self.register_function_signatures(&parsed.module, parsed.file_id, &module_name);
             self.register_module_definition(parsed, module_name);
         }
-        let tables = SymbolTablesInput::new(
+        SymbolTablesInput::new(
             db,
             ArcPtr::new(self.metadata.functions.clone()),
             ArcPtr::new(self.metadata.types.clone()),
             ArcPtr::new(self.metadata.impls.clone()),
             ArcPtr::new(self.metadata.modules.clone()),
-        );
-        tables
+        )
     }
 
     fn register_module_definition(&mut self, parsed: &ParsedModule, module_name: DefinitionPath) {

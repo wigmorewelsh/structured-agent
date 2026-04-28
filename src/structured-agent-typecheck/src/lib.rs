@@ -104,13 +104,10 @@ impl TypeChecker {
     fn run_solve_pass(&mut self, program_input: ProgramInput) -> Vec<TypeError> {
         let _ = solver::solve_constraints(&self.db, program_input);
 
-        let solver_errors =
-            solver::solve_constraints::accumulated::<TypeErrorAccumulator>(&self.db, program_input)
-                .into_iter()
-                .map(|e| e.0.clone())
-                .collect();
-
-        solver_errors
+        solver::solve_constraints::accumulated::<TypeErrorAccumulator>(&self.db, program_input)
+            .into_iter()
+            .map(|e| e.0.clone())
+            .collect()
     }
 
     fn populate_symbol_tables(
@@ -141,12 +138,10 @@ impl TypeChecker {
     fn run_check_pass(&self, program: ProgramInput) -> Vec<TypeError> {
         db::check_program(&self.db, program);
 
-        let all_errors = db::check_program::accumulated::<TypeErrorAccumulator>(&self.db, program)
+        db::check_program::accumulated::<TypeErrorAccumulator>(&self.db, program)
             .into_iter()
             .map(|e| e.0.clone())
-            .collect();
-
-        all_errors
+            .collect()
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {

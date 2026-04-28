@@ -101,17 +101,16 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
             trait_name,
             param_name,
         } = &constraint.kind
+            && !impls.contains_key(&(type_path.clone(), trait_path.clone()))
         {
-            if !impls.contains_key(&(type_path.clone(), trait_path.clone())) {
-                TypeErrorAccumulator(TypeError::TraitBoundNotSatisfied {
-                    type_name: type_name.clone(),
-                    trait_name: trait_name.clone(),
-                    param_name: param_name.clone(),
-                    span: constraint.span,
-                    file_id: constraint.file_id,
-                })
-                .accumulate(db);
-            }
+            TypeErrorAccumulator(TypeError::TraitBoundNotSatisfied {
+                type_name: type_name.clone(),
+                trait_name: trait_name.clone(),
+                param_name: param_name.clone(),
+                span: constraint.span,
+                file_id: constraint.file_id,
+            })
+            .accumulate(db);
         }
     }
 

@@ -2,6 +2,7 @@ use structured_agent_macros::sa_module;
 
 #[sa_module]
 pub mod equality {
+    #[allow(unused_imports)]
     use structured_agent_runtime::{BooleanValue, IntValue, StringValue};
 
     #[sa_trait]

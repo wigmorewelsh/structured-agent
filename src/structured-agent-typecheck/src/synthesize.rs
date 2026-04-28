@@ -138,6 +138,12 @@ impl TypeEnvironment {
     }
 }
 
+impl Default for TypeEnvironment {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn resolve_type_name(
     db: &dyn TypeCheckDatabase,
     name: &str,
@@ -169,10 +175,10 @@ pub fn resolve(
     let name = t.name().to_string();
     let args = &t.args;
 
-    if name == "Self" {
-        if let Some(ref self_type) = env.self_type {
-            return Some(RT::Named(self_type.clone()));
-        }
+    if name == "Self"
+        && let Some(ref self_type) = env.self_type
+    {
+        return Some(RT::Named(self_type.clone()));
     }
 
     if env.lookup_type_param(&name) {

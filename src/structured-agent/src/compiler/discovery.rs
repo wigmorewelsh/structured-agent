@@ -175,10 +175,7 @@ struct ParsedModuleAst(Result<Module, String>);
 
 impl PartialEq for ParsedModuleAst {
     fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (Ok(_), Ok(_)) | (Err(_), Err(_)) => true,
-            _ => false,
-        }
+        matches!((&self.0, &other.0), (Ok(_), Ok(_)) | (Err(_), Err(_)))
     }
 }
 
@@ -382,10 +379,7 @@ pub fn discover_all(
             continue;
         };
         let ParsedModuleAst(parse_result) = parse_module_source(&db, ms);
-        let mut module = match parse_result {
-            Ok(m) => m,
-            Err(e) => return Err(e),
-        };
+        let mut module = parse_result?;
         let Some(ne_logical) = NonEmpty::from_vec(logical.clone()) else {
             continue;
         };

@@ -2,6 +2,7 @@ use structured_agent_macros::sa_module;
 
 #[sa_module]
 pub mod logic {
+    #[allow(unused_imports)]
     use structured_agent_runtime::BooleanValue;
 
     #[sa_trait]

@@ -466,8 +466,8 @@ mod type_resolver {
         pub module_args: Vec<CallModuleArg>,
     }
 
-    pub fn resolve_absolute_path<'db>(
-        db: &'db dyn TypeCheckDatabase,
+    pub fn resolve_absolute_path(
+        db: &dyn TypeCheckDatabase,
         use_path: NonEmpty<PathSegment>,
     ) -> Option<DefinitionPath> {
         let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
@@ -498,18 +498,17 @@ mod type_resolver {
         for seg in use_path.path.iter() {
             let symbol = seg.name.clone().intern(db);
             let mut resolved = resolve_type_in_module(db, search_module, symbol)?;
-            if !seg.params.is_empty() {
-                if let Some(last_seg) = resolved.path.last_mut() {
-                    last_seg.inject_params(seg.params.clone());
-                }
+            if !seg.params.is_empty()
+                && let Some(last_seg) = resolved.path.last_mut()
+            {
+                last_seg.inject_params(seg.params.clone());
             }
             accumulated.extend(resolved.path);
             if let Some(type_def) =
                 lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, resolved.ty.clone()))
+                && let DefKind::Signature { .. } = type_def.get().kind
             {
-                if let DefKind::Signature { .. } = type_def.get().kind {
-                    search_module = InternedModuleName::new(db, resolved.ty.clone());
-                }
+                search_module = InternedModuleName::new(db, resolved.ty.clone());
             }
             last_ty = Some(resolved.ty);
         }
@@ -637,10 +636,9 @@ mod type_resolver {
         for def in &ast_module.definitions {
             if let Definition::Use(u) = def
                 && let Some(use_alias) = &u.alias
+                && use_alias == alias_str.as_str()
             {
-                if use_alias == alias_str.as_str() {
-                    return resolve_local_use_path(db, current_module, u.clone());
-                }
+                return resolve_local_use_path(db, current_module, u.clone());
             }
         }
         None
@@ -792,10 +790,9 @@ fn resolve_path_full<'db>(
         accumulated.extend(resolved.path);
         if let Some(type_def) =
             lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, resolved.ty.clone()))
+            && let DefKind::Signature { .. } = type_def.get().kind
         {
-            if let DefKind::Signature { .. } = type_def.get().kind {
-                search = InternedModuleName::new(db, resolved.ty.clone());
-            }
+            search = InternedModuleName::new(db, resolved.ty.clone());
         }
         last_ty = Some(resolved.ty);
     }
@@ -803,14 +800,6 @@ fn resolve_path_full<'db>(
         ty: last_ty?,
         path: accumulated,
     })
-}
-
-fn resolve_path_to_module<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    current_module: InternedModuleName<'db>,
-    path: &NonEmpty<PathSegment>,
-) -> Option<DefinitionPath> {
-    resolve_path_full(db, current_module, path).map(|r| r.ty)
 }
 
 pub fn ast_type_to_type_name(

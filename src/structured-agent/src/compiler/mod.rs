@@ -116,7 +116,6 @@ impl CompiledProgram {
 }
 
 pub struct Compiler {
-    parser: CodespanParser,
     modules: HashMap<String, Arc<dyn RuntimeModule>>,
 }
 
@@ -129,7 +128,6 @@ impl Default for Compiler {
 impl Compiler {
     pub fn new() -> Self {
         Self {
-            parser: CodespanParser::new(),
             modules: HashMap::new(),
         }
     }
@@ -172,7 +170,7 @@ impl Compiler {
     ) -> Result<CompiledProgram, String> {
         debug!("Compiling: {}", entry_path);
 
-        let mut diagnostics = DiagnosticManager::new();
+        let diagnostics = DiagnosticManager::new();
 
         let native_names: std::collections::HashSet<String> =
             self.modules.keys().cloned().collect();
@@ -385,6 +383,12 @@ fn build_analysis_runner() -> AnalysisRunner {
 }
 
 pub struct CodespanParser {}
+
+impl Default for CodespanParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CodespanParser {
     pub fn new() -> Self {

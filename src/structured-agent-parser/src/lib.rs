@@ -780,6 +780,8 @@ where
     parse_expression().map(Statement::ExpressionStatement)
 }
 
+type SuffixList = Vec<(char, String, Option<Vec<Expression>>, usize)>;
+
 combine::parser! {
     fn parse_simple_expression[Input]()(Input) -> Expression
     where [Input: Stream<Token = char, Position = usize>]
@@ -809,11 +811,7 @@ combine::parser! {
             ))),
         )
             .skip(skip_spaces())
-            .map(
-                |(base, suffixes): (
-                    Expression,
-                    Vec<(char, String, Option<Vec<Expression>>, usize)>,
-                )| {
+            .map(|(base, suffixes): (Expression, SuffixList)| {
                     suffixes
                         .into_iter()
                         .fold(base, |acc, (_, name, maybe_args, end)| {

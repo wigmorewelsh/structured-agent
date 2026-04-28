@@ -566,7 +566,7 @@ impl VM {
         let module_val = Self::read_slot(&state, module_param)?;
         let (module_path, module_params) = match &module_val.value {
             ExpressionValue::Module { path, params } => (path.clone(), params.clone()),
-            _ => return Err(format!("CallIndirect: expected Module")),
+            _ => return Err("CallIndirect: expected Module".to_string()),
         };
         let function_name = DefinitionPath::for_function(module_path, fn_name.last_name());
         let func = self

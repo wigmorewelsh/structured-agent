@@ -634,28 +634,28 @@ impl Default for BytecodeCompiler {
 
 fn collect_from_expr(
     expr: &typed_ast::Expression,
-    result: &mut Vec<(BindingId, String)>,
-    seen: &mut HashSet<BindingId>,
+    _result: &mut Vec<(BindingId, String)>,
+    _seen: &mut HashSet<BindingId>,
 ) {
     match expr {
         typed_ast::Expression::ModuleInstance { params, .. } => {
             for p in params {
-                collect_from_expr(p, result, seen);
+                collect_from_expr(p, _result, _seen);
             }
         }
         typed_ast::Expression::Select(select, _) => {
             for clause in &select.clauses {
-                collect_from_expr(&clause.expression_to_run, result, seen);
+                collect_from_expr(&clause.expression_to_run, _result, _seen);
             }
         }
         typed_ast::Expression::Call { arguments, .. } => {
             for arg in arguments {
-                collect_from_expr(arg, result, seen);
+                collect_from_expr(arg, _result, _seen);
             }
         }
         typed_ast::Expression::ListLiteral { elements, .. } => {
             for e in elements {
-                collect_from_expr(e, result, seen);
+                collect_from_expr(e, _result, _seen);
             }
         }
         typed_ast::Expression::IfElse {
@@ -664,17 +664,17 @@ fn collect_from_expr(
             else_expr,
             ..
         } => {
-            collect_from_expr(condition, result, seen);
-            collect_from_expr(then_expr, result, seen);
-            collect_from_expr(else_expr, result, seen);
+            collect_from_expr(condition, _result, _seen);
+            collect_from_expr(then_expr, _result, _seen);
+            collect_from_expr(else_expr, _result, _seen);
         }
         typed_ast::Expression::StructLiteral { fields, .. } => {
             for (_, e) in fields {
-                collect_from_expr(e, result, seen);
+                collect_from_expr(e, _result, _seen);
             }
         }
         typed_ast::Expression::FieldAccess { base, .. } => {
-            collect_from_expr(base, result, seen);
+            collect_from_expr(base, _result, _seen);
         }
         _ => {}
     }

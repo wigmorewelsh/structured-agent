@@ -361,7 +361,7 @@ fn type_name_to_arrow_datatype<R>(
 where
     R: References<TypeAnnotation = DefinitionPath>,
 {
-    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == &type_name.last_name()) {
+    if let Some((_, ty)) = subst.iter().find(|(k, _)| k == type_name.last_name()) {
         return type_to_arrow_datatype(ty, metadata);
     }
     match type_name.last_name() {
