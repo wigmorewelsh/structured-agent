@@ -4,16 +4,18 @@ use structured_agent_runtime::{AgentHandle, ExpressionValue};
 
 #[sa_module]
 mod math {
+    use structured_agent_runtime::{BooleanValue, IntValue};
+
     /// Add two integers
     #[sa_fn]
-    async fn add(a: i64, b: i64) -> i64 {
-        a + b
+    async fn add(a: IntValue, b: IntValue) -> IntValue {
+        IntValue(a.0 + b.0)
     }
 
     /// Negate a boolean
     #[sa_fn]
-    async fn negate(value: bool) -> bool {
-        !value
+    async fn negate(value: BooleanValue) -> BooleanValue {
+        BooleanValue(!value.0)
     }
 }
 

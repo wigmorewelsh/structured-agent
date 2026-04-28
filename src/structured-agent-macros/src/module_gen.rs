@@ -252,23 +252,30 @@ fn impl_mod_to_decl(
 
     let mut generated_fns = Vec::new();
     let mut fn_def_names = Vec::new();
+    let mut use_items = Vec::new();
 
     for item in items {
-        if let Item::Fn(mut item_fn) = item {
-            let sa_fn_pos = item_fn
-                .attrs
-                .iter()
-                .position(|a| a.path().is_ident("sa_fn"));
-            if let Some(pos) = sa_fn_pos {
-                let attr_tokens = match &item_fn.attrs[pos].meta {
-                    syn::Meta::List(ml) => ml.tokens.clone(),
-                    _ => proc_macro2::TokenStream::new(),
-                };
-                item_fn.attrs.remove(pos);
-                let fn_name = item_fn.sig.ident.to_string();
-                fn_def_names.push(format_ident!("{}_native_def", fn_name));
-                generated_fns.push(generate_native_function(attr_tokens, item_fn)?);
+        match item {
+            Item::Fn(mut item_fn) => {
+                let sa_fn_pos = item_fn
+                    .attrs
+                    .iter()
+                    .position(|a| a.path().is_ident("sa_fn"));
+                if let Some(pos) = sa_fn_pos {
+                    let attr_tokens = match &item_fn.attrs[pos].meta {
+                        syn::Meta::List(ml) => ml.tokens.clone(),
+                        _ => proc_macro2::TokenStream::new(),
+                    };
+                    item_fn.attrs.remove(pos);
+                    let fn_name = item_fn.sig.ident.to_string();
+                    fn_def_names.push(format_ident!("{}_native_def", fn_name));
+                    generated_fns.push(generate_native_function(attr_tokens, item_fn)?);
+                }
             }
+            Item::Use(use_item) => {
+                use_items.push(quote! { #use_item });
+            }
+            _ => {}
         }
     }
 
@@ -285,6 +292,7 @@ fn impl_mod_to_decl(
 
     let submod_code = quote! {
         mod #mod_ident {
+            #(#use_items)*
             #(#generated_fns)*
         }
     };

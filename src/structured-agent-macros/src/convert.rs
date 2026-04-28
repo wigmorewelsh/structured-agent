@@ -21,9 +21,7 @@ pub fn to_expr_value(
     }
 
     match ident_str.as_str() {
-        "String" => Ok(quote! { ::structured_agent_runtime::ExpressionValue::string(#val) }),
-        "bool" => Ok(quote! { ::structured_agent_runtime::ExpressionValue::boolean(#val) }),
-        "i64" => Ok(quote! { ::structured_agent_runtime::ExpressionValue::integer(#val) }),
+        "UnitValue" => Ok(quote! { ::structured_agent_runtime::ExpressionValue::unit() }),
         "Option" => option_to_expr_value(val, ty, type_params),
         "Vec" => {
             let inner = generic_arg(ty)?;
@@ -39,10 +37,9 @@ pub fn to_expr_value(
                 "Vec<T> where T is not a type param is not supported as a return type",
             ))
         }
-        other => Err(syn::Error::new_spanned(
-            ident,
-            format!("unsupported return type: {other}"),
-        )),
+        _ => Ok(
+            quote! { ::structured_agent_runtime::ExpressionValue::Dynamic(::std::sync::Arc::new(#val)) },
+        ),
     }
 }
 
@@ -56,9 +53,15 @@ fn option_to_expr_value(
 
     let none_expr = if let Ok(inner_ident) = path_ident(inner) {
         match inner_ident.to_string().as_str() {
-            "String" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_utf8() },
-            "bool" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_boolean() },
-            "i64" => quote! { ::structured_agent_runtime::ExpressionValue::option_none_int64() },
+            "StringValue" => {
+                quote! { ::structured_agent_runtime::ExpressionValue::option_none_utf8() }
+            }
+            "BooleanValue" => {
+                quote! { ::structured_agent_runtime::ExpressionValue::option_none_boolean() }
+            }
+            "IntValue" => {
+                quote! { ::structured_agent_runtime::ExpressionValue::option_none_int64() }
+            }
             _ => quote! { ::structured_agent_runtime::ExpressionValue::option_none() },
         }
     } else {

@@ -3,20 +3,21 @@ use structured_agent_macros::sa_module;
 #[sa_module]
 pub mod messaging {
     use structured_agent_runtime::AgentMessageContent;
+    use structured_agent_runtime::StringValue;
 
     #[sa_fn]
-    async fn receive() -> String {
+    async fn receive() -> StringValue {
         let (msg, ack) = agent.recv_message().await?;
         let content = match &msg.content {
             AgentMessageContent::String(s) => s.clone(),
             _ => return Err("Unexpected message type in receive".to_string()),
         };
         ack.send(()).ok();
-        content
+        content.into()
     }
 
     #[sa_fn]
-    async fn try_receive() -> String {
+    async fn try_receive() -> StringValue {
         match agent.try_recv_message().await {
             Some((msg, ack)) => {
                 let content = match &msg.content {
@@ -24,9 +25,9 @@ pub mod messaging {
                     _ => return Err("Unexpected message type in try_receive".to_string()),
                 };
                 ack.send(()).ok();
-                content
+                content.into()
             }
-            None => "No prompt received".to_string(),
+            None => "No prompt received".into(),
         }
     }
 

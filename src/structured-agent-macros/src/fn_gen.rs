@@ -118,6 +118,19 @@ fn return_type(output: &ReturnType) -> Option<&SynType> {
     }
 }
 
+fn type_contains_param(ty: &SynType, type_params: &[String]) -> bool {
+    use crate::types::{generic_arg, path_ident};
+    if let Ok(ident) = path_ident(ty) {
+        if type_params.contains(&ident.to_string()) {
+            return true;
+        }
+    }
+    if let Ok(inner) = generic_arg(ty) {
+        return type_contains_param(inner, type_params);
+    }
+    false
+}
+
 fn build_return_conversion(
     ret_ty: Option<&SynType>,
     body: &Block,
@@ -129,11 +142,19 @@ fn build_return_conversion(
             Ok(::structured_agent_runtime::ExpressionValue::unit())
         });
     }
-    let conv = convert_result(ret_ty.unwrap(), type_params)?;
-    Ok(quote! {
-        let __sa_result = { #body };
-        Ok(#conv)
-    })
+    let ty = ret_ty.unwrap();
+    let conv = convert_result(ty, type_params)?;
+    if type_contains_param(ty, type_params) {
+        Ok(quote! {
+            let __sa_result = { #body };
+            Ok(#conv)
+        })
+    } else {
+        Ok(quote! {
+            let __sa_result: #ty = { #body };
+            Ok(#conv)
+        })
+    }
 }
 
 pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Result<TokenStream2> {

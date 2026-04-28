@@ -1,8 +1,9 @@
 use structured_agent_macros::sa_fn;
+use structured_agent_runtime::BooleanValue;
 
 #[sa_fn(type_params = "T")]
-fn is_some<T>(value: Option<T>) -> bool {
-    value.is_some()
+fn is_some<T>(value: Option<T>) -> BooleanValue {
+    value.is_some().into()
 }
 
 #[cfg(test)]

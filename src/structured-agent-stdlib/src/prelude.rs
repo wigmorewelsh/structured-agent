@@ -4,21 +4,25 @@ use structured_agent_macros::sa_module;
 pub mod prelude {
     #[sa_trait]
     trait ToString {
-        fn to_string(self: Self) -> String;
+        fn to_string(self: Self) -> StringValue;
     }
 
     #[sa_impl(Int for ToString)]
     mod int_impl {
+        use structured_agent_runtime::{IntValue, StringValue};
+
         #[sa_fn]
-        fn to_string(value: i64) -> String {
-            value.to_string()
+        fn to_string(value: IntValue) -> StringValue {
+            value.to_string().into()
         }
     }
 
     #[sa_impl(String for ToString)]
     mod string_impl {
+        use structured_agent_runtime::StringValue;
+
         #[sa_fn]
-        fn to_string(value: String) -> String {
+        fn to_string(value: StringValue) -> StringValue {
             value
         }
     }

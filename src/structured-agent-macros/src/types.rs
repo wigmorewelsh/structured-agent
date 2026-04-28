@@ -37,9 +37,10 @@ pub fn map_type_to_runtime(ty: &SynType, type_params: &[String]) -> syn::Result<
         return Ok(quote! { ::structured_agent_runtime::Type::generic(#ident_str) });
     }
     Ok(match ident_str.as_str() {
-        "String" => quote! { ::structured_agent_runtime::Type::string() },
-        "bool" => quote! { ::structured_agent_runtime::Type::boolean() },
-        "i64" => quote! { ::structured_agent_runtime::Type::int() },
+        "StringValue" => quote! { ::structured_agent_runtime::Type::string() },
+        "BooleanValue" => quote! { ::structured_agent_runtime::Type::boolean() },
+        "IntValue" => quote! { ::structured_agent_runtime::Type::int() },
+        "UnitValue" => quote! { ::structured_agent_runtime::Type::unit() },
         "Option" => {
             let inner = map_type_to_runtime(generic_arg(ty)?, type_params)?;
             quote! { ::structured_agent_runtime::Type::option(#inner) }

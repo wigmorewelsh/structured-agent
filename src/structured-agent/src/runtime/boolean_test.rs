@@ -8,17 +8,18 @@ use tokio;
 #[sa_module]
 mod bool_fns {
     use std::sync::Mutex;
+    use structured_agent_runtime::BooleanValue;
 
     pub static LOG_BOOL_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     #[sa_fn]
-    async fn log_bool(value: bool) {
-        LOG_BOOL_MESSAGES.lock().unwrap().push(value.to_string());
+    async fn log_bool(value: BooleanValue) {
+        LOG_BOOL_MESSAGES.lock().unwrap().push(value.0.to_string());
     }
 
     #[sa_fn]
-    async fn get_bool() -> bool {
-        true
+    async fn get_bool() -> BooleanValue {
+        BooleanValue(true)
     }
 }
 

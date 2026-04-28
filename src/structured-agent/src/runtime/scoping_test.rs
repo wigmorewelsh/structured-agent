@@ -7,12 +7,13 @@ use tokio;
 #[sa_module]
 mod log_fns {
     use std::sync::Mutex;
+    use structured_agent_runtime::StringValue;
 
     pub static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     #[sa_fn]
-    async fn log(message: String) {
-        MESSAGES.lock().unwrap().push(message);
+    async fn log(message: StringValue) {
+        MESSAGES.lock().unwrap().push(message.0);
     }
 }
 

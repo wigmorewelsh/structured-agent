@@ -3,15 +3,16 @@ use structured_agent_macros::sa_module;
 #[sa_module]
 pub mod io {
     use structured_agent_runtime::AgentMessageContent;
+    use structured_agent_runtime::StringValue;
 
     #[sa_fn]
-    async fn print(value: String) {
-        agent.publish(AgentMessageContent::String(value));
+    async fn print(value: StringValue) {
+        agent.publish(AgentMessageContent::String(value.into()));
     }
 
     #[sa_fn]
-    async fn input() -> String {
-        agent.publish_input_request(String::new()).await?
+    async fn input() -> StringValue {
+        agent.publish_input_request(String::new()).await?.into()
     }
 
     #[cfg(test)]

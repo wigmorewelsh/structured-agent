@@ -1,11 +1,12 @@
 use std::any::Any;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use arrow::array::{Array, BooleanArray, Int64Array, NullArray, StringArray};
 
 use super::RuntimeValue;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnitValue;
 
 impl RuntimeValue for UnitValue {
@@ -30,8 +31,39 @@ impl RuntimeValue for UnitValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StringValue(pub String);
+
+impl Deref for StringValue {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for StringValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for StringValue {
+    fn from(s: String) -> Self {
+        StringValue(s)
+    }
+}
+
+impl From<&str> for StringValue {
+    fn from(s: &str) -> Self {
+        StringValue(s.to_string())
+    }
+}
+
+impl From<StringValue> for String {
+    fn from(v: StringValue) -> Self {
+        v.0
+    }
+}
 
 impl RuntimeValue for StringValue {
     fn type_name(&self) -> &str {
@@ -58,8 +90,26 @@ impl RuntimeValue for StringValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntValue(pub i64);
+
+impl std::fmt::Display for IntValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<i64> for IntValue {
+    fn from(n: i64) -> Self {
+        IntValue(n)
+    }
+}
+
+impl From<IntValue> for i64 {
+    fn from(v: IntValue) -> Self {
+        v.0
+    }
+}
 
 impl RuntimeValue for IntValue {
     fn type_name(&self) -> &str {
@@ -86,8 +136,26 @@ impl RuntimeValue for IntValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BooleanValue(pub bool);
+
+impl std::fmt::Display for BooleanValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<bool> for BooleanValue {
+    fn from(b: bool) -> Self {
+        BooleanValue(b)
+    }
+}
+
+impl From<BooleanValue> for bool {
+    fn from(v: BooleanValue) -> Self {
+        v.0
+    }
+}
 
 impl RuntimeValue for BooleanValue {
     fn type_name(&self) -> &str {

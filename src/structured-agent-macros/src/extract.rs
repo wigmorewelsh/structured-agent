@@ -21,9 +21,6 @@ pub fn extract_value(
     }
 
     match ident_str.as_str() {
-        "String" => Ok(quote! { #val.as_string().map_err(|e| e.to_string())?.to_string() }),
-        "bool" => Ok(quote! { #val.as_boolean().map_err(|e| e.to_string())? }),
-        "i64" => Ok(quote! { #val.as_integer().map_err(|e| e.to_string())? }),
         "Vec" => {
             let inner = generic_arg(ty)?;
             if let Ok(inner_ident) = path_ident(inner)
@@ -45,10 +42,7 @@ pub fn extract_value(
             }
             extract_option(val, ty, type_params)
         }
-        other => Err(syn::Error::new_spanned(
-            ident,
-            format!("unsupported arg type: {other}"),
-        )),
+        _ => Ok(quote! { #val.downcast_clone::<#ident>().map_err(|e| e.to_string())? }),
     }
 }
 

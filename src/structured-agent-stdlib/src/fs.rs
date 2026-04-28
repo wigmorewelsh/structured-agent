@@ -2,16 +2,18 @@ use structured_agent_macros::sa_module;
 
 #[sa_module]
 pub mod fs {
+    use structured_agent_runtime::StringValue;
+
     #[sa_fn]
-    async fn get_working_dir() -> String {
+    async fn get_working_dir() -> StringValue {
         let path = std::env::current_dir()
             .map_err(|e| format!("Failed to get working directory: {}", e))?;
-        path.to_string_lossy().into_owned()
+        path.to_string_lossy().into_owned().into()
     }
 
     #[sa_fn]
-    async fn set_working_dir(path: String) {
-        std::env::set_current_dir(&path)
+    async fn set_working_dir(path: StringValue) {
+        std::env::set_current_dir(&*path)
             .map_err(|e| format!("Failed to set working directory to '{}': {}", path, e))?;
     }
 

@@ -1,41 +1,49 @@
 use structured_agent_il::Instruction;
 use structured_agent_macros::sa_fn;
-use structured_agent_runtime::{AgentHandle, ExpressionValue, Type};
+use structured_agent_runtime::{
+    AgentHandle, BooleanValue, ExpressionValue, IntValue, StringValue, Type,
+};
 
 #[sa_fn]
-async fn greet(name: String) -> String {
-    format!("Hello, {}!", name)
+async fn greet(name: StringValue) -> StringValue {
+    StringValue(format!("Hello, {}!", name.0))
 }
 
 #[sa_fn]
-async fn no_args() -> String {
-    "hello".to_string()
+async fn no_args() -> StringValue {
+    StringValue("hello".to_string())
 }
 
 #[sa_fn]
-async fn unit_return(value: String) -> () {
+async fn unit_return(value: StringValue) -> () {
     let _ = value;
 }
 
 #[sa_fn]
-async fn multi_param(a: String, b: i64, c: bool) -> String {
-    format!("{} {} {}", a, b, c)
+async fn multi_param(a: StringValue, b: IntValue, c: BooleanValue) -> StringValue {
+    StringValue(format!("{} {} {}", a.0, b.0, c.0))
 }
 
 /// Documented function
 #[sa_fn]
-async fn documented() -> String {
-    "result".to_string()
+async fn documented() -> StringValue {
+    StringValue("result".to_string())
 }
 
 #[sa_fn]
-async fn option_param(value: Option<String>) -> String {
-    value.unwrap_or_else(|| "none".to_string())
+async fn option_param(value: Option<StringValue>) -> StringValue {
+    value
+        .map(|v| StringValue(v.0))
+        .unwrap_or_else(|| StringValue("none".to_string()))
 }
 
 #[sa_fn]
-async fn option_return(flag: bool) -> Option<String> {
-    if flag { Some("yes".to_string()) } else { None }
+async fn option_return(flag: BooleanValue) -> Option<StringValue> {
+    if flag.0 {
+        Some(StringValue("yes".to_string()))
+    } else {
+        None
+    }
 }
 
 fn call_native_fn(

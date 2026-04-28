@@ -299,6 +299,20 @@ impl ExpressionValue {
             ExpressionValue::Dynamic(v) => v.format_for_llm(),
         }
     }
+
+    pub fn downcast_clone<T: Clone + RuntimeValue + 'static>(&self) -> Result<T, String> {
+        match self {
+            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<T>().cloned(),
+            _ => None,
+        }
+        .ok_or_else(|| {
+            format!(
+                "expected {}, got {}",
+                std::any::type_name::<T>(),
+                self.type_name()
+            )
+        })
+    }
 }
 
 pub fn type_to_arrow_datatype<R>(ty: &Type, metadata: &MetaData<R>) -> DataType
@@ -766,5 +780,22 @@ mod tests {
             super::type_to_arrow_datatype(&Type::int(), &metadata),
             arrow::datatypes::DataType::Int64
         );
+    }
+
+    #[test]
+    fn downcast_clone_integer_succeeds() {
+        use crate::runtime_value::IntValue;
+        let val = ExpressionValue::integer(42);
+        let result = val.downcast_clone::<IntValue>();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().0, 42);
+    }
+
+    #[test]
+    fn downcast_clone_wrong_type_fails() {
+        use crate::runtime_value::IntValue;
+        let val = ExpressionValue::string("x");
+        let result = val.downcast_clone::<IntValue>();
+        assert!(result.is_err());
     }
 }
