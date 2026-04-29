@@ -2,7 +2,7 @@ pub mod context;
 pub mod service;
 pub mod traits;
 
-pub use context::{ActionEvent, Context};
+pub use context::{ActionEvent, Context, ContextEvent, ThinkingEvent};
 pub use service::RuntimeService;
 pub use traits::{
     Event, ExecutableFunction, FillParameterEvent, Function, FunctionProvider, LanguageEngine,

@@ -5,7 +5,7 @@ use structured_agent_runtime::{
     ExpressionResult, ExpressionValue, ExternalFunctionDefinition, Parameter, RuntimeError, Type,
 };
 
-use crate::context::{ActionEvent, Context};
+use crate::context::{ActionEvent, Context, ThinkingEvent};
 
 pub trait Event: Send + Sync {
     fn format(&self) -> String;
@@ -134,7 +134,7 @@ pub trait LanguageEngine: Send + Sync {
         &self,
         context: &Context,
         request: &dyn Event,
-    ) -> Result<ExpressionValue, String>;
+    ) -> Result<(ExpressionValue, Option<ThinkingEvent>), String>;
 }
 
 #[async_trait]
@@ -154,36 +154,39 @@ impl LanguageEngine for PrintEngine {
         &self,
         context: &Context,
         request: &dyn Event,
-    ) -> Result<ExpressionValue, String> {
+    ) -> Result<(ExpressionValue, Option<ThinkingEvent>), String> {
         let return_type = request.return_type();
         if return_type.is_unit() {
-            return Ok(ExpressionValue::unit());
+            return Ok((ExpressionValue::unit(), None));
         }
         if return_type.is_string() {
             let formatted = request.format();
             if !formatted.is_empty() {
-                return Ok(ExpressionValue::string(formatted));
+                return Ok((ExpressionValue::string(formatted), None));
             }
             let value = context.last_event().map(|e| e.format()).unwrap_or_default();
-            return Ok(ExpressionValue::string(value));
+            return Ok((ExpressionValue::string(value), None));
         }
         if return_type.is_boolean() {
-            return Ok(ExpressionValue::boolean(true));
+            return Ok((ExpressionValue::boolean(true), None));
         }
         if return_type.is_int() {
-            return Ok(ExpressionValue::integer(0));
+            return Ok((ExpressionValue::integer(0), None));
         }
         match return_type {
             Type::Parameterized(n, args) => {
                 if n.last_name() == "Option" {
-                    Ok(ExpressionValue::option_none_with_type(
-                        context.runtime().type_to_arrow_datatype(&args[0]),
+                    Ok((
+                        ExpressionValue::option_none_with_type(
+                            context.runtime().type_to_arrow_datatype(&args[0]),
+                        ),
+                        None,
                     ))
                 } else {
-                    Ok(ExpressionValue::unit())
+                    Ok((ExpressionValue::unit(), None))
                 }
             }
-            _ => Ok(ExpressionValue::unit()),
+            _ => Ok((ExpressionValue::unit(), None)),
         }
     }
 }
@@ -329,7 +332,7 @@ mod tests {
         };
         let result = engine.request(&context, &request).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().type_name(), "String");
+        assert_eq!(result.unwrap().0.type_name(), "String");
     }
 
     #[tokio::test]
@@ -341,7 +344,7 @@ mod tests {
         };
         let result = engine.request(&context, &request).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().type_name(), "Boolean");
+        assert_eq!(result.unwrap().0.type_name(), "Boolean");
     }
 
     #[tokio::test]
@@ -356,7 +359,7 @@ mod tests {
         };
         let result = engine.request(&context, &request).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().type_name(), "Int");
+        assert_eq!(result.unwrap().0.type_name(), "Int");
     }
 
     #[tokio::test]
@@ -369,6 +372,6 @@ mod tests {
         };
         let result = engine.request(&context, &request).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().type_name(), "String");
+        assert_eq!(result.unwrap().0.type_name(), "String");
     }
 }

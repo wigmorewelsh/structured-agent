@@ -52,6 +52,8 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 impl ChatMessage {
@@ -60,6 +62,7 @@ impl ChatMessage {
             role: Role::User,
             content: content.into(),
             metadata: None,
+            thought_signature: None,
         }
     }
 
@@ -68,6 +71,7 @@ impl ChatMessage {
             role: Role::Model,
             content: content.into(),
             metadata: None,
+            thought_signature: None,
         }
     }
 
@@ -76,12 +80,22 @@ impl ChatMessage {
             role: Role::System,
             content: content.into(),
             metadata: None,
+            thought_signature: None,
         }
     }
 
     pub fn with_metadata(mut self, metadata: HashMap<String, Value>) -> Self {
         self.metadata = Some(metadata);
         self
+    }
+
+    pub fn thinking_model(content: impl Into<String>, thought_signature: Option<String>) -> Self {
+        Self {
+            role: Role::Model,
+            content: content.into(),
+            metadata: None,
+            thought_signature,
+        }
     }
 }
 
@@ -331,9 +345,26 @@ impl GeminiResponse {
                 .content
                 .parts
                 .iter()
-                .map(|part| part.text.as_str())
+                .filter(|part| part.thought != Some(true))
+                .filter_map(|part| part.text.as_deref())
                 .collect::<Vec<_>>()
                 .join("")
+        })
+    }
+
+    pub fn first_thinking(&self) -> Option<(String, Option<String>)> {
+        self.candidates.first().and_then(|candidate| {
+            candidate
+                .content
+                .parts
+                .iter()
+                .find(|part| part.thought == Some(true))
+                .map(|part| {
+                    (
+                        part.text.clone().unwrap_or_default(),
+                        part.thought_signature.clone(),
+                    )
+                })
         })
     }
 
@@ -363,7 +394,30 @@ pub struct StreamingResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Part {
-    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "thoughtSignature")]
+    pub thought_signature: Option<String>,
+}
+
+impl Part {
+    pub fn text(content: impl Into<String>) -> Self {
+        Self {
+            text: Some(content.into()),
+            thought: None,
+            thought_signature: None,
+        }
+    }
+
+    pub fn thought_signature(signature: impl Into<String>) -> Self {
+        Self {
+            text: None,
+            thought: Some(true),
+            thought_signature: Some(signature.into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -480,11 +534,23 @@ impl From<&ChatRequest> for GeminiApiRequest {
                     Role::System => "user",
                 };
 
+                let parts = if matches!(msg.role, Role::Model) {
+                    if let Some(sig) = &msg.thought_signature {
+                        let mut p = vec![Part::thought_signature(sig.clone())];
+                        if !msg.content.is_empty() {
+                            p.push(Part::text(msg.content.clone()));
+                        }
+                        p
+                    } else {
+                        vec![Part::text(msg.content.clone())]
+                    }
+                } else {
+                    vec![Part::text(msg.content.clone())]
+                };
+
                 Content {
                     role: role.to_string(),
-                    parts: vec![Part {
-                        text: msg.content.clone(),
-                    }],
+                    parts,
                 }
             })
             .collect();
@@ -494,9 +560,7 @@ impl From<&ChatRequest> for GeminiApiRequest {
                 .system_instruction
                 .as_ref()
                 .map(|instruction| SystemInstruction {
-                    parts: vec![Part {
-                        text: instruction.clone(),
-                    }],
+                    parts: vec![Part::text(instruction.clone())],
                 });
 
         Self {
@@ -677,7 +741,7 @@ mod tests {
         assert_eq!(response.candidates[0].content.parts.len(), 1);
         assert_eq!(
             response.candidates[0].content.parts[0].text,
-            "Hello! How can I help you today?"
+            Some("Hello! How can I help you today?".to_string())
         );
         assert_eq!(
             response.candidates[0].finish_reason,
@@ -711,7 +775,7 @@ mod tests {
         assert_eq!(response.candidates.len(), 1);
         assert_eq!(
             response.candidates[0].content.parts[0].text,
-            "Short response"
+            Some("Short response".to_string())
         );
         assert_eq!(response.candidates[0].finish_reason, None);
         assert_eq!(response.candidates[0].safety_ratings, None);
@@ -724,12 +788,8 @@ mod tests {
             candidates: vec![Candidate {
                 content: ResponseContent {
                     parts: vec![
-                        Part {
-                            text: "Hello ".to_string(),
-                        },
-                        Part {
-                            text: "world!".to_string(),
-                        },
+                        Part::text("Hello "),
+                        Part::text("world!"),
                     ],
                 },
                 finish_reason: None,

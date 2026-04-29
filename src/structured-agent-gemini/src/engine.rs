@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use schemars::schema::SchemaObject;
 
 use structured_agent_interpreter_runtime::{
-    ActionEvent, Context, Event, ExpressionValue, LanguageEngine, Type,
+    Context, ContextEvent, Event, ExpressionValue, LanguageEngine, ThinkingEvent, Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
@@ -89,16 +89,21 @@ impl GeminiEngine {
     }
 
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
-        let events: Vec<ActionEvent> = context.iter_all_events().collect();
+        let all_events: Vec<ContextEvent> = context.iter_all_context_events().collect();
 
-        if events.is_empty() {
-            vec![ChatMessage::system(DEFAULT_NO_EVENTS_MESSAGE)]
-        } else {
-            events
-                .iter()
-                .map(|event| ChatMessage::system(event.format()))
-                .collect()
+        if all_events.is_empty() {
+            return vec![ChatMessage::system(DEFAULT_NO_EVENTS_MESSAGE)];
         }
+
+        all_events
+            .iter()
+            .map(|event| match event {
+                ContextEvent::Action(a) => ChatMessage::system(a.format()),
+                ContextEvent::Thinking(t) => {
+                    ChatMessage::thinking_model(t.content.clone(), t.thought_signature.clone())
+                }
+            })
+            .collect()
     }
 
     fn parse_json_value(
@@ -249,11 +254,11 @@ impl LanguageEngine for GeminiEngine {
         &self,
         context: &Context,
         request: &dyn Event,
-    ) -> Result<ExpressionValue, String> {
+    ) -> Result<(ExpressionValue, Option<ThinkingEvent>), String> {
         let return_type = request.return_type();
 
         if return_type.is_unit() {
-            return Ok(ExpressionValue::unit());
+            return Ok((ExpressionValue::unit(), None));
         }
 
         let value_schema = Self::build_value_schema(return_type, context)?;
@@ -286,11 +291,19 @@ impl LanguageEngine for GeminiEngine {
             .await
             .map_err(|e| format!("Error communicating with Gemini: {}", e))?;
 
+        let thinking = response
+            .first_thinking()
+            .map(|(content, signature)| ThinkingEvent {
+                content,
+                thought_signature: signature,
+            });
+
         let response_text = response
             .first_content()
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
         Self::parse_typed_response(&response_text, return_type, context)
+            .map(|value| (value, thinking))
     }
 }
 

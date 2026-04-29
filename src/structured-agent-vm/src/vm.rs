@@ -426,7 +426,7 @@ impl VM {
         param_name: &str,
         param_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
-        let value = state
+        let (value, thinking) = state
             .context
             .runtime()
             .engine()
@@ -438,6 +438,9 @@ impl VM {
                 },
             )
             .await?;
+        if let Some(t) = thinking {
+            state.context.add_thinking_event(t);
+        }
 
         Self::write_slot(&mut state, dest, ExpressionResult::new(value));
         Ok(Self::advance_pc(state))
@@ -463,7 +466,7 @@ impl VM {
             metadata_values.push(value.value.clone());
         }
 
-        let value = state
+        let (value, thinking) = state
             .context
             .runtime()
             .engine()
@@ -474,6 +477,9 @@ impl VM {
                 },
             )
             .await?;
+        if let Some(t) = thinking {
+            state.context.add_thinking_event(t);
+        }
         let selected_index = value
             .as_integer()
             .map_err(|e| format!("Expected integer selection: {}", e))?
@@ -491,7 +497,7 @@ impl VM {
         dest: Slot,
         return_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
-        let value = state
+        let (value, thinking) = state
             .context
             .runtime()
             .engine()
@@ -502,6 +508,9 @@ impl VM {
                 },
             )
             .await?;
+        if let Some(t) = thinking {
+            state.context.add_thinking_event(t);
+        }
 
         state
             .context

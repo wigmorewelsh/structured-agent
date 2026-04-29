@@ -28,7 +28,7 @@ async fn select(
     context: &Context,
     options: Vec<ExpressionValue>,
 ) -> Result<usize, String> {
-    let value = engine.request(context, &SelectEvent { options }).await?;
+    let (value, _) = engine.request(context, &SelectEvent { options }).await?;
     value
         .as_integer()
         .map_err(|e| format!("Expected integer selection: {}", e))

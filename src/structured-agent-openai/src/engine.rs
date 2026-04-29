@@ -3,13 +3,13 @@ use async_openai::{
     config::OpenAIConfig,
     types::chat::{
         ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs, ResponseFormat,
-        ResponseFormatJsonSchema,
+        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs, ReasoningEffort,
+        ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 use async_trait::async_trait;
 use structured_agent_interpreter_runtime::{
-    ActionEvent, Context, Event, ExpressionValue, LanguageEngine, Type,
+    Context, ContextEvent, Event, ExpressionValue, LanguageEngine, ThinkingEvent, Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
@@ -20,6 +20,7 @@ pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub struct OpenAIEngine {
     client: Client<OpenAIConfig>,
     model: String,
+    reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl OpenAIEngine {
@@ -36,7 +37,13 @@ impl OpenAIEngine {
         Self {
             client: Client::with_config(config),
             model: model.into(),
+            reasoning_effort: None,
         }
+    }
+
+    pub fn with_reasoning_effort(mut self, effort: ReasoningEffort) -> Self {
+        self.reasoning_effort = Some(effort);
+        self
     }
 
     fn build_value_schema(
@@ -102,27 +109,29 @@ impl OpenAIEngine {
     }
 
     fn build_context_messages(context: &Context) -> Vec<ChatCompletionRequestMessage> {
-        let events: Vec<ActionEvent> = context.iter_all_events().collect();
-        if events.is_empty() {
-            vec![
+        let all_events: Vec<ContextEvent> = context.iter_all_context_events().collect();
+        if all_events.is_empty() {
+            return vec![
                 ChatCompletionRequestSystemMessageArgs::default()
                     .content(DEFAULT_NO_EVENTS_MESSAGE)
                     .build()
                     .unwrap()
                     .into(),
-            ]
-        } else {
-            events
-                .iter()
-                .map(|event| {
+            ];
+        }
+        all_events
+            .iter()
+            .filter_map(|event| match event {
+                ContextEvent::Action(a) => Some(
                     ChatCompletionRequestSystemMessageArgs::default()
-                        .content(event.format())
+                        .content(a.format())
                         .build()
                         .unwrap()
-                        .into()
-                })
-                .collect()
-        }
+                        .into(),
+                ),
+                ContextEvent::Thinking(_) => None,
+            })
+            .collect()
     }
 
     fn parse_json_value(
@@ -283,11 +292,11 @@ impl LanguageEngine for OpenAIEngine {
         &self,
         context: &Context,
         request: &dyn Event,
-    ) -> Result<ExpressionValue, String> {
+    ) -> Result<(ExpressionValue, Option<ThinkingEvent>), String> {
         let return_type = request.return_type();
 
         if return_type.is_unit() {
-            return Ok(ExpressionValue::unit());
+            return Ok((ExpressionValue::unit(), None));
         }
 
         let value_schema = Self::build_value_schema(return_type, context)?;
@@ -328,11 +337,16 @@ impl LanguageEngine for OpenAIEngine {
             );
         }
 
-        let openai_request = CreateChatCompletionRequestArgs::default()
+        let mut request_builder = CreateChatCompletionRequestArgs::default();
+        request_builder
             .model(&self.model)
             .messages(messages)
             .response_format(Self::make_json_schema_format(schema))
-            .temperature(temperature)
+            .temperature(temperature);
+        if let Some(effort) = &self.reasoning_effort {
+            request_builder.reasoning_effort(effort.clone());
+        }
+        let openai_request = request_builder
             .build()
             .map_err(|e| format!("Error building request: {}", e))?;
 
@@ -349,7 +363,7 @@ impl LanguageEngine for OpenAIEngine {
             .and_then(|c| c.message.content.clone())
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
-        Self::parse_typed_response(&response_text, return_type, context)
+        Self::parse_typed_response(&response_text, return_type, context).map(|v| (v, None))
     }
 }
 

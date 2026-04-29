@@ -3,15 +3,27 @@ use std::sync::Arc;
 use structured_agent_runtime::{AgentHandle, ExpressionParameter, ExpressionValue};
 
 #[derive(Debug, Clone)]
+pub struct ThinkingEvent {
+    pub content: String,
+    pub thought_signature: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ActionEvent {
     pub content: ExpressionValue,
     pub name: Option<String>,
     pub params: Option<Vec<ExpressionParameter>>,
 }
 
+#[derive(Debug, Clone)]
+pub enum ContextEvent {
+    Action(ActionEvent),
+    Thinking(ThinkingEvent),
+}
+
 pub struct Context {
     parent: Option<Box<Context>>,
-    events: Vec<ActionEvent>,
+    events: Vec<ContextEvent>,
     runtime: Arc<dyn RuntimeService>,
     agent_handle: AgentHandle,
 }
@@ -48,38 +60,46 @@ impl Context {
         name: Option<String>,
         params: Option<Vec<ExpressionParameter>>,
     ) {
-        self.events.push(ActionEvent {
+        self.events.push(ContextEvent::Action(ActionEvent {
             content,
             name,
             params,
-        });
+        }));
     }
 
-    pub fn iter_all_events(&self) -> impl Iterator<Item = ActionEvent> + '_ {
-        let mut all_events = Vec::new();
-        let mut current_context = Some(self);
+    pub fn add_thinking_event(&mut self, event: ThinkingEvent) {
+        self.events.push(ContextEvent::Thinking(event));
+    }
 
-        let mut context_chain = Vec::new();
-        while let Some(ctx) = current_context {
-            context_chain.push(ctx);
-            current_context = ctx.parent.as_deref();
+    pub fn iter_all_context_events(&self) -> impl Iterator<Item = ContextEvent> + '_ {
+        let mut all = Vec::new();
+        let mut chain = Vec::new();
+        let mut current = Some(self);
+        while let Some(ctx) = current {
+            chain.push(ctx);
+            current = ctx.parent.as_deref();
         }
-
-        for ctx in context_chain.into_iter().rev() {
-            all_events.extend(ctx.events.clone());
+        for ctx in chain.into_iter().rev() {
+            all.extend(ctx.events.clone());
         }
-
-        all_events.into_iter()
+        all.into_iter()
     }
 
     pub fn events_count(&self) -> usize {
-        self.events.len()
+        self.events
+            .iter()
+            .filter(|e| matches!(e, ContextEvent::Action(_)))
+            .count()
     }
 
     pub fn has_events(&self) -> bool {
         let mut current_context = Some(self);
         while let Some(ctx) = current_context {
-            if !ctx.events.is_empty() {
+            if ctx
+                .events
+                .iter()
+                .any(|e| matches!(e, ContextEvent::Action(_)))
+            {
                 return true;
             }
             current_context = ctx.parent.as_deref();
@@ -88,15 +108,29 @@ impl Context {
     }
 
     pub fn has_local_events(&self) -> bool {
-        !self.events.is_empty()
+        self.events
+            .iter()
+            .any(|e| matches!(e, ContextEvent::Action(_)))
     }
 
     pub fn get_event(&self, index: usize) -> Option<ActionEvent> {
-        self.events.get(index).cloned()
+        self.events
+            .iter()
+            .filter_map(|e| match e {
+                ContextEvent::Action(a) => Some(a.clone()),
+                ContextEvent::Thinking(_) => None,
+            })
+            .nth(index)
     }
 
     pub fn last_event(&self) -> Option<ActionEvent> {
-        self.events.last().cloned()
+        self.events
+            .iter()
+            .filter_map(|e| match e {
+                ContextEvent::Action(a) => Some(a.clone()),
+                ContextEvent::Thinking(_) => None,
+            })
+            .last()
     }
 
     pub fn create_child(self) -> Self {
