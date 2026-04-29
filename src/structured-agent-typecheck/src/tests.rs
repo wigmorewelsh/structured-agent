@@ -139,6 +139,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::StringLiteral {
                     value: "Alice".to_string(),
                     span: crate::types::Span::dummy(),
@@ -173,6 +174,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::BooleanLiteral {
                     value: true,
                     span: crate::types::Span::dummy(),
@@ -213,6 +215,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "greet".to_string(),
+                type_args: vec![],
                 arguments: vec![],
                 span: crate::types::Span::dummy(),
             })],
@@ -244,6 +247,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "test".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Placeholder {
                     span: crate::types::Span::dummy(),
                 }],
@@ -284,6 +288,7 @@ mod tests {
                     variable: "name".to_string(),
                     expression: Expression::Call {
                         function: "get_name".to_string(),
+                        type_args: vec![],
                         arguments: vec![],
                         span: crate::types::Span::dummy(),
                     },
@@ -448,6 +453,7 @@ mod tests {
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "add".to_string(),
+                            type_args: vec![],
                             arguments: vec![
                                 Expression::Placeholder {
                                     span: crate::types::Span::dummy(),
@@ -463,6 +469,7 @@ mod tests {
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "concat".to_string(),
+                            type_args: vec![],
                             arguments: vec![
                                 Expression::Placeholder {
                                     span: crate::types::Span::dummy(),
@@ -520,6 +527,7 @@ mod tests {
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "get_string".to_string(),
+                            type_args: vec![],
                             arguments: vec![],
                             span: crate::types::Span::dummy(),
                         },
@@ -528,6 +536,7 @@ mod tests {
                     SelectClause {
                         expression_to_run: Expression::Call {
                             function: "get_bool".to_string(),
+                            type_args: vec![],
                             arguments: vec![],
                             span: crate::types::Span::dummy(),
                         },
@@ -572,6 +581,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "concat".to_string(),
+                type_args: vec![],
                 arguments: vec![
                     Expression::StringLiteral {
                         value: "hello".to_string(),
@@ -1119,6 +1129,7 @@ mod tests {
                 AstType::simple("Unit"),
                 vec![Statement::Return(Expression::Call {
                     function: "consume".to_string(),
+                    type_args: vec![],
                     arguments: vec![Expression::StructLiteral {
                         struct_name: "Point".to_string(),
                         fields: vec![(
@@ -1295,6 +1306,7 @@ mod tests {
             AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Variable {
                     name: "s".to_string(),
                     span: crate::types::Span::dummy(),
@@ -1332,6 +1344,7 @@ mod tests {
             AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "wrap".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Variable {
                     name: "s".to_string(),
                     span: crate::types::Span::dummy(),
@@ -1361,6 +1374,7 @@ mod tests {
             AstType::simple("Unit"),
             vec![Statement::ExpressionStatement(Expression::Call {
                 function: "make_none".to_string(),
+                type_args: vec![],
                 arguments: vec![],
                 span: crate::types::Span::dummy(),
             })],
@@ -1408,6 +1422,7 @@ mod tests {
                     variable: "result".to_string(),
                     expression: Expression::Call {
                         function: "head".to_string(),
+                        type_args: vec![],
                         arguments: vec![Expression::Variable {
                             name: "xs".to_string(),
                             span: crate::types::Span::dummy(),
@@ -1418,6 +1433,7 @@ mod tests {
                 },
                 Statement::ExpressionStatement(Expression::Call {
                     function: "consume".to_string(),
+                    type_args: vec![],
                     arguments: vec![Expression::Variable {
                         name: "result".to_string(),
                         span: crate::types::Span::dummy(),
@@ -1964,7 +1980,15 @@ mod typed_ast_tests {
             panic!()
         };
 
-        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments.len(), 2);
+        assert!(
+            matches!(
+                &arguments[0],
+                crate::typed_ast::Expression::TypeLiteral { .. }
+            ),
+            "expected TypeLiteral as first arg, got {:?}",
+            &arguments[0]
+        );
     }
 
     #[test]
@@ -2003,6 +2027,7 @@ mod typed_ast_tests {
             AstType::simple("String"),
             vec![Statement::Return(Expression::Call {
                 function: "get_value".to_string(),
+                type_args: vec![],
                 arguments: vec![],
                 span: crate::types::Span::dummy(),
             })],
@@ -2051,6 +2076,7 @@ mod typed_ast_tests {
             AstType::simple("Unit"),
             vec![Statement::Return(Expression::Call {
                 function: "process".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Placeholder {
                     span: crate::types::Span::dummy(),
                 }],
@@ -2327,6 +2353,7 @@ mod typed_ast_tests {
                 clauses: vec![SelectClause {
                     expression_to_run: Expression::Call {
                         function: "get_str".to_string(),
+                        type_args: vec![],
                         arguments: vec![],
                         span: crate::types::Span::dummy(),
                     },
@@ -2376,6 +2403,7 @@ mod typed_ast_tests {
             AstType::parameterized("Option", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Variable {
                     name: "xs".to_string(),
                     span: crate::types::Span::dummy(),
@@ -2423,6 +2451,7 @@ mod typed_ast_tests {
             AstType::parameterized("Option", vec![AstType::simple("Int")]),
             vec![Statement::Return(Expression::Call {
                 function: "head".to_string(),
+                type_args: vec![],
                 arguments: vec![Expression::Variable {
                     name: "xs".to_string(),
                     span: crate::types::Span::dummy(),
@@ -2482,6 +2511,7 @@ mod typed_ast_tests {
             AstType::parameterized("List", vec![AstType::simple("String")]),
             vec![Statement::Return(Expression::Call {
                 function: "zip".to_string(),
+                type_args: vec![],
                 arguments: vec![
                     Expression::Variable {
                         name: "strs".to_string(),
@@ -2530,6 +2560,7 @@ mod typed_ast_tests {
             AstType::simple("Int"),
             vec![Statement::Return(Expression::Call {
                 function: "native_fn".to_string(),
+                type_args: vec![],
                 arguments: vec![],
                 span: crate::types::Span::dummy(),
             })],
@@ -2597,10 +2628,15 @@ mod typed_ast_tests {
                 }
             })
             .unwrap();
-        assert!(
-            combine_fn.parameters[0].name.starts_with("__T__"),
-            "expected implicit param starting with __T__, got {:?}",
+        assert_eq!(
+            combine_fn.parameters[0].name, "T",
+            "expected type param slot T as first parameter, got {:?}",
             combine_fn.parameters[0].name
+        );
+        assert!(
+            combine_fn.parameters[1].name.starts_with("__T__"),
+            "expected implicit param starting with __T__ as second parameter, got {:?}",
+            combine_fn.parameters[1].name
         );
         let return_expr = combine_fn
             .body
@@ -2683,11 +2719,16 @@ mod typed_ast_tests {
             typed_ast::Expression::Call { arguments, .. } => {
                 let mn = DefinitionPath::for_module(NonEmpty::new("main".to_string()));
                 let expected_impl = DefinitionPath::for_impl(mn, Some(0));
-                match &arguments[0] {
+                assert!(
+                    matches!(&arguments[0], typed_ast::Expression::TypeLiteral { .. }),
+                    "expected TypeLiteral as first arg, got {:?}",
+                    &arguments[0]
+                );
+                match &arguments[1] {
                     typed_ast::Expression::ModuleInstance { path, .. } => {
                         assert_eq!(path, &expected_impl);
                     }
-                    other => panic!("expected ModuleInstance as first arg, got {:?}", other),
+                    other => panic!("expected ModuleInstance as second arg, got {:?}", other),
                 }
             }
             other => panic!("expected Call, got {:?}", other),
@@ -2857,6 +2898,241 @@ mod typed_ast_tests {
             };
             assert_eq!(ref_id, param_id);
         }
+    }
+
+    #[test]
+    fn test_generic_function_has_type_param_slot() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".into()],
+            vec![create_parameter(
+                "list",
+                AstType::parameterized("List", vec![AstType::simple("T")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            head,
+        ))]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "head" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(f.parameters[0].name, "T");
+        assert_eq!(f.parameters[0].param_type, RT::Generic("T".to_string()));
+        assert_eq!(f.parameters[1].name, "list");
+    }
+
+    #[test]
+    fn test_call_to_generic_function_prepends_inferred_type_literal() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".into()],
+            vec![create_parameter(
+                "list",
+                AstType::parameterized("List", vec![AstType::simple("T")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter(
+                "xs",
+                AstType::parameterized("List", vec![AstType::simple("String")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
+            vec![Statement::Return(Expression::Call {
+                function: "head".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "xs".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(caller)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        if let typed_ast::Expression::Call { arguments, .. } = expr {
+            assert_eq!(arguments.len(), 2, "expected type arg + value arg");
+            assert!(
+                matches!(&arguments[0], typed_ast::Expression::TypeLiteral { ty, .. } if *ty == RT::string()),
+                "expected TypeLiteral(String) as first arg, got {:?}",
+                &arguments[0]
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn test_call_with_explicit_type_arg_prepends_type_literal() {
+        let head = create_generic_test_function(
+            "head",
+            vec!["T".into()],
+            vec![create_parameter(
+                "list",
+                AstType::parameterized("List", vec![AstType::simple("T")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter(
+                "xs",
+                AstType::parameterized("List", vec![AstType::simple("String")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
+            vec![Statement::Return(Expression::Call {
+                function: "head".to_string(),
+                type_args: vec![AstType::simple("String")],
+                arguments: vec![Expression::Variable {
+                    name: "xs".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(head)),
+            Definition::Function(Arc::new(caller)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        if let typed_ast::Expression::Call { arguments, .. } = expr {
+            assert_eq!(arguments.len(), 2, "expected type arg + value arg");
+            assert!(
+                matches!(&arguments[0], typed_ast::Expression::TypeLiteral { ty, .. } if *ty == RT::string()),
+                "expected TypeLiteral(String) as first arg, got {:?}",
+                &arguments[0]
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn test_generic_function_passes_type_param_as_variable() {
+        let wrap = create_generic_test_function(
+            "wrap",
+            vec!["T".into()],
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let proxy = create_generic_test_function(
+            "proxy",
+            vec!["T".into()],
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![Statement::Return(Expression::Call {
+                function: "wrap".to_string(),
+                type_args: vec![AstType::simple("T")],
+                arguments: vec![Expression::Variable {
+                    name: "x".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(wrap)),
+            Definition::Function(Arc::new(proxy)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "proxy" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        if let typed_ast::Expression::Call { arguments, .. } = expr {
+            assert!(
+                matches!(&arguments[0], typed_ast::Expression::Variable { name, .. } if name == "T"),
+                "expected Variable(T) as first arg, got {:?}",
+                &arguments[0]
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn test_explicit_type_arg_resolves_unresolvable_return_type() {
+        let make_none = create_generic_test_function(
+            "make_none",
+            vec!["T".into()],
+            vec![],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let main_fn = create_test_function(
+            "main",
+            vec![],
+            AstType::parameterized("Option", vec![AstType::simple("String")]),
+            vec![Statement::Return(Expression::Call {
+                function: "make_none".to_string(),
+                type_args: vec![AstType::simple("String")],
+                arguments: vec![],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(make_none)),
+            Definition::Function(Arc::new(main_fn)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "main" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &RT::option(RT::string()));
     }
 }
 

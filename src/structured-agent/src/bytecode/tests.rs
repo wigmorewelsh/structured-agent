@@ -879,6 +879,7 @@ mod vm_execution_tests {
                 function,
                 arguments,
                 span,
+                ..
             } => typed_ast::Expression::Call {
                 function: function.clone(),
                 binding: typed_ast::MethodBinding::Early(DefinitionPath::for_function(

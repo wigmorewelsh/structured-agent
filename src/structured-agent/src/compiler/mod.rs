@@ -223,6 +223,9 @@ impl Compiler {
                 let fn_key = DefinitionPath::for_function(module_path.clone(), &def.name);
                 let mut slot_table = SlotTable::new();
                 slot_table.push(SlotKind::ReturnSlot, "__ret");
+                for tp in &def.type_params {
+                    slot_table.push(SlotKind::ValueParam, tp);
+                }
                 for param in &def.parameters {
                     slot_table.push(SlotKind::ValueParam, &param.name);
                 }

@@ -334,6 +334,7 @@ pub struct SelectClause {
 pub enum Expression {
     Call {
         function: String,
+        type_args: Vec<Type>,
         arguments: Vec<Expression>,
         span: Span,
     },
@@ -707,10 +708,21 @@ impl fmt::Display for Expression {
         match self {
             Expression::Call {
                 function,
+                type_args,
                 arguments,
                 ..
             } => {
                 write!(f, "{}", function)?;
+                if !type_args.is_empty() {
+                    write!(f, "<")?;
+                    for (i, ta) in type_args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", ta)?;
+                    }
+                    write!(f, ">")?;
+                }
                 write!(f, "(")?;
                 for (i, arg) in arguments.iter().enumerate() {
                     if i > 0 {

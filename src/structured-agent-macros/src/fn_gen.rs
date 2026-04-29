@@ -188,7 +188,9 @@ pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Resul
         quote! { vec![#(#tp_strs.to_string()),*] }
     };
 
-    let slot_indices: Vec<u32> = (1..=(param_count as u32)).collect();
+    let type_param_count = type_params.len() as u32;
+    let slot_indices: Vec<u32> =
+        ((1 + type_param_count)..=(param_count as u32 + type_param_count)).collect();
     let params_slots = if slot_indices.is_empty() {
         quote! { vec![] }
     } else {

@@ -5,7 +5,7 @@ use super::db::{
     resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
-use structured_agent_ast::ast::{Expression, Function, Statement};
+use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
@@ -43,6 +43,16 @@ pub fn elaborate_function(
         env.set_self_type(st);
     }
     let mut typed_parameters = Vec::new();
+    for tp in &func.type_params {
+        let rt_type = RT::Generic(tp.name.clone());
+        let binding_id = env.declare_variable(tp.name.clone(), rt_type.clone(), func.span);
+        typed_parameters.push(typed_ast::Parameter {
+            name: tp.name.clone(),
+            param_type: rt_type,
+            binding_id,
+            span: func.span,
+        });
+    }
     for (name, module_type_path) in module_params {
         let rt_type = structured_agent_runtime::Type::Named(module_type_path.clone());
         let binding_id = env.declare_variable(name.clone(), rt_type.clone(), func.span);
@@ -226,9 +236,10 @@ pub fn elaborate_expression(
     match expression {
         Expression::Call {
             function,
+            type_args,
             arguments,
             span,
-        } => elaborate_call(db, function, arguments, *span, env, ctx),
+        } => elaborate_call(db, function, type_args, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
             let (ty, binding_id) = env.lookup_variable(name)?;
             Some(typed_ast::Expression::Variable {
@@ -377,6 +388,7 @@ fn elaborate_method_call(
 fn elaborate_call(
     db: &dyn TypeCheckDatabase,
     function: &str,
+    type_args: &[AstType],
     arguments: &[Expression],
     span: Span,
     env: &synthesize::TypeEnvironment,
@@ -394,6 +406,11 @@ fn elaborate_call(
     let mut typed_args = Vec::new();
 
     let mut unifier = synthesize::Unifier::new();
+    for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
+        if let Some(resolved) = synthesize::resolve(db, ty_arg, env, span, ctx) {
+            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
+        }
+    }
     for (arg, param) in arguments.iter().zip(&sig.parameters) {
         if matches!(arg, Expression::Placeholder { .. }) {
             typed_args.push(typed_ast::Expression::Placeholder {
@@ -407,6 +424,41 @@ fn elaborate_call(
         typed_args.push(typed_arg);
     }
     let resolved_return = unifier.apply_subst(&sig.return_type);
+
+    let mut type_arg_exprs: Vec<typed_ast::Expression> = Vec::new();
+    for tp in sig
+        .type_params
+        .iter()
+        .filter(|_| sig.kind == FunctionKind::Bytecode)
+    {
+        let resolved = if let Some(idx) = sig.type_params.iter().position(|p| p.name == tp.name)
+            && let Some(explicit) = type_args.get(idx)
+        {
+            synthesize::resolve(db, explicit, env, span, ctx)
+        } else {
+            unifier
+                .get(&tp.name)
+                .cloned()
+                .or_else(|| Some(RT::Generic(tp.name.clone())))
+        };
+        let Some(ty) = resolved else { continue };
+        let expr = match &ty {
+            RT::Generic(name) => {
+                if let Some((var_ty, binding_id)) = env.lookup_variable(name) {
+                    typed_ast::Expression::Variable {
+                        name: name.clone(),
+                        binding_id,
+                        ty: var_ty,
+                        span,
+                    }
+                } else {
+                    typed_ast::Expression::TypeLiteral { ty, span }
+                }
+            }
+            _ => typed_ast::Expression::TypeLiteral { ty, span },
+        };
+        type_arg_exprs.push(expr);
+    }
     let routing = resolve_call_routing(db, interned_current, interned_fn);
 
     let solved = crate::solver::solve_constraints(db, ctx.program);
@@ -461,7 +513,8 @@ fn elaborate_call(
         .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
         .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name.clone()));
 
-    let mut all_args: Vec<typed_ast::Expression> = implicit_args;
+    let mut all_args: Vec<typed_ast::Expression> = type_arg_exprs;
+    all_args.extend(implicit_args);
 
     if let Some(routing) = &routing {
         for arg in &routing.module_args {

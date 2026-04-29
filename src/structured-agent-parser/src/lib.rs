@@ -912,6 +912,11 @@ where
     (
         position(),
         sep_by1(identifier_raw(), attempt(string("::"))),
+        optional(attempt(between(
+            lex_char('<'),
+            lex_char('>'),
+            sep_by1(parse_type(), lex_char(',')),
+        ))),
         between(
             lex_char('('),
             char(')'),
@@ -921,9 +926,16 @@ where
     )
         .skip(skip_spaces())
         .map(
-            |(start, parts, args, end): (usize, Vec<String>, Vec<Expression>, usize)| {
+            |(start, parts, type_args, args, end): (
+                usize,
+                Vec<String>,
+                Option<Vec<Type>>,
+                Vec<Expression>,
+                usize,
+            )| {
                 Expression::Call {
                     function: parts.join("::"),
+                    type_args: type_args.unwrap_or_default(),
                     arguments: args,
                     span: Span::new(start, end),
                 }
@@ -1546,7 +1558,7 @@ fn main(): () {
                     Expression::Call {
                         function,
                         arguments,
-                        span: _,
+                        ..
                     } => {
                         assert_eq!(function, "analyze_code");
                         assert_eq!(arguments.len(), 1);
@@ -1574,7 +1586,7 @@ fn main(): () {
             Expression::Call {
                 function,
                 arguments,
-                span: _,
+                ..
             } => {
                 assert_eq!(function, "func");
                 assert_eq!(arguments.len(), 3);
@@ -3584,5 +3596,107 @@ fn main(): String {
         } else {
             panic!("expected trait impl, got {:?}", module.definitions[1]);
         }
+    }
+
+    #[test]
+    fn test_parse_call_with_single_type_arg() {
+        let input = "fn main(): () {\n    let x = make_none<String>()\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expr = match &func.body.statements[0] {
+            Statement::Assignment { expression, .. } => expression,
+            _ => panic!("expected assignment"),
+        };
+        let Expression::Call {
+            function,
+            type_args,
+            arguments,
+            ..
+        } = expr
+        else {
+            panic!("expected call expression");
+        };
+        assert_eq!(function, "make_none");
+        assert_eq!(arguments.len(), 0);
+        assert_eq!(type_args.len(), 1);
+        assert_eq!(type_args[0].name(), "String");
+    }
+
+    #[test]
+    fn test_parse_call_with_multiple_type_args() {
+        let input = "fn main(): () {\n    let x = zip<String, Int>()\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expr = match &func.body.statements[0] {
+            Statement::Assignment { expression, .. } => expression,
+            _ => panic!("expected assignment"),
+        };
+        let Expression::Call { type_args, .. } = expr else {
+            panic!("expected call expression");
+        };
+        assert_eq!(type_args.len(), 2);
+        assert_eq!(type_args[0].name(), "String");
+        assert_eq!(type_args[1].name(), "Int");
+    }
+
+    #[test]
+    fn test_parse_call_without_type_args_has_empty_list() {
+        let input = "fn main(): () {\n    let x = greet()\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expr = match &func.body.statements[0] {
+            Statement::Assignment { expression, .. } => expression,
+            _ => panic!("expected assignment"),
+        };
+        let Expression::Call { type_args, .. } = expr else {
+            panic!("expected call expression");
+        };
+        assert_eq!(type_args.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_qualified_call_with_type_arg() {
+        let input = "fn main(): () {\n    let x = mod::func<String>()\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expr = match &func.body.statements[0] {
+            Statement::Assignment { expression, .. } => expression,
+            _ => panic!("expected assignment"),
+        };
+        let Expression::Call {
+            function,
+            type_args,
+            ..
+        } = expr
+        else {
+            panic!("expected call expression");
+        };
+        assert_eq!(function, "mod::func");
+        assert_eq!(type_args.len(), 1);
+        assert_eq!(type_args[0].name(), "String");
     }
 }

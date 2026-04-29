@@ -66,3 +66,43 @@ fn main(): String {
     let result = run_program_with_unstable(source).await;
     assert_eq!(result.as_string().unwrap(), "extracted");
 }
+
+#[tokio::test]
+async fn test_explicit_type_arg_on_generic_call() {
+    let source = r#"
+use unstable::head
+use unstable::some_value
+
+fn first_string(list: List<String>): String {
+    let h = head<String>(list)
+    return some_value<String>(h)
+}
+
+fn main(): String {
+    let list = ["hello", "world"]
+    return first_string(list)
+}
+"#;
+    let result = run_program_with_unstable(source).await;
+    assert_eq!(result.as_string().unwrap(), "hello");
+}
+
+#[tokio::test]
+async fn test_type_param_passed_through_call_chain() {
+    let source = r#"
+use unstable::head
+use unstable::some_value
+
+fn get_first<T>(list: List<T>): Option<T> {
+    return head<T>(list)
+}
+
+fn main(): String {
+    let list = ["chained", "result"]
+    let h = get_first<String>(list)
+    return some_value<String>(h)
+}
+"#;
+    let result = run_program_with_unstable(source).await;
+    assert_eq!(result.as_string().unwrap(), "chained");
+}

@@ -407,7 +407,7 @@ fn check_impl_function(
     let sig = get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?
         .get()
         .clone();
-    let mut env = TypeEnvironment::new();
+    let mut env = TypeEnvironment::with_type_params(&sig.type_params);
     for param in &sig.parameters {
         env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
     }
@@ -426,7 +426,7 @@ fn check_function(db: &dyn TypeCheckDatabase, func: &Function, ctx: &CheckContex
     let sig = get_function_sig(db, InternedFunctionName::new(db, fn_name), ctx.program)?
         .get()
         .clone();
-    let mut env = TypeEnvironment::new();
+    let mut env = TypeEnvironment::with_type_params(&sig.type_params);
     for param in &sig.parameters {
         env.declare_variable(param.name.clone(), param.param_type.clone(), param.span);
     }
@@ -623,9 +623,10 @@ pub fn synthesize_expression(
     match expression {
         Expression::Call {
             function,
+            type_args,
             arguments,
             span,
-        } => synthesize_call(db, function, arguments, *span, env, ctx),
+        } => synthesize_call(db, function, type_args, arguments, *span, env, ctx),
         Expression::Variable { name, span } => {
             env.lookup_variable(name).map(|(ty, _)| ty).or_accumulate(
                 db,
@@ -750,6 +751,7 @@ pub fn synthesize_expression(
 fn synthesize_call(
     db: &dyn TypeCheckDatabase,
     function: &str,
+    type_args: &[AstType],
     arguments: &[Expression],
     span: Span,
     env: &TypeEnvironment,
@@ -787,6 +789,11 @@ fn synthesize_call(
     );
 
     let mut unifier = Unifier::new();
+    for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
+        if let Some(resolved) = resolve(db, ty_arg, env, span, ctx) {
+            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
+        }
+    }
     for (arg, param) in arguments.iter().zip(&sig.parameters) {
         if matches!(arg, Expression::Placeholder { .. }) {
             continue;
