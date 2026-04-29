@@ -5,7 +5,7 @@ use structured_agent_il::Instruction;
 use structured_agent_il::slot::Slot;
 use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
-    ExpressionValue, RuntimeService,
+    ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, TypedEvent,
 };
 use structured_agent_runtime::{DefinitionPath, NativeFnPtr};
 
@@ -430,7 +430,13 @@ impl VM {
             .context
             .runtime()
             .engine()
-            .fill_parameter(&state.context, param_name, param_type)
+            .request(
+                &state.context,
+                &FillParameterEvent {
+                    param_name: param_name.to_string(),
+                    param_type: param_type.clone(),
+                },
+            )
             .await?;
 
         Self::write_slot(&mut state, dest, ExpressionResult::new(value));
@@ -457,12 +463,21 @@ impl VM {
             metadata_values.push(value.value.clone());
         }
 
-        let selected_index = state
+        let value = state
             .context
             .runtime()
             .engine()
-            .select(&state.context, &metadata_values)
+            .request(
+                &state.context,
+                &SelectEvent {
+                    options: metadata_values,
+                },
+            )
             .await?;
+        let selected_index = value
+            .as_integer()
+            .map_err(|e| format!("Expected integer selection: {}", e))?
+            as usize;
 
         let result = ExpressionResult::new(ExpressionValue::string(selected_index.to_string()));
 
@@ -480,7 +495,12 @@ impl VM {
             .context
             .runtime()
             .engine()
-            .typed(&state.context, return_type)
+            .request(
+                &state.context,
+                &TypedEvent {
+                    return_type: return_type.clone(),
+                },
+            )
             .await?;
 
         state

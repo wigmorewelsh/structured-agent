@@ -3,7 +3,7 @@ use std::sync::Arc;
 use structured_agent_runtime::{AgentHandle, ExpressionParameter, ExpressionValue};
 
 #[derive(Debug, Clone)]
-pub struct Event {
+pub struct ActionEvent {
     pub content: ExpressionValue,
     pub name: Option<String>,
     pub params: Option<Vec<ExpressionParameter>>,
@@ -11,7 +11,7 @@ pub struct Event {
 
 pub struct Context {
     parent: Option<Box<Context>>,
-    events: Vec<Event>,
+    events: Vec<ActionEvent>,
     runtime: Arc<dyn RuntimeService>,
     agent_handle: AgentHandle,
 }
@@ -48,14 +48,14 @@ impl Context {
         name: Option<String>,
         params: Option<Vec<ExpressionParameter>>,
     ) {
-        self.events.push(Event {
+        self.events.push(ActionEvent {
             content,
             name,
             params,
         });
     }
 
-    pub fn iter_all_events(&self) -> impl Iterator<Item = Event> + '_ {
+    pub fn iter_all_events(&self) -> impl Iterator<Item = ActionEvent> + '_ {
         let mut all_events = Vec::new();
         let mut current_context = Some(self);
 
@@ -91,11 +91,11 @@ impl Context {
         !self.events.is_empty()
     }
 
-    pub fn get_event(&self, index: usize) -> Option<Event> {
+    pub fn get_event(&self, index: usize) -> Option<ActionEvent> {
         self.events.get(index).cloned()
     }
 
-    pub fn last_event(&self) -> Option<Event> {
+    pub fn last_event(&self) -> Option<ActionEvent> {
         self.events.last().cloned()
     }
 

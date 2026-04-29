@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 pub use structured_agent_ast::types::{FileId, Span, Spanned};
 pub use structured_agent_interpreter_runtime::{
-    ExecutableFunction, Function, FunctionProvider, LanguageEngine, PrintEngine, format_event,
+    ExecutableFunction, Function, FunctionProvider, LanguageEngine, PrintEngine,
 };
 pub use structured_agent_runtime::{ExternalFunctionDefinition, Parameter, Type};
 

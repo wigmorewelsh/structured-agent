@@ -2,10 +2,11 @@ pub mod context;
 pub mod service;
 pub mod traits;
 
-pub use context::{Context, Event};
+pub use context::{ActionEvent, Context};
 pub use service::RuntimeService;
 pub use traits::{
-    ExecutableFunction, Function, FunctionProvider, LanguageEngine, PrintEngine, format_event,
+    Event, ExecutableFunction, FillParameterEvent, Function, FunctionProvider, LanguageEngine,
+    PrintEngine, SelectEvent, TypedEvent,
 };
 
 pub use structured_agent_runtime::{

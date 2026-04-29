@@ -3,6 +3,7 @@ use structured_agent::cli::config::ProgramSource;
 use structured_agent::gemini::GeminiEngine;
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
 use structured_agent::types::LanguageEngine;
+use structured_agent_interpreter_runtime::SelectEvent;
 use tokio;
 
 async fn make_engine() -> GeminiEngine {
@@ -22,6 +23,18 @@ fn make_context(events: &[&str]) -> Context {
     context
 }
 
+async fn select(
+    engine: &GeminiEngine,
+    context: &Context,
+    options: Vec<ExpressionValue>,
+) -> Result<usize, String> {
+    let value = engine.request(context, &SelectEvent { options }).await?;
+    value
+        .as_integer()
+        .map_err(|e| format!("Expected integer selection: {}", e))
+        .map(|i| i as usize)
+}
+
 #[tokio::test]
 #[ignore]
 async fn test_select_with_simple_options() {
@@ -34,7 +47,7 @@ async fn test_select_with_simple_options() {
         ExpressionValue::metadata("Green", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options.clone()).await;
 
     match result {
         Ok(index) => {
@@ -67,11 +80,11 @@ async fn test_select_with_numbered_options() {
         ExpressionValue::metadata("Division", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
-            assert!(index < options.len());
+            assert!(index < 4);
             assert_eq!(index, 0, "Should select Addition (index 0) for 2 + 2");
         }
         Err(e) => panic!("Selection failed: {}", e),
@@ -86,7 +99,7 @@ async fn test_select_with_single_option() {
 
     let options = vec![ExpressionValue::metadata("Only choice", None)];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
@@ -111,11 +124,11 @@ async fn test_select_with_contextual_decision() {
         ExpressionValue::metadata("Thick sweater", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
-            assert!(index < options.len());
+            assert!(index < 3);
             assert_eq!(index, 1, "Should select light t-shirt for hot weather");
         }
         Err(e) => panic!("Selection failed: {}", e),
@@ -135,11 +148,11 @@ async fn test_select_with_mathematical_context() {
         ExpressionValue::metadata("x", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
-            assert!(index < options.len());
+            assert!(index < 4);
             assert_eq!(index, 0, "Should select 2x as derivative of x^2");
         }
         Err(e) => panic!("Selection failed: {}", e),
@@ -163,11 +176,11 @@ async fn test_select_with_many_options() {
         ExpressionValue::metadata("Ruby", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
-            assert!(index < options.len());
+            assert!(index < 8);
             assert_eq!(index, 4, "Should select Rust for memory safety");
         }
         Err(e) => panic!("Selection failed: {}", e),
@@ -185,7 +198,7 @@ async fn test_select_validates_bounds() {
         ExpressionValue::metadata("Second", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
@@ -212,11 +225,11 @@ async fn test_select_prompt_formatting() {
         ExpressionValue::metadata("B", None),
     ];
 
-    let result = engine.select(&context, &options).await;
+    let result = select(&engine, &context, options).await;
 
     match result {
         Ok(index) => {
-            assert!(index < options.len(), "Selected index should be valid");
+            assert!(index < 2, "Selected index should be valid");
         }
         Err(e) => {
             if e.contains("Language engine returned invalid selection") {

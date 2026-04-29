@@ -1,11 +1,110 @@
 use async_trait::async_trait;
 use std::any::Any;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use structured_agent_runtime::{
     ExpressionResult, ExpressionValue, ExternalFunctionDefinition, Parameter, RuntimeError, Type,
 };
 
-use crate::context::{Context, Event};
+use crate::context::{ActionEvent, Context};
+
+pub trait Event: Send + Sync {
+    fn format(&self) -> String;
+    fn return_type(&self) -> &Type;
+}
+
+static ACTION_EVENT_RETURN_TYPE: LazyLock<Type> = LazyLock::new(Type::string);
+
+impl Event for ActionEvent {
+    fn format(&self) -> String {
+        let content = self.content.format_for_llm();
+        if let Some(name) = &self.name {
+            let params_xml = if let Some(params) = &self.params {
+                let params_str = params
+                    .iter()
+                    .map(|p| {
+                        let value = p.value.format_for_llm();
+                        format!("    <param name=\"{}\">{}</param>", p.name, value)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("{}\n", params_str)
+            } else {
+                String::new()
+            };
+            format!(
+                "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
+                name, params_xml, content, name
+            )
+        } else {
+            content
+        }
+    }
+
+    fn return_type(&self) -> &Type {
+        &ACTION_EVENT_RETURN_TYPE
+    }
+}
+
+pub struct TypedEvent {
+    pub return_type: Type,
+}
+
+impl Event for TypedEvent {
+    fn format(&self) -> String {
+        String::new()
+    }
+
+    fn return_type(&self) -> &Type {
+        &self.return_type
+    }
+}
+
+pub struct SelectEvent {
+    pub options: Vec<ExpressionValue>,
+}
+
+static SELECT_EVENT_RETURN_TYPE: LazyLock<Type> = LazyLock::new(Type::int);
+
+impl Event for SelectEvent {
+    fn format(&self) -> String {
+        let mut selection_prompt = "SELECT: Choose one of the following options:\n".to_string();
+        for (index, option) in self.options.iter().enumerate() {
+            let description = option
+                .as_metadata()
+                .ok()
+                .map(|(name, doc)| match doc {
+                    Some(d) => format!("Function Name: '{}' Documentation: {}", name, d),
+                    None => format!("Function Name: '{}'", name),
+                })
+                .unwrap_or_else(|| option.format_for_llm());
+            selection_prompt.push_str(&format!("{}: {}\n", index, description));
+        }
+        selection_prompt
+    }
+
+    fn return_type(&self) -> &Type {
+        &SELECT_EVENT_RETURN_TYPE
+    }
+}
+
+pub struct FillParameterEvent {
+    pub param_name: String,
+    pub param_type: Type,
+}
+
+impl Event for FillParameterEvent {
+    fn format(&self) -> String {
+        format!(
+            "Provide a value for '{}' of type '{}'",
+            self.param_name,
+            self.param_type.name()
+        )
+    }
+
+    fn return_type(&self) -> &Type {
+        &self.param_type
+    }
+}
 
 #[async_trait]
 pub trait Function: std::fmt::Debug + Send + Sync {
@@ -31,16 +130,10 @@ pub trait ExecutableFunction: Function + std::fmt::Debug + Send + Sync {
 
 #[async_trait]
 pub trait LanguageEngine: Send + Sync {
-    async fn untyped(&self, context: &Context) -> String;
-    async fn typed(&self, context: &Context, return_type: &Type)
-    -> Result<ExpressionValue, String>;
-    async fn select(&self, context: &Context, options: &[ExpressionValue])
-    -> Result<usize, String>;
-    async fn fill_parameter(
+    async fn request(
         &self,
         context: &Context,
-        param_name: &str,
-        param_type: &Type,
+        request: &dyn Event,
     ) -> Result<ExpressionValue, String>;
 }
 
@@ -53,105 +146,229 @@ pub trait FunctionProvider: Send + Sync {
     ) -> Result<Arc<dyn ExecutableFunction>, RuntimeError>;
 }
 
-pub fn format_event(event: &Event) -> String {
-    let content = event.content.format_for_llm();
-
-    if let Some(name) = &event.name {
-        let params_xml = if let Some(params) = &event.params {
-            let params_str = params
-                .iter()
-                .map(|p| {
-                    let value = p.value.format_for_llm();
-                    format!("    <param name=\"{}\">{}</param>", p.name, value)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("{}\n", params_str)
-        } else {
-            String::new()
-        };
-
-        format!(
-            "<{}>\n{}    <result>\n    {}\n    </result>\n</{}>",
-            name, params_xml, content, name
-        )
-    } else {
-        content
-    }
-}
-
 pub struct PrintEngine {}
 
 #[async_trait]
 impl LanguageEngine for PrintEngine {
-    async fn untyped(&self, context: &Context) -> String {
-        if let Some(last_event) = context.last_event() {
-            format_event(&last_event)
-        } else {
-            "PrintEngine {}".to_string()
-        }
-    }
-
-    async fn typed(
+    async fn request(
         &self,
         context: &Context,
-        return_type: &Type,
+        request: &dyn Event,
     ) -> Result<ExpressionValue, String> {
+        let return_type = request.return_type();
+        if return_type.is_unit() {
+            return Ok(ExpressionValue::unit());
+        }
+        if return_type.is_string() {
+            let formatted = request.format();
+            if !formatted.is_empty() {
+                return Ok(ExpressionValue::string(formatted));
+            }
+            let value = context.last_event().map(|e| e.format()).unwrap_or_default();
+            return Ok(ExpressionValue::string(value));
+        }
+        if return_type.is_boolean() {
+            return Ok(ExpressionValue::boolean(true));
+        }
+        if return_type.is_int() {
+            return Ok(ExpressionValue::integer(0));
+        }
         match return_type {
-            _ if return_type.is_string() => {
-                let value = self.untyped(context).await;
-                Ok(ExpressionValue::string(value))
-            }
-            _ if return_type.is_boolean() => Ok(ExpressionValue::boolean(true)),
-            _ if return_type.is_int() => Ok(ExpressionValue::integer(0)),
-            _ if return_type.is_unit() => Ok(ExpressionValue::unit()),
             Type::Parameterized(n, args) => {
                 if n.last_name() == "Option" {
                     Ok(ExpressionValue::option_none_with_type(
                         context.runtime().type_to_arrow_datatype(&args[0]),
                     ))
                 } else {
-                    let value = self.untyped(context).await;
-                    Ok(ExpressionValue::string(value))
+                    Ok(ExpressionValue::unit())
                 }
             }
-            Type::Named(_) => Ok(ExpressionValue::unit()),
-            Type::Generic(_) => Ok(ExpressionValue::unit()),
+            _ => Ok(ExpressionValue::unit()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::Context;
+    use crate::service::RuntimeService;
+    use arrow::datatypes::DataType;
+    use std::sync::Arc;
+    use structured_agent_runtime::{DefinitionPath, ExpressionValue, Type};
+
+    struct MockRuntime {
+        engine: Arc<PrintEngine>,
+    }
+
+    impl RuntimeService for MockRuntime {
+        fn get_native_function(&self, _name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+
+        fn get_bytecode_function(
+            &self,
+            _name: &DefinitionPath,
+        ) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+
+        fn engine(&self) -> &dyn LanguageEngine {
+            self.engine.as_ref()
+        }
+
+        fn type_to_arrow_datatype(&self, _ty: &Type) -> DataType {
+            DataType::Utf8
+        }
+
+        fn get_struct(&self, _type_name: &DefinitionPath) -> Option<Vec<(String, Type)>> {
+            None
+        }
+
+        fn get_struct_with_args(
+            &self,
+            _type_name: &DefinitionPath,
+            _args: &[Type],
+        ) -> Option<Vec<(String, Type)>> {
+            None
         }
     }
 
-    async fn select(
-        &self,
-        _context: &Context,
-        _options: &[ExpressionValue],
-    ) -> Result<usize, String> {
-        Ok(0)
+    fn make_context() -> Context {
+        let runtime = Arc::new(MockRuntime {
+            engine: Arc::new(PrintEngine {}),
+        });
+        Context::with_runtime(runtime)
     }
 
-    async fn fill_parameter(
-        &self,
-        context: &Context,
-        _param_name: &str,
-        param_type: &Type,
-    ) -> Result<ExpressionValue, String> {
-        match param_type {
-            _ if param_type.is_string() => {
-                let value = self.untyped(context).await;
-                Ok(ExpressionValue::string(value))
-            }
-            _ if param_type.is_boolean() => Ok(ExpressionValue::boolean(true)),
-            _ if param_type.is_int() => Ok(ExpressionValue::integer(0)),
-            Type::Parameterized(n, args) => {
-                if n.last_name() == "Option" {
-                    Ok(ExpressionValue::option_none_with_type(
-                        context.runtime().type_to_arrow_datatype(&args[0]),
-                    ))
-                } else {
-                    let value = self.untyped(context).await;
-                    Ok(ExpressionValue::string(value))
-                }
-            }
-            Type::Named(_) | Type::Generic(_) => Ok(ExpressionValue::unit()),
-        }
+    #[test]
+    fn typed_event_return_type_matches() {
+        let event = TypedEvent {
+            return_type: Type::string(),
+        };
+        assert!(event.return_type().is_string());
+    }
+
+    #[test]
+    fn typed_event_format_is_empty() {
+        let event = TypedEvent {
+            return_type: Type::string(),
+        };
+        assert_eq!(event.format(), "");
+    }
+
+    #[test]
+    fn select_event_format_contains_options() {
+        let event = SelectEvent {
+            options: vec![
+                ExpressionValue::metadata("Red", None),
+                ExpressionValue::metadata("Blue", None),
+            ],
+        };
+        let formatted = event.format();
+        assert!(formatted.contains("Red"));
+        assert!(formatted.contains("Blue"));
+    }
+
+    #[test]
+    fn select_event_return_type_is_int() {
+        let event = SelectEvent { options: vec![] };
+        assert!(event.return_type().is_int());
+    }
+
+    #[test]
+    fn fill_parameter_event_format_contains_name_and_type() {
+        let event = FillParameterEvent {
+            param_name: "age".to_string(),
+            param_type: Type::int(),
+        };
+        let formatted = event.format();
+        assert!(formatted.contains("age"));
+        assert!(formatted.contains("Int"));
+    }
+
+    #[test]
+    fn fill_parameter_event_return_type_matches() {
+        let event = FillParameterEvent {
+            param_name: "score".to_string(),
+            param_type: Type::int(),
+        };
+        assert!(event.return_type().is_int());
+    }
+
+    #[test]
+    fn action_event_format_unnamed() {
+        let event = ActionEvent {
+            content: ExpressionValue::string("hello".to_string()),
+            name: None,
+            params: None,
+        };
+        assert_eq!(event.format(), "hello");
+    }
+
+    #[test]
+    fn action_event_format_named() {
+        let event = ActionEvent {
+            content: ExpressionValue::string("result".to_string()),
+            name: Some("test".to_string()),
+            params: None,
+        };
+        let formatted = event.format();
+        assert!(formatted.contains("<test>"));
+        assert!(formatted.contains("result"));
+        assert!(formatted.contains("</test>"));
+    }
+
+    #[tokio::test]
+    async fn print_engine_request_typed_string() {
+        let engine = PrintEngine {};
+        let mut context = make_context();
+        context.add_event(ExpressionValue::string("hello".to_string()), None, None);
+        let request = TypedEvent {
+            return_type: Type::string(),
+        };
+        let result = engine.request(&context, &request).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().type_name(), "String");
+    }
+
+    #[tokio::test]
+    async fn print_engine_request_typed_bool() {
+        let engine = PrintEngine {};
+        let context = make_context();
+        let request = TypedEvent {
+            return_type: Type::boolean(),
+        };
+        let result = engine.request(&context, &request).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().type_name(), "Boolean");
+    }
+
+    #[tokio::test]
+    async fn print_engine_request_select() {
+        let engine = PrintEngine {};
+        let context = make_context();
+        let request = SelectEvent {
+            options: vec![
+                ExpressionValue::metadata("Option A", None),
+                ExpressionValue::metadata("Option B", None),
+            ],
+        };
+        let result = engine.request(&context, &request).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().type_name(), "Int");
+    }
+
+    #[tokio::test]
+    async fn print_engine_request_fill_parameter() {
+        let engine = PrintEngine {};
+        let context = make_context();
+        let request = FillParameterEvent {
+            param_name: "username".to_string(),
+            param_type: Type::string(),
+        };
+        let result = engine.request(&context, &request).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().type_name(), "String");
     }
 }

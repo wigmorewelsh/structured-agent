@@ -19,7 +19,7 @@ mod signature_mismatch_test;
 
 pub use actor::{Agent, AgentError, AgentHandle, AgentId, AgentMessage, AgentMessageContent};
 pub use engine::{Runtime, RuntimeError};
-pub use structured_agent_interpreter_runtime::{Context, Event, RuntimeService};
+pub use structured_agent_interpreter_runtime::{ActionEvent, Context, RuntimeService};
 pub use types::{ExpressionParameter, ExpressionResult, ExpressionValue};
 
 #[cfg(test)]

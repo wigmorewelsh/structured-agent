@@ -8,20 +8,14 @@ use async_openai::{
     },
 };
 use async_trait::async_trait;
-use serde::Deserialize;
 use structured_agent_interpreter_runtime::{
-    Context, ExpressionValue, LanguageEngine, Type, format_event,
+    ActionEvent, Context, Event, ExpressionValue, LanguageEngine, Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
 const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
 pub const HF_BASE_URL: &str = "https://api-inference.huggingface.co/v1";
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-
-#[derive(Deserialize)]
-struct SelectionResponse {
-    selection: u32,
-}
 
 pub struct OpenAIEngine {
     client: Client<OpenAIConfig>,
@@ -108,7 +102,7 @@ impl OpenAIEngine {
     }
 
     fn build_context_messages(context: &Context) -> Vec<ChatCompletionRequestMessage> {
-        let events: Vec<_> = context.iter_all_events().collect();
+        let events: Vec<ActionEvent> = context.iter_all_events().collect();
         if events.is_empty() {
             vec![
                 ChatCompletionRequestSystemMessageArgs::default()
@@ -122,7 +116,7 @@ impl OpenAIEngine {
                 .iter()
                 .map(|event| {
                     ChatCompletionRequestSystemMessageArgs::default()
-                        .content(format_event(event))
+                        .content(event.format())
                         .build()
                         .unwrap()
                         .into()
@@ -285,34 +279,13 @@ impl OpenAIEngine {
 
 #[async_trait]
 impl LanguageEngine for OpenAIEngine {
-    async fn untyped(&self, context: &Context) -> String {
-        let messages = Self::build_context_messages(context);
-
-        let request = match CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .messages(messages)
-            .temperature(0.9f32)
-            .build()
-        {
-            Ok(r) => r,
-            Err(e) => return format!("Error building request: {}", e),
-        };
-
-        match self.client.chat().create(request).await {
-            Ok(response) => response
-                .choices
-                .first()
-                .and_then(|c| c.message.content.clone())
-                .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string()),
-            Err(e) => format!("Error communicating with OpenAI: {}", e),
-        }
-    }
-
-    async fn typed(
+    async fn request(
         &self,
         context: &Context,
-        return_type: &Type,
+        request: &dyn Event,
     ) -> Result<ExpressionValue, String> {
+        let return_type = request.return_type();
+
         if return_type.is_unit() {
             return Ok(ExpressionValue::unit());
         }
@@ -343,9 +316,19 @@ impl LanguageEngine for OpenAIEngine {
             })
         };
 
-        let messages = Self::build_context_messages(context);
+        let mut messages = Self::build_context_messages(context);
+        let prompt = request.format();
+        if !prompt.is_empty() {
+            messages.push(
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()
+                    .unwrap()
+                    .into(),
+            );
+        }
 
-        let request = CreateChatCompletionRequestArgs::default()
+        let openai_request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .messages(messages)
             .response_format(Self::make_json_schema_format(schema))
@@ -356,7 +339,7 @@ impl LanguageEngine for OpenAIEngine {
         let response = self
             .client
             .chat()
-            .create(request)
+            .create(openai_request)
             .await
             .map_err(|e| format!("Error communicating with OpenAI: {}", e))?;
 
@@ -367,172 +350,6 @@ impl LanguageEngine for OpenAIEngine {
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
         Self::parse_typed_response(&response_text, return_type, context)
-    }
-
-    async fn select(
-        &self,
-        context: &Context,
-        options: &[ExpressionValue],
-    ) -> Result<usize, String> {
-        let mut selection_prompt =
-            "SELECT: Choose one of the following options by responding with the appropriate number:\n"
-                .to_string();
-        for (index, option) in options.iter().enumerate() {
-            let description = if option.type_name() == "Metadata" {
-                if let Ok((name, documentation)) = option.as_metadata() {
-                    if let Some(doc) = documentation {
-                        format!("Function Name: '{}' Documentation: {}", name, doc)
-                    } else {
-                        format!("Function Name: '{}'", name)
-                    }
-                } else {
-                    option.format_for_llm()
-                }
-            } else {
-                option.format_for_llm()
-            };
-            selection_prompt.push_str(&format!("{}: {}\n", index, description));
-        }
-
-        let mut messages = Self::build_context_messages(context);
-        messages.push(
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(selection_prompt)
-                .build()
-                .unwrap()
-                .into(),
-        );
-
-        let max_index = if options.is_empty() {
-            0
-        } else {
-            options.len() - 1
-        };
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "selection": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": max_index
-                }
-            },
-            "required": ["selection"],
-            "additionalProperties": false
-        });
-
-        let request = CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .messages(messages)
-            .response_format(Self::make_json_schema_format(schema))
-            .temperature(0.0f32)
-            .build()
-            .map_err(|e| format!("Error building request: {}", e))?;
-
-        let response = self
-            .client
-            .chat()
-            .create(request)
-            .await
-            .map_err(|e| format!("Error communicating with OpenAI for selection: {}", e))?;
-
-        let response_text = response
-            .choices
-            .first()
-            .and_then(|c| c.message.content.clone())
-            .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
-
-        let selection_response: SelectionResponse =
-            serde_json::from_str(&response_text).map_err(|_| {
-                format!(
-                    "Invalid JSON response from language engine: '{}'",
-                    response_text
-                )
-            })?;
-
-        let selected_index = selection_response.selection as usize;
-        if selected_index >= options.len() {
-            return Err(format!(
-                "Language engine selected invalid option index: {}",
-                selected_index
-            ));
-        }
-
-        Ok(selected_index)
-    }
-
-    async fn fill_parameter(
-        &self,
-        context: &Context,
-        param_name: &str,
-        param_type: &Type,
-    ) -> Result<ExpressionValue, String> {
-        if param_type.is_unit() {
-            return Ok(ExpressionValue::unit());
-        }
-
-        let value_schema = Self::build_value_schema(param_type, context)?;
-        let is_required = !param_type.is_option();
-        let temperature = if param_type.is_boolean() {
-            0.0f32
-        } else {
-            0.7f32
-        };
-
-        let schema = if matches!(param_type, Type::Named(_)) && !param_type.is_unit() {
-            value_schema
-        } else {
-            let mut properties = serde_json::Map::new();
-            properties.insert("value".to_string(), value_schema);
-            let required: Vec<serde_json::Value> = if is_required {
-                vec![serde_json::Value::String("value".to_string())]
-            } else {
-                vec![]
-            };
-            serde_json::json!({
-                "type": "object",
-                "properties": properties,
-                "required": required,
-                "additionalProperties": false
-            })
-        };
-
-        let mut messages = Self::build_context_messages(context);
-        let prompt = format!(
-            "Provide a value for '{}' of type '{}'",
-            param_name,
-            param_type.name()
-        );
-        messages.push(
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt)
-                .build()
-                .unwrap()
-                .into(),
-        );
-
-        let request = CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .messages(messages)
-            .response_format(Self::make_json_schema_format(schema))
-            .temperature(temperature)
-            .build()
-            .map_err(|e| format!("Error building request: {}", e))?;
-
-        let response = self
-            .client
-            .chat()
-            .create(request)
-            .await
-            .map_err(|e| format!("Error communicating with OpenAI: {}", e))?;
-
-        let response_text = response
-            .choices
-            .first()
-            .and_then(|c| c.message.content.clone())
-            .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
-
-        Self::parse_typed_response(&response_text, param_type, context)
     }
 }
 

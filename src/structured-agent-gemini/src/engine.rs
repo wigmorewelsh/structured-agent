@@ -4,18 +4,13 @@ use crate::types::JsonSchemaBuilder;
 use crate::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use async_trait::async_trait;
 use schemars::schema::SchemaObject;
-use serde::{Deserialize, Serialize};
+
 use structured_agent_interpreter_runtime::{
-    Context, ExpressionValue, LanguageEngine, Type, format_event,
+    ActionEvent, Context, Event, ExpressionValue, LanguageEngine, Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
 const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
-
-#[derive(Serialize, Deserialize)]
-struct SelectionResponse {
-    selection: u32,
-}
 
 pub struct GeminiEngine {
     client: GeminiClient,
@@ -94,14 +89,14 @@ impl GeminiEngine {
     }
 
     fn build_context_messages(&self, context: &Context) -> Vec<ChatMessage> {
-        let events: Vec<_> = context.iter_all_events().collect();
+        let events: Vec<ActionEvent> = context.iter_all_events().collect();
 
         if events.is_empty() {
             vec![ChatMessage::system(DEFAULT_NO_EVENTS_MESSAGE)]
         } else {
             events
                 .iter()
-                .map(|event| ChatMessage::system(format_event(event)))
+                .map(|event| ChatMessage::system(event.format()))
                 .collect()
         }
     }
@@ -250,32 +245,13 @@ impl GeminiEngine {
 
 #[async_trait]
 impl LanguageEngine for GeminiEngine {
-    async fn untyped(&self, context: &Context) -> String {
-        let chat_messages = self.build_context_messages(context);
-
-        let generation_config = GenerationConfig::new()
-            .with_temperature(0.9)
-            .with_low_thinking();
-
-        match self
-            .client
-            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
-            .await
-        {
-            Ok(response) => response
-                .first_content()
-                .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string()),
-            Err(e) => {
-                format!("Error communicating with Gemini: {}", e)
-            }
-        }
-    }
-
-    async fn typed(
+    async fn request(
         &self,
         context: &Context,
-        return_type: &Type,
+        request: &dyn Event,
     ) -> Result<ExpressionValue, String> {
+        let return_type = request.return_type();
+
         if return_type.is_unit() {
             return Ok(ExpressionValue::unit());
         }
@@ -291,7 +267,11 @@ impl LanguageEngine for GeminiEngine {
             is_required,
         );
 
-        let chat_messages = self.build_context_messages(context);
+        let mut chat_messages = self.build_context_messages(context);
+        let user_message = request.format();
+        if !user_message.is_empty() {
+            chat_messages.push(ChatMessage::user(user_message));
+        }
 
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
@@ -311,132 +291,6 @@ impl LanguageEngine for GeminiEngine {
             .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
 
         Self::parse_typed_response(&response_text, return_type, context)
-    }
-
-    async fn select(
-        &self,
-        context: &Context,
-        options: &[ExpressionValue],
-    ) -> Result<usize, String> {
-        let mut selection_prompt =
-            "SELECT: Choose one of the following options by responding with the appropriate number:\n"
-                .to_string();
-        for (index, option) in options.iter().enumerate() {
-            let description = if option.type_name() == "Metadata" {
-                if let Ok((name, documentation)) = option.as_metadata() {
-                    if let Some(doc) = documentation {
-                        format!("Function Name: '{}' Documentation: {}", name, doc)
-                    } else {
-                        format!("Function Name: '{}'", name)
-                    }
-                } else {
-                    option.format_for_llm()
-                }
-            } else {
-                option.format_for_llm()
-            };
-            selection_prompt.push_str(&format!("{}: {}\n", index, description));
-        }
-
-        let mut chat_messages = self.build_context_messages(context);
-        chat_messages.push(ChatMessage::user(selection_prompt));
-
-        let max_index = if options.is_empty() {
-            0
-        } else {
-            options.len() - 1
-        };
-
-        let schema = JsonSchemaBuilder::integer_selection(max_index as u32);
-
-        let generation_config = GenerationConfig::new()
-            .with_temperature(0.0)
-            .with_response_mime_type("application/json".to_string())
-            .with_response_schema(schema)
-            .with_minimal_thinking();
-
-        match self
-            .client
-            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
-            .await
-        {
-            Ok(response) => {
-                let response_text = response
-                    .first_content()
-                    .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
-
-                let selection_response: SelectionResponse = serde_json::from_str(&response_text)
-                    .map_err(|_| {
-                        format!(
-                            "Invalid JSON response from language engine: '{}'",
-                            response_text
-                        )
-                    })?;
-
-                let selected_index = selection_response.selection as usize;
-
-                if selected_index >= options.len() {
-                    return Err(format!(
-                        "Language engine selected invalid option index: {}",
-                        selected_index
-                    ));
-                }
-
-                Ok(selected_index)
-            }
-            Err(e) => Err(format!(
-                "Error communicating with Gemini for selection: {}",
-                e
-            )),
-        }
-    }
-
-    async fn fill_parameter(
-        &self,
-        context: &Context,
-        param_name: &str,
-        param_type: &Type,
-    ) -> Result<ExpressionValue, String> {
-        if param_type.is_unit() {
-            return Ok(ExpressionValue::unit());
-        }
-
-        let value_schema = Self::build_value_schema(param_type, context)?;
-        let is_required = !param_type.is_option();
-        let temperature = if param_type.is_boolean() { 0.0 } else { 0.7 };
-
-        let schema = JsonSchemaBuilder::with_property(
-            JsonSchemaBuilder::object(),
-            "value",
-            value_schema,
-            is_required,
-        );
-
-        let mut chat_messages = self.build_context_messages(context);
-        let prompt = format!(
-            "Provide a value for '{}' of type '{}'",
-            param_name,
-            param_type.name()
-        );
-        chat_messages.push(ChatMessage::user(prompt));
-
-        let generation_config = GenerationConfig::new()
-            .with_temperature(temperature)
-            .with_response_mime_type("application/json".to_string())
-            .with_response_schema(schema)
-            .with_minimal_thinking();
-
-        let response = self
-            .client
-            .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
-            .await
-            .map_err(|e| format!("Error communicating with Gemini: {}", e))?;
-
-        let response_text = response
-            .first_content()
-            .unwrap_or_else(|| DEFAULT_NO_RESPONSE_MESSAGE.to_string());
-
-        Self::parse_typed_response(&response_text, param_type, context)
     }
 }
 
