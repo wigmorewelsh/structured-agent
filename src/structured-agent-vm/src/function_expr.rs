@@ -1,6 +1,7 @@
 use crate::vm::VM;
 use async_trait::async_trait;
 use std::any::Any;
+use std::sync::Arc;
 use structured_agent_il::BytecodeRef;
 use structured_agent_interpreter_runtime::{
     Context, ExecutableFunction, ExpressionResult, Function, Parameter, Type,
@@ -11,7 +12,7 @@ pub struct BytecodeFunctionExpr {
     name: String,
     parameters: Vec<Parameter>,
     return_type: Type,
-    instructions: Vec<structured_agent_il::Instruction>,
+    instructions: Arc<[structured_agent_il::Instruction]>,
     labels: std::collections::HashMap<String, usize>,
     documentation: Option<String>,
     slot_count: usize,
@@ -23,11 +24,21 @@ impl BytecodeFunctionExpr {
             name: name.to_string(),
             parameters: body.parameters,
             return_type: body.return_type,
-            instructions: body.instructions,
+            instructions: body.instructions.into(),
             labels: body.labels,
             documentation: body.documentation,
             slot_count: body.slot_table.len(),
         }
+    }
+}
+
+impl BytecodeFunctionExpr {
+    pub(crate) fn instructions_arc(&self) -> Arc<[structured_agent_il::Instruction]> {
+        Arc::clone(&self.instructions)
+    }
+
+    pub(crate) fn slot_count(&self) -> usize {
+        self.slot_count
     }
 }
 
@@ -51,7 +62,7 @@ impl Clone for BytecodeFunctionExpr {
             name: self.name.clone(),
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
-            instructions: self.instructions.clone(),
+            instructions: Arc::clone(&self.instructions),
             labels: self.labels.clone(),
             documentation: self.documentation.clone(),
             slot_count: self.slot_count,
