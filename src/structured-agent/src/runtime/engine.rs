@@ -3,6 +3,7 @@ use crate::cli::config::{Config, EngineType, McpServerConfig, ProgramSource};
 use crate::compiler::{CompilationUnit, CompiledProgram, Compiler};
 use crate::gemini::{GeminiConfig, GeminiEngine};
 use crate::mcp::McpClient;
+use crate::runtime::actor::actor_loop;
 use crate::runtime::{Context, ExpressionValue, RuntimeService};
 use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_il::Module;
 use structured_agent_openai::{HF_BASE_URL, OpenAIEngine};
+use structured_agent_runtime::actor::ActorRegistry;
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{DefinitionPath, SymbolQuery};
 use structured_agent_stdlib::{
@@ -32,6 +34,7 @@ pub struct Runtime {
     providers: Vec<Arc<dyn FunctionProvider>>,
     program_source: ProgramSource,
     compiled: Arc<OnceLock<Result<CachedProgram, String>>>,
+    actor_registry: Arc<ActorRegistry>,
 }
 
 pub struct RuntimeBuilder {
@@ -207,6 +210,7 @@ impl RuntimeBuilder {
             providers,
             program_source: self.program_source,
             compiled: Arc::new(OnceLock::new()),
+            actor_registry: ActorRegistry::new(),
         }
     }
 }
@@ -421,6 +425,7 @@ impl Runtime {
             providers: self.providers.clone(),
             program_source: self.program_source.clone(),
             compiled: Arc::clone(&self.compiled),
+            actor_registry: self.actor_registry.clone(),
         }
     }
 
@@ -541,6 +546,10 @@ impl RuntimeService for Runtime {
         self.function_registry.get(name).cloned()
     }
 
+    fn actor_registry(&self) -> Arc<ActorRegistry> {
+        self.actor_registry.clone()
+    }
+
     fn get_bytecode_ref(&self, name: &DefinitionPath) -> Option<structured_agent_il::BytecodeRef> {
         let cached = self.compiled.get()?.as_ref().ok()?;
         let func_def = cached.metadata.functions.get(name)?;
@@ -572,6 +581,15 @@ impl RuntimeService for Runtime {
         args: &[crate::types::Type],
     ) -> Option<Vec<(String, crate::types::Type)>> {
         Runtime::get_struct_with_args(self, type_name, args)
+    }
+
+    fn spawn_actor(
+        &self,
+        mailbox: structured_agent_runtime::ActorMailboxReceiver,
+        context: crate::runtime::Context,
+    ) {
+        let runtime: Arc<dyn RuntimeService> = Arc::new(self.clone());
+        tokio::spawn(actor_loop(mailbox, context, runtime));
     }
 }
 

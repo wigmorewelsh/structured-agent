@@ -46,7 +46,20 @@ pub enum Instruction {
     Ret {
         var: Slot,
     },
-    Yield,
+    Snapshot,
+    ActorYield,
+
+    Spawn {
+        module_slot: Slot,
+        key_slot: Slot,
+        dest: Slot,
+    },
+    CallActor {
+        actor_slot: Slot,
+        fn_name: DefinitionPath,
+        params: Vec<Slot>,
+        dest: Slot,
+    },
 
     CallBytecode {
         function_name: DefinitionPath,
@@ -146,8 +159,29 @@ impl fmt::Display for Instruction {
                 write!(f, "]")
             }
             Instruction::Ret { var } => write!(f, "ret {}", var),
-            Instruction::Yield => write!(f, "yield"),
+            Instruction::Snapshot => write!(f, "snapshot"),
+            Instruction::ActorYield => write!(f, "actor.yield"),
 
+            Instruction::Spawn {
+                module_slot,
+                key_slot,
+                dest,
+            } => write!(f, "spawn {}, {}, {}", module_slot, key_slot, dest),
+            Instruction::CallActor {
+                actor_slot,
+                fn_name,
+                params,
+                dest,
+            } => {
+                write!(f, "call.actor {}.{}, [", actor_slot, fn_name)?;
+                for (i, var) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "], {}", dest)
+            }
             Instruction::CallBytecode {
                 function_name,
                 params,

@@ -86,6 +86,7 @@ impl PlaceholderOveruseAnalyzer {
             Statement::Return(expr) => {
                 self.analyze_expression(expr, file_id, warnings);
             }
+            Statement::Yield { .. } => {}
         }
     }
 }

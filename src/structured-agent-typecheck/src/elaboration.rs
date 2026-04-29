@@ -5,6 +5,7 @@ use super::db::{
     resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
+use nonempty::NonEmpty;
 use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
@@ -209,6 +210,7 @@ fn elaborate_statement(
             let typed_expr = elaborate_expression(db, expr, &env, ctx)?;
             Some((typed_ast::Statement::Return(typed_expr), env))
         }
+        Statement::Yield { span } => Some((typed_ast::Statement::Yield { span: *span }, env)),
     }
 }
 
@@ -335,6 +337,10 @@ fn elaborate_method_call(
     let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
     let receiver_type = typed_receiver.ty().clone();
 
+    if receiver_type.is_actor_ref() {
+        return elaborate_actor_method_call(db, typed_receiver, method, args, span, env, ctx);
+    }
+
     if let RT::Generic(param_name) = &receiver_type {
         let prefix = format!("__{}__", param_name);
         if let Some((trait_type, binding_id)) = find_implicit_param(env, &prefix)
@@ -385,6 +391,71 @@ fn elaborate_method_call(
     })
 }
 
+fn elaborate_spawn(
+    db: &dyn TypeCheckDatabase,
+    type_args: &[AstType],
+    arguments: &[Expression],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<typed_ast::Expression> {
+    let module_type_ast = type_args.first()?;
+    let module_type = synthesize::resolve(db, module_type_ast, env, span, ctx)?;
+    let type_literal = typed_ast::Expression::TypeLiteral {
+        ty: module_type.clone(),
+        span,
+    };
+    let key_arg = arguments.first()?;
+    let typed_key = elaborate_expression(db, key_arg, env, ctx)?;
+    let actor_ref_type = RT::actor_ref(module_type);
+    Some(typed_ast::Expression::Call {
+        function: "spawn".to_string(),
+        binding: typed_ast::MethodBinding::Early(DefinitionPath::for_function(
+            DefinitionPath::for_module(NonEmpty::new("builtin".to_string())),
+            "spawn".to_string(),
+        )),
+        kind: FunctionKind::Spawn,
+        arguments: vec![type_literal, typed_key],
+        ty: actor_ref_type,
+        span,
+    })
+}
+
+fn elaborate_actor_method_call(
+    db: &dyn TypeCheckDatabase,
+    receiver: typed_ast::Expression,
+    method: &str,
+    args: &[Expression],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<typed_ast::Expression> {
+    let module_type = receiver.ty().actor_ref_inner()?.clone();
+    let module_path = match &module_type {
+        RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
+        _ => return None,
+    };
+    let fn_path = DefinitionPath::for_function(module_path, method);
+    let sig = get_function_sig(
+        db,
+        InternedFunctionName::new(db, fn_path.clone()),
+        ctx.program,
+    )?;
+    let sig = sig.get().clone();
+    let mut typed_args = vec![receiver];
+    for arg in args {
+        typed_args.push(elaborate_expression(db, arg, env, ctx)?);
+    }
+    Some(typed_ast::Expression::Call {
+        function: method.to_string(),
+        binding: typed_ast::MethodBinding::Early(fn_path),
+        kind: FunctionKind::Actor,
+        arguments: typed_args,
+        ty: sig.return_type,
+        span,
+    })
+}
+
 fn elaborate_call(
     db: &dyn TypeCheckDatabase,
     function: &str,
@@ -394,6 +465,9 @@ fn elaborate_call(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
+    if function == "spawn" && !type_args.is_empty() {
+        return elaborate_spawn(db, type_args, arguments, span, env, ctx);
+    }
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 

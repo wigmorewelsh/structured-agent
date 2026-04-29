@@ -302,6 +302,9 @@ pub enum Statement {
         span: Span,
     },
     Return(Expression),
+    Yield {
+        span: Span,
+    },
 }
 
 impl Spanned for Statement {
@@ -314,6 +317,7 @@ impl Spanned for Statement {
             Statement::If { span, .. } => *span,
             Statement::While { span, .. } => *span,
             Statement::Return(expr) => expr.span(),
+            Statement::Yield { span, .. } => *span,
         }
     }
 }
@@ -544,6 +548,7 @@ impl fmt::Display for Statement {
                 write!(f, "}}")
             }
             Statement::Return(expr) => write!(f, "return {}", expr),
+            Statement::Yield { .. } => write!(f, "yield"),
         }
     }
 }

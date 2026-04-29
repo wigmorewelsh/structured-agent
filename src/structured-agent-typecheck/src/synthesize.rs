@@ -449,6 +449,7 @@ fn check_statement(
     ctx: &CheckContext,
 ) -> Option<TypeEnvironment> {
     match statement {
+        Statement::Yield { .. } => Some(env),
         Statement::Injection(expr) => {
             synthesize_expression(db, expr, &env, ctx)?;
             Some(env)
@@ -678,6 +679,20 @@ pub fn synthesize_expression(
             span,
         } => {
             let receiver_type = synthesize_expression(db, receiver, env, ctx)?;
+            if receiver_type.is_actor_ref() {
+                let module_type = receiver_type.actor_ref_inner()?;
+                let module_path = match module_type {
+                    RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
+                    _ => return None,
+                };
+                let fn_path = DefinitionPath::for_function(module_path, method.as_str());
+                for arg in args {
+                    synthesize_expression(db, arg, env, ctx)?;
+                }
+                let sig =
+                    get_function_sig(db, InternedFunctionName::new(db, fn_path), ctx.program)?;
+                return Some(sig.get().return_type.clone());
+            }
             if let RT::Generic(param_name) = &receiver_type {
                 let bounds = match env.get_type_param_bounds(param_name) {
                     Some(b) => b.clone(),
@@ -757,6 +772,11 @@ fn synthesize_call(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<RT> {
+    if function == "spawn" && !type_args.is_empty() {
+        let module_type_ast = type_args.first()?;
+        let module_type = resolve(db, module_type_ast, env, span, ctx)?;
+        return Some(RT::actor_ref(module_type));
+    }
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 

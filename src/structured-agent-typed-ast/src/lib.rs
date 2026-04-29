@@ -100,6 +100,9 @@ pub enum Statement {
         span: Span,
     },
     Return(Expression),
+    Yield {
+        span: Span,
+    },
 }
 
 #[derive(Clone, Debug)]

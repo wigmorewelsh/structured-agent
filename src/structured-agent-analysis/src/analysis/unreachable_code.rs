@@ -1,7 +1,7 @@
 use crate::analysis::{Analyzer, Warning};
+use std::collections::HashSet;
 use structured_agent_ast::ast::{Expression, Function, Statement};
 use structured_agent_ast::types::{FileId, Span, Spanned};
-use std::collections::HashSet;
 
 pub struct ReachabilityAnalyzer {
     reachable: HashSet<Span>,
@@ -32,6 +32,7 @@ impl ReachabilityAnalyzer {
                     *span
                 }
                 Statement::Return(expr) => expr.span(),
+                Statement::Yield { span, .. } => *span,
             };
             self.all_statements.push(span);
         }
@@ -50,6 +51,7 @@ impl ReachabilityAnalyzer {
                     Statement::If { span, .. } => *span,
                     Statement::While { span, .. } => *span,
                     Statement::Return(expr) => expr.span(),
+                    Statement::Yield { span, .. } => *span,
                 };
                 self.reachable.insert(span);
             }

@@ -995,6 +995,7 @@ mod vm_execution_tests {
                 span: *span,
             },
             AS::Return(expr) => typed_ast::Statement::Return(ast_expr_to_typed(expr)),
+            AS::Yield { span } => typed_ast::Statement::Yield { span: *span },
         }
     }
 

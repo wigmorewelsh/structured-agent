@@ -9,6 +9,7 @@ structured-agent-il = { path = "../structured-agent-il" }
 structured-agent-interpreter-runtime = { path = "../structured-agent-interpreter-runtime" }
 structured-agent-runtime = { path = "../structured-agent-runtime" }
 async-trait = "0.1"
+tokio = { version = "1.0", features = ["rt", "sync", "macros"] }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt", "macros"] }

@@ -8,6 +8,8 @@ use nonempty::NonEmpty;
 pub enum FunctionKind {
     Bytecode,
     External,
+    Spawn,
+    Actor,
 }
 
 pub trait SourceRef: fmt::Debug + Clone {}

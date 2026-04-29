@@ -78,6 +78,7 @@ impl UnusedVariableAnalyzer {
             Statement::Return(expr) => {
                 self.analyze_expression(expr);
             }
+            Statement::Yield { .. } => {}
         }
     }
 

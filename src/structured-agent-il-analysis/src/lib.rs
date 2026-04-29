@@ -51,6 +51,18 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         Instruction::CallBytecode { params, .. } | Instruction::CallExternal { params, .. } => {
             params.clone()
         }
+        Instruction::Spawn {
+            module_slot,
+            key_slot,
+            ..
+        } => vec![*module_slot, *key_slot],
+        Instruction::CallActor {
+            actor_slot, params, ..
+        } => {
+            let mut reads = vec![*actor_slot];
+            reads.extend(params.iter().cloned());
+            reads
+        }
         Instruction::CtxEvent { var } => vec![*var],
         Instruction::ListCreate { elements, .. } => elements.clone(),
         Instruction::LlmSelect { metadata_vars, .. } => metadata_vars.clone(),
@@ -73,6 +85,8 @@ pub fn instruction_writes(instruction: &Instruction) -> Option<Slot> {
         Instruction::CallBytecode { dest, .. } | Instruction::CallExternal { dest, .. } => {
             Some(*dest)
         }
+        Instruction::Spawn { dest, .. } => Some(*dest),
+        Instruction::CallActor { dest, .. } => Some(*dest),
         Instruction::LoadModule { dest, .. } => Some(*dest),
         Instruction::CallIndirect { dest, .. } => Some(*dest),
         Instruction::CallNative { dest, .. } => Some(*dest),

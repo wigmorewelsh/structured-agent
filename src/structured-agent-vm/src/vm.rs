@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use structured_agent_il::slot::Slot;
@@ -7,7 +8,7 @@ use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
     ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, TypedEvent,
 };
-use structured_agent_runtime::{DefinitionPath, NativeFnPtr};
+use structured_agent_runtime::{ActorRef, AgentHandle, DefinitionPath, NativeFnPtr};
 
 struct CallFrame {
     instructions: Arc<[Instruction]>,
@@ -19,9 +20,20 @@ struct CallFrame {
     needs_context_restore: bool,
 }
 
-struct VMState {
+pub enum VMOutcome {
+    Complete(Context, ExpressionResult),
+    Yielded(VMState),
+}
+
+pub struct VMState {
     call_stack: Vec<CallFrame>,
     context: Context,
+}
+
+impl VMState {
+    pub fn agent_handle(&self) -> &AgentHandle {
+        self.context.agent_handle()
+    }
 }
 
 pub struct VM {
@@ -39,6 +51,20 @@ impl VM {
         context: Context,
         frame: Vec<Option<ExpressionResult>>,
     ) -> Result<(Context, ExpressionResult), String> {
+        match self.execute_outcome(instructions, context, frame).await? {
+            VMOutcome::Complete(ctx, result) => Ok((ctx, result)),
+            VMOutcome::Yielded(_) => {
+                Err("actor yield not supported in non-actor context".to_string())
+            }
+        }
+    }
+
+    pub async fn execute_outcome(
+        &self,
+        instructions: &[Instruction],
+        context: Context,
+        frame: Vec<Option<ExpressionResult>>,
+    ) -> Result<VMOutcome, String> {
         let instructions_arc: Arc<[Instruction]> = Arc::from(instructions);
         let initial_frame = CallFrame {
             instructions: instructions_arc,
@@ -49,11 +75,18 @@ impl VM {
             evaluated_parameters: vec![],
             needs_context_restore: false,
         };
-        let mut state = VMState {
+        let state = VMState {
             call_stack: vec![initial_frame],
             context,
         };
+        self.run_dispatch_loop(state).await
+    }
 
+    pub async fn resume_outcome(&self, state: VMState) -> Result<VMOutcome, String> {
+        self.run_dispatch_loop(state).await
+    }
+
+    async fn run_dispatch_loop(&self, mut state: VMState) -> Result<VMOutcome, String> {
         loop {
             let instruction = {
                 let frame = state
@@ -90,7 +123,7 @@ impl VM {
                         state.context = state.context.restore_parent()?;
                     }
                     if state.call_stack.is_empty() {
-                        return Ok((state.context, result));
+                        return Ok(VMOutcome::Complete(state.context, result));
                     }
                     let result_with_meta = ExpressionResult {
                         name: Some(frame.display_name),
@@ -101,7 +134,27 @@ impl VM {
                         Some(result_with_meta);
                     state
                 }
-                Instruction::Yield => return Err("Yield not yet implemented".to_string()),
+                Instruction::Snapshot => {
+                    return Err("snapshot/durable-yield not yet implemented".to_string());
+                }
+                Instruction::ActorYield => return Ok(VMOutcome::Yielded(Self::advance_pc(state))),
+                Instruction::Spawn {
+                    module_slot,
+                    key_slot,
+                    dest,
+                } => {
+                    self.execute_spawn(state, module_slot, key_slot, dest)
+                        .await?
+                }
+                Instruction::CallActor {
+                    actor_slot,
+                    fn_name,
+                    params,
+                    dest,
+                } => {
+                    self.execute_call_actor(state, actor_slot, fn_name, params, dest)
+                        .await?
+                }
                 Instruction::CallBytecode {
                     function_name,
                     params,
@@ -685,6 +738,59 @@ impl VM {
         Self::write_slot(&mut state, dest, ExpressionResult::new(field_value));
         Ok(Self::advance_pc(state))
     }
+
+    async fn execute_spawn(
+        &self,
+        mut state: VMState,
+        module_slot: Slot,
+        key_slot: Slot,
+        dest: Slot,
+    ) -> Result<VMState, String> {
+        let module_val = Self::read_slot(&state, module_slot)?;
+        let key_val = Self::read_slot(&state, key_slot)?;
+        let key = key_val.value.as_string()?;
+        let module_path = match &module_val.value {
+            ExpressionValue::Module { path, .. } => path.clone(),
+            _ => return Err("Spawn: expected Module value".to_string()),
+        };
+        let registry_key = format!("{}:{}", module_path, key);
+        let handle = state.context.agent_handle().clone();
+        let actor_ref =
+            self.runtime
+                .actor_registry()
+                .get_or_create(registry_key, module_path, |rx| {
+                    let actor_ctx = Context::with_runtime_and_handle(self.runtime.clone(), handle);
+                    self.runtime.spawn_actor(rx, actor_ctx);
+                });
+        let actor_ref_result = ExpressionResult::new(ExpressionValue::Dynamic(Arc::new(actor_ref)));
+        state = Self::advance_pc(state);
+        Self::write_slot(&mut state, dest, actor_ref_result);
+        Ok(state)
+    }
+
+    async fn execute_call_actor(
+        &self,
+        mut state: VMState,
+        actor_slot: Slot,
+        fn_name: DefinitionPath,
+        params: Vec<Slot>,
+        dest: Slot,
+    ) -> Result<VMState, String> {
+        let actor_val = Self::read_slot(&state, actor_slot)?;
+        let actor_ref = actor_val
+            .value
+            .downcast_clone::<ActorRef>()
+            .map_err(|_| "CallActor: expected ActorRef".to_string())?;
+        let mut args = Vec::new();
+        for slot in &params {
+            args.push(Self::read_slot(&state, *slot)?);
+        }
+        let result_value = actor_ref.call(fn_name, args).await?;
+        let result = ExpressionResult::new(result_value);
+        state = Self::advance_pc(state);
+        Self::write_slot(&mut state, dest, result);
+        Ok(state)
+    }
 }
 
 #[cfg(test)]
@@ -698,7 +804,7 @@ mod tests {
     };
     use structured_agent_runtime::{DefinitionPath, NativeFnPtr, Parameter, Type};
 
-    use crate::vm::VM;
+    use crate::vm::{VM, VMOutcome};
 
     struct NoopRuntime;
 
@@ -918,5 +1024,50 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.value, ExpressionValue::string("nested"));
+    }
+
+    #[tokio::test]
+    async fn actor_yield_in_non_actor_context_returns_error() {
+        let instructions = vec![Instruction::ActorYield];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let context = make_context();
+        let frame = vec![];
+        let result = vm.execute(&instructions, context, frame).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("actor yield"));
+    }
+
+    #[tokio::test]
+    async fn actor_yield_via_execute_outcome_returns_yielded() {
+        let instructions = vec![Instruction::ActorYield];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let context = make_context();
+        let frame = vec![];
+        let outcome = vm
+            .execute_outcome(&instructions, context, frame)
+            .await
+            .unwrap();
+        assert!(matches!(outcome, VMOutcome::Yielded(_)));
+    }
+
+    #[tokio::test]
+    async fn resume_after_yield_completes() {
+        let instructions = vec![
+            Instruction::ActorYield,
+            Instruction::LdcUnit { dest: Slot(0) },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let context = make_context();
+        let frame = vec![None];
+        let outcome = vm
+            .execute_outcome(&instructions, context, frame)
+            .await
+            .unwrap();
+        let VMOutcome::Yielded(state) = outcome else {
+            panic!("expected Yielded")
+        };
+        let outcome2 = vm.resume_outcome(state).await.unwrap();
+        assert!(matches!(outcome2, VMOutcome::Complete(_, _)));
     }
 }

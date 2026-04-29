@@ -713,6 +713,7 @@ combine::parser! {
             parse_if_statement(),
             parse_while_statement(),
             parse_return_statement(),
+            attempt(parse_yield_statement()),
             parse_expression_statement(),
         ))
     }
@@ -1263,6 +1264,15 @@ where
     attempt(lex_string("return"))
         .with(parse_expression())
         .map(Statement::Return)
+}
+
+combine::parser! {
+    fn parse_yield_statement[Input]()(Input) -> Statement
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (position(), attempt(lex_string("yield")), position())
+            .map(|(start, _, end)| Statement::Yield { span: Span::new(start, end) })
+    }
 }
 
 #[cfg(test)]
@@ -2002,6 +2012,19 @@ fn documented_function(): () {
         assert!(func.documentation.is_some());
         let doc = func.documentation.as_ref().unwrap();
         assert_eq!(doc, "Single line documentation");
+    }
+
+    #[test]
+    fn test_parse_yield_statement() {
+        let input = "fn main(): () {\n    yield\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert_eq!(func.body.statements.len(), 1);
+        assert!(matches!(func.body.statements[0], Statement::Yield { .. }));
     }
 
     #[test]

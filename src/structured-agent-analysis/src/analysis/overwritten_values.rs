@@ -77,6 +77,7 @@ impl OverwrittenValueAnalyzer {
             Statement::Return(expr) => {
                 Self::collect_reads_in_expression(expr, reads);
             }
+            Statement::Yield { .. } => {}
         }
     }
 
@@ -135,6 +136,7 @@ impl OverwrittenValueAnalyzer {
                         Self::collect_reads_in_statement(stmt, reads);
                     }
                 }
+                Statement::Yield { .. } => {}
             }
         }
     }

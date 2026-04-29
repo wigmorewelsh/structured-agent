@@ -160,6 +160,23 @@ impl Type {
         matches!(self, Type::Parameterized(n, _) if n.last_name() == "Option")
     }
 
+    pub fn actor_ref(inner: Type) -> Self {
+        Self::Parameterized(Self::prelude("ActorRef"), vec![inner])
+    }
+
+    pub fn is_actor_ref(&self) -> bool {
+        matches!(self, Type::Parameterized(n, _) if n.last_name() == "ActorRef")
+    }
+
+    pub fn actor_ref_inner(&self) -> Option<&Type> {
+        if let Type::Parameterized(n, args) = self {
+            if n.last_name() == "ActorRef" {
+                return args.first();
+            }
+        }
+        None
+    }
+
     pub fn generic(name: impl Into<std::string::String>) -> Self {
         Self::Generic(name.into())
     }

@@ -137,6 +137,10 @@ impl BytecodeCompiler {
                 condition, body, ..
             } => self.compile_while_statement(ctx, condition, body),
             typed_ast::Statement::Return(expr) => self.compile_return_statement(ctx, expr),
+            typed_ast::Statement::Yield { .. } => {
+                ctx.builder.emit(Instruction::ActorYield);
+                Ok(())
+            }
         }
     }
 
@@ -349,21 +353,37 @@ impl BytecodeCompiler {
                     dest: dest_var,
                 });
             }
-            typed_ast::MethodBinding::Early(fn_path) => {
-                let instruction = match kind {
-                    FunctionKind::Bytecode => Instruction::CallBytecode {
+            typed_ast::MethodBinding::Early(fn_path) => match kind {
+                FunctionKind::Bytecode => {
+                    ctx.builder.emit(Instruction::CallBytecode {
                         function_name: fn_path.clone(),
                         params,
                         dest: dest_var,
-                    },
-                    FunctionKind::External => Instruction::CallExternal {
+                    });
+                }
+                FunctionKind::External => {
+                    ctx.builder.emit(Instruction::CallExternal {
                         function_name: fn_path.clone(),
                         params,
                         dest: dest_var,
-                    },
-                };
-                ctx.builder.emit(instruction);
-            }
+                    });
+                }
+                FunctionKind::Spawn => {
+                    ctx.builder.emit(Instruction::Spawn {
+                        module_slot: params[0],
+                        key_slot: params[1],
+                        dest: dest_var,
+                    });
+                }
+                FunctionKind::Actor => {
+                    ctx.builder.emit(Instruction::CallActor {
+                        actor_slot: params[0],
+                        fn_name: fn_path.clone(),
+                        params: params[1..].to_vec(),
+                        dest: dest_var,
+                    });
+                }
+            },
         }
         Ok(())
     }
@@ -743,6 +763,7 @@ fn collect_binding_ids_inner(
             typed_ast::Statement::Return(expr) => {
                 collect_from_expr(expr, result, seen);
             }
+            typed_ast::Statement::Yield { .. } => {}
         }
     }
 }
