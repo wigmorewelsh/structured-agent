@@ -209,10 +209,10 @@ mod tests {
             None
         }
 
-        fn get_bytecode_function(
+        fn get_bytecode_ref(
             &self,
             _name: &DefinitionPath,
-        ) -> Option<Arc<dyn ExecutableFunction>> {
+        ) -> Option<structured_agent_il::BytecodeRef> {
             None
         }
 

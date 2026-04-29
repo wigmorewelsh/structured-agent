@@ -1,3 +1,5 @@
+pub use structured_agent_il::BytecodeRef;
+
 pub mod context;
 pub mod service;
 pub mod traits;

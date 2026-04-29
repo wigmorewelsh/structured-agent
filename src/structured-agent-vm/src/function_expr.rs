@@ -32,16 +32,6 @@ impl BytecodeFunctionExpr {
     }
 }
 
-impl BytecodeFunctionExpr {
-    pub(crate) fn instructions_arc(&self) -> Arc<[structured_agent_il::Instruction]> {
-        Arc::clone(&self.instructions)
-    }
-
-    pub(crate) fn slot_count(&self) -> usize {
-        self.slot_count
-    }
-}
-
 impl std::fmt::Debug for BytecodeFunctionExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BytecodeFunctionExpr")

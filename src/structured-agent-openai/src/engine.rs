@@ -386,7 +386,10 @@ mod tests {
         fn get_native_function(&self, _: &str) -> Option<Arc<dyn ExecutableFunction>> {
             None
         }
-        fn get_bytecode_function(&self, _: &DefinitionPath) -> Option<Arc<dyn ExecutableFunction>> {
+        fn get_bytecode_ref(
+            &self,
+            _: &DefinitionPath,
+        ) -> Option<structured_agent_interpreter_runtime::BytecodeRef> {
             None
         }
         fn engine(&self) -> &dyn LanguageEngine {

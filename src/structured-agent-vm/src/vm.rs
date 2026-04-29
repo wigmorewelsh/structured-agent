@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use structured_agent_il::Instruction;
 use structured_agent_il::slot::Slot;
+use structured_agent_il::{BytecodeRef, Instruction};
 use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
     ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, TypedEvent,
 };
 use structured_agent_runtime::{DefinitionPath, NativeFnPtr};
-
-use crate::function_expr::BytecodeFunctionExpr;
 
 struct CallFrame {
     instructions: Arc<[Instruction]>,
@@ -244,9 +242,9 @@ impl VM {
         params: Vec<Slot>,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let func = self
+        let body = self
             .runtime
-            .get_bytecode_function(&function_name)
+            .get_bytecode_ref(&function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
         let display_name = function_name.to_string();
         let args: Vec<ExpressionResult> = params
@@ -254,26 +252,22 @@ impl VM {
             .map(|s| Self::read_slot(&state, *s))
             .collect::<Result<Vec<_>, _>>()?;
         let state = Self::advance_pc(state);
-        self.push_bytecode_frame(state, func, display_name, args, dest)
+        self.push_bytecode_frame(state, body, display_name, args, dest)
     }
 
     fn push_bytecode_frame(
         &self,
         mut state: VMState,
-        func: Arc<dyn ExecutableFunction>,
+        body: BytecodeRef,
         display_name: String,
         args: Vec<ExpressionResult>,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let bytecode_fn = func
-            .as_any()
-            .downcast_ref::<BytecodeFunctionExpr>()
-            .ok_or_else(|| "Function is not a bytecode function".to_string())?;
-        let instructions = bytecode_fn.instructions_arc();
-        let slot_count = bytecode_fn.slot_count();
+        let instructions: Arc<[Instruction]> = body.instructions.into();
+        let slot_count = body.slot_table.len();
         let evaluated_parameters: Vec<ExpressionParameter> = args
             .iter()
-            .zip(func.parameters().iter())
+            .zip(body.parameters.iter())
             .map(|(arg, param)| ExpressionParameter::new(param.name.clone(), arg.value.clone()))
             .collect();
         let mut child_context = state.context.create_child();
@@ -425,13 +419,12 @@ impl VM {
         function_name: &DefinitionPath,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let func = self
+        let body = self
             .runtime
-            .get_bytecode_function(function_name)
+            .get_bytecode_ref(function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
         let name_str = function_name.to_string();
-        let metadata =
-            ExpressionValue::metadata(&name_str, func.documentation().map(|s| s.to_string()));
+        let metadata = ExpressionValue::metadata(&name_str, body.documentation);
         Self::write_slot(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))
     }
@@ -646,9 +639,9 @@ impl VM {
             _ => return Err("CallIndirect: expected Module".to_string()),
         };
         let function_name = DefinitionPath::for_function(module_path, fn_name.last_name());
-        let func = self
+        let body = self
             .runtime
-            .get_bytecode_function(&function_name)
+            .get_bytecode_ref(&function_name)
             .ok_or_else(|| format!("Function not found: {}", function_name))?;
         let mut args: Vec<ExpressionResult> = module_params
             .into_iter()
@@ -659,7 +652,7 @@ impl VM {
         }
         let display_name = function_name.to_string();
         let state = Self::advance_pc(state);
-        self.push_bytecode_frame(state, func, display_name, args, dest)
+        self.push_bytecode_frame(state, body, display_name, args, dest)
     }
 
     fn execute_struct_new(
@@ -705,7 +698,6 @@ mod tests {
     };
     use structured_agent_runtime::{DefinitionPath, NativeFnPtr, Parameter, Type};
 
-    use crate::function_expr::BytecodeFunctionExpr;
     use crate::vm::VM;
 
     struct NoopRuntime;
@@ -714,10 +706,7 @@ mod tests {
         fn get_native_function(&self, _name: &str) -> Option<Arc<dyn ExecutableFunction>> {
             None
         }
-        fn get_bytecode_function(
-            &self,
-            _name: &DefinitionPath,
-        ) -> Option<Arc<dyn ExecutableFunction>> {
+        fn get_bytecode_ref(&self, _name: &DefinitionPath) -> Option<BytecodeRef> {
             None
         }
         fn engine(&self) -> &dyn structured_agent_interpreter_runtime::LanguageEngine {
@@ -745,11 +734,11 @@ mod tests {
     }
 
     struct TestRuntime {
-        functions: HashMap<DefinitionPath, Arc<dyn ExecutableFunction>>,
+        functions: HashMap<DefinitionPath, BytecodeRef>,
     }
 
     impl TestRuntime {
-        fn new(functions: HashMap<DefinitionPath, Arc<dyn ExecutableFunction>>) -> Self {
+        fn new(functions: HashMap<DefinitionPath, BytecodeRef>) -> Self {
             Self { functions }
         }
     }
@@ -758,10 +747,7 @@ mod tests {
         fn get_native_function(&self, _name: &str) -> Option<Arc<dyn ExecutableFunction>> {
             None
         }
-        fn get_bytecode_function(
-            &self,
-            name: &DefinitionPath,
-        ) -> Option<Arc<dyn ExecutableFunction>> {
+        fn get_bytecode_ref(&self, name: &DefinitionPath) -> Option<BytecodeRef> {
             self.functions.get(name).cloned()
         }
         fn engine(&self) -> &dyn structured_agent_interpreter_runtime::LanguageEngine {
@@ -796,25 +782,23 @@ mod tests {
         Context::with_runtime(runtime)
     }
 
-    fn make_bytecode_fn(
-        name: DefinitionPath,
+    fn make_bytecode_ref(
         instructions: Vec<Instruction>,
         slot_count: usize,
         params: Vec<Parameter>,
-    ) -> Arc<dyn ExecutableFunction> {
+    ) -> BytecodeRef {
         let mut slot_table = SlotTable::new();
         for i in 0..slot_count {
             slot_table.push(SlotKind::Temp, format!("s{}", i));
         }
-        let body = BytecodeRef {
+        BytecodeRef {
             instructions,
             labels: HashMap::new(),
             parameters: params,
             return_type: Type::string(),
             documentation: None,
             slot_table,
-        };
-        Arc::new(BytecodeFunctionExpr::new(name, body))
+        }
     }
 
     #[tokio::test]
@@ -845,8 +829,7 @@ mod tests {
     async fn execute_call_bytecode_returns_result() {
         let callee_path = DefinitionPath::for_function(DefinitionPath::root(), "callee");
 
-        let callee_fn = make_bytecode_fn(
-            callee_path.clone(),
+        let callee_ref = make_bytecode_ref(
             vec![
                 Instruction::LdcStr {
                     dest: Slot(1),
@@ -859,7 +842,7 @@ mod tests {
         );
 
         let mut functions = HashMap::new();
-        functions.insert(callee_path.clone(), callee_fn);
+        functions.insert(callee_path.clone(), callee_ref);
 
         let runtime = Arc::new(TestRuntime::new(functions));
         let context = make_context_with_runtime(runtime.clone());
@@ -887,8 +870,7 @@ mod tests {
         let inner_path = DefinitionPath::for_function(DefinitionPath::root(), "inner");
         let helper_path = DefinitionPath::for_function(DefinitionPath::root(), "helper");
 
-        let inner_fn = make_bytecode_fn(
-            inner_path.clone(),
+        let inner_ref = make_bytecode_ref(
             vec![
                 Instruction::LdcStr {
                     dest: Slot(1),
@@ -900,8 +882,7 @@ mod tests {
             vec![],
         );
 
-        let helper_fn = make_bytecode_fn(
-            helper_path.clone(),
+        let helper_ref = make_bytecode_ref(
             vec![
                 Instruction::CallBytecode {
                     function_name: inner_path.clone(),
@@ -915,8 +896,8 @@ mod tests {
         );
 
         let mut functions = HashMap::new();
-        functions.insert(inner_path, inner_fn);
-        functions.insert(helper_path.clone(), helper_fn);
+        functions.insert(inner_path, inner_ref);
+        functions.insert(helper_path.clone(), helper_ref);
 
         let runtime = Arc::new(TestRuntime::new(functions));
         let context = make_context_with_runtime(runtime.clone());

@@ -541,14 +541,10 @@ impl RuntimeService for Runtime {
         self.function_registry.get(name).cloned()
     }
 
-    fn get_bytecode_function(&self, name: &DefinitionPath) -> Option<Arc<dyn ExecutableFunction>> {
+    fn get_bytecode_ref(&self, name: &DefinitionPath) -> Option<structured_agent_il::BytecodeRef> {
         let cached = self.compiled.get()?.as_ref().ok()?;
         let func_def = cached.metadata.functions.get(name)?;
-        let body = func_def.body_ref.as_ref()?;
-        Some(Arc::new(BytecodeFunctionExpr::new(
-            name.clone(),
-            body.clone(),
-        )))
+        func_def.body_ref.as_ref().cloned()
     }
 
     fn engine(&self) -> &dyn LanguageEngine {
