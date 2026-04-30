@@ -13,7 +13,7 @@ use structured_agent_runtime::{ActorRef, AgentHandle, DefinitionPath, NativeFnPt
 struct CallFrame {
     instructions: Arc<[Instruction]>,
     pc: usize,
-    frame: Vec<Option<ExpressionResult>>,
+    slots: Vec<Option<ExpressionResult>>,
     dest: Slot,
     display_name: String,
     evaluated_parameters: Vec<ExpressionParameter>,
@@ -69,7 +69,7 @@ impl VM {
         let initial_frame = CallFrame {
             instructions: instructions_arc,
             pc: 0,
-            frame,
+            slots: frame,
             dest: Slot(0),
             display_name: String::new(),
             evaluated_parameters: vec![],
@@ -130,7 +130,7 @@ impl VM {
                         params: Some(frame.evaluated_parameters),
                         value: result.value,
                     };
-                    state.call_stack.last_mut().unwrap().frame[frame.dest.0 as usize] =
+                    state.call_stack.last_mut().unwrap().slots[frame.dest.0 as usize] =
                         Some(result_with_meta);
                     state
                 }
@@ -337,7 +337,7 @@ impl VM {
         state.call_stack.push(CallFrame {
             instructions,
             pc: 0,
-            frame: callee_frame,
+            slots: callee_frame,
             dest,
             display_name,
             evaluated_parameters,
@@ -628,14 +628,14 @@ impl VM {
         state
             .call_stack
             .last()
-            .and_then(|f| f.frame.get(slot.0 as usize))
+            .and_then(|f| f.slots.get(slot.0 as usize))
             .and_then(|v| v.clone())
             .ok_or_else(|| format!("Slot {} not initialized", slot.0))
     }
 
     fn write_slot(state: &mut VMState, slot: Slot, value: ExpressionResult) {
         if let Some(frame) = state.call_stack.last_mut() {
-            if let Some(entry) = frame.frame.get_mut(slot.0 as usize) {
+            if let Some(entry) = frame.slots.get_mut(slot.0 as usize) {
                 *entry = Some(value);
             }
         }
