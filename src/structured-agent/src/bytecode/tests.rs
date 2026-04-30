@@ -888,6 +888,7 @@ mod vm_execution_tests {
                 )),
                 kind: crate::typecheck::FunctionKind::External,
                 arguments: arguments.iter().map(ast_expr_to_typed).collect(),
+                target: None,
                 ty: Type::unit(),
                 span: *span,
             },
@@ -928,6 +929,7 @@ mod vm_execution_tests {
                 span: *span,
             },
             AE::MethodCall { .. } => unimplemented!("MethodCall not supported in test helper"),
+            AE::Spawn { .. } => unimplemented!("Spawn not supported in test helper"),
             AE::Select(select) => typed_ast::Expression::Select(
                 typed_ast::SelectExpression {
                     clauses: select

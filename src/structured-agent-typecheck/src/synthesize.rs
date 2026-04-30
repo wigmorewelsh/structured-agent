@@ -676,6 +676,10 @@ pub fn synthesize_expression(
         Expression::FieldAccess { base, field, span } => {
             synthesize_field_access(db, base, field, *span, env, ctx)
         }
+        Expression::Spawn { type_arg, span, .. } => {
+            let module_type = resolve(db, type_arg, env, *span, ctx)?;
+            Some(RT::actor_ref(module_type))
+        }
         Expression::MethodCall {
             receiver,
             method,
@@ -776,11 +780,6 @@ fn synthesize_call(
     env: &TypeEnvironment,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    if function == "spawn" && !type_args.is_empty() {
-        let module_type_ast = type_args.first()?;
-        let module_type = resolve(db, module_type_ast, env, span, ctx)?;
-        return Some(RT::actor_ref(module_type));
-    }
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 

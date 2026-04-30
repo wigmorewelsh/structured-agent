@@ -121,6 +121,9 @@ impl UnusedVariableAnalyzer {
                     self.analyze_expression(arg);
                 }
             }
+            Expression::Spawn { key, .. } => {
+                self.analyze_expression(key);
+            }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
             | Expression::IntLiteral { .. }

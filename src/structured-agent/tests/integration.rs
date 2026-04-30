@@ -1,4 +1,5 @@
 mod integration {
+    mod actor_test;
     mod assignment_test;
     mod helpers;
     mod integration_test;

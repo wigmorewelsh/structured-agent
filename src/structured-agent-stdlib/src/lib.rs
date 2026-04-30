@@ -1,3 +1,4 @@
+pub mod actor;
 pub mod equality;
 pub mod fs;
 pub mod io;

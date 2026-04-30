@@ -123,6 +123,9 @@ impl UnusedReturnValueAnalyzer {
                     self.analyze_expression(arg);
                 }
             }
+            Expression::Spawn { key, .. } => {
+                self.analyze_expression(key);
+            }
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }

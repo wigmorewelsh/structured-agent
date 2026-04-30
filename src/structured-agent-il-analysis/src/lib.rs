@@ -51,11 +51,7 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         Instruction::CallBytecode { params, .. } | Instruction::CallExternal { params, .. } => {
             params.clone()
         }
-        Instruction::Spawn {
-            module_slot,
-            key_slot,
-            ..
-        } => vec![*module_slot, *key_slot],
+        Instruction::Spawn { key_slot, .. } => vec![*key_slot],
         Instruction::CallActor {
             actor_slot, params, ..
         } => {

@@ -139,11 +139,11 @@ impl VM {
                 }
                 Instruction::ActorYield => return Ok(VMOutcome::Yielded(Self::advance_pc(state))),
                 Instruction::Spawn {
-                    module_slot,
+                    module_path,
                     key_slot,
                     dest,
                 } => {
-                    self.execute_spawn(state, module_slot, key_slot, dest)
+                    self.execute_spawn(state, module_path.clone(), key_slot, dest)
                         .await?
                 }
                 Instruction::CallActor {
@@ -742,24 +742,22 @@ impl VM {
     async fn execute_spawn(
         &self,
         mut state: VMState,
-        module_slot: Slot,
+        module_path: DefinitionPath,
         key_slot: Slot,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let module_val = Self::read_slot(&state, module_slot)?;
         let key_val = Self::read_slot(&state, key_slot)?;
         let key = key_val.value.as_string()?;
-        let module_path = match &module_val.value {
-            ExpressionValue::Module { path, .. } => path.clone(),
-            _ => return Err("Spawn: expected Module value".to_string()),
-        };
         let registry_key = format!("{}:{}", module_path, key);
+        let actor_id = registry_key.clone();
         let handle = state.context.agent_handle().clone();
         let actor_ref =
             self.runtime
                 .actor_registry()
                 .get_or_create(registry_key, module_path, |rx| {
-                    let actor_ctx = Context::with_runtime_and_handle(self.runtime.clone(), handle);
+                    let actor_handle = handle.with_actor_id(actor_id);
+                    let actor_ctx =
+                        Context::with_runtime_and_handle(self.runtime.clone(), actor_handle);
                     self.runtime.spawn_actor(rx, actor_ctx);
                 });
         let actor_ref_result = ExpressionResult::new(ExpressionValue::Dynamic(Arc::new(actor_ref)));

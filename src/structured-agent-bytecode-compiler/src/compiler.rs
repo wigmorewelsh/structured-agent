@@ -277,8 +277,16 @@ impl BytecodeCompiler {
                 binding,
                 kind,
                 arguments,
+                target,
                 ..
-            } => self.compile_call_expression(ctx, binding, kind.clone(), arguments, dest_var),
+            } => self.compile_call_expression(
+                ctx,
+                binding,
+                kind.clone(),
+                arguments,
+                target,
+                dest_var,
+            ),
             typed_ast::Expression::TypeLiteral { ty, .. } => {
                 Self::compile_type_literal(ctx, ty, dest_var);
                 Ok(())
@@ -322,6 +330,9 @@ impl BytecodeCompiler {
             typed_ast::Expression::FieldAccess { base, field, .. } => {
                 self.compile_field_access(ctx, base, field, dest_var)
             }
+            typed_ast::Expression::Spawn { key, ty, .. } => {
+                self.compile_spawn_expression(ctx, key, ty, dest_var)
+            }
         }
     }
 
@@ -331,6 +342,7 @@ impl BytecodeCompiler {
         binding: &typed_ast::MethodBinding,
         kind: FunctionKind,
         arguments: &[typed_ast::Expression],
+        target: &Option<Box<typed_ast::Expression>>,
         dest_var: Slot,
     ) -> Result<(), String> {
         let mut params: Vec<Slot> = Vec::new();
@@ -353,38 +365,61 @@ impl BytecodeCompiler {
                     dest: dest_var,
                 });
             }
-            typed_ast::MethodBinding::Early(fn_path) => match kind {
-                FunctionKind::Bytecode => {
-                    ctx.builder.emit(Instruction::CallBytecode {
-                        function_name: fn_path.clone(),
-                        params,
-                        dest: dest_var,
-                    });
-                }
-                FunctionKind::External => {
-                    ctx.builder.emit(Instruction::CallExternal {
-                        function_name: fn_path.clone(),
-                        params,
-                        dest: dest_var,
-                    });
-                }
-                FunctionKind::Spawn => {
-                    ctx.builder.emit(Instruction::Spawn {
-                        module_slot: params[0],
-                        key_slot: params[1],
-                        dest: dest_var,
-                    });
-                }
-                FunctionKind::Actor => {
+            typed_ast::MethodBinding::Early(fn_path) => {
+                if let Some(actor_expr) = target {
+                    let actor_slot = ctx.builder.next_temp_slot();
+                    self.compile_expression(ctx, actor_expr, actor_slot)?;
                     ctx.builder.emit(Instruction::CallActor {
-                        actor_slot: params[0],
+                        actor_slot,
                         fn_name: fn_path.clone(),
-                        params: params[1..].to_vec(),
+                        params,
                         dest: dest_var,
                     });
+                } else {
+                    match kind {
+                        FunctionKind::Bytecode => {
+                            ctx.builder.emit(Instruction::CallBytecode {
+                                function_name: fn_path.clone(),
+                                params,
+                                dest: dest_var,
+                            });
+                        }
+                        FunctionKind::External => {
+                            ctx.builder.emit(Instruction::CallExternal {
+                                function_name: fn_path.clone(),
+                                params,
+                                dest: dest_var,
+                            });
+                        }
+                    }
                 }
-            },
+            }
         }
+        Ok(())
+    }
+
+    fn compile_spawn_expression(
+        &self,
+        ctx: &mut CompilerCtx,
+        key: &typed_ast::Expression,
+        ty: &structured_agent_runtime::Type,
+        dest_var: Slot,
+    ) -> Result<(), String> {
+        let key_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, key, key_slot)?;
+        let module_path = ty
+            .actor_ref_inner()
+            .and_then(|t| match t {
+                structured_agent_runtime::Type::Named(p)
+                | structured_agent_runtime::Type::Parameterized(p, _) => Some(p.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| "Spawn: expected ActorRef type".to_string())?;
+        ctx.builder.emit(Instruction::Spawn {
+            module_path,
+            key_slot,
+            dest: dest_var,
+        });
         Ok(())
     }
 

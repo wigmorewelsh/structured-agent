@@ -30,6 +30,7 @@ impl UnusedExpressionAnalyzer {
                 }
                 Expression::Variable { .. }
                 | Expression::Call { .. }
+                | Expression::Spawn { .. }
                 | Expression::Select(_)
                 | Expression::IfElse { .. }
                 | Expression::StructLiteral { .. }
@@ -112,6 +113,9 @@ impl UnusedExpressionAnalyzer {
                 for arg in args {
                     self.analyze_expression(arg);
                 }
+            }
+            Expression::Spawn { key, .. } => {
+                self.analyze_expression(key);
             }
             Expression::Variable { .. }
             | Expression::StringLiteral { .. }

@@ -130,6 +130,7 @@ pub enum Expression {
         binding: MethodBinding,
         kind: FunctionKind,
         arguments: Vec<Expression>,
+        target: Option<Box<Expression>>,
         ty: Type,
         span: Span,
     },
@@ -197,6 +198,11 @@ pub enum Expression {
         ty: Type,
         span: Span,
     },
+    Spawn {
+        key: Box<Expression>,
+        ty: Type,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -216,6 +222,7 @@ impl Expression {
             Expression::ModuleInstance { ty, .. } => ty,
             Expression::Select(_, ty) => ty,
             Expression::IfElse { ty, .. } => ty,
+            Expression::Spawn { ty, .. } => ty,
         }
     }
 
@@ -235,6 +242,7 @@ impl Expression {
             Expression::ModuleInstance { span, .. } => *span,
             Expression::Select(s, _) => s.span,
             Expression::IfElse { span, .. } => *span,
+            Expression::Spawn { span, .. } => *span,
         }
     }
 }

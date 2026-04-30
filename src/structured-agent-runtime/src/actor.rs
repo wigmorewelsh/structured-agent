@@ -50,6 +50,7 @@ pub struct AgentHandle {
     pub id: AgentId,
     events_tx: broadcast::Sender<AgentMessage>,
     messagebox_rx: MessageboxRx,
+    actor_id: Option<String>,
 }
 
 impl AgentHandle {
@@ -61,6 +62,7 @@ impl AgentHandle {
             id: AgentId::default(),
             events_tx,
             messagebox_rx: Arc::new(Mutex::new(messagebox_rx)),
+            actor_id: None,
         }
     }
 
@@ -74,6 +76,7 @@ impl AgentHandle {
             id: AgentId::default(),
             events_tx,
             messagebox_rx: Arc::new(Mutex::new(messagebox_rx)),
+            actor_id: None,
         };
         (handle, messagebox_tx)
     }
@@ -110,6 +113,15 @@ impl AgentHandle {
     pub async fn try_recv_message(&self) -> Option<(AgentMessage, oneshot::Sender<()>)> {
         let mut rx = self.messagebox_rx.lock().await;
         rx.try_recv().ok()
+    }
+
+    pub fn with_actor_id(mut self, id: String) -> Self {
+        self.actor_id = Some(id);
+        self
+    }
+
+    pub fn actor_id(&self) -> Option<&str> {
+        self.actor_id.as_deref()
     }
 }
 

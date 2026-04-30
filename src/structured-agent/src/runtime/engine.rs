@@ -17,7 +17,8 @@ use structured_agent_runtime::actor::ActorRegistry;
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{DefinitionPath, SymbolQuery};
 use structured_agent_stdlib::{
-    fs::FsModule, io::IoModule, messaging::MessagingModule, unstable::UnstableModule,
+    actor::ActorModule, fs::FsModule, io::IoModule, messaging::MessagingModule,
+    unstable::UnstableModule,
 };
 use tracing::{debug, error};
 
@@ -196,10 +197,10 @@ impl RuntimeBuilder {
 
         let function_registry = HashMap::new();
 
-        let default_compiler = self
-            .modules
-            .iter()
-            .fold(Compiler::new(), |c, m| c.with_module(Arc::clone(m)));
+        let default_compiler = self.modules.iter().fold(
+            Compiler::new().with_module(Arc::new(ActorModule)),
+            |c, m| c.with_module(Arc::clone(m)),
+        );
 
         Runtime {
             function_registry,

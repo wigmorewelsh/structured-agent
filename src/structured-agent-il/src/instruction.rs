@@ -50,7 +50,7 @@ pub enum Instruction {
     ActorYield,
 
     Spawn {
-        module_slot: Slot,
+        module_path: DefinitionPath,
         key_slot: Slot,
         dest: Slot,
     },
@@ -163,10 +163,11 @@ impl fmt::Display for Instruction {
             Instruction::ActorYield => write!(f, "actor.yield"),
 
             Instruction::Spawn {
-                module_slot,
+                module_path,
                 key_slot,
                 dest,
-            } => write!(f, "spawn {}, {}, {}", module_slot, key_slot, dest),
+                ..
+            } => write!(f, "spawn {}, {}, {}", module_path, key_slot, dest),
             Instruction::CallActor {
                 actor_slot,
                 fn_name,

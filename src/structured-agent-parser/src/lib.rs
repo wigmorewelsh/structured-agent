@@ -97,16 +97,21 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        choice((letter(), char('_'))),
-        many(choice((combine::parser::char::alpha_num(), char('_')))),
+    not_followed_by(attempt(string("spawn").skip(not_followed_by(satisfy(
+        |c: char| c.is_alphanumeric() || c == '_',
+    )))))
+    .with(
+        (
+            choice((letter(), char('_'))),
+            many(choice((combine::parser::char::alpha_num(), char('_')))),
+        )
+            .map(|(first, rest): (char, Vec<char>)| {
+                let mut result = String::new();
+                result.push(first);
+                result.extend(rest);
+                result
+            }),
     )
-        .map(|(first, rest): (char, Vec<char>)| {
-            let mut result = String::new();
-            result.push(first);
-            result.extend(rest);
-            result
-        })
 }
 
 fn identifier<Input>() -> impl Parser<Input, Output = String>
@@ -192,10 +197,14 @@ where
             ))),
             position(),
         )
-            .map(move |(name, params, end)| Definition::ModuleHeader {
-                name,
-                params: params.unwrap_or_default(),
-                span: Span::new(start, end),
+            .then(move |(name, params, end)| {
+                not_followed_by(skip_spaces_and_comments().with(char('{'))).map(move |_| {
+                    Definition::ModuleHeader {
+                        name: name.clone(),
+                        params: params.clone().unwrap_or_default(),
+                        span: Span::new(start, end),
+                    }
+                })
             })
     })
 }
@@ -206,28 +215,51 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (position(), attempt(lex_string("mod")), identifier()).then(|(start, _, name)| {
-        between(
-            lex_char('{').skip(skip_spaces_and_comments()),
-            lex_char('}'),
-            many(
-                choice((
-                    parse_use(),
-                    parse_sig_definition(),
-                    parse_trait_impl(),
-                    parse_trait(),
-                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
-                    parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
-                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
-                ))
-                .skip(skip_spaces_and_comments()),
+        (
+            optional(attempt(between(
+                lex_char('('),
+                lex_char(')'),
+                sep_by::<Vec<_>, _, _, _>(parse_module_param(), lex_char(',')),
+            ))),
+            between(
+                lex_char('{').skip(skip_spaces_and_comments()),
+                lex_char('}'),
+                many(
+                    choice((
+                        parse_use(),
+                        parse_sig_definition(),
+                        parse_trait_impl(),
+                        parse_trait(),
+                        parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                        parse_external_function()
+                            .map(|f| Definition::ExternalFunction(Arc::new(f))),
+                        parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+                    ))
+                    .skip(skip_spaces_and_comments()),
+                ),
             ),
         )
-        .and(position())
-        .map(move |(definitions, end)| Definition::InlineModule {
-            name: name.clone(),
-            definitions,
-            span: Span::new(start, end),
-        })
+            .and(position())
+            .map(move |(inner, end)| {
+                let (params, mut definitions): (Option<Vec<ModuleParam>>, Vec<Definition>) = inner;
+                if let Some(p) = params {
+                    if !p.is_empty() {
+                        definitions.insert(
+                            0,
+                            Definition::ModuleHeader {
+                                name: name.clone(),
+                                params: p,
+                                span: Span::new(start, end),
+                            },
+                        );
+                    }
+                }
+                Definition::InlineModule {
+                    name: name.clone(),
+                    definitions,
+                    span: Span::new(start, end),
+                }
+            })
     })
 }
 
@@ -789,6 +821,7 @@ combine::parser! {
     {
         let primary = choice((
             attempt(parse_struct_literal()),
+            attempt(parse_spawn()),
             attempt(parse_call()),
             parse_string_literal(),
             attempt(parse_list_literal()),
@@ -942,6 +975,26 @@ where
                 }
             },
         )
+}
+
+fn parse_spawn<Input>() -> impl Parser<Input, Output = Expression>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        attempt(lex_string("spawn")),
+        between(lex_char('<'), lex_char('>'), parse_type()),
+        between(lex_char('('), char(')'), parse_argument()),
+        position(),
+    )
+        .skip(skip_spaces())
+        .map(|(start, _, type_arg, key_expr, end)| Expression::Spawn {
+            type_arg,
+            key: Box::new(key_expr),
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_argument<Input>() -> impl Parser<Input, Output = Expression>

@@ -391,6 +391,11 @@ pub enum Expression {
         else_expr: Box<Expression>,
         span: Span,
     },
+    Spawn {
+        type_arg: Type,
+        key: Box<Expression>,
+        span: Span,
+    },
 }
 
 impl Spanned for Expression {
@@ -409,6 +414,7 @@ impl Spanned for Expression {
             Expression::StructLiteral { span, .. } => *span,
             Expression::FieldAccess { span, .. } => *span,
             Expression::MethodCall { span, .. } => *span,
+            Expression::Spawn { span, .. } => *span,
         }
     }
 }
@@ -793,6 +799,9 @@ impl fmt::Display for Expression {
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ")")
+            }
+            Expression::Spawn { type_arg, key, .. } => {
+                write!(f, "spawn<{}>({})", type_arg, key)
             }
         }
     }

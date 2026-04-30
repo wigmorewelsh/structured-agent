@@ -5,7 +5,6 @@ use super::db::{
     resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
-use nonempty::NonEmpty;
 use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
@@ -295,6 +294,11 @@ pub fn elaborate_expression(
             args,
             span,
         } => elaborate_method_call(db, receiver, method, args, *span, env, ctx),
+        Expression::Spawn {
+            type_arg,
+            key,
+            span,
+        } => elaborate_spawn(db, type_arg, key, *span, env, ctx),
     }
 }
 
@@ -337,9 +341,6 @@ fn elaborate_method_call(
     let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
     let receiver_type = typed_receiver.ty().clone();
 
-    if receiver_type.is_actor_ref() {
-        return elaborate_actor_method_call(db, typed_receiver, method, args, span, env, ctx);
-    }
 
     if let RT::Generic(param_name) = &receiver_type {
         let prefix = format!("__{}__", param_name);
@@ -393,65 +394,20 @@ fn elaborate_method_call(
 
 fn elaborate_spawn(
     db: &dyn TypeCheckDatabase,
-    type_args: &[AstType],
-    arguments: &[Expression],
+    type_arg: &AstType,
+    key: &Expression,
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    let module_type_ast = type_args.first()?;
-    let module_type = synthesize::resolve(db, module_type_ast, env, span, ctx)?;
-    let type_literal = typed_ast::Expression::TypeLiteral {
-        ty: module_type.clone(),
-        span,
-    };
-    let key_arg = arguments.first()?;
-    let typed_key = elaborate_expression(db, key_arg, env, ctx)?;
+    let current_module = InternedModuleName::new(db, ctx.module_name.clone());
+    let instantiation = build_module_instantiation(db, current_module, &type_arg.path)?;
+    let module_type = RT::Named(instantiation.path.clone());
+    let typed_key = elaborate_expression(db, key, env, ctx)?;
     let actor_ref_type = RT::actor_ref(module_type);
-    Some(typed_ast::Expression::Call {
-        function: "spawn".to_string(),
-        binding: typed_ast::MethodBinding::Early(DefinitionPath::for_function(
-            DefinitionPath::for_module(NonEmpty::new("builtin".to_string())),
-            "spawn".to_string(),
-        )),
-        kind: FunctionKind::Spawn,
-        arguments: vec![type_literal, typed_key],
+    Some(typed_ast::Expression::Spawn {
+        key: Box::new(typed_key),
         ty: actor_ref_type,
-        span,
-    })
-}
-
-fn elaborate_actor_method_call(
-    db: &dyn TypeCheckDatabase,
-    receiver: typed_ast::Expression,
-    method: &str,
-    args: &[Expression],
-    span: Span,
-    env: &synthesize::TypeEnvironment,
-    ctx: &synthesize::CheckContext,
-) -> Option<typed_ast::Expression> {
-    let module_type = receiver.ty().actor_ref_inner()?.clone();
-    let module_path = match &module_type {
-        RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
-        _ => return None,
-    };
-    let fn_path = DefinitionPath::for_function(module_path, method);
-    let sig = get_function_sig(
-        db,
-        InternedFunctionName::new(db, fn_path.clone()),
-        ctx.program,
-    )?;
-    let sig = sig.get().clone();
-    let mut typed_args = vec![receiver];
-    for arg in args {
-        typed_args.push(elaborate_expression(db, arg, env, ctx)?);
-    }
-    Some(typed_ast::Expression::Call {
-        function: method.to_string(),
-        binding: typed_ast::MethodBinding::Early(fn_path),
-        kind: FunctionKind::Actor,
-        arguments: typed_args,
-        ty: sig.return_type,
         span,
     })
 }
@@ -465,9 +421,6 @@ fn elaborate_call(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
-    if function == "spawn" && !type_args.is_empty() {
-        return elaborate_spawn(db, type_args, arguments, span, env, ctx);
-    }
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
 
