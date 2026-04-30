@@ -761,12 +761,18 @@ pub fn synthesize_expression(
                         file_id: ctx.file_id,
                     },
                 )?;
-            for arg in args {
-                synthesize_expression(db, arg, env, ctx)?;
-            }
             let sig =
                 get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?;
-            Some(sig.get().return_type.clone())
+            let mut unifier = Unifier::new();
+            let _ = unifier.unify_type(&sig.get().parameters[0].param_type, &receiver_type);
+            for (arg, param) in args.iter().zip(sig.get().parameters.iter().skip(1)) {
+                if matches!(arg, Expression::Placeholder { .. }) {
+                    continue;
+                }
+                let arg_ty = synthesize_expression(db, arg, env, ctx)?;
+                let _ = unifier.unify_type(&param.param_type, &arg_ty);
+            }
+            Some(unifier.apply_subst(&sig.get().return_type))
         }
     }
 }

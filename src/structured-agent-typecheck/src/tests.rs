@@ -2735,6 +2735,12 @@ mod typed_ast_tests {
         }
     }
 
+    // TODO: argument ordering test — routing arg at arguments[1], implicit trait arg at arguments[2].
+    // The combination of module params (routing args) and type params with trait bounds (implicit
+    // trait args) requires calling a generic function from a parameterised module, which is a
+    // multi-module scenario. The single-module test helper check_typed cannot express it. No
+    // existing test verifies routing arg position at the call site.
+
     #[test]
     fn generic_struct_literal_has_parameterized_type() {
         let input = concat!(
@@ -3134,11 +3140,127 @@ mod typed_ast_tests {
         let expr = stmt_expr(f.body.statements.first().unwrap());
         assert_eq!(expr.ty(), &RT::option(RT::string()));
     }
-}
 
+    #[test]
+    fn method_call_placeholder_carries_parameter_type() {
+        let input = concat!(
+            "struct Foo {}\n",
+            "impl Foo {\n",
+            "    pub fn process(self: Self, a: String, b: Int): String {\n",
+            "        return a\n",
+            "    }\n",
+            "}\n",
+            "fn main(): String {\n",
+            "    let f = Foo {}\n",
+            "    return f.process(_, 42)\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let main_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "main" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("main function should be elaborated");
+        let expr = main_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        if let typed_ast::Expression::Call { arguments, .. } = expr {
+            let placeholder = arguments
+                .iter()
+                .find(|a| matches!(a, typed_ast::Expression::Placeholder { .. }));
+            let placeholder = placeholder.expect("expected a placeholder argument");
+            assert_eq!(
+                placeholder.ty(),
+                &RT::string(),
+                "placeholder should carry String type"
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn method_call_generic_return_type_resolves() {
+        let input = concat!(
+            "struct Wrapper {}\n",
+            "impl Wrapper {\n",
+            "    pub fn identity<T>(self: Self, x: T): T {\n",
+            "        return x\n",
+            "    }\n",
+            "}\n",
+            "fn take_int(x: Int): Unit {}\n",
+            "fn main(): Unit {\n",
+            "    let w = Wrapper {}\n",
+            "    let r = w.identity(42)\n",
+            "    take_int(r)\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let main_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "main" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("main function should be elaborated");
+        let assign = main_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Assignment { expression, .. } = s {
+                    if let typed_ast::Expression::Call { function, .. } = expression {
+                        if function == "identity" {
+                            return Some(expression);
+                        }
+                    }
+                }
+                None
+            })
+            .expect("expected assignment from identity call");
+        assert_eq!(
+            assign.ty(),
+            &RT::int(),
+            "identity<T>(42) should resolve return type to Int"
+        );
+    }
+}
 mod metadata_query_tests {
     use super::*;
-    use crate::ast::{AstSignature, SigFunction, StructDefinition, StructField};
+    use crate::ast::{SigFunction, StructDefinition, StructField};
     use crate::{CheckerAstRef, TypedCheckerAstRef, TypedRefs};
     use nonempty::NonEmpty;
     use std::sync::Arc;

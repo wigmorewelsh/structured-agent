@@ -169,10 +169,10 @@ impl Type {
     }
 
     pub fn actor_ref_inner(&self) -> Option<&Type> {
-        if let Type::Parameterized(n, args) = self {
-            if n.last_name() == "ActorRef" {
-                return args.first();
-            }
+        if let Type::Parameterized(n, args) = self
+            && n.last_name() == "ActorRef"
+        {
+            return args.first();
         }
         None
     }

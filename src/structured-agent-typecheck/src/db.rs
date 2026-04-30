@@ -690,7 +690,7 @@ pub use type_resolver::{
 
 type DefKind = TypeDefinitionKind<CheckerRefs>;
 
-fn build_module_instantiation<'db>(
+pub fn build_module_instantiation<'db>(
     db: &'db dyn TypeCheckDatabase,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<PathSegment>,

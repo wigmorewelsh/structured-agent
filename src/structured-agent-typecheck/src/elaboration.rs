@@ -1,15 +1,24 @@
+use crate::db::build_module_instantiation;
+
 use super::db::{
-    CallModuleArg, Intern, InternedFunctionName, InternedModuleName, InternedTypeName,
+    CallModuleArg, CallRouting, Intern, InternedFunctionName, InternedModuleName, InternedTypeName,
     ModuleInstantiation, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
     impl_for_type_and_trait, lookup_type_def_in_symbol_tables, resolve_call_routing,
     resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
+use crate::FunctionSignature;
 use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
 use structured_agent_typed_ast as typed_ast;
+
+struct ResolvedCallee {
+    sig: FunctionSignature,
+    binding: typed_ast::MethodBinding,
+    routing: Option<CallRouting>,
+}
 
 fn implicit_param_name(type_param: &str, trait_name: &str) -> String {
     format!("__{}__{}", type_param, trait_name)
@@ -341,7 +350,6 @@ fn elaborate_method_call(
     let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
     let receiver_type = typed_receiver.ty().clone();
 
-
     if let RT::Generic(param_name) = &receiver_type {
         let prefix = format!("__{}__", param_name);
         if let Some((trait_type, binding_id)) = find_implicit_param(env, &prefix)
@@ -359,6 +367,7 @@ fn elaborate_method_call(
                 binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
                 kind: FunctionKind::Bytecode,
                 arguments: typed_args,
+                target: None,
                 ty: return_ty,
                 span,
             });
@@ -370,26 +379,18 @@ fn elaborate_method_call(
         RT::Named(tn) => tn.last_name().to_string(),
         _ => return None,
     };
-    let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name)?;
-    let sig = get_function_sig(
+    let callee = resolve_callee_for_method(db, &struct_type_name, method, env, ctx)?;
+    build_typed_call(
         db,
-        InternedFunctionName::new(db, impl_fn_path.clone()),
-        ctx.program,
-    )?
-    .get()
-    .clone();
-    let mut typed_args = vec![typed_receiver];
-    for arg in args {
-        typed_args.push(elaborate_expression(db, arg, env, ctx)?);
-    }
-    Some(typed_ast::Expression::Call {
-        function: method.to_string(),
-        binding: typed_ast::MethodBinding::Early(impl_fn_path),
-        kind: sig.kind,
-        arguments: typed_args,
-        ty: sig.return_type,
+        &callee,
+        method.to_string(),
+        &[],
+        Some(typed_receiver),
+        args,
         span,
-    })
+        env,
+        ctx,
+    )
 }
 
 fn elaborate_spawn(
@@ -412,46 +413,104 @@ fn elaborate_spawn(
     })
 }
 
-fn elaborate_call(
+fn resolve_callee_for_call(
     db: &dyn TypeCheckDatabase,
     function: &str,
-    type_args: &[AstType],
-    arguments: &[Expression],
-    span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
-) -> Option<typed_ast::Expression> {
+) -> Option<ResolvedCallee> {
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
-
     let (resolved_fn_name, sig) = resolve_function_call(db, interned_current, interned_fn)
         .and_then(|fn_name| {
             let interned = InternedFunctionName::new(db, fn_name.clone());
             get_function_sig(db, interned, ctx.program).map(|arc| (fn_name, arc.get().clone()))
         })?;
+    let routing = resolve_call_routing(db, interned_current, interned_fn);
+    let binding = routing
+        .as_ref()
+        .and_then(|r| r.via_module_param.as_deref())
+        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id))
+        .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
+        .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name));
+    Some(ResolvedCallee {
+        sig,
+        binding,
+        routing,
+    })
+}
 
-    let mut typed_args = Vec::new();
-
-    let mut unifier = synthesize::Unifier::new();
-    for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
-        if let Some(resolved) = synthesize::resolve(db, ty_arg, env, span, ctx) {
-            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
+fn resolve_callee_for_method(
+    db: &dyn TypeCheckDatabase,
+    struct_type_name: &str,
+    method: &str,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<ResolvedCallee> {
+    let impl_fn_path = find_impl_fn(db, struct_type_name, method, ctx.module_name)?;
+    let sig = get_function_sig(
+        db,
+        InternedFunctionName::new(db, impl_fn_path.clone()),
+        ctx.program,
+    )?
+    .get()
+    .clone();
+    let routing = resolve_call_routing(
+        db,
+        InternedModuleName::new(db, ctx.module_name.clone()),
+        struct_type_name.intern(db),
+    );
+    let binding = match routing.as_ref().and_then(|r| r.via_module_param.as_deref()) {
+        Some(name) => {
+            let (_, id) = env.lookup_variable(name)?;
+            typed_ast::MethodBinding::Late(id, impl_fn_path)
         }
-    }
-    for (arg, param) in arguments.iter().zip(&sig.parameters) {
+        None => typed_ast::MethodBinding::Early(impl_fn_path),
+    };
+    Some(ResolvedCallee {
+        sig,
+        binding,
+        routing,
+    })
+}
+
+fn elaborate_user_args(
+    db: &dyn TypeCheckDatabase,
+    sig: &FunctionSignature,
+    unifier: &mut synthesize::Unifier,
+    param_offset: usize,
+    pending_args: &[Expression],
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<Vec<typed_ast::Expression>> {
+    let mut user_args = Vec::new();
+    for (arg, param) in pending_args
+        .iter()
+        .zip(sig.parameters.iter().skip(param_offset))
+    {
         if matches!(arg, Expression::Placeholder { .. }) {
-            typed_args.push(typed_ast::Expression::Placeholder {
+            user_args.push(typed_ast::Expression::Placeholder {
                 ty: param.param_type.clone(),
                 span: arg.span(),
             });
             continue;
         }
-        let typed_arg = elaborate_expression(db, arg, env, ctx)?;
-        let _ = unifier.unify_type(&param.param_type, typed_arg.ty());
-        typed_args.push(typed_arg);
+        let user_arg = elaborate_expression(db, arg, env, ctx)?;
+        let _ = unifier.unify_type(&param.param_type, user_arg.ty());
+        user_args.push(user_arg);
     }
-    let resolved_return = unifier.apply_subst(&sig.return_type);
+    Some(user_args)
+}
 
+fn elaborate_type_args(
+    db: &dyn TypeCheckDatabase,
+    sig: &FunctionSignature,
+    unifier: &synthesize::Unifier,
+    type_args: &[AstType],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Vec<typed_ast::Expression> {
     let mut type_arg_exprs: Vec<typed_ast::Expression> = Vec::new();
     for tp in sig
         .type_params
@@ -486,8 +545,44 @@ fn elaborate_call(
         };
         type_arg_exprs.push(expr);
     }
-    let routing = resolve_call_routing(db, interned_current, interned_fn);
+    type_arg_exprs
+}
 
+fn elaborate_routing_args(
+    routing: Option<&CallRouting>,
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+) -> Vec<typed_ast::Expression> {
+    let mut routing_exprs = Vec::new();
+    if let Some(routing) = routing {
+        for arg in &routing.module_args {
+            match arg {
+                CallModuleArg::Concrete(instantiation) => {
+                    routing_exprs.push(instantiation_to_expr(instantiation, span));
+                }
+                CallModuleArg::FromParam(name) => {
+                    if let Some((ty, binding_id)) = env.lookup_variable(name) {
+                        routing_exprs.push(typed_ast::Expression::Variable {
+                            name: name.clone(),
+                            binding_id,
+                            ty,
+                            span,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    routing_exprs
+}
+
+fn elaborate_implicit_trait_args(
+    db: &dyn TypeCheckDatabase,
+    sig: &FunctionSignature,
+    unifier: &synthesize::Unifier,
+    span: Span,
+    ctx: &synthesize::CheckContext,
+) -> Vec<typed_ast::Expression> {
     let solved = crate::solver::solve_constraints(db, ctx.program);
     let mut implicit_args: Vec<typed_ast::Expression> = Vec::new();
     let interned_mod_call = InternedModuleName::new(db, ctx.module_name.clone());
@@ -532,47 +627,104 @@ fn elaborate_call(
             });
         }
     }
+    implicit_args
+}
 
-    let binding = routing
-        .as_ref()
-        .and_then(|r| r.via_module_param.as_deref())
-        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id))
-        .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
-        .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name.clone()));
+fn elaborate_arguments(
+    db: &dyn TypeCheckDatabase,
+    sig: &FunctionSignature,
+    unifier: &mut synthesize::Unifier,
+    type_args: &[AstType],
+    pending_args: &[Expression],
+    elaborated_receiver: Option<typed_ast::Expression>,
+    routing: Option<&CallRouting>,
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<Vec<typed_ast::Expression>> {
+    let param_offset = usize::from(elaborated_receiver.is_some());
+    let user_args = elaborate_user_args(db, sig, unifier, param_offset, pending_args, env, ctx)?;
+    let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
+    let routing_exprs = elaborate_routing_args(routing, span, env);
+    let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
+    let mut all_args = type_exprs;
+    all_args.extend(routing_exprs);
+    all_args.extend(trait_exprs);
+    if let Some(receiver) = elaborated_receiver {
+        all_args.push(receiver);
+    }
+    all_args.extend(user_args);
+    Some(all_args)
+}
 
-    let mut all_args: Vec<typed_ast::Expression> = type_arg_exprs;
-    all_args.extend(implicit_args);
-
-    if let Some(routing) = &routing {
-        for arg in &routing.module_args {
-            match arg {
-                CallModuleArg::Concrete(instantiation) => {
-                    all_args.push(instantiation_to_expr(instantiation, span));
-                }
-                CallModuleArg::FromParam(name) => {
-                    if let Some((ty, binding_id)) = env.lookup_variable(name) {
-                        all_args.push(typed_ast::Expression::Variable {
-                            name: name.clone(),
-                            binding_id,
-                            ty,
-                            span,
-                        });
-                    }
-                }
-            }
+fn build_typed_call(
+    db: &dyn TypeCheckDatabase,
+    callee: &ResolvedCallee,
+    function_name: String,
+    type_args: &[AstType],
+    elaborated_receiver: Option<typed_ast::Expression>,
+    pending_args: &[Expression],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<typed_ast::Expression> {
+    let sig = &callee.sig;
+    let mut unifier = synthesize::Unifier::new();
+    for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
+        if let Some(resolved) = synthesize::resolve(db, ty_arg, env, span, ctx) {
+            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
         }
     }
-
-    all_args.extend(typed_args);
-
+    if let Some(receiver) = &elaborated_receiver
+        && let Some(param) = sig.parameters.first()
+    {
+        let _ = unifier.unify_type(&param.param_type, receiver.ty());
+    }
+    let all_args = elaborate_arguments(
+        db,
+        sig,
+        &mut unifier,
+        type_args,
+        pending_args,
+        elaborated_receiver,
+        callee.routing.as_ref(),
+        span,
+        env,
+        ctx,
+    )?;
+    let resolved_return = unifier.apply_subst(&sig.return_type);
     Some(typed_ast::Expression::Call {
-        function: function.to_string(),
-        binding,
-        kind: sig.kind,
+        function: function_name,
+        binding: callee.binding.clone(),
+        kind: sig.kind.clone(),
         arguments: all_args,
+        target: None,
         ty: resolved_return,
         span,
     })
+}
+
+fn elaborate_call(
+    db: &dyn TypeCheckDatabase,
+    function: &str,
+    type_args: &[AstType],
+    arguments: &[Expression],
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<typed_ast::Expression> {
+    let callee = resolve_callee_for_call(db, function, env, ctx)?;
+    build_typed_call(
+        db,
+        &callee,
+        function.to_string(),
+        type_args,
+        None,
+        arguments,
+        span,
+        env,
+        ctx,
+    )
 }
 
 fn instantiation_to_expr(
