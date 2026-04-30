@@ -18,6 +18,7 @@ struct ResolvedCallee {
     sig: FunctionSignature,
     binding: typed_ast::MethodBinding,
     routing: Option<CallRouting>,
+    receiver_is_target: bool,
 }
 
 fn implicit_param_name(type_param: &str, trait_name: &str) -> String {
@@ -327,6 +328,9 @@ fn resolve_method_callee(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
+    if receiver_type.is_actor_ref() {
+        return resolve_callee_for_actor_method(db, receiver_type, method, ctx);
+    }
     if let RT::Generic(param_name) = receiver_type {
         return resolve_callee_for_generic_method(db, env, param_name, method, span, ctx);
     }
@@ -381,6 +385,7 @@ fn resolve_callee_for_call(
         sig,
         binding,
         routing,
+        receiver_is_target: false,
     })
 }
 
@@ -415,6 +420,34 @@ fn resolve_callee_for_method(
         sig,
         binding,
         routing,
+        receiver_is_target: false,
+    })
+}
+
+fn resolve_callee_for_actor_method(
+    db: &dyn TypeCheckDatabase,
+    receiver_type: &RT,
+    method: &str,
+    ctx: &synthesize::CheckContext,
+) -> Option<ResolvedCallee> {
+    let module_type = receiver_type.actor_ref_inner()?;
+    let module_path = match module_type {
+        RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
+        _ => return None,
+    };
+    let fn_path = DefinitionPath::for_function(module_path, method);
+    let sig = get_function_sig(
+        db,
+        InternedFunctionName::new(db, fn_path.clone()),
+        ctx.program,
+    )?
+    .get()
+    .clone();
+    Some(ResolvedCallee {
+        sig,
+        binding: typed_ast::MethodBinding::Early(fn_path),
+        routing: None,
+        receiver_is_target: true,
     })
 }
 
@@ -435,6 +468,7 @@ fn resolve_callee_for_generic_method(
         sig,
         binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
         routing: None,
+        receiver_is_target: false,
     })
 }
 
@@ -626,7 +660,7 @@ fn build_typed_call(
     callee: &ResolvedCallee,
     function_name: String,
     type_args: &[AstType],
-    elaborated_receiver: Option<typed_ast::Expression>,
+    receiver: Option<typed_ast::Expression>,
     pending_args: &[Expression],
     span: Span,
     env: &synthesize::TypeEnvironment,
@@ -639,10 +673,16 @@ fn build_typed_call(
             let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
         }
     }
-    if let Some(receiver) = &elaborated_receiver
+    let (elaborated_receiver, target) = if callee.receiver_is_target {
+        let t = receiver.map(Box::new);
+        (None, t)
+    } else {
+        (receiver, None)
+    };
+    if let Some(r) = &elaborated_receiver
         && let Some(param) = sig.parameters.first()
     {
-        let _ = unifier.unify_type(&param.param_type, receiver.ty());
+        let _ = unifier.unify_type(&param.param_type, r.ty());
     }
     let all_args = elaborate_arguments(
         db,
@@ -662,7 +702,7 @@ fn build_typed_call(
         binding: callee.binding.clone(),
         kind: sig.kind.clone(),
         arguments: all_args,
-        target: None,
+        target,
         ty: resolved_return,
         span,
     })

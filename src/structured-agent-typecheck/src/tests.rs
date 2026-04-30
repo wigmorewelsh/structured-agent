@@ -3438,6 +3438,73 @@ mod typed_ast_tests {
             panic!("expected Call expression");
         }
     }
+    #[test]
+    fn actor_method_call_has_target_set() {
+        let counter_src = "fn increment(): String {\n    return \"ok\"\n}\n";
+        let main_src = "fn main(): String {\n    let c = spawn<Counter>(\"c1\")\n    return c.increment()\n}\n";
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    combine::stream::position::IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let counter_module = crate::ast::ParsedModule {
+            name: nonempty::nonempty!["main".to_string(), "Counter".to_string()],
+            module: parse(counter_src),
+            is_entry: false,
+            file_id: 0,
+            is_inline: false,
+        };
+        let main_module = crate::ast::ParsedModule {
+            name: nonempty::NonEmpty::new("main".to_string()),
+            module: parse(main_src),
+            is_entry: true,
+            file_id: 1,
+            is_inline: false,
+        };
+        let mut checker = super::TypeChecker::new();
+        let metadata = checker
+            .check(
+                &[counter_module, main_module],
+                &std::collections::HashMap::new(),
+            )
+            .expect("typecheck should succeed");
+        let main_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.last_name() == "main" && f.name.module_prefix().to_string() == "main")
+            .unwrap();
+        let TypedCheckerAstRef::Function(f, _) = &main_fn.ast_ref else {
+            panic!("expected function");
+        };
+        let return_expr = f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        match return_expr {
+            typed_ast::Expression::Call {
+                target, binding, ..
+            } => {
+                assert!(target.is_some(), "expected target to be set for actor call");
+                assert!(
+                    matches!(binding, typed_ast::MethodBinding::Early(_)),
+                    "expected Early binding for actor call"
+                );
+            }
+            other => panic!("expected Call expression, got {:?}", other),
+        }
+    }
 }
 mod metadata_query_tests {
     use super::*;
