@@ -3257,6 +3257,187 @@ mod typed_ast_tests {
             "identity<T>(42) should resolve return type to Int"
         );
     }
+
+    #[test]
+    fn generic_receiver_multiple_bounds_selects_correct_trait() {
+        let input = concat!(
+            "trait Add {\n",
+            "    fn add(self: Self, other: Self): Self\n",
+            "}\n",
+            "trait Display {\n",
+            "    fn display(self: Self): String\n",
+            "}\n",
+            "fn show<T: Add + Display>(a: T): String {\n",
+            "    return a.display()\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let show_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "show" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("show function should be elaborated");
+        let return_expr = show_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        match return_expr {
+            typed_ast::Expression::Call {
+                binding: typed_ast::MethodBinding::Late(_, path),
+                ty,
+                ..
+            } => {
+                assert_eq!(path.last_name(), "display");
+                assert!(
+                    path.to_string().contains("Display"),
+                    "binding path should reference Display trait, got {:?}",
+                    path
+                );
+                assert_eq!(ty, &RT::string(), "return type should be String");
+            }
+            other => panic!("expected Call with Late binding, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn generic_receiver_placeholder_carries_parameter_type() {
+        let input = concat!(
+            "trait Transform {\n",
+            "    fn apply(self: Self, x: String): String\n",
+            "}\n",
+            "fn call_transform<T: Transform>(a: T): String {\n",
+            "    return a.apply(_)\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let f = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "call_transform" {
+                        Some(f)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .expect("call_transform should be elaborated");
+        let return_expr = f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        if let typed_ast::Expression::Call { arguments, .. } = return_expr {
+            assert_eq!(arguments.len(), 2, "expected receiver + user arg");
+            let placeholder = arguments
+                .iter()
+                .find(|a| matches!(a, typed_ast::Expression::Placeholder { .. }))
+                .expect("expected placeholder in arguments");
+            assert_eq!(
+                placeholder.ty(),
+                &RT::string(),
+                "placeholder should carry String type"
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn generic_receiver_call_has_receiver_then_user_args() {
+        let input = concat!(
+            "trait Add {\n",
+            "    fn add(self: Self, other: Self): Self\n",
+            "}\n",
+            "fn combine<T: Add>(a: T, b: T): T {\n",
+            "    return a.add(b)\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let combine_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "combine" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("combine should be elaborated");
+        let return_expr = combine_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        if let typed_ast::Expression::Call { arguments, .. } = return_expr {
+            assert_eq!(arguments.len(), 2, "expected exactly receiver + user arg");
+            assert!(
+                matches!(&arguments[0], typed_ast::Expression::Variable { name, .. } if name == "a"),
+                "expected receiver 'a' at arguments[0], got {:?}",
+                &arguments[0]
+            );
+            assert!(
+                matches!(&arguments[1], typed_ast::Expression::Variable { name, .. } if name == "b"),
+                "expected user arg 'b' at arguments[1], got {:?}",
+                &arguments[1]
+            );
+        } else {
+            panic!("expected Call expression");
+        }
+    }
 }
 mod metadata_query_tests {
     use super::*;

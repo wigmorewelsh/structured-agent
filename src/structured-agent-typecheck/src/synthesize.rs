@@ -738,6 +738,9 @@ pub fn synthesize_expression(
                         _ => continue,
                     };
                     for arg in args {
+                        if matches!(arg, Expression::Placeholder { .. }) {
+                            continue;
+                        }
                         synthesize_expression(db, arg, env, ctx)?;
                     }
                     if return_type.name() == "Self" {
