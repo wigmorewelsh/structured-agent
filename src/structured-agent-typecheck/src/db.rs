@@ -556,6 +556,7 @@ mod type_resolver {
                 })
             })
             .or_else(|| resolve_type_as_sibling_module(db, current_module, symbol))
+            .or_else(|| resolve_type_as_child_module(db, current_module, symbol))
     }
 
     #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
@@ -573,6 +574,19 @@ mod type_resolver {
                 current_module.name(db).parent(),
                 vec![],
             ))
+        })
+    }
+
+    #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
+    fn resolve_type_as_child_module<'db>(
+        db: &'db dyn TypeCheckDatabase,
+        current_module: InternedModuleName<'db>,
+        symbol: InternedString<'db>,
+    ) -> Option<ResolvedType> {
+        let key = current_module.name(db).with_module(symbol.value(db));
+        db.symbol_tables().types(db).get().get(&key).map(|_| {
+            ResolvedType::new(key.clone())
+                .with_segment(ResolveSegment::Local(current_module.name(db), vec![]))
         })
     }
 

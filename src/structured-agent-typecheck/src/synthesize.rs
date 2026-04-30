@@ -198,7 +198,11 @@ pub fn resolve(
     )?;
 
     match &td.kind {
-        TypeDefinitionKind::Struct { .. } | TypeDefinitionKind::Primitive if args.is_empty() => {
+        TypeDefinitionKind::Struct { .. }
+        | TypeDefinitionKind::Primitive
+        | TypeDefinitionKind::Signature { .. }
+            if args.is_empty() =>
+        {
             Some(RT::Named(type_name))
         }
         TypeDefinitionKind::Native { .. } => {
