@@ -16,7 +16,9 @@ use structured_agent_typed_ast::BindingId;
 use salsa::Accumulator;
 use std::collections::HashMap;
 use structured_agent_runtime::Type as RT;
-use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind, Visibility};
+use structured_agent_runtime::symbols::{
+    DefinitionPath, FunctionKind, TypeDefinitionKind, Visibility,
+};
 
 use super::db::{InternedFunctionName, InternedModuleName};
 
@@ -619,6 +621,125 @@ fn check_block(
     Some(())
 }
 
+pub(crate) fn resolve_generic_method_sig(
+    db: &dyn TypeCheckDatabase,
+    param_name: &str,
+    method: &str,
+    env: &TypeEnvironment,
+    span: Span,
+    ctx: &CheckContext,
+) -> Option<(crate::FunctionSignature, DefinitionPath, String)> {
+    let bounds = env.get_type_param_bounds(param_name)?.clone();
+    bounds
+        .iter()
+        .find_map(|bound| resolve_sig_for_bound(db, bound, param_name, method, span, ctx))
+}
+
+fn resolve_sig_for_bound(
+    db: &dyn TypeCheckDatabase,
+    bound: &AstType,
+    param_name: &str,
+    method: &str,
+    span: Span,
+    ctx: &CheckContext,
+) -> Option<(crate::FunctionSignature, DefinitionPath, String)> {
+    let bound_short_name = bound.name().to_string();
+    let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
+    let resolved = resolve_type_in_module(db, interned_mod, bound_short_name.clone().intern(db))?;
+    let trait_path = resolved.ty;
+    let trait_type_def =
+        lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, trait_path.clone()))?;
+    let TypeDefinitionKind::Trait { functions, .. } = &trait_type_def.get().kind else {
+        return None;
+    };
+    let entry = functions.iter().find(|e| e.name == method)?;
+    let fn_type_def =
+        lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, entry.type_name.clone()))?;
+    let TypeDefinitionKind::Function {
+        parameters,
+        generic_parameters,
+        return_type,
+    } = &fn_type_def.get().kind
+    else {
+        return None;
+    };
+    let type_params_vec: Vec<TypeParam> = generic_parameters
+        .iter()
+        .map(|gp| TypeParam {
+            name: gp.name.clone(),
+            bounds: gp.constraints.clone(),
+        })
+        .collect();
+    let type_env = TypeEnvironment::with_type_params(&type_params_vec);
+    let mut resolved_params = Vec::new();
+    for p in parameters {
+        let param_type = if p.type_name.name() == "Self" {
+            RT::Generic(param_name.to_string())
+        } else {
+            resolve(db, &p.type_name, &type_env, span, ctx)?
+        };
+        resolved_params.push(crate::typed_ast::Parameter {
+            name: p.name.clone(),
+            param_type,
+            binding_id: BindingId(0),
+            span,
+        });
+    }
+    let resolved_return = if return_type.name() == "Self" {
+        RT::Generic(param_name.to_string())
+    } else {
+        resolve(db, return_type, &type_env, span, ctx)?
+    };
+    Some((
+        crate::FunctionSignature {
+            parameters: resolved_params,
+            return_type: resolved_return,
+            type_params: type_params_vec,
+            kind: FunctionKind::Bytecode,
+        },
+        trait_path,
+        bound_short_name,
+    ))
+}
+
+fn resolve_method_sig(
+    db: &dyn TypeCheckDatabase,
+    receiver_type: &RT,
+    method: &str,
+    env: &TypeEnvironment,
+    span: Span,
+    ctx: &CheckContext,
+) -> Option<crate::FunctionSignature> {
+    if receiver_type.is_actor_ref() {
+        let module_type = receiver_type.actor_ref_inner()?;
+        let module_path = match module_type {
+            RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
+            _ => return None,
+        };
+        let fn_path = DefinitionPath::for_function(module_path, method);
+        return get_function_sig(db, InternedFunctionName::new(db, fn_path), ctx.program)
+            .map(|s| s.get().clone());
+    }
+    if let RT::Generic(param_name) = receiver_type {
+        let (sig, _, _) = resolve_generic_method_sig(db, param_name, method, env, span, ctx)?;
+        return Some(sig);
+    }
+    let struct_type_name = match receiver_type {
+        RT::Named(tn) => tn.last_name().to_string(),
+        _ => return None,
+    };
+    let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name).or_accumulate(
+        db,
+        TypeError::UnknownFunction {
+            name: method.to_string(),
+            span,
+            file_id: ctx.file_id,
+        },
+    )?;
+    get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)
+        .map(|s| s.get().clone())
+}
+
 pub fn synthesize_expression(
     db: &dyn TypeCheckDatabase,
     expression: &Expression,
@@ -687,95 +808,24 @@ pub fn synthesize_expression(
             span,
         } => {
             let receiver_type = synthesize_expression(db, receiver, env, ctx)?;
-            if receiver_type.is_actor_ref() {
-                let module_type = receiver_type.actor_ref_inner()?;
-                let module_path = match module_type {
-                    RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
-                    _ => return None,
-                };
-                let fn_path = DefinitionPath::for_function(module_path, method.as_str());
-                for arg in args {
-                    synthesize_expression(db, arg, env, ctx)?;
-                }
-                let sig =
-                    get_function_sig(db, InternedFunctionName::new(db, fn_path), ctx.program)?;
-                return Some(sig.get().return_type.clone());
-            }
-            if let RT::Generic(param_name) = &receiver_type {
-                let bounds = match env.get_type_param_bounds(param_name) {
-                    Some(b) => b.clone(),
-                    None => return None,
-                };
-                let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
-                for bound in &bounds {
-                    let interned_bound = bound.name().to_string().intern(db);
-                    let Some(resolved) = resolve_type_in_module(db, interned_mod, interned_bound)
-                    else {
-                        continue;
-                    };
-                    let Some(trait_def) = lookup_type_def_in_symbol_tables(
-                        db,
-                        InternedTypeName::new(db, resolved.ty),
-                    ) else {
-                        continue;
-                    };
-                    let functions = match &trait_def.get().kind {
-                        TypeDefinitionKind::Trait { functions, .. } => functions.clone(),
-                        _ => continue,
-                    };
-                    let Some(entry) = functions.iter().find(|e| e.name == *method) else {
-                        continue;
-                    };
-                    let fn_type_name = entry.type_name.clone();
-                    let Some(fn_def) = lookup_type_def_in_symbol_tables(
-                        db,
-                        InternedTypeName::new(db, fn_type_name),
-                    ) else {
-                        continue;
-                    };
-                    let return_type = match &fn_def.get().kind {
-                        TypeDefinitionKind::Function { return_type, .. } => return_type.clone(),
-                        _ => continue,
-                    };
-                    for arg in args {
-                        if matches!(arg, Expression::Placeholder { .. }) {
-                            continue;
-                        }
-                        synthesize_expression(db, arg, env, ctx)?;
-                    }
-                    if return_type.name() == "Self" {
-                        return Some(RT::Generic(param_name.clone()));
-                    } else {
-                        return resolve(db, &return_type, env, *span, ctx);
-                    }
-                }
-                return None;
-            }
-            let struct_type_name = match &receiver_type {
-                RT::Named(tn) => tn.last_name().to_string(),
-                _ => return None,
-            };
-            let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name)
-                .or_accumulate(
-                    db,
-                    TypeError::UnknownFunction {
-                        name: method.clone(),
-                        span: *span,
-                        file_id: ctx.file_id,
-                    },
-                )?;
-            let sig =
-                get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?;
+            let sig = resolve_method_sig(db, &receiver_type, method, env, *span, ctx)?;
             let mut unifier = Unifier::new();
-            let _ = unifier.unify_type(&sig.get().parameters[0].param_type, &receiver_type);
-            for (arg, param) in args.iter().zip(sig.get().parameters.iter().skip(1)) {
+            let param_offset = if receiver_type.is_actor_ref() {
+                0
+            } else {
+                if let Some(first_param) = sig.parameters.first() {
+                    let _ = unifier.unify_type(&first_param.param_type, &receiver_type);
+                }
+                1
+            };
+            for (arg, param) in args.iter().zip(sig.parameters.iter().skip(param_offset)) {
                 if matches!(arg, Expression::Placeholder { .. }) {
                     continue;
                 }
                 let arg_ty = synthesize_expression(db, arg, env, ctx)?;
                 let _ = unifier.unify_type(&param.param_type, &arg_ty);
             }
-            Some(unifier.apply_subst(&sig.get().return_type))
+            Some(unifier.apply_subst(&sig.return_type))
         }
     }
 }

@@ -8,7 +8,7 @@ use super::db::{
 };
 use super::synthesize;
 use crate::FunctionSignature;
-use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType, TypeParam};
+use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
@@ -305,28 +305,7 @@ fn elaborate_method_call(
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
     let typed_receiver = elaborate_expression(db, receiver, env, ctx)?;
-    let receiver_type = typed_receiver.ty().clone();
-
-    if let RT::Generic(param_name) = &receiver_type {
-        let callee = resolve_callee_for_generic_method(db, env, param_name, method, span, ctx)?;
-        return build_typed_call(
-            db,
-            &callee,
-            method.to_string(),
-            &[],
-            Some(typed_receiver),
-            args,
-            span,
-            env,
-            ctx,
-        );
-    }
-
-    let struct_type_name = match &receiver_type {
-        RT::Named(tn) => tn.last_name().to_string(),
-        _ => return None,
-    };
-    let callee = resolve_callee_for_method(db, &struct_type_name, method, env, ctx)?;
+    let callee = resolve_method_callee(db, typed_receiver.ty(), method, span, env, ctx)?;
     build_typed_call(
         db,
         &callee,
@@ -338,6 +317,24 @@ fn elaborate_method_call(
         env,
         ctx,
     )
+}
+
+fn resolve_method_callee(
+    db: &dyn TypeCheckDatabase,
+    receiver_type: &RT,
+    method: &str,
+    span: Span,
+    env: &synthesize::TypeEnvironment,
+    ctx: &synthesize::CheckContext,
+) -> Option<ResolvedCallee> {
+    if let RT::Generic(param_name) = receiver_type {
+        return resolve_callee_for_generic_method(db, env, param_name, method, span, ctx);
+    }
+    let struct_type_name = match receiver_type {
+        RT::Named(tn) => tn.last_name().to_string(),
+        _ => return None,
+    };
+    resolve_callee_for_method(db, &struct_type_name, method, env, ctx)
 }
 
 fn elaborate_spawn(
@@ -429,83 +426,16 @@ fn resolve_callee_for_generic_method(
     span: Span,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
-    let bounds = env.get_type_param_bounds(param_name)?.clone();
-    let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
-    for bound in &bounds {
-        let bound_short_name = bound.name().to_string();
-        let interned_bound = bound_short_name.clone().intern(db);
-        let Some(resolved) = resolve_type_in_module(db, interned_mod, interned_bound) else {
-            continue;
-        };
-        let trait_path = resolved.ty;
-        let Some(trait_type_def) =
-            lookup_type_def_in_symbol_tables(db, InternedTypeName::new(db, trait_path.clone()))
-        else {
-            continue;
-        };
-        let TypeDefinitionKind::Trait { functions, .. } = &trait_type_def.get().kind else {
-            continue;
-        };
-        let Some(entry) = functions.iter().find(|e| e.name == method) else {
-            continue;
-        };
-        let Some(fn_type_def) = lookup_type_def_in_symbol_tables(
-            db,
-            InternedTypeName::new(db, entry.type_name.clone()),
-        ) else {
-            continue;
-        };
-        let TypeDefinitionKind::Function {
-            parameters,
-            generic_parameters,
-            return_type,
-        } = &fn_type_def.get().kind
-        else {
-            continue;
-        };
-        let type_params_vec: Vec<TypeParam> = generic_parameters
-            .iter()
-            .map(|gp| TypeParam {
-                name: gp.name.clone(),
-                bounds: gp.constraints.clone(),
-            })
-            .collect();
-        let type_env = synthesize::TypeEnvironment::with_type_params(&type_params_vec);
-        let mut resolved_params = Vec::new();
-        for p in parameters {
-            let param_type = if p.type_name.name() == "Self" {
-                RT::Generic(param_name.to_string())
-            } else {
-                synthesize::resolve(db, &p.type_name, &type_env, span, ctx)?
-            };
-            resolved_params.push(typed_ast::Parameter {
-                name: p.name.clone(),
-                param_type,
-                binding_id: typed_ast::BindingId(0),
-                span,
-            });
-        }
-        let resolved_return = if return_type.name() == "Self" {
-            RT::Generic(param_name.to_string())
-        } else {
-            synthesize::resolve(db, return_type, &type_env, span, ctx)?
-        };
-        let sig = FunctionSignature {
-            parameters: resolved_params,
-            return_type: resolved_return,
-            type_params: type_params_vec,
-            kind: FunctionKind::Bytecode,
-        };
-        let implicit_name = implicit_param_name(param_name, &bound_short_name);
-        let (_, binding_id) = env.lookup_variable(&implicit_name)?;
-        let impl_fn_path = DefinitionPath::for_impl_fn(&trait_path, method);
-        return Some(ResolvedCallee {
-            sig,
-            binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
-            routing: None,
-        });
-    }
-    None
+    let (sig, trait_path, bound_short_name) =
+        synthesize::resolve_generic_method_sig(db, param_name, method, env, span, ctx)?;
+    let implicit_name = implicit_param_name(param_name, &bound_short_name);
+    let (_, binding_id) = env.lookup_variable(&implicit_name)?;
+    let impl_fn_path = DefinitionPath::for_impl_fn(&trait_path, method);
+    Some(ResolvedCallee {
+        sig,
+        binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
+        routing: None,
+    })
 }
 
 fn elaborate_user_args(
