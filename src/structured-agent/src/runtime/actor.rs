@@ -85,12 +85,12 @@ pub async fn actor_loop(
                 continue;
             }
         };
-        let mut frame: Vec<Option<ExpressionResult>> = vec![None; body.slot_table.len()];
+        let mut slots: Vec<Option<ExpressionResult>> = vec![None; body.slot_table.len()];
         for (i, arg) in msg.args.iter().enumerate() {
-            frame[i + 1] = Some(arg.clone());
+            slots[i + 1] = Some(arg.clone());
         }
         let handle = context.agent_handle().clone();
-        match vm.execute_outcome(&body.instructions, context, frame).await {
+        match vm.execute_outcome(&body.instructions, context, slots).await {
             Err(e) => {
                 context = Context::with_runtime_and_handle(runtime.clone(), handle);
                 let _ = msg.reply.send(Err(e));
