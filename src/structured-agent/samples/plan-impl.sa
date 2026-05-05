@@ -20,8 +20,14 @@ fn ask_for_supervisor_help(context: String): String {
 }
 
 fn project_context(): String {
+    let readme = read_file("README.md")
+    let agent_instructions = read_file(".github/copilot-instructions.md")
+    let claude_instructions = read_file("CLAUDE.md")
+    readme!
+    agent_instructions!
+    claude_instructions!
     '''
-    Describe the current project: what it does, what it is for, the major components, and the tech stack.
+    Based on the above, describe the project: what it does, what it is for, the major components, and the tech stack.
     '''
 }
 

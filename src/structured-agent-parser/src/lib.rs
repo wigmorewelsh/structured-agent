@@ -10,7 +10,8 @@ use combine::{attempt, between, not_followed_by, optional, position, sep_by1, Pa
 use structured_agent_ast::ast::{
     AstPath, AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction,
     Function, FunctionBody, Module, Parameter, PathArg, PathSegment, SelectClause,
-    SelectExpression, SigFunction, Statement, StructDefinition, StructField, Type, TypeParam, Use,
+    SelectExpression, SigFunction, Statement, StringPart, StructDefinition, StructField, Type,
+    TypeParam, Use,
 };
 use structured_agent_ast::types::{FileId, Span, Spanned};
 
@@ -964,76 +965,106 @@ where
     choice((parse_multiline_string(), parse_single_line_string()))
 }
 
-fn parse_single_line_string<Input>() -> impl Parser<Input, Output = Expression>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        between(
-            lex_char('"'),
-            char('"'),
-            many(
-                char('\\')
-                    .with(satisfy(|_| true))
-                    .map(|c| match c {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '\\' => '\\',
-                        '\'' => '\'',
-                        '"' => '"',
-                        c => c,
-                    })
-                    .or(satisfy(|c: char| c != '"')),
-            ),
-        ),
-        position(),
-    )
-        .skip(skip_spaces())
-        .map(
-            |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
-                value: chars.into_iter().collect(),
-                span: Span::new(start, end),
-            },
-        )
+fn merge_string_parts(parts: Vec<StringPart>) -> Vec<StringPart> {
+    parts.into_iter().fold(Vec::new(), |mut acc, part| {
+        match (acc.last_mut(), &part) {
+            (Some(StringPart::Literal(prev)), StringPart::Literal(s)) => prev.push_str(s),
+            _ => acc.push(part),
+        }
+        acc
+    })
 }
 
-fn parse_multiline_string<Input>() -> impl Parser<Input, Output = Expression>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        between(
-            lex_string("'''"),
-            string("'''"),
-            many(
-                char('\\')
-                    .with(satisfy(|_| true))
-                    .map(|c| match c {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '\\' => '\\',
-                        '\'' => '\'',
-                        '"' => '"',
-                        c => c,
-                    })
-                    .or(satisfy(|c: char| c != '\'')),
+combine::parser! {
+    fn parse_single_line_string[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            position(),
+            between(
+                lex_char('"'),
+                char('"'),
+                many(choice((
+                    attempt(
+                        string("${").with(parse_simple_expression()).skip(char('}'))
+                    ).map(|expr| StringPart::Interpolated(Box::new(expr))),
+                    choice((
+                        char('\\').with(satisfy(|_: char| true))
+                            .map(|c: char| match c {
+                                'n' => '\n', 't' => '\t', 'r' => '\r',
+                                '\\' => '\\', '\'' => '\'', '"' => '"', c => c,
+                            })
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                        attempt(char('$').skip(not_followed_by(char('{'))))
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                        satisfy(|c: char| c != '"' && c != '$' && c != '\\')
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                    )),
+                ))),
             ),
-        ),
-        position(),
-    )
-        .skip(skip_spaces())
-        .map(
-            |(start, chars, end): (_, Vec<char>, _)| Expression::StringLiteral {
-                value: chars.into_iter().collect(),
-                span: Span::new(start, end),
-            },
+            position(),
         )
+            .skip(skip_spaces())
+            .map(|(start, raw_parts, end): (_, Vec<StringPart>, _)| {
+                let parts = merge_string_parts(raw_parts);
+                let span = Span::new(start, end);
+                if parts.iter().any(|p| matches!(p, StringPart::Interpolated(_))) {
+                    Expression::StringTemplate { parts, span }
+                } else {
+                    let value = parts.into_iter().map(|p| match p {
+                        StringPart::Literal(s) => s,
+                        StringPart::Interpolated(_) => unreachable!(),
+                    }).collect::<String>();
+                    Expression::StringLiteral { value, span }
+                }
+            })
+    }
+}
+
+combine::parser! {
+    fn parse_multiline_string[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (
+            position(),
+            between(
+                lex_string("'''"),
+                string("'''"),
+                many(choice((
+                    attempt(
+                        string("${").with(parse_simple_expression()).skip(char('}'))
+                    ).map(|expr| StringPart::Interpolated(Box::new(expr))),
+                    choice((
+                        char('\\').with(satisfy(|_: char| true))
+                            .map(|c: char| match c {
+                                'n' => '\n', 't' => '\t', 'r' => '\r',
+                                '\\' => '\\', '\'' => '\'', '"' => '"', c => c,
+                            })
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                        attempt(char('$').skip(not_followed_by(char('{'))))
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                        satisfy(|c: char| c != '\'' && c != '$' && c != '\\')
+                            .map(|c: char| StringPart::Literal(c.to_string())),
+                    )),
+                ))),
+            ),
+            position(),
+        )
+            .skip(skip_spaces())
+            .map(|(start, raw_parts, end): (_, Vec<StringPart>, _)| {
+                let parts = merge_string_parts(raw_parts);
+                let span = Span::new(start, end);
+                if parts.iter().any(|p| matches!(p, StringPart::Interpolated(_))) {
+                    Expression::StringTemplate { parts, span }
+                } else {
+                    let value = parts.into_iter().map(|p| match p {
+                        StringPart::Literal(s) => s,
+                        StringPart::Interpolated(_) => unreachable!(),
+                    }).collect::<String>();
+                    Expression::StringLiteral { value, span }
+                }
+            })
+    }
 }
 
 fn parse_variable<Input>() -> impl Parser<Input, Output = Expression>
@@ -3895,6 +3926,82 @@ fn main(): String {
                 assert!(span.start > 0);
             }
             _ => panic!("Expected ForIn statement"),
+        }
+    }
+
+    #[test]
+    fn test_single_line_string_with_interpolation() {
+        let input = r#""hello ${name}""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_single_line_string().parse(stream).unwrap();
+        match expr {
+            Expression::StringTemplate { parts, .. } => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(&parts[0], StringPart::Literal(s) if s == "hello "));
+                assert!(
+                    matches!(&parts[1], StringPart::Interpolated(e) if matches!(e.as_ref(), Expression::Variable { name, .. } if name == "name"))
+                );
+            }
+            _ => panic!("Expected StringTemplate"),
+        }
+    }
+
+    #[test]
+    fn test_multiline_string_with_interpolation() {
+        let input = r#"'''hi ${x}'''"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_multiline_string().parse(stream).unwrap();
+        match expr {
+            Expression::StringTemplate { parts, .. } => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(&parts[0], StringPart::Literal(s) if s == "hi "));
+                assert!(
+                    matches!(&parts[1], StringPart::Interpolated(e) if matches!(e.as_ref(), Expression::Variable { name, .. } if name == "x"))
+                );
+            }
+            _ => panic!("Expected StringTemplate"),
+        }
+    }
+
+    #[test]
+    fn test_bare_dollar_not_followed_by_brace() {
+        let input = r#""cost $5""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_single_line_string().parse(stream).unwrap();
+        match expr {
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "cost $5");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_string_without_interpolation_still_produces_string_literal() {
+        let input = r#""hello world""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_single_line_string().parse(stream).unwrap();
+        match expr {
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!(value, "hello world");
+            }
+            _ => panic!("Expected StringLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_interpolated_method_call() {
+        let input = r#""${x.foo()}""#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (expr, _) = parse_single_line_string().parse(stream).unwrap();
+        match expr {
+            Expression::StringTemplate { parts, .. } => {
+                assert_eq!(parts.len(), 1);
+                assert!(
+                    matches!(&parts[0], StringPart::Interpolated(e) if matches!(e.as_ref(), Expression::MethodCall { .. }))
+                );
+            }
+            _ => panic!("Expected StringTemplate"),
         }
     }
 }
