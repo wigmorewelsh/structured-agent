@@ -73,16 +73,14 @@ pub enum Instruction {
     },
     LoadModule {
         name: DefinitionPath,
+        dest: Slot,
+    },
+    CallVirtual {
+        module_slot: Slot,
+        method: String,
         params: Vec<Slot>,
         dest: Slot,
     },
-    CallIndirect {
-        module_param: Slot,
-        fn_name: DefinitionPath,
-        params: Vec<Slot>,
-        dest: Slot,
-    },
-
     CtxEvent {
         var: Slot,
     },
@@ -212,23 +210,16 @@ impl fmt::Display for Instruction {
                 write!(f, "], {}", dest)
             }
 
-            Instruction::LoadModule { name, params, dest } => {
-                write!(f, "load.module {}, [", name)?;
-                for (i, p) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", p)?;
-                }
-                write!(f, "], {}", dest)
+            Instruction::LoadModule { name, dest } => {
+                write!(f, "load.module {}, {}", name, dest)
             }
-            Instruction::CallIndirect {
-                module_param,
-                fn_name,
+            Instruction::CallVirtual {
+                module_slot,
+                method,
                 params,
                 dest,
             } => {
-                write!(f, "call.indirect {}.{}, [", module_param, fn_name)?;
+                write!(f, "call.virtual {}.{}, [", module_slot, method)?;
                 for (i, var) in params.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;

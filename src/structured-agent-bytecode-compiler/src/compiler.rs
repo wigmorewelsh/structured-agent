@@ -291,8 +291,8 @@ impl BytecodeCompiler {
                 Self::compile_type_literal(ctx, ty, dest_var);
                 Ok(())
             }
-            typed_ast::Expression::ModuleInstance { path, params, .. } => {
-                self.compile_module_instance(ctx, path, params, dest_var)
+            typed_ast::Expression::ModuleInstance { path, .. } => {
+                Self::compile_module_instance(ctx, path, dest_var)
             }
             typed_ast::Expression::Variable { binding_id, .. } => {
                 Self::compile_variable_expression(ctx, binding_id, dest_var)
@@ -358,9 +358,9 @@ impl BytecodeCompiler {
                     .binding_id_to_slot
                     .get(binding_id)
                     .ok_or_else(|| format!("module param slot not found: {:?}", binding_id))?;
-                ctx.builder.emit(Instruction::CallIndirect {
-                    module_param: module_slot,
-                    fn_name: fn_path.clone(),
+                ctx.builder.emit(Instruction::CallVirtual {
+                    module_slot,
+                    method: fn_path.last_name().to_string(),
                     params,
                     dest: dest_var,
                 });
@@ -433,7 +433,6 @@ impl BytecodeCompiler {
             | structured_agent_runtime::Type::Parameterized(path, _) => {
                 ctx.builder.emit(Instruction::LoadModule {
                     name: path.clone(),
-                    params: vec![],
                     dest: dest_var,
                 });
             }
@@ -444,21 +443,12 @@ impl BytecodeCompiler {
     }
 
     fn compile_module_instance(
-        &self,
         ctx: &mut CompilerCtx,
         path: &DefinitionPath,
-        params: &[typed_ast::Expression],
         dest_var: Slot,
     ) -> Result<(), String> {
-        let mut param_slots = Vec::new();
-        for param_expr in params {
-            let s = ctx.builder.next_temp_slot();
-            self.compile_expression(ctx, param_expr, s)?;
-            param_slots.push(s);
-        }
         ctx.builder.emit(Instruction::LoadModule {
             name: path.clone(),
-            params: param_slots,
             dest: dest_var,
         });
         Ok(())
@@ -693,11 +683,6 @@ fn collect_from_expr(
     _seen: &mut HashSet<BindingId>,
 ) {
     match expr {
-        typed_ast::Expression::ModuleInstance { params, .. } => {
-            for p in params {
-                collect_from_expr(p, _result, _seen);
-            }
-        }
         typed_ast::Expression::Select(select, _) => {
             for clause in &select.clauses {
                 collect_from_expr(&clause.expression_to_run, _result, _seen);

@@ -64,9 +64,16 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         Instruction::LlmSelect { metadata_vars, .. } => metadata_vars.clone(),
         Instruction::StructNew { fields, .. } => fields.iter().map(|(_, src)| *src).collect(),
         Instruction::StructGet { src, .. } => vec![*src],
-        Instruction::CallIndirect { params, .. } => params.clone(),
         Instruction::CallNative { params, .. } => params.clone(),
-        Instruction::LoadModule { params, .. } => params.clone(),
+        Instruction::CallVirtual {
+            module_slot,
+            params,
+            ..
+        } => {
+            let mut reads = vec![*module_slot];
+            reads.extend(params.iter().cloned());
+            reads
+        }
         _ => vec![],
     }
 }
@@ -84,7 +91,7 @@ pub fn instruction_writes(instruction: &Instruction) -> Option<Slot> {
         Instruction::Spawn { dest, .. } => Some(*dest),
         Instruction::CallActor { dest, .. } => Some(*dest),
         Instruction::LoadModule { dest, .. } => Some(*dest),
-        Instruction::CallIndirect { dest, .. } => Some(*dest),
+        Instruction::CallVirtual { dest, .. } => Some(*dest),
         Instruction::CallNative { dest, .. } => Some(*dest),
         Instruction::MetaFunction { dest, .. } => Some(*dest),
         Instruction::ListCreate { dest, .. } => Some(*dest),

@@ -30,26 +30,14 @@ impl ExpressionParameter {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionValue {
-    Module {
-        path: DefinitionPath,
-        params: Vec<ExpressionValue>,
-    },
+    Module { path: DefinitionPath },
     Dynamic(Arc<dyn RuntimeValue>),
 }
 
 impl PartialEq for ExpressionValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (
-                ExpressionValue::Module {
-                    path: a,
-                    params: ap,
-                },
-                ExpressionValue::Module {
-                    path: b,
-                    params: bp,
-                },
-            ) => a == b && ap == bp,
+            (ExpressionValue::Module { path: a }, ExpressionValue::Module { path: b }) => a == b,
             (ExpressionValue::Dynamic(a), ExpressionValue::Dynamic(b)) => a.eq(b.as_any()),
             _ => false,
         }
@@ -116,10 +104,7 @@ impl ExpressionValue {
     }
 
     pub fn module(path: DefinitionPath) -> Self {
-        Self::Module {
-            path,
-            params: vec![],
-        }
+        Self::Module { path }
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {

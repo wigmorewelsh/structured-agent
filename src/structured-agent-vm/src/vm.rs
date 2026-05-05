@@ -171,8 +171,8 @@ impl VM {
                     self.execute_external_call(state, &function_name, &params, dest)
                         .await?
                 }
-                Instruction::LoadModule { name, params, dest } => {
-                    self.execute_load_module(state, &name, &params, dest)?
+                Instruction::LoadModule { name, dest } => {
+                    self.execute_load_module(state, &name, dest)?
                 }
                 Instruction::CtxEvent { var } => self.execute_ctx_event(state, var)?,
                 Instruction::CtxChild => self.execute_ctx_child(state),
@@ -207,17 +207,17 @@ impl VM {
                 Instruction::StructGet { dest, src, field } => {
                     self.execute_struct_get(state, dest, src, &field)?
                 }
-                Instruction::CallIndirect {
-                    module_param,
-                    fn_name,
+                Instruction::CallNative { f, params, dest } => {
+                    self.execute_native_call(state, &f, &params, dest).await?
+                }
+                Instruction::CallVirtual {
+                    module_slot,
+                    method,
                     params,
                     dest,
                 } => {
-                    self.execute_indirect_call(state, module_param, fn_name, params, dest)
+                    self.execute_virtual_call(state, module_slot, &method, params, dest)
                         .await?
-                }
-                Instruction::CallNative { f, params, dest } => {
-                    self.execute_native_call(state, &f, &params, dest).await?
                 }
             };
         }
@@ -486,20 +486,12 @@ impl VM {
         &self,
         mut state: VMState,
         name: &DefinitionPath,
-        param_slots: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
-        let params: Vec<ExpressionValue> = param_slots
-            .iter()
-            .map(|s| Ok(Self::read_slot(&state, *s)?.value))
-            .collect::<Result<_, String>>()?;
         Self::write_slot(
             &mut state,
             dest,
-            ExpressionResult::new(ExpressionValue::Module {
-                path: name.clone(),
-                params,
-            }),
+            ExpressionResult::new(ExpressionValue::module(name.clone())),
         );
         Ok(Self::advance_pc(state))
     }
@@ -678,34 +670,20 @@ impl VM {
         Ok(Self::advance_pc(state))
     }
 
-    async fn execute_indirect_call(
+    async fn execute_virtual_call(
         &self,
         state: VMState,
-        module_param: Slot,
-        fn_name: DefinitionPath,
+        module_slot: Slot,
+        method: &str,
         params: Vec<Slot>,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let module_val = Self::read_slot(&state, module_param)?;
-        let (module_path, module_params) = match &module_val.value {
-            ExpressionValue::Module { path, params } => (path.clone(), params.clone()),
-            _ => return Err("CallIndirect: expected Module".to_string()),
+        let module_val = Self::read_slot(&state, module_slot)?;
+        let ExpressionValue::Module { path: impl_key } = &module_val.value else {
+            return Err("CallVirtual: expected Module value".to_string());
         };
-        let function_name = DefinitionPath::for_function(module_path, fn_name.last_name());
-        let body = self
-            .runtime
-            .get_bytecode_ref(&function_name)
-            .ok_or_else(|| format!("Function not found: {}", function_name))?;
-        let mut args: Vec<ExpressionResult> = module_params
-            .into_iter()
-            .map(ExpressionResult::new)
-            .collect();
-        for slot in &params {
-            args.push(Self::read_slot(&state, *slot)?);
-        }
-        let display_name = function_name.to_string();
-        let state = Self::advance_pc(state);
-        self.push_bytecode_frame(state, body, display_name, args, dest)
+        let function_name = DefinitionPath::for_function(impl_key.clone(), method);
+        self.execute_call(state, function_name, params, dest).await
     }
 
     fn execute_struct_new(

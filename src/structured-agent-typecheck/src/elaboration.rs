@@ -554,7 +554,6 @@ fn elaborate_implicit_trait_args(
             };
             implicit_args.push(typed_ast::Expression::ModuleInstance {
                 path: impl_path.clone(),
-                params: vec![],
                 ty: RT::Named(impl_path),
                 span,
             });

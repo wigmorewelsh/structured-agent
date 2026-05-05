@@ -186,7 +186,6 @@ pub enum Expression {
     },
     ModuleInstance {
         path: DefinitionPath,
-        params: Vec<Expression>,
         ty: Type,
         span: Span,
     },
