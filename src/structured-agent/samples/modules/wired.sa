@@ -1,9 +1,7 @@
-mod reporter(formatter)
-
-use reporter::report
+use ::reporter::report
 
 fn main(): () {
-    "Demonstrating vtable dispatch via module parameters"!
+    "Demonstrating absolute imports"!
     report("hello from wired modules")
     "Done"!
 }

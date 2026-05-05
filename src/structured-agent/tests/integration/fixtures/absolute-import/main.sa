@@ -1,0 +1,5 @@
+use ::worker::greet
+
+fn main(): String {
+    return greet("absolute")
+}

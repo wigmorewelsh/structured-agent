@@ -79,6 +79,19 @@ pub fn parse_and_type_check(code: &str) -> typed_ast::Module {
     }
 }
 
+pub async fn run_fixture(fixture_name: &str) -> ExpressionValue {
+    let fixture_path = format!(
+        "{}/tests/integration/fixtures/{}/main.sa",
+        env!("CARGO_MANIFEST_DIR"),
+        fixture_name
+    );
+    Runtime::builder(ProgramSource::File(fixture_path))
+        .build()
+        .run()
+        .await
+        .expect("Program execution failed")
+}
+
 pub fn make_context() -> Context {
     let runtime =
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());

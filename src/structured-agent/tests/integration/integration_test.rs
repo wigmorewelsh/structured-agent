@@ -1,4 +1,4 @@
-use super::helpers::run_program;
+use super::helpers::{run_fixture, run_program};
 use nonempty::NonEmpty;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::CompilationUnit;
@@ -146,4 +146,10 @@ fn main(): String {
 
     let value = run_program(code).await;
     assert_eq!(value.as_string().unwrap(), "helper");
+}
+
+#[tokio::test]
+async fn test_absolute_import_resolves_and_executes() {
+    let value = run_fixture("absolute-import").await;
+    assert_eq!(value.as_string().unwrap(), "absolute");
 }

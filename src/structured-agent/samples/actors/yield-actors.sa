@@ -3,7 +3,7 @@ struct ActorState {
     // Define any state variables for the actor here
 }
 
-mod SomeActor(state: ActorState) {
+mod SomeActor {
     pub fn push_state(): () {
         "Did something"!
 

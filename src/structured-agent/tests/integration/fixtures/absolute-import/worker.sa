@@ -1,0 +1,5 @@
+mod worker
+
+pub fn greet(name: String): String {
+    return name
+}

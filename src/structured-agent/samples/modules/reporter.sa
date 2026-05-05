@@ -1,6 +1,8 @@
-mod reporter(fmt: formatter::Formatter)
+mod reporter
+
+use ::formatter::format
 
 pub fn report(value: String): () {
-    let formatted = fmt::format(value)
+    let formatted = format(value)
     formatted!
 }
