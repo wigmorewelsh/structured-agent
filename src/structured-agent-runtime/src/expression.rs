@@ -3,8 +3,8 @@ use arrow::datatypes::{DataType, Field, Fields};
 use std::sync::Arc;
 
 use crate::runtime_value::{
-    BooleanValue, IntValue, ListValue, MetadataValue, OptionValue, RuntimeValue, StringValue,
-    StructValue, UnitValue, arrow_col_to_expression,
+    BooleanValue, IntValue, ListIteratorValue, ListValue, MetadataValue, OptionValue, RuntimeValue,
+    StringValue, StructValue, UnitValue, arrow_col_to_expression,
 };
 use crate::symbols::{DefinitionPath, MetaData, References, SymbolQuery, TypeDefinitionKind};
 use crate::types::Type;
@@ -105,6 +105,14 @@ impl ExpressionValue {
 
     pub fn module(path: DefinitionPath) -> Self {
         Self::Module { path }
+    }
+
+    pub fn list_iterator(arr: Arc<ListArray>) -> Self {
+        Self::Dynamic(Arc::new(ListIteratorValue::new(arr)))
+    }
+
+    pub fn as_list_iterator(&self) -> Result<ListIteratorValue, String> {
+        self.downcast_clone::<ListIteratorValue>()
     }
 
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
@@ -782,5 +790,37 @@ mod tests {
         let val = ExpressionValue::string("x");
         let result = val.downcast_clone::<IntValue>();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_iterator_expression_type_name() {
+        let list = ExpressionValue::from_elements(vec![ExpressionValue::string("a")])
+            .unwrap()
+            .as_list()
+            .unwrap()
+            .clone();
+        let val = ExpressionValue::list_iterator(Arc::new(list));
+        assert_eq!(val.type_name(), "ListIterator");
+    }
+
+    #[test]
+    fn list_iterator_as_list_iterator_roundtrips() {
+        use arrow::array::ListArray;
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::string("a"),
+            ExpressionValue::string("b"),
+        ])
+        .unwrap();
+        let arr: Arc<ListArray> = Arc::new(list.as_list().unwrap().clone());
+        let val = ExpressionValue::list_iterator(arr);
+        let iter = val.as_list_iterator();
+        assert!(iter.is_ok());
+        iter.unwrap().move_next();
+    }
+
+    #[test]
+    fn list_iterator_wrong_type_returns_err() {
+        let val = ExpressionValue::string("hello");
+        assert!(val.as_list_iterator().is_err());
     }
 }

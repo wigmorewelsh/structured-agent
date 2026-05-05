@@ -2,6 +2,7 @@ pub mod actor;
 pub mod equality;
 pub mod fs;
 pub mod io;
+pub mod iterator;
 pub mod logic;
 pub mod math;
 pub mod messaging;

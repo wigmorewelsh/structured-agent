@@ -19,6 +19,10 @@ impl ListValue {
         Self { list }
     }
 
+    pub fn list_arc(&self) -> Arc<ListArray> {
+        self.list.clone()
+    }
+
     pub fn list_array(&self) -> &ListArray {
         &self.list
     }

@@ -1,17 +1,21 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use arrow::array::{Array, BooleanArray, Int64Array, ListArray, StringArray, StructArray, UnionArray};
+use arrow::array::{
+    Array, BooleanArray, Int64Array, ListArray, StringArray, StructArray, UnionArray,
+};
 use arrow::datatypes::DataType;
 
 use crate::expression::ExpressionValue;
 
 mod list;
+mod list_iterator;
 mod option;
 mod primitives;
 mod struct_value;
 
 pub use list::{ListValue, ListValueFactory};
+pub use list_iterator::ListIteratorValue;
 pub use option::{OptionValue, OptionValueFactory};
 pub use primitives::{BooleanValue, IntValue, StringValue, UnitValue};
 pub use struct_value::{MetadataValue, StructValue};
@@ -79,7 +83,10 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
                 } else {
                     Some(doc_arr.value(0).to_string())
                 };
-                ExpressionValue::Dynamic(Arc::new(MetadataValue { name, documentation }))
+                ExpressionValue::Dynamic(Arc::new(MetadataValue {
+                    name,
+                    documentation,
+                }))
             } else {
                 ExpressionValue::Dynamic(Arc::new(StructValue {
                     struct_array: Arc::new(arr.clone()),
