@@ -396,8 +396,25 @@ impl BytecodeCompiler {
             typed_ast::Expression::Spawn { key, ty, .. } => {
                 self.compile_spawn_expression(ctx, key, ty, dest_var)
             }
-            typed_ast::Expression::StringTemplate { .. } => {
-                unreachable!("StringTemplate not yet produced by parser")
+            typed_ast::Expression::StringTemplate { parts, .. } => {
+                let mut part_slots = Vec::new();
+                for part in parts {
+                    let slot = ctx.builder.next_temp_slot();
+                    match part {
+                        typed_ast::StringPart::Literal(s) => {
+                            Self::compile_string_literal(ctx, s, slot)?;
+                        }
+                        typed_ast::StringPart::Interpolated(expr) => {
+                            self.compile_expression(ctx, expr, slot)?;
+                        }
+                    }
+                    part_slots.push(slot);
+                }
+                ctx.builder.emit(Instruction::StrConcat {
+                    dest: dest_var,
+                    parts: part_slots,
+                });
+                Ok(())
             }
         }
     }

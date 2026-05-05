@@ -1,77 +1,168 @@
+use messaging::receive
+use io::print
 
-# phase 1. discuss with the user (interactive back and forth)
-# phase 2. plan/impl/verify loop
-# phase 2a. plan then the top level agent reviews (loop if more work needed)
-# phase 2b. have an agent implement (if the agent fails
+## Read the full contents of a file at the given path
+extern fn read_file(path: String): String
+## Write content to a file, overwriting any existing content
+extern fn write_file(path: String, content: String): String
+## List the files and directories at the given path
+extern fn list_directory(path: String): String
+## Search file contents using a regular expression
+extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
+## Execute a shell command and return its output
+extern fn execute_command(command: String): String
 
-fn process(): () {
-
-    let stages = high_level_plan()
-
-    '''
-    for each stage run a sub agent to plan out the work,
-    check the plan means the expected top level plan,
-    then another sub agent to implement the work.
-    after the stage is complete commit to git using a one line commit message.
-    '''
-    for stage in stages {
-        let stage_plan = planner_agent(stage)
-        let result = impl_agent(stage_plan)
-        commit_with_single_message(result)
-    }
-}
-
-fn high_level_plan(): List<String> {
-    '''
-    write up a plan inc test list for the Absolute use imports.
-    split it into deliverable chunks of value that can be built and tested independently.
-    '''
+## Ask the supervising human for input when blocked or uncertain
+fn ask_for_supervisor_help(context: String): String {
+    print(context)
+    let response = receive()
+    return response
 }
 
 fn project_context(): String {
     '''
-    You are generating a description of the current project.
-    What does it do what? What is it for? What are the major components?
-    What tech does it use?
+    Describe the current project: what it does, what it is for, the major components, and the tech stack.
     '''
 }
 
-fn planner_agent(stage: String): String {
+# --- Read-only planning agent loop ---
+
+fn is_plan_ready(): Boolean {
+    "Is the plan precise and complete enough to hand to an implementer, with specific file paths, type names, and test names?"!
+}
+
+fn plan_is_blocked(): Boolean {
+    "Is there an ambiguity or blocker that cannot be resolved by reading the codebase?"!
+}
+
+fn summarize_plan(): String {
     '''
-    You are planning implementation work for {a language runtime written in Rust.}
-    Do NOT implement anything — produce a precise, ordered list of file changes and test cases only.
-
-    ## Context
-
-    {project context}
-
+    Produce the final plan: an ordered list of file changes and test cases.
+    Include file paths, function or type names, and test names.
     '''
-
 }
 
-fn impl_agent(plan: String): String {
+fn planner_loop(): String {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _)
+    }
 
-}
+    action!
 
-fn commit_with_single_message(result: String): () {
+    if plan_is_blocked() {
+        let guidance = ask_for_supervisor_help("Planning is blocked, supervisor input needed:")
+        guidance!
+    }
 
-}
-
-fn test_driven_process(): () {
-    # NOTE: Need to track the files changes
-
-    # create test plan
-    let test_list = create_initial_test_list()
-
-    for test in test_list {
-        implement_test(test)
+    if is_plan_ready() {
+        return summarize_plan()
+    } else {
+        return planner_loop()
     }
 }
 
-fn create_initial_test_list(): List<String> {
+fn planner_agent(stage: String, knowledge: String): String {
     '''
-    create a list of tests that would be needed to verify the Absolute use imports feature.
+    You are planning implementation work. Do NOT implement anything.
+    Explore the codebase then produce a precise, ordered plan.
+
+    ## Project
+    {project_context()}
+
+    ## Prior knowledge
+    {knowledge}
+
+    ## Stage
+    {stage}
+    '''!
+
+    return planner_loop()
+}
+
+# --- TDD impl agent loop ---
+
+fn is_all_tests_passing(): Boolean {
+    "Are all tests currently passing?"!
+}
+
+fn is_impl_stuck(): Boolean {
+    "Have you been unable to make progress after multiple attempts?"!
+}
+
+fn is_refactor_done(): Boolean {
+    "Is the code clean and are all tests still passing?"!
+}
+
+fn summarize_changes(): String {
+    "List the files changed and a one-line description of each change."!
+}
+
+fn write_failing_test(test_description: String): String {
     '''
+    Write a single failing test for: {test_description}
+    Do not write any implementation code.
+    Consider the right API, extending existing APIs where appropriate.
+    '''!
+    test_description!
+}
+
+fn make_test_pass_loop(test_name: String): String {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        write_file(_, _),
+        execute_command(_)
+    }
+
+    action!
+
+    if is_impl_stuck() {
+        let guidance = ask_for_supervisor_help("Cannot make {test_name} pass, supervisor input needed:")
+        guidance!
+    }
+
+    if is_all_tests_passing() {
+        return summarize_changes()
+    } else {
+        return make_test_pass_loop(test_name)
+    }
+}
+
+fn make_test_pass(test_name: String): String {
+    '''
+    Write only enough implementation to make {test_name} pass.
+    Do not over-engineer. Run the test after each change.
+    '''!
+    return make_test_pass_loop(test_name)
+}
+
+fn refactor_loop(): () {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        write_file(_, _),
+        execute_command(_)
+    }
+
+    action!
+
+    if is_refactor_done() {
+        return
+    } else {
+        return refactor_loop()
+    }
+}
+
+fn refactor(changes: String): () {
+    '''
+    Refactor the code changed in: {changes}
+    Remove duplication, improve names. Do not change behaviour. Run tests after each change.
+    '''!
+    refactor_loop()
 }
 
 fn implement_test(test: String): () {
@@ -80,12 +171,110 @@ fn implement_test(test: String): () {
     refactor(changes)
 }
 
-fn write_failing_test(test_description: String): String {
+fn create_test_list(plan: String): List<String> {
     '''
-    Write a single test for {test_description} that fails.
-    Do not write any implementation code.
-    Consider the right API for the {test_description}.
-    Extend the existing API if there is already one to build on top of.
+    From the following plan, produce a minimal ordered list of test cases to implement.
+    Each entry should be a single sentence describing one test.
+
+    {plan}
+    '''
+}
+
+fn summarize_stage(plan: String): String {
+    '''
+    Summarize what was implemented, what tests were added, and what files changed.
+    Note anything that deviated from the plan and any patterns or pitfalls discovered.
     '''!
-    test_description!
+    plan!
+}
+
+fn impl_agent(plan: String): String {
+    plan!
+
+    let test_list = create_test_list(plan)
+
+    for test in test_list {
+        implement_test(test)
+    }
+
+    return summarize_stage(plan)
+}
+
+# --- Learning ---
+
+fn update_knowledge(knowledge: String, stage_summary: String): String {
+    '''
+    Combine the existing knowledge with the stage summary into an updated record of knowledge.
+    Keep it concise. Focus on patterns, pitfalls, and conventions discovered.
+
+    ## Existing knowledge
+    {knowledge}
+
+    ## Stage summary
+    {stage_summary}
+    '''
+}
+
+# --- Commit ---
+
+fn generate_commit_message(result: String): String {
+    "Write a single-line git commit message summarising: {result}"
+}
+
+fn commit_with_single_message(result: String): () {
+    let message = generate_commit_message(result)
+    execute_command("git add -A")
+    execute_command("git commit -m \"{message}\"")
+}
+
+# --- Top-level process ---
+
+fn high_level_plan(feature: String): List<String> {
+    '''
+    Write a high-level plan for implementing: {feature}
+    Split into independently deliverable stages that can each be built and tested on their own.
+    '''
+}
+
+fn process(feature: String): () {
+    let stages = high_level_plan(feature)
+    let knowledge = ""
+
+    for stage in stages {
+        let stage_plan = planner_agent(stage, knowledge)
+        let result = impl_agent(stage_plan)
+        knowledge = update_knowledge(knowledge, result)
+        commit_with_single_message(result)
+    }
+}
+
+# --- Discussion phase ---
+
+fn is_feature_understood(): Boolean {
+    "Do you have enough context to write a high-level plan for this feature?"!
+}
+
+fn summarize_feature(): String {
+    "Summarize the feature requirements clearly and concisely."!
+}
+
+fn discuss(): String {
+    let response = ask_for_supervisor_help("What feature would you like to implement?")
+    response!
+
+    if is_feature_understood() {
+        return summarize_feature()
+    } else {
+        return discuss()
+    }
+}
+
+fn main(): () {
+    '''
+    You are a structured agent implementing a software feature using a test-driven process.
+    You will discuss requirements with the user, plan stages, implement with TDD, and commit each stage.
+    '''!
+
+    let feature = discuss()
+    process(feature)
 }

@@ -7,7 +7,7 @@ use super::db::{
 };
 use super::synthesize;
 use crate::FunctionSignature;
-use structured_agent_ast::ast::{Expression, Function, Statement, Type as AstType};
+use structured_agent_ast::ast::{Expression, Function, Statement, StringPart, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionKind, TypeDefinitionKind};
@@ -319,8 +319,22 @@ pub fn elaborate_expression(
             key,
             span,
         } => elaborate_spawn(db, type_arg, key, *span, env, ctx),
-        Expression::StringTemplate { .. } => {
-            unreachable!("StringTemplate not yet produced by parser")
+        Expression::StringTemplate { parts, span } => {
+            let typed_parts = parts
+                .iter()
+                .map(|part| match part {
+                    StringPart::Literal(s) => Some(typed_ast::StringPart::Literal(s.clone())),
+                    StringPart::Interpolated(expr) => {
+                        let typed = elaborate_expression(db, expr, env, ctx)?;
+                        Some(typed_ast::StringPart::Interpolated(Box::new(typed)))
+                    }
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(typed_ast::Expression::StringTemplate {
+                parts: typed_parts,
+                ty: RT::string(),
+                span: *span,
+            })
         }
     }
 }

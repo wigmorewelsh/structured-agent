@@ -91,8 +91,10 @@ mod compilation_tests {
     use crate::typecheck::TypeChecker;
     use crate::typecheck::TypedCheckerAstRef;
     use crate::typed_ast;
+    use crate::types::Span;
     use nonempty::NonEmpty;
     use std::collections::HashMap;
+    use structured_agent_runtime::Type as RT;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -725,6 +727,48 @@ fn test(): Int {
 }
 "#;
         compile_and_check(code, expected);
+    }
+
+    #[test]
+    fn test_compile_string_template() {
+        let func = typed_ast::Function {
+            name: "test".to_string(),
+            parameters: vec![],
+            return_type: RT::string(),
+            body: typed_ast::FunctionBody {
+                statements: vec![typed_ast::Statement::Return(
+                    typed_ast::Expression::StringTemplate {
+                        parts: vec![
+                            typed_ast::StringPart::Literal("hello ".to_string()),
+                            typed_ast::StringPart::Interpolated(Box::new(
+                                typed_ast::Expression::IntLiteral {
+                                    value: 42,
+                                    ty: RT::int(),
+                                    span: Span::dummy(),
+                                },
+                            )),
+                        ],
+                        ty: RT::string(),
+                        span: Span::dummy(),
+                    },
+                )],
+                span: Span::dummy(),
+            },
+            documentation: None,
+            is_pub: false,
+            span: Span::dummy(),
+        };
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(&func).unwrap();
+        let expected = r#"fn test(
+
+): String {
+      0: ldc.str s2, "hello "
+      1: ldc.int s3, 42
+      2: str.concat s1, [s2, s3]
+      3: ret s1
+}
+"#;
+        assert_eq!(format!("{}", compiled), expected);
     }
 }
 

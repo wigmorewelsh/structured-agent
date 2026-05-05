@@ -8,7 +8,8 @@ use crate::ensure_or_accumulate;
 use crate::error::{TypeError, TypeErrorAccumulator};
 use crate::solver::{Constraint, ConstraintKind};
 use structured_agent_ast::ast::{
-    Definition, Expression, Function, SelectClause, Statement, Type as AstType, TypeParam,
+    Definition, Expression, Function, SelectClause, Statement, StringPart, Type as AstType,
+    TypeParam,
 };
 use structured_agent_ast::types::{FileId, Span, Spanned};
 use structured_agent_typed_ast::BindingId;
@@ -886,8 +887,13 @@ pub fn synthesize_expression(
             }
             Some(unifier.apply_subst(&sig.return_type))
         }
-        Expression::StringTemplate { .. } => {
-            unreachable!("StringTemplate not yet produced by parser")
+        Expression::StringTemplate { parts, .. } => {
+            for part in parts {
+                if let StringPart::Interpolated(expr) = part {
+                    synthesize_expression(db, expr, env, ctx);
+                }
+            }
+            Some(RT::string())
         }
     }
 }

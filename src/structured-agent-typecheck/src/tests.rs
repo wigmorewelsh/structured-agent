@@ -2042,6 +2042,7 @@ mod typed_ast_tests {
     use nonempty::NonEmpty;
 
     use std::sync::Arc;
+    use structured_agent_ast::ast::StringPart;
     use structured_agent_runtime::Type as RT;
     use structured_agent_runtime::symbols::DefinitionPath;
 
@@ -3665,6 +3666,48 @@ mod typed_ast_tests {
             panic!("expected Call expression");
         }
     }
+    #[test]
+    fn string_template_literal_only_has_string_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::StringTemplate {
+                parts: vec![StringPart::Literal("hello".to_string())],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &RT::string());
+    }
+
+    #[test]
+    fn string_template_with_interpolated_int_has_string_type() {
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::StringTemplate {
+                parts: vec![
+                    StringPart::Literal("value is ".to_string()),
+                    StringPart::Interpolated(Box::new(Expression::IntLiteral {
+                        value: 42,
+                        span: crate::types::Span::dummy(),
+                    })),
+                ],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![Definition::Function(Arc::new(
+            func,
+        ))]));
+        let expr = stmt_expr(first_function(&module).body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &RT::string());
+    }
+
     #[test]
     fn actor_method_call_has_target_set() {
         let counter_src = "fn increment(): String {\n    return \"ok\"\n}\n";
