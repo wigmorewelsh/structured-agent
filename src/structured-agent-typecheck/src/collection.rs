@@ -178,6 +178,31 @@ impl SymbolTableBuilder {
 
             for (idx, impl_decl) in native_mod.native_impls().iter().enumerate() {
                 let impl_key = DefinitionPath::for_impl(module_name.clone(), Some(idx as u32));
+                if impl_decl.trait_name.is_some() {
+                    let type_path =
+                        DefinitionPath::for_type(module_name.clone(), &impl_decl.type_name);
+                    if !self.metadata.types.contains_key(&type_path) {
+                        let generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> =
+                            impl_decl
+                                .type_params
+                                .iter()
+                                .map(|s| GenericParameterDefinition {
+                                    name: s.clone(),
+                                    constraints: vec![],
+                                })
+                                .collect();
+                        let type_entry = TypeDefinition {
+                            name: type_path.clone(),
+                            kind: TypeDefinitionKind::Struct {
+                                fields: vec![],
+                                generic_parameters,
+                            },
+                            source_ref: SourceLocation(0, Span::dummy()),
+                            ast_ref: CheckerAstRef::Primitive,
+                        };
+                        self.metadata.register_type(type_path, Arc::new(type_entry));
+                    }
+                }
                 let impl_entry = ImplDefinition {
                     key: impl_key.clone(),
                     module: module_name.clone(),
@@ -206,6 +231,14 @@ impl SymbolTableBuilder {
                         })
                         .collect();
                     let return_type = Self::runtime_type_to_ast(&func.return_type);
+                    let generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> = func
+                        .type_params
+                        .iter()
+                        .map(|s| GenericParameterDefinition {
+                            name: s.clone(),
+                            constraints: vec![],
+                        })
+                        .collect();
                     let fn_def = FunctionDefinition {
                         name: fn_key.clone(),
                         visibility: Visibility::Public,
@@ -219,7 +252,7 @@ impl SymbolTableBuilder {
                         name: fn_type_name.clone(),
                         kind: TypeDefinitionKind::Function {
                             parameters,
-                            generic_parameters: vec![],
+                            generic_parameters,
                             return_type,
                         },
                         source_ref: SourceLocation(0, Span::dummy()),

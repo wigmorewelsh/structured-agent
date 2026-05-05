@@ -191,7 +191,51 @@ fn elaborate_statement(
             Some((typed_ast::Statement::Return(typed_expr), env))
         }
         Statement::Yield { span } => Some((typed_ast::Statement::Yield { span: *span }, env)),
-        Statement::ForIn { .. } => todo!("ForIn elaboration not yet implemented"),
+        Statement::ForIn {
+            variable,
+            iterable,
+            body,
+            span,
+        } => {
+            let typed_iterable = elaborate_expression(db, iterable, &env, ctx)?;
+            let type_name_str = match typed_iterable.ty() {
+                RT::Named(p) | RT::Parameterized(p, _) => p.last_name().to_string(),
+                _ => return None,
+            };
+            let impls = db.symbol_tables().impls(db);
+            let impl_key = impls
+                .get()
+                .values()
+                .find(|i| {
+                    i.type_name.name() == type_name_str
+                        && i.trait_name
+                            .as_ref()
+                            .map(|t| t.name() == "Iterator")
+                            .unwrap_or(false)
+                })
+                .map(|i| i.key.clone())?;
+            let move_next_fn = DefinitionPath::for_impl_fn(&impl_key, "move_next");
+            let current_fn = DefinitionPath::for_impl_fn(&impl_key, "current");
+            let mut child_env = env.create_child();
+            let element_type = match typed_iterable.ty() {
+                RT::Parameterized(_, args) if !args.is_empty() => args[0].clone(),
+                _ => RT::Generic("T".to_string()),
+            };
+            let binding_id = child_env.declare_variable(variable.clone(), element_type, *span);
+            let typed_body = elaborate_block(db, body, child_env, ctx)?;
+            Some((
+                typed_ast::Statement::ForIn {
+                    variable: variable.clone(),
+                    binding_id,
+                    iterable: typed_iterable,
+                    move_next_fn,
+                    current_fn,
+                    body: typed_body,
+                    span: *span,
+                },
+                env,
+            ))
+        }
     }
 }
 
@@ -323,7 +367,7 @@ fn resolve_method_callee(
         return resolve_callee_for_generic_method(db, env, param_name, method, span, ctx);
     }
     let struct_type_name = match receiver_type {
-        RT::Named(tn) => tn.last_name().to_string(),
+        RT::Named(tn) | RT::Parameterized(tn, _) => tn.last_name().to_string(),
         _ => return None,
     };
     resolve_callee_for_method(db, &struct_type_name, method, env, ctx)
@@ -375,7 +419,7 @@ fn resolve_callee_for_method(
     _env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
-    let impl_fn_path = find_impl_fn(db, struct_type_name, method, ctx.module_name)?;
+    let impl_fn_path = find_impl_fn(db, struct_type_name, method)?;
     let sig = get_function_sig(
         db,
         InternedFunctionName::new(db, impl_fn_path.clone()),

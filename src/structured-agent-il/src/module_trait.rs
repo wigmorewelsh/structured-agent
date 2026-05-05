@@ -14,6 +14,7 @@ pub struct NativeTraitDecl {
 
 pub struct NativeImplDecl {
     pub type_name: String,
+    pub type_params: Vec<String>,
     pub trait_name: Option<String>,
     pub functions: Vec<NativeFunctionDef>,
 }

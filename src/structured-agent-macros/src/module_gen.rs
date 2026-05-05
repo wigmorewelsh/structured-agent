@@ -333,6 +333,7 @@ fn impl_mod_to_decl(
     let construction = quote! {
         ::structured_agent_il::NativeImplDecl {
             type_name: #type_name.to_string(),
+            type_params: vec![],
             trait_name: #trait_name_expr,
             functions: vec![#(#def_constructions),*],
         }
@@ -475,6 +476,7 @@ fn impl_block_to_decl(
     let construction = quote! {
         ::structured_agent_il::NativeImplDecl {
             type_name: #type_name.to_string(),
+            type_params: vec![],
             trait_name: #trait_name_expr,
             functions: vec![#(#def_constructions),*],
         }

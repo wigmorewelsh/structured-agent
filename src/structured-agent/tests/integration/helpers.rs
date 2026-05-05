@@ -11,6 +11,7 @@ use structured_agent::typecheck::TypeChecker;
 use structured_agent::typecheck::TypedCheckerAstRef;
 use structured_agent::typed_ast;
 use structured_agent::types::{FileId, Span};
+use structured_agent_stdlib::iterator::IteratorModule;
 use structured_agent_stdlib::prelude::PreludeModule;
 use structured_agent_stdlib::unstable::UnstableModule;
 
@@ -36,6 +37,15 @@ pub async fn run_program_with_prelude(source: &str) -> ExpressionValue {
 pub async fn run_program_with_unstable(source: &str) -> ExpressionValue {
     Runtime::builder(ProgramSource::Inline(source.to_string()))
         .with_module(Arc::new(UnstableModule))
+        .build()
+        .run()
+        .await
+        .expect("Program execution failed")
+}
+
+pub async fn run_program_with_iterator(source: &str) -> ExpressionValue {
+    Runtime::builder(ProgramSource::Inline(source.to_string()))
+        .with_module(Arc::new(IteratorModule))
         .build()
         .run()
         .await

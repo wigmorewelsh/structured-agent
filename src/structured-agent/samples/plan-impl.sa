@@ -28,7 +28,24 @@ fn high_level_plan(): List<String> {
     '''
 }
 
+fn project_context(): String {
+    '''
+    You are generating a description of the current project.
+    What does it do what? What is it for? What are the major components?
+    What tech does it use?
+    '''
+}
+
 fn planner_agent(stage: String): String {
+    '''
+    You are planning implementation work for {a language runtime written in Rust.}
+    Do NOT implement anything — produce a precise, ordered list of file changes and test cases only.
+
+    ## Context
+
+    {project context}
+
+    '''
 
 }
 
@@ -41,6 +58,8 @@ fn commit_with_single_message(result: String): () {
 }
 
 fn test_driven_process(): () {
+    # NOTE: Need to track the files changes
+
     # create test plan
     let test_list = create_initial_test_list()
 
@@ -59,4 +78,14 @@ fn implement_test(test: String): () {
     let test_name = write_failing_test(test)
     let changes = make_test_pass(test_name)
     refactor(changes)
+}
+
+fn write_failing_test(test_description: String): String {
+    '''
+    Write a single test for {test_description} that fails.
+    Do not write any implementation code.
+    Consider the right API for the {test_description}.
+    Extend the existing API if there is already one to build on top of.
+    '''!
+    test_description!
 }

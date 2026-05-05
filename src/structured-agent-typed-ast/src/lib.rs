@@ -103,6 +103,8 @@ pub enum Statement {
         variable: String,
         binding_id: BindingId,
         iterable: Expression,
+        move_next_fn: DefinitionPath,
+        current_fn: DefinitionPath,
         body: Vec<Statement>,
         span: Span,
     },

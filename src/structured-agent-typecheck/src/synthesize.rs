@@ -560,7 +560,54 @@ fn check_statement(
             );
             Some(env)
         }
-        Statement::ForIn { .. } => todo!("ForIn type-check not yet implemented"),
+        Statement::ForIn {
+            variable,
+            iterable,
+            body,
+            ..
+        } => {
+            let iterable_ty = synthesize_expression(db, iterable, &env, ctx)?;
+            let type_name_str = match &iterable_ty {
+                RT::Named(p) | RT::Parameterized(p, _) => p.last_name().to_string(),
+                _ => {
+                    TypeErrorAccumulator(TypeError::TraitBoundNotSatisfied {
+                        type_name: iterable_ty.name(),
+                        trait_name: "Iterator".to_string(),
+                        param_name: variable.clone(),
+                        span: iterable.span(),
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                    return None;
+                }
+            };
+            let has_iterator_impl = db.symbol_tables().impls(db).get().values().any(|i| {
+                i.type_name.name() == type_name_str
+                    && i.trait_name
+                        .as_ref()
+                        .map(|t| t.name() == "Iterator")
+                        .unwrap_or(false)
+            });
+            if !has_iterator_impl {
+                TypeErrorAccumulator(TypeError::TraitBoundNotSatisfied {
+                    type_name: type_name_str,
+                    trait_name: "Iterator".to_string(),
+                    param_name: variable.clone(),
+                    span: iterable.span(),
+                    file_id: ctx.file_id,
+                })
+                .accumulate(db);
+                return None;
+            }
+            let mut child_env = env.create_child();
+            let element_type = match &iterable_ty {
+                RT::Parameterized(_, args) if !args.is_empty() => args[0].clone(),
+                _ => RT::Generic("T".to_string()),
+            };
+            child_env.declare_variable(variable.clone(), element_type, iterable.span());
+            check_block(db, body, child_env, function_name, return_type, ctx)?;
+            Some(env)
+        }
     }
 }
 
@@ -726,10 +773,10 @@ fn resolve_method_sig(
         return Some(sig);
     }
     let struct_type_name = match receiver_type {
-        RT::Named(tn) => tn.last_name().to_string(),
+        RT::Named(tn) | RT::Parameterized(tn, _) => tn.last_name().to_string(),
         _ => return None,
     };
-    let impl_fn_path = find_impl_fn(db, &struct_type_name, method, ctx.module_name).or_accumulate(
+    let impl_fn_path = find_impl_fn(db, &struct_type_name, method).or_accumulate(
         db,
         TypeError::UnknownFunction {
             name: method.to_string(),

@@ -332,13 +332,12 @@ pub fn find_impl_fn(
     db: &dyn TypeCheckDatabase,
     type_name: &str,
     method_name: &str,
-    current_module: &DefinitionPath,
 ) -> Option<DefinitionPath> {
     let impls = db.symbol_tables().impls(db);
     let impl_entry = impls
         .get()
         .values()
-        .find(|i| i.type_name.name() == type_name && i.module == *current_module)?;
+        .find(|i| i.type_name.name() == type_name)?;
     Some(DefinitionPath::for_impl_fn(&impl_entry.key, method_name))
 }
 

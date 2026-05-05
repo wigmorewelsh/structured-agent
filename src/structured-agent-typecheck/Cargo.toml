@@ -15,4 +15,5 @@ codespan-reporting = "0.11"
 
 [dev-dependencies]
 structured-agent-parser = { path = "../structured-agent-parser" }
+structured-agent-stdlib = { path = "../structured-agent-stdlib" }
 combine = "4.6.7"

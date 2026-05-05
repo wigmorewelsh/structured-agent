@@ -1898,6 +1898,73 @@ mod tests {
             .map(|_| ());
         assert!(result.is_err(), "nonexistent module should fail to resolve");
     }
+
+    fn check_with_iterator(module: crate::ast::Module) -> Result<(), Vec<crate::TypeError>> {
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let mut native = std::collections::HashMap::new();
+        native.insert(
+            "iterator".to_string(),
+            Arc::new(structured_agent_stdlib::iterator::IteratorModule)
+                as Arc<dyn structured_agent_il::Module>,
+        );
+        TypeChecker::new().check(&[parsed], &native).map(|_| ())
+    }
+
+    #[test]
+    fn for_in_rejects_non_iterator_expression() {
+        let func = create_test_function(
+            "test",
+            vec![],
+            AstType::simple("Unit"),
+            vec![Statement::ForIn {
+                variable: "x".to_string(),
+                iterable: Expression::StringLiteral {
+                    value: "hello".to_string(),
+                    span: crate::types::Span::dummy(),
+                },
+                body: vec![],
+                span: crate::types::Span::dummy(),
+            }],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        let result = check_with_iterator(module);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, crate::TypeError::TraitBoundNotSatisfied { trait_name, .. } if trait_name == "Iterator")));
+    }
+
+    #[test]
+    fn for_in_loop_variable_not_visible_after_loop() {
+        let func = create_test_function(
+            "test",
+            vec![],
+            AstType::simple("String"),
+            vec![
+                Statement::ForIn {
+                    variable: "x".to_string(),
+                    iterable: Expression::StringLiteral {
+                        value: "hello".to_string(),
+                        span: crate::types::Span::dummy(),
+                    },
+                    body: vec![],
+                    span: crate::types::Span::dummy(),
+                },
+                Statement::Return(Expression::Variable {
+                    name: "x".to_string(),
+                    span: crate::types::Span::dummy(),
+                }),
+            ],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        let result = check_with_iterator(module);
+        assert!(result.is_err());
+    }
 }
 
 #[cfg(test)]

@@ -141,9 +141,21 @@ impl BytecodeCompiler {
                 ctx.builder.emit(Instruction::ActorYield);
                 Ok(())
             }
-            typed_ast::Statement::ForIn { .. } => {
-                todo!("ForIn compilation not yet implemented")
-            }
+            typed_ast::Statement::ForIn {
+                binding_id,
+                iterable,
+                move_next_fn,
+                current_fn,
+                body,
+                ..
+            } => self.compile_for_in_statement(
+                ctx,
+                binding_id,
+                iterable,
+                move_next_fn,
+                current_fn,
+                body,
+            ),
         }
     }
 
@@ -254,6 +266,54 @@ impl BytecodeCompiler {
         ctx.builder.emit_br(&loop_start);
 
         ctx.builder.emit_label(&loop_end);
+        ctx.builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_for_in_statement(
+        &self,
+        ctx: &mut CompilerCtx,
+        binding_id: &BindingId,
+        iterable: &typed_ast::Expression,
+        move_next_fn: &DefinitionPath,
+        current_fn: &DefinitionPath,
+        body: &[typed_ast::Statement],
+    ) -> Result<(), String> {
+        let id = ctx.builder.next_label_id();
+        let loop_start = format!("for_start_{}", id);
+        let loop_end = format!("for_end_{}", id);
+
+        let iter_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, iterable, iter_slot)?;
+
+        ctx.builder.emit(Instruction::CtxChild);
+        ctx.builder.emit_label(&loop_start);
+
+        let move_next_slot = ctx.builder.next_temp_slot();
+        ctx.builder.emit(Instruction::CallBytecode {
+            function_name: move_next_fn.clone(),
+            params: vec![iter_slot],
+            dest: move_next_slot,
+        });
+        ctx.builder.emit_brfalse(move_next_slot, &loop_end);
+
+        let x_slot = *ctx
+            .binding_id_to_slot
+            .get(binding_id)
+            .ok_or_else(|| format!("loop variable binding {:?} not found", binding_id))?;
+        ctx.builder.emit(Instruction::CallBytecode {
+            function_name: current_fn.clone(),
+            params: vec![iter_slot],
+            dest: x_slot,
+        });
+
+        for stmt in body {
+            self.compile_statement(ctx, stmt)?;
+        }
+
+        ctx.builder.emit_br(&loop_start);
+        ctx.builder.emit_label(&loop_end);
+        ctx.builder.emit(Instruction::CtxRestore);
         ctx.builder.emit(Instruction::Nop);
         Ok(())
     }
@@ -787,7 +847,19 @@ fn collect_binding_ids_inner(
                 collect_from_expr(expr, result, seen);
             }
             typed_ast::Statement::Yield { .. } => {}
-            typed_ast::Statement::ForIn { .. } => {}
+            typed_ast::Statement::ForIn {
+                variable,
+                binding_id,
+                iterable,
+                body,
+                ..
+            } => {
+                collect_from_expr(iterable, result, seen);
+                if seen.insert(*binding_id) {
+                    result.push((*binding_id, variable.clone()));
+                }
+                collect_binding_ids_inner(body, result, seen);
+            }
         }
     }
 }
