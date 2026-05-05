@@ -191,6 +191,7 @@ fn elaborate_statement(
             Some((typed_ast::Statement::Return(typed_expr), env))
         }
         Statement::Yield { span } => Some((typed_ast::Statement::Yield { span: *span }, env)),
+        Statement::ForIn { .. } => todo!("ForIn elaboration not yet implemented"),
     }
 }
 

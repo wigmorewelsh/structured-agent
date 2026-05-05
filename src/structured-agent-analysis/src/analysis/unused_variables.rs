@@ -75,6 +75,12 @@ impl UnusedVariableAnalyzer {
                     self.analyze_statement(stmt);
                 }
             }
+            Statement::ForIn { iterable, body, .. } => {
+                self.analyze_expression(iterable);
+                for stmt in body {
+                    self.analyze_statement(stmt);
+                }
+            }
             Statement::Return(expr) => {
                 self.analyze_expression(expr);
             }

@@ -694,6 +694,7 @@ combine::parser! {
             attempt(parse_injection()),
             parse_if_statement(),
             parse_while_statement(),
+            parse_for_statement(),
             parse_return_statement(),
             attempt(parse_yield_statement()),
             parse_expression_statement(),
@@ -1234,6 +1235,34 @@ where
                 span: Span::new(start, end),
             })
     })
+}
+
+fn parse_for_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        attempt((lex_string("for"), identifier(), lex_string("in"))),
+    )
+        .then(|(start, (_, variable, _))| {
+            (
+                parse_simple_expression(),
+                between(
+                    lex_char('{'),
+                    lex_char('}'),
+                    many(statement_with_comments()),
+                ),
+                position(),
+            )
+                .map(move |(iterable, body, end)| Statement::ForIn {
+                    variable: variable.clone(),
+                    iterable,
+                    body,
+                    span: Span::new(start, end),
+                })
+        })
 }
 
 fn parse_while_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -3776,5 +3805,96 @@ fn main(): String {
         assert_eq!(function, "mod::func");
         assert_eq!(type_args.len(), 1);
         assert_eq!(type_args[0].name(), "String");
+    }
+
+    #[test]
+    fn test_parse_for_in_empty_body() {
+        let input = "fn f(): () { for x in items { } }";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        match &func.body.statements[0] {
+            Statement::ForIn {
+                variable,
+                iterable,
+                body,
+                ..
+            } => {
+                assert_eq!(variable, "x");
+                assert!(body.is_empty());
+                match iterable {
+                    Expression::Variable { name, .. } => assert_eq!(name, "items"),
+                    _ => panic!("Expected variable expression"),
+                }
+            }
+            _ => panic!("Expected ForIn statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_for_in_with_body_statements() {
+        let input = "fn f(): () { for x in items { call(x) } }";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        match &func.body.statements[0] {
+            Statement::ForIn { body, .. } => {
+                assert_eq!(body.len(), 1);
+            }
+            _ => panic!("Expected ForIn statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_for_in() {
+        let input = "fn f(): () { for x in xs { for y in ys { } } }";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        match &func.body.statements[0] {
+            Statement::ForIn { body, .. } => {
+                assert_eq!(body.len(), 1);
+                match &body[0] {
+                    Statement::ForIn { variable, .. } => assert_eq!(variable, "y"),
+                    _ => panic!("Expected nested ForIn"),
+                }
+            }
+            _ => panic!("Expected ForIn statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_for_in_span() {
+        let input = "fn f(): () { for x in items { } }";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        match &func.body.statements[0] {
+            Statement::ForIn { span, .. } => {
+                assert!(span.start < span.end);
+                assert!(span.start > 0);
+            }
+            _ => panic!("Expected ForIn statement"),
+        }
     }
 }

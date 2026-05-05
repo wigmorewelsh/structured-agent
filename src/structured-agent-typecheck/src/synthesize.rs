@@ -560,6 +560,7 @@ fn check_statement(
             );
             Some(env)
         }
+        Statement::ForIn { .. } => todo!("ForIn type-check not yet implemented"),
     }
 }
 

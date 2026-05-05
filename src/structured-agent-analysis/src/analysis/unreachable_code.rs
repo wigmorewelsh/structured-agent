@@ -31,6 +31,10 @@ impl ReachabilityAnalyzer {
                     self.collect_all_statements(body);
                     *span
                 }
+                Statement::ForIn { span, body, .. } => {
+                    self.collect_all_statements(body);
+                    *span
+                }
                 Statement::Return(expr) => expr.span(),
                 Statement::Yield { span, .. } => *span,
             };
@@ -50,6 +54,7 @@ impl ReachabilityAnalyzer {
                     Statement::ExpressionStatement(expr) => expr.span(),
                     Statement::If { span, .. } => *span,
                     Statement::While { span, .. } => *span,
+                    Statement::ForIn { span, .. } => *span,
                     Statement::Return(expr) => expr.span(),
                     Statement::Yield { span, .. } => *span,
                 };

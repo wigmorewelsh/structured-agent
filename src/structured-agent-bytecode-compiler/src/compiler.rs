@@ -141,6 +141,9 @@ impl BytecodeCompiler {
                 ctx.builder.emit(Instruction::ActorYield);
                 Ok(())
             }
+            typed_ast::Statement::ForIn { .. } => {
+                todo!("ForIn compilation not yet implemented")
+            }
         }
     }
 
@@ -784,6 +787,7 @@ fn collect_binding_ids_inner(
                 collect_from_expr(expr, result, seen);
             }
             typed_ast::Statement::Yield { .. } => {}
+            typed_ast::Statement::ForIn { .. } => {}
         }
     }
 }

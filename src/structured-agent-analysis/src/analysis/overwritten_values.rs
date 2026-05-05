@@ -74,6 +74,12 @@ impl OverwrittenValueAnalyzer {
                     Self::collect_reads_in_statement(stmt, reads);
                 }
             }
+            Statement::ForIn { iterable, body, .. } => {
+                Self::collect_reads_in_expression(iterable, reads);
+                for stmt in body {
+                    Self::collect_reads_in_statement(stmt, reads);
+                }
+            }
             Statement::Return(expr) => {
                 Self::collect_reads_in_expression(expr, reads);
             }
@@ -132,6 +138,12 @@ impl OverwrittenValueAnalyzer {
                     condition, body, ..
                 } => {
                     Self::collect_reads_in_expression(condition, reads);
+                    for stmt in body {
+                        Self::collect_reads_in_statement(stmt, reads);
+                    }
+                }
+                Statement::ForIn { iterable, body, .. } => {
+                    Self::collect_reads_in_expression(iterable, reads);
                     for stmt in body {
                         Self::collect_reads_in_statement(stmt, reads);
                     }

@@ -294,6 +294,12 @@ pub enum Statement {
         body: Vec<Statement>,
         span: Span,
     },
+    ForIn {
+        variable: String,
+        iterable: Expression,
+        body: Vec<Statement>,
+        span: Span,
+    },
     Return(Expression),
     Yield {
         span: Span,
@@ -309,6 +315,7 @@ impl Spanned for Statement {
             Statement::ExpressionStatement(expr) => expr.span(),
             Statement::If { span, .. } => *span,
             Statement::While { span, .. } => *span,
+            Statement::ForIn { span, .. } => *span,
             Statement::Return(expr) => expr.span(),
             Statement::Yield { span, .. } => *span,
         }
@@ -541,6 +548,18 @@ impl fmt::Display for Statement {
                 condition, body, ..
             } => {
                 writeln!(f, "while {} {{", condition)?;
+                for stmt in body {
+                    writeln!(f, "    {}", stmt)?;
+                }
+                write!(f, "}}")
+            }
+            Statement::ForIn {
+                variable,
+                iterable,
+                body,
+                ..
+            } => {
+                writeln!(f, "for {} in {} {{", variable, iterable)?;
                 for stmt in body {
                     writeln!(f, "    {}", stmt)?;
                 }

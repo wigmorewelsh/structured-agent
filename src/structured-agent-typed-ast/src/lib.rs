@@ -99,6 +99,13 @@ pub enum Statement {
         body: Vec<Statement>,
         span: Span,
     },
+    ForIn {
+        variable: String,
+        binding_id: BindingId,
+        iterable: Expression,
+        body: Vec<Statement>,
+        span: Span,
+    },
     Return(Expression),
     Yield {
         span: Span,

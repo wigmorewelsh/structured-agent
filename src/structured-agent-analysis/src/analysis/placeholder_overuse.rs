@@ -83,6 +83,12 @@ impl PlaceholderOveruseAnalyzer {
                     self.analyze_statement(stmt, file_id, warnings);
                 }
             }
+            Statement::ForIn { iterable, body, .. } => {
+                self.analyze_expression(iterable, file_id, warnings);
+                for stmt in body {
+                    self.analyze_statement(stmt, file_id, warnings);
+                }
+            }
             Statement::Return(expr) => {
                 self.analyze_expression(expr, file_id, warnings);
             }

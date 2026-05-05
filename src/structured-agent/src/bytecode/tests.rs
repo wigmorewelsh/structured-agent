@@ -998,6 +998,7 @@ mod vm_execution_tests {
             },
             AS::Return(expr) => typed_ast::Statement::Return(ast_expr_to_typed(expr)),
             AS::Yield { span } => typed_ast::Statement::Yield { span: *span },
+            AS::ForIn { .. } => todo!("ForIn not yet supported in VM test helper"),
         }
     }
 

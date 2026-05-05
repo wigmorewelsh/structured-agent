@@ -45,6 +45,9 @@ impl ConstantConditionAnalyzer {
                 Statement::While { body, .. } => {
                     Self::collect_assignments(body, values);
                 }
+                Statement::ForIn { body, .. } => {
+                    Self::collect_assignments(body, values);
+                }
                 _ => {}
             }
         }
@@ -117,6 +120,12 @@ impl ConstantConditionAnalyzer {
                 }
             }
             Statement::While { body, .. } => {
+                for stmt in body {
+                    self.analyze_statement(stmt, file_id, variable_values, warnings);
+                }
+            }
+            Statement::ForIn { iterable, body, .. } => {
+                self.analyze_expression(iterable, file_id, variable_values, warnings);
                 for stmt in body {
                     self.analyze_statement(stmt, file_id, variable_values, warnings);
                 }
