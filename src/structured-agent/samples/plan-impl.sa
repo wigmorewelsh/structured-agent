@@ -39,3 +39,24 @@ fn impl_agent(plan: String): String {
 fn commit_with_single_message(result: String): () {
 
 }
+
+fn test_driven_process(): () {
+    # create test plan
+    let test_list = create_initial_test_list()
+
+    for test in test_list {
+        implement_test(test)
+    }
+}
+
+fn create_initial_test_list(): List<String> {
+    '''
+    create a list of tests that would be needed to verify the Absolute use imports feature.
+    '''
+}
+
+fn implement_test(test: String): () {
+    let test_name = write_failing_test(test)
+    let changes = make_test_pass(test_name)
+    refactor(changes)
+}
