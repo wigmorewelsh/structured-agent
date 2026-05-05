@@ -1799,6 +1799,105 @@ mod tests {
             result
         );
     }
+
+    #[test]
+    fn use_relative_path_resolves() {
+        let io_src = "struct Msg {\n    value: String,\n}\n";
+        let app_src = "use io::Msg\nfn main(m: Msg): Unit {\n    return ()\n}\n";
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let io_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("io".to_string()),
+            module: parse(io_src),
+            is_entry: false,
+            file_id: 0,
+            is_inline: false,
+        };
+        let app_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("app".to_string()),
+            module: parse(app_src),
+            is_entry: true,
+            file_id: 1,
+            is_inline: false,
+        };
+        let result = TypeChecker::new()
+            .check(&[io_module, app_module], &std::collections::HashMap::new())
+            .map(|_| ());
+        assert!(
+            result.is_ok(),
+            "relative use path should resolve: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn use_absolute_path_resolves() {
+        let io_src = "struct Msg {\n    value: String,\n}\n";
+        let app_src = "use ::io::Msg\nfn main(m: Msg): Unit {\n    return ()\n}\n";
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let io_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("io".to_string()),
+            module: parse(io_src),
+            is_entry: false,
+            file_id: 0,
+            is_inline: false,
+        };
+        let app_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("app".to_string()),
+            module: parse(app_src),
+            is_entry: true,
+            file_id: 1,
+            is_inline: false,
+        };
+        let result = TypeChecker::new()
+            .check(&[io_module, app_module], &std::collections::HashMap::new())
+            .map(|_| ());
+        assert!(
+            result.is_ok(),
+            "absolute use path should resolve: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn use_absolute_path_nonexistent_module_fails() {
+        let app_src = "use ::nonexistent::Foo\nfn main(f: Foo): Unit {\n    return ()\n}\n";
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let app_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("app".to_string()),
+            module: parse(app_src),
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let result = TypeChecker::new()
+            .check(&[app_module], &std::collections::HashMap::new())
+            .map(|_| ());
+        assert!(result.is_err(), "nonexistent module should fail to resolve");
+    }
 }
 
 #[cfg(test)]

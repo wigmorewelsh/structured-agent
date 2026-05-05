@@ -442,33 +442,16 @@ mod type_resolver {
         }
     }
 
-    pub fn resolve_absolute_path(
-        db: &dyn TypeCheckDatabase,
-        use_path: NonEmpty<PathSegment>,
-    ) -> Option<DefinitionPath> {
-        let mut search_module = InternedModuleName::new(db, DefinitionPath::root());
-        let mut last_type_name = None;
-        for symbol in use_path.iter() {
-            let resolved =
-                resolve_type_in_module(db, search_module, symbol.name.clone().intern(db))?;
-            let type_def = lookup_type_def_in_symbol_tables(
-                db,
-                InternedTypeName::new(db, resolved.ty.clone()),
-            )?;
-            if let DefKind::Signature { .. } = type_def.get().kind {
-                search_module = InternedModuleName::new(db, resolved.ty.clone());
-            }
-            last_type_name = Some(resolved.ty);
-        }
-        last_type_name
-    }
-
     fn resolve_local_use_path<'db>(
         db: &'db dyn TypeCheckDatabase,
         current_module: InternedModuleName<'db>,
         use_path: Arc<Use>,
     ) -> Option<ResolvedType> {
-        let mut search_module = current_module;
+        let mut search_module = if use_path.rooted {
+            InternedModuleName::new(db, DefinitionPath::root())
+        } else {
+            current_module
+        };
         let mut accumulated: Vec<ResolveSegment> = vec![];
         let mut last_ty = None;
         for seg in use_path.path.iter() {
@@ -522,7 +505,6 @@ mod type_resolver {
                 ResolvedType::new(ty.clone())
                     .with_segment(ResolveSegment::Local(current_module.name(db), vec![]))
             })
-            .or_else(|| resolve_type_as_mod_param(db, current_module, symbol))
             .or_else(|| resolve_type_as_alias(db, current_module, symbol))
             .or_else(|| resolve_type_as_use(db, current_module, symbol))
             .or_else(|| {
@@ -570,24 +552,6 @@ mod type_resolver {
             ResolvedType::new(key.clone())
                 .with_segment(ResolveSegment::Local(current_module.name(db), vec![]))
         })
-    }
-
-    #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
-    fn resolve_type_as_mod_param<'db>(
-        db: &'db dyn TypeCheckDatabase,
-        current_module: InternedModuleName<'db>,
-        _symbol: InternedString<'db>,
-    ) -> Option<ResolvedType> {
-        let module_def = db
-            .symbol_tables()
-            .modules(db)
-            .get()
-            .get(&current_module.name(db))?
-            .clone();
-        let CheckerAstRef::Module(_) = &module_def.ast_ref else {
-            return None;
-        };
-        None
     }
 
     #[salsa::tracked(cycle_result = resolve_type_cycle_recovery)]
