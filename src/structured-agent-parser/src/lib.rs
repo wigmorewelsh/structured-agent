@@ -548,17 +548,19 @@ where
     ))
     .then(|(start, pub_kw, _): (usize, Option<&str>, &str)| {
         (
+            optional(attempt(string("::").skip(skip_spaces()))),
             parse_ast_path(),
             optional(attempt(
                 (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
             )),
             position(),
         )
-            .map(move |(path, alias, end)| {
+            .map(move |(root_token, path, alias, end)| {
                 Definition::Use(Arc::new(Use {
                     path,
                     alias,
                     is_pub: pub_kw.is_some(),
+                    rooted: root_token.is_some(),
                     span: Span::new(start, end),
                 }))
             })
@@ -3090,6 +3092,80 @@ fn main(): String {
         let stream = Stream::with_positioner(input, IndexPositioner::default());
         let result = parse_program(TEST_FILE_ID).parse(stream);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_use_relative_has_rooted_false() {
+        let input = "use foo::bar\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let u = match &module.definitions[0] {
+            Definition::Use(u) => u,
+            _ => panic!("expected Use"),
+        };
+        assert!(!u.rooted);
+    }
+
+    #[test]
+    fn test_parse_use_absolute_rooted_flag() {
+        let input = "use ::foo::bar\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let u = match &module.definitions[0] {
+            Definition::Use(u) => u,
+            _ => panic!("expected Use"),
+        };
+        assert!(u.rooted);
+        assert_eq!(u.path.len(), 2);
+        assert_eq!(u.path[0].name, "foo");
+        assert_eq!(u.path.last().name, "bar");
+    }
+
+    #[test]
+    fn test_parse_use_absolute_three_segments() {
+        let input = "use ::foo::bar::baz\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let u = match &module.definitions[0] {
+            Definition::Use(u) => u,
+            _ => panic!("expected Use"),
+        };
+        assert!(u.rooted);
+        assert_eq!(u.path.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_use_absolute_with_alias() {
+        let input = "use ::foo::bar as baz\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let u = match &module.definitions[0] {
+            Definition::Use(u) => u,
+            _ => panic!("expected Use"),
+        };
+        assert!(u.rooted);
+        assert_eq!(u.alias, Some("baz".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pub_use_absolute() {
+        let input = "pub use ::foo::bar\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        let u = match &module.definitions[0] {
+            Definition::Use(u) => u,
+            _ => panic!("expected Use"),
+        };
+        assert!(u.rooted);
+        assert!(u.is_pub);
+    }
+
+    #[test]
+    fn test_display_rooted_use() {
+        let input = "use ::foo::bar\n\nfn main(): () {}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let (module, _) = parse_program(TEST_FILE_ID).parse(stream).unwrap();
+        assert_eq!(format!("{}", &module.definitions[0]), "use ::foo::bar");
     }
 
     #[test]

@@ -8,6 +8,12 @@ fn process(): () {
 
     let stages = high_level_plan()
 
+    '''
+    for each stage run a sub agent to plan out the work,
+    check the plan means the expected top level plan,
+    then another sub agent to implement the work.
+    after the stage is complete commit to git using a one line commit message.
+    '''
     for stage in stages {
         let stage_plan = planner_agent(stage)
         let result = impl_agent(stage_plan)
@@ -16,7 +22,10 @@ fn process(): () {
 }
 
 fn high_level_plan(): List<String> {
-
+    '''
+    write up a plan inc test list for the Absolute use imports.
+    split it into deliverable chunks of value that can be built and tested independently.
+    '''
 }
 
 fn planner_agent(stage: String): String {

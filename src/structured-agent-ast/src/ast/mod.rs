@@ -147,6 +147,7 @@ pub struct Use {
     pub path: AstPath,
     pub alias: Option<String>,
     pub is_pub: bool,
+    pub rooted: bool,
     pub span: Span,
 }
 
@@ -599,6 +600,9 @@ impl fmt::Display for Definition {
                     write!(f, "pub ")?;
                 }
                 write!(f, "use ")?;
+                if u.rooted {
+                    write!(f, "::")?;
+                }
                 for (i, seg) in path.iter().enumerate() {
                     if i > 0 {
                         write!(f, "::")?;
