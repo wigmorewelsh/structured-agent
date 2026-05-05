@@ -1,7 +1,0 @@
-mod main
-
-use worker(formatter)::run
-
-fn main(): String {
-    return run("hello")
-}

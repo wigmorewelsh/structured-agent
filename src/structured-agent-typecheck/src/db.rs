@@ -430,7 +430,6 @@ mod type_resolver {
         Local(DefinitionPath, Vec<PathArg>),
         UseAlias(String, DefinitionPath, Vec<PathArg>),
         UseDirect(String, DefinitionPath, Vec<PathArg>),
-        ModuleHeader(String, DefinitionPath, Vec<PathArg>),
     }
 
     impl ResolveSegment {
@@ -438,26 +437,9 @@ mod type_resolver {
             match self {
                 ResolveSegment::Local(_, p)
                 | ResolveSegment::UseAlias(_, _, p)
-                | ResolveSegment::UseDirect(_, _, p)
-                | ResolveSegment::ModuleHeader(_, _, p) => *p = params,
+                | ResolveSegment::UseDirect(_, _, p) => *p = params,
             }
         }
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ModuleInstantiation {
-        pub path: DefinitionPath,
-        pub params: Vec<ModuleInstantiation>,
-    }
-
-    pub enum CallModuleArg {
-        Concrete(ModuleInstantiation),
-        FromParam(String),
-    }
-
-    pub struct CallRouting {
-        pub via_module_param: Option<String>,
-        pub module_args: Vec<CallModuleArg>,
     }
 
     pub fn resolve_absolute_path(
@@ -667,10 +649,7 @@ mod type_resolver {
     }
 }
 
-pub use type_resolver::{
-    CallModuleArg, CallRouting, ModuleInstantiation, ResolveSegment, ResolvedType,
-    resolve_type_in_module,
-};
+pub use type_resolver::{ResolveSegment, ResolvedType, resolve_type_in_module};
 
 type DefKind = TypeDefinitionKind<CheckerRefs>;
 
@@ -678,75 +657,8 @@ pub fn build_module_instantiation<'db>(
     db: &'db dyn TypeCheckDatabase,
     current_module: InternedModuleName<'db>,
     path: &NonEmpty<PathSegment>,
-) -> Option<ModuleInstantiation> {
-    let resolved = resolve_path_full(db, current_module, path)?;
-    let params: Vec<ModuleInstantiation> = resolved
-        .path
-        .iter()
-        .flat_map(|seg| match seg {
-            ResolveSegment::Local(_, p)
-            | ResolveSegment::UseAlias(_, _, p)
-            | ResolveSegment::UseDirect(_, _, p)
-            | ResolveSegment::ModuleHeader(_, _, p) => p.iter(),
-        })
-        .filter_map(|use_param| {
-            let param_path = match use_param {
-                PathArg::Positional(p) => p,
-                PathArg::Named { path, .. } => path,
-            };
-            build_module_instantiation(db, current_module, param_path)
-        })
-        .collect();
-    Some(ModuleInstantiation {
-        path: resolved.ty,
-        params,
-    })
-}
-
-pub fn resolve_call_routing<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    current_module: InternedModuleName<'db>,
-    alias: InternedString<'db>,
-) -> Option<CallRouting> {
-    let resolved = resolve_type_in_module(db, current_module, alias)?;
-    let via_module_param =
-        if let Some(ResolveSegment::ModuleHeader(name, _, _)) = resolved.path.first() {
-            Some(name.clone())
-        } else {
-            None
-        };
-    let module_args = resolved
-        .path
-        .iter()
-        .flat_map(|seg| match seg {
-            ResolveSegment::Local(_, p)
-            | ResolveSegment::UseAlias(_, _, p)
-            | ResolveSegment::UseDirect(_, _, p)
-            | ResolveSegment::ModuleHeader(_, _, p) => p.iter(),
-        })
-        .filter_map(|use_param| {
-            let path = match use_param {
-                PathArg::Positional(path_segs) => path_segs,
-                PathArg::Named { path, .. } => path,
-            };
-            let resolved = resolve_path_full(db, current_module, path)?;
-            match resolved.path.iter().find_map(|s| {
-                if let ResolveSegment::ModuleHeader(name, _, _) = s {
-                    Some(name.clone())
-                } else {
-                    None
-                }
-            }) {
-                Some(param_name) => Some(CallModuleArg::FromParam(param_name)),
-                None => build_module_instantiation(db, current_module, path)
-                    .map(CallModuleArg::Concrete),
-            }
-        })
-        .collect();
-    Some(CallRouting {
-        via_module_param,
-        module_args,
-    })
+) -> Option<DefinitionPath> {
+    Some(resolve_path_full(db, current_module, path)?.ty)
 }
 
 #[salsa::tracked]
@@ -877,40 +789,6 @@ fn convert_type_kind(
     }
 }
 
-fn get_module_header_params<'db>(
-    db: &'db dyn TypeCheckDatabase,
-    module: InternedModuleName<'db>,
-) -> Vec<(String, DefinitionPath)> {
-    collect_module_params_for_path(db, &module.name(db))
-}
-
-fn collect_module_params_for_path(
-    db: &dyn TypeCheckDatabase,
-    module_name: &DefinitionPath,
-) -> Vec<(String, DefinitionPath)> {
-    let module_def = match db
-        .symbol_tables()
-        .modules(db)
-        .get()
-        .get(module_name)
-        .cloned()
-    {
-        Some(d) => d,
-        None => return vec![],
-    };
-
-    let params = if let Some(parent) = &module_def.parent_module {
-        collect_module_params_for_path(db, parent)
-    } else {
-        vec![]
-    };
-
-    let CheckerAstRef::Module(_) = &module_def.ast_ref else {
-        return params;
-    };
-    params
-}
-
 pub fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     name: InternedFunctionName<'db>,
@@ -921,19 +799,13 @@ pub fn elaborate_function_def<'db>(
     match &fn_def.ast_ref {
         CheckerAstRef::Function(arc_fn, _) => {
             let module_name = fn_def.name.module_prefix();
-            let interned_module = InternedModuleName::new(db, module_name.clone());
-            let module_params = get_module_header_params(db, interned_module);
             let ctx = super::CheckContext {
                 file_id: fn_def.source_ref.0,
                 module_name: &module_name,
                 program,
             };
             Some(ArcPtr::new(super::elaboration::elaborate_function(
-                db,
-                arc_fn,
-                &ctx,
-                None,
-                &module_params,
+                db, arc_fn, &ctx, None,
             )?))
         }
         CheckerAstRef::ImplFunction(arc_fn, type_name_str, _) => {
@@ -949,7 +821,6 @@ pub fn elaborate_function_def<'db>(
                 arc_fn,
                 &ctx,
                 Some(self_type),
-                &[],
             )?))
         }
         _ => None,

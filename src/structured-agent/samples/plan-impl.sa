@@ -10,12 +10,8 @@ fn process(): () {
 
     for stage in stages {
         let stage_plan = planner_agent(stage)
-        let result = ""
-        if check_plan(stage_plan, stage) {
-            result = impl_agent(stage_plan)
-        }
-        
-        
+        let result = impl_agent(stage_plan)
+        commit_with_single_message(result)
     }
 }
 
@@ -28,5 +24,9 @@ fn planner_agent(stage: String): String {
 }
 
 fn impl_agent(plan: String): String {
+
+}
+
+fn commit_with_single_message(result: String): () {
 
 }

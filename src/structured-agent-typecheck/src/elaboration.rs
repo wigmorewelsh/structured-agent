@@ -1,10 +1,9 @@
 use crate::db::build_module_instantiation;
 
 use super::db::{
-    CallModuleArg, CallRouting, Intern, InternedFunctionName, InternedModuleName, InternedTypeName,
-    ModuleInstantiation, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
-    impl_for_type_and_trait, lookup_type_def_in_symbol_tables, resolve_call_routing,
-    resolve_function_call, resolve_type_in_module,
+    Intern, InternedFunctionName, InternedModuleName, InternedTypeName, TypeCheckDatabase,
+    find_impl_fn, get_function_sig, get_struct_fields, impl_for_type_and_trait,
+    lookup_type_def_in_symbol_tables, resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
 use crate::FunctionSignature;
@@ -17,7 +16,6 @@ use structured_agent_typed_ast as typed_ast;
 struct ResolvedCallee {
     sig: FunctionSignature,
     binding: typed_ast::MethodBinding,
-    routing: Option<CallRouting>,
     receiver_is_target: bool,
 }
 
@@ -30,7 +28,6 @@ pub fn elaborate_function(
     func: &Function,
     ctx: &synthesize::CheckContext,
     self_type: Option<DefinitionPath>,
-    module_params: &[(String, DefinitionPath)],
 ) -> Option<typed_ast::Function> {
     let mut env = synthesize::TypeEnvironment::with_type_params(&func.type_params);
     if let Some(st) = self_type {
@@ -42,16 +39,6 @@ pub fn elaborate_function(
         let binding_id = env.declare_variable(tp.name.clone(), rt_type.clone(), func.span);
         typed_parameters.push(typed_ast::Parameter {
             name: tp.name.clone(),
-            param_type: rt_type,
-            binding_id,
-            span: func.span,
-        });
-    }
-    for (name, module_type_path) in module_params {
-        let rt_type = structured_agent_runtime::Type::Named(module_type_path.clone());
-        let binding_id = env.declare_variable(name.clone(), rt_type.clone(), func.span);
-        typed_parameters.push(typed_ast::Parameter {
-            name: name.clone(),
             param_type: rt_type,
             binding_id,
             span: func.span,
@@ -341,19 +328,6 @@ fn resolve_method_callee(
     resolve_callee_for_method(db, &struct_type_name, method, env, ctx)
 }
 
-fn module_instantiation_to_type(inst: &ModuleInstantiation) -> RT {
-    if inst.params.is_empty() {
-        RT::Named(inst.path.clone())
-    } else {
-        let args: Vec<RT> = inst
-            .params
-            .iter()
-            .map(|p| module_instantiation_to_type(p))
-            .collect();
-        RT::Parameterized(inst.path.clone(), args)
-    }
-}
-
 fn elaborate_spawn(
     db: &dyn TypeCheckDatabase,
     type_arg: &AstType,
@@ -363,10 +337,9 @@ fn elaborate_spawn(
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
     let current_module = InternedModuleName::new(db, ctx.module_name.clone());
-    let instantiation = build_module_instantiation(db, current_module, &type_arg.path)?;
-    let module_type = module_instantiation_to_type(&instantiation);
+    let module_path = build_module_instantiation(db, current_module, &type_arg.path)?;
     let typed_key = elaborate_expression(db, key, env, ctx)?;
-    let actor_ref_type = RT::actor_ref(module_type.clone());
+    let actor_ref_type = RT::actor_ref(RT::Named(module_path));
     Some(typed_ast::Expression::Spawn {
         key: Box::new(typed_key),
         ty: actor_ref_type,
@@ -377,7 +350,7 @@ fn elaborate_spawn(
 fn resolve_callee_for_call(
     db: &dyn TypeCheckDatabase,
     function: &str,
-    env: &synthesize::TypeEnvironment,
+    _env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
@@ -387,17 +360,9 @@ fn resolve_callee_for_call(
             let interned = InternedFunctionName::new(db, fn_name.clone());
             get_function_sig(db, interned, ctx.program).map(|arc| (fn_name, arc.get().clone()))
         })?;
-    let routing = resolve_call_routing(db, interned_current, interned_fn);
-    let binding = routing
-        .as_ref()
-        .and_then(|r| r.via_module_param.as_deref())
-        .and_then(|name| env.lookup_variable(name).map(|(_, id)| id))
-        .map(|id| typed_ast::MethodBinding::Late(id, resolved_fn_name.clone()))
-        .unwrap_or_else(|| typed_ast::MethodBinding::Early(resolved_fn_name));
     Some(ResolvedCallee {
         sig,
-        binding,
-        routing,
+        binding: typed_ast::MethodBinding::Early(resolved_fn_name),
         receiver_is_target: false,
     })
 }
@@ -406,7 +371,7 @@ fn resolve_callee_for_method(
     db: &dyn TypeCheckDatabase,
     struct_type_name: &str,
     method: &str,
-    env: &synthesize::TypeEnvironment,
+    _env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
     let impl_fn_path = find_impl_fn(db, struct_type_name, method, ctx.module_name)?;
@@ -417,44 +382,11 @@ fn resolve_callee_for_method(
     )?
     .get()
     .clone();
-    let routing = resolve_call_routing(
-        db,
-        InternedModuleName::new(db, ctx.module_name.clone()),
-        struct_type_name.intern(db),
-    );
-    let binding = match routing.as_ref().and_then(|r| r.via_module_param.as_deref()) {
-        Some(name) => {
-            let (_, id) = env.lookup_variable(name)?;
-            typed_ast::MethodBinding::Late(id, impl_fn_path)
-        }
-        None => typed_ast::MethodBinding::Early(impl_fn_path),
-    };
     Some(ResolvedCallee {
         sig,
-        binding,
-        routing,
+        binding: typed_ast::MethodBinding::Early(impl_fn_path),
         receiver_is_target: false,
     })
-}
-
-fn module_instantiation_from_rt(rt: &RT) -> ModuleInstantiation {
-    match rt {
-        RT::Named(p) => ModuleInstantiation {
-            path: p.clone(),
-            params: vec![],
-        },
-        RT::Parameterized(p, args) => ModuleInstantiation {
-            path: p.clone(),
-            params: args
-                .iter()
-                .map(|a| module_instantiation_from_rt(a))
-                .collect(),
-        },
-        _ => ModuleInstantiation {
-            path: DefinitionPath::root(),
-            params: vec![],
-        },
-    }
 }
 
 fn resolve_callee_for_actor_method(
@@ -476,22 +408,9 @@ fn resolve_callee_for_actor_method(
     )?
     .get()
     .clone();
-
-    let inst = module_instantiation_from_rt(module_type);
-    let module_args: Vec<CallModuleArg> = inst
-        .params
-        .into_iter()
-        .map(CallModuleArg::Concrete)
-        .collect();
-    let routing = CallRouting {
-        via_module_param: None,
-        module_args,
-    };
-
     Some(ResolvedCallee {
         sig,
         binding: typed_ast::MethodBinding::Early(fn_path),
-        routing: Some(routing),
         receiver_is_target: true,
     })
 }
@@ -512,7 +431,6 @@ fn resolve_callee_for_generic_method(
     Some(ResolvedCallee {
         sig,
         binding: typed_ast::MethodBinding::Late(binding_id, impl_fn_path),
-        routing: None,
         receiver_is_target: false,
     })
 }
@@ -591,34 +509,6 @@ fn elaborate_type_args(
     type_arg_exprs
 }
 
-fn elaborate_routing_args(
-    routing: Option<&CallRouting>,
-    span: Span,
-    env: &synthesize::TypeEnvironment,
-) -> Vec<typed_ast::Expression> {
-    let mut routing_exprs = Vec::new();
-    if let Some(routing) = routing {
-        for arg in &routing.module_args {
-            match arg {
-                CallModuleArg::Concrete(instantiation) => {
-                    routing_exprs.push(instantiation_to_expr(instantiation, span));
-                }
-                CallModuleArg::FromParam(name) => {
-                    if let Some((ty, binding_id)) = env.lookup_variable(name) {
-                        routing_exprs.push(typed_ast::Expression::Variable {
-                            name: name.clone(),
-                            binding_id,
-                            ty,
-                            span,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    routing_exprs
-}
-
 fn elaborate_implicit_trait_args(
     db: &dyn TypeCheckDatabase,
     sig: &FunctionSignature,
@@ -680,18 +570,15 @@ fn elaborate_arguments(
     type_args: &[AstType],
     pending_args: &[Expression],
     elaborated_receiver: Option<typed_ast::Expression>,
-    routing: Option<&CallRouting>,
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Expression>> {
     let param_offset = usize::from(elaborated_receiver.is_some());
-    let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
-    let routing_exprs = elaborate_routing_args(routing, span, env);
-    let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
     let user_args = elaborate_user_args(db, sig, unifier, param_offset, pending_args, env, ctx)?;
+    let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
+    let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
     let mut all_args = type_exprs;
-    all_args.extend(routing_exprs);
     all_args.extend(trait_exprs);
     if let Some(receiver) = elaborated_receiver {
         all_args.push(receiver);
@@ -736,7 +623,6 @@ fn build_typed_call(
         type_args,
         pending_args,
         elaborated_receiver,
-        callee.routing.as_ref(),
         span,
         env,
         ctx,
@@ -774,22 +660,6 @@ fn elaborate_call(
         env,
         ctx,
     )
-}
-
-fn instantiation_to_expr(
-    inst: &ModuleInstantiation,
-    span: structured_agent_ast::types::Span,
-) -> typed_ast::Expression {
-    typed_ast::Expression::ModuleInstance {
-        path: inst.path.clone(),
-        params: inst
-            .params
-            .iter()
-            .map(|p| instantiation_to_expr(p, span))
-            .collect(),
-        ty: structured_agent_runtime::Type::Named(inst.path.clone()),
-        span,
-    }
 }
 
 fn elaborate_list_literal(

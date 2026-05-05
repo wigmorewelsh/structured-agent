@@ -147,31 +147,3 @@ fn main(): String {
     let value = run_program(code).await;
     assert_eq!(value.as_string().unwrap(), "helper");
 }
-
-#[tokio::test]
-async fn test_file_based_module_binding_tracer_bullet() {
-    let fixture_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/integration/fixtures/module-binding-tracer/main.sa"
-    );
-    let value = Runtime::builder(ProgramSource::File(fixture_path.to_string()))
-        .build()
-        .run()
-        .await
-        .expect("Program execution failed");
-    assert_eq!(value.as_string().unwrap(), "fake module called");
-}
-
-#[tokio::test]
-async fn test_indirect_call_passes_value_args() {
-    let fixture_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/integration/fixtures/indirect-call-with-args/main.sa"
-    );
-    let value = Runtime::builder(ProgramSource::File(fixture_path.to_string()))
-        .build()
-        .run()
-        .await
-        .expect("Program execution failed");
-    assert_eq!(value.as_string().unwrap(), "hello");
-}

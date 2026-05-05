@@ -2735,12 +2735,6 @@ mod typed_ast_tests {
         }
     }
 
-    // TODO: argument ordering test — routing arg at arguments[1], implicit trait arg at arguments[2].
-    // The combination of module params (routing args) and type params with trait bounds (implicit
-    // trait args) requires calling a generic function from a parameterised module, which is a
-    // multi-module scenario. The single-module test helper check_typed cannot express it. No
-    // existing test verifies routing arg position at the call site.
-
     #[test]
     fn generic_struct_literal_has_parameterized_type() {
         let input = concat!(

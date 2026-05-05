@@ -33,27 +33,6 @@ async fn actor_spawn_and_call_returns_value() {
 }
 
 #[tokio::test]
-async fn actor_id_reflects_spawn_key() {
-    let source = r#"
-        mod Counter(a: actor) {
-            use a::actor_id
-
-            fn get_id(): String {
-                return actor_id()
-            }
-        }
-
-        fn main(): String {
-            let c = spawn<Counter>("my_counter")
-            return c.get_id()
-        }
-    "#;
-
-    let value = run_actor_program(source).await;
-    assert_eq!(value.as_string().unwrap(), "main::Counter:my_counter");
-}
-
-#[tokio::test]
 async fn actor_call_with_argument() {
     let source = r#"
         mod Greeter {
