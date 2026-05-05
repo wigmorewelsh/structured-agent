@@ -1,0 +1,342 @@
+digraph typecheck {
+    graph [rankdir=LR fontname="Helvetica" bgcolor="#1e1e2e" pad=1.5
+           nodesep=0.35 ranksep=1.2 splines=true]
+    node [fontname="Helvetica" fontsize=11 style=filled fontcolor="white" shape=box]
+    edge [color="#888888" fontsize=9 arrowsize=0.7]
+
+    // ─── lib.rs (TypeChecker) ─────────────────────────────────────────────────
+    subgraph cluster_lib {
+        label="lib.rs (TypeChecker)" fontname="Helvetica" fontcolor="white"
+        color="#9090aa" style=dashed
+        node [fillcolor="#6b6b8a"]
+        TC_check         [label="check"]
+        TC_run_check     [label="run_check_pass"]
+        TC_run_solve     [label="run_solve_pass"]
+        TC_run_elaborate [label="run_elaborate_pass"]
+        TC_populate      [label="populate_symbol_tables"]
+        TC_make_inputs   [label="make_parsed_inputs"]
+        TC_fn_kinds      [label="function_kinds"]
+    }
+
+    // ─── collection ──────────────────────────────────────────────────────────
+    subgraph cluster_collection {
+        label="collection" fontname="Helvetica" fontcolor="white"
+        color="#9090aa" style=dashed
+        node [fillcolor="#6b6b8a"]
+        C_build          [label="build_symbol_tables"]
+        C_new            [label="SymbolTableBuilder::new"]
+        C_seed           [label="seed_builtin_types"]
+        C_native         [label="register_native_modules"]
+        C_runtime_to_ast [label="runtime_type_to_ast"]
+        C_insert_fn      [label="insert_fn"]
+        C_reg_type_defs  [label="register_type_definitions"]
+        C_reg_fn_defs    [label="register_function_defs"]
+        C_reg_sig        [label="register_signature"]
+        C_reg_struct     [label="register_struct"]
+        C_reg_fn_sigs    [label="register_function_signatures"]
+        C_reg_regular    [label="register_regular_function"]
+        C_reg_external   [label="register_external_function"]
+        C_reg_trait      [label="register_trait"]
+        C_reg_impl       [label="register_trait_impl"]
+        C_reg_impl_fn    [label="register_impl_function"]
+        C_reg_module_def [label="register_module_definition"]
+        C_reg_module_type[label="register_module_as_type"]
+        C_collect_exports[label="collect_module_exports"]
+    }
+
+    // ─── db ───────────────────────────────────────────────────────────────────
+    subgraph cluster_db {
+        label="db" fontname="Helvetica" fontcolor="white"
+        color="#6090c0" style=dashed
+        node [fillcolor="#4e79a7"]
+        DB_check_program    [label="check_program"]
+        DB_check_module     [label="check_module"]
+        DB_lookup_fn_def    [label="lookup_function_def"]
+        DB_lookup_type_def  [label="lookup_type_def_in_symbol_tables"]
+        DB_lookup_type_syms [label="lookup_type_in_symbol_tables"]
+        DB_get_fn_sig       [label="get_function_sig"]
+        DB_get_struct_fields[label="get_struct_fields"]
+        DB_find_impl_fn     [label="find_impl_fn"]
+        DB_impl_for_tt      [label="impl_for_type_and_trait"]
+        DB_resolve_fn_call  [label="resolve_function_call"]
+        DB_build_mod_inst   [label="build_module_instantiation"]
+        DB_resolve_path     [label="resolve_path_full"]
+        DB_ast_type_to_name [label="ast_type_to_type_name"]
+        DB_conv_gen_params  [label="convert_generic_params"]
+        DB_conv_type_kind   [label="convert_type_kind"]
+        DB_elab_fn_def      [label="elaborate_function_def"]
+        DB_elab_metadata    [label="elaborate_metadata"]
+    }
+
+    // ─── db::type_resolver ───────────────────────────────────────────────────
+    subgraph cluster_type_resolver {
+        label="db::type_resolver" fontname="Helvetica" fontcolor="white"
+        color="#3a6090" style=dashed
+        node [fillcolor="#2a5580"]
+        TR_resolve        [label="resolve_type_in_module"]
+        TR_resolve_local  [label="resolve_local_use_path"]
+        TR_cycle_recovery [label="resolve_type_cycle_recovery"]
+        TR_sibling        [label="resolve_type_as_sibling_module"]
+        TR_child          [label="resolve_type_as_child_module"]
+        TR_alias          [label="resolve_type_as_alias"]
+        TR_use            [label="resolve_type_as_use"]
+    }
+
+    // ─── synthesize ───────────────────────────────────────────────────────────
+    subgraph cluster_synth {
+        label="synthesize" fontname="Helvetica" fontcolor="white"
+        color="#70b870" style=dashed
+        node [fillcolor="#59a14f"]
+        SY_resolve_name  [label="resolve_type_name"]
+        SY_resolve       [label="resolve"]
+        SY_check_def     [label="check_definition"]
+        SY_check_impl_fn [label="check_impl_function"]
+        SY_check_fn      [label="check_function"]
+        SY_check_stmt    [label="check_statement"]
+        SY_check_expr    [label="check_expression"]
+        SY_check_bool    [label="check_boolean_condition"]
+        SY_check_block   [label="check_block"]
+        SY_gen_method_sig[label="resolve_generic_method_sig"]
+        SY_sig_for_bound [label="resolve_sig_for_bound"]
+        SY_method_sig    [label="resolve_method_sig"]
+        SY_synth_expr    [label="synthesize_expression"]
+        SY_synth_call    [label="synthesize_call"]
+        SY_synth_list    [label="synthesize_list_literal"]
+        SY_synth_select  [label="synthesize_select"]
+        SY_synth_if      [label="synthesize_if_else"]
+        SY_synth_struct  [label="synthesize_struct_literal"]
+        SY_synth_field   [label="synthesize_field_access"]
+        SY_check_vis     [label="check_visibility"]
+    }
+
+    // ─── solver ────────────────────────────────────────────────────────────────
+    subgraph cluster_solver {
+        label="solver" fontname="Helvetica" fontcolor="white"
+        color="#e0a050" style=dashed
+        node [fillcolor="#f28e2b"]
+        SL_solve     [label="solve_constraints"]
+        SL_trait_impl[label="check_trait_impl"]
+        SL_type_bound[label="check_type_bound"]
+    }
+
+    // ─── elaboration ──────────────────────────────────────────────────────────
+    subgraph cluster_elab {
+        label="elaboration" fontname="Helvetica" fontcolor="white"
+        color="#c090c0" style=dashed
+        node [fillcolor="#b07aa1"]
+        EL_elab_fn       [label="elaborate_function"]
+        EL_elab_block    [label="elaborate_block"]
+        EL_elab_stmt     [label="elaborate_statement"]
+        EL_elab_expr     [label="elaborate_expression"]
+        EL_elab_method   [label="elaborate_method_call"]
+        EL_resolve_callee[label="resolve_method_callee"]
+        EL_elab_spawn    [label="elaborate_spawn"]
+        EL_callee_call   [label="resolve_callee_for_call"]
+        EL_callee_method [label="resolve_callee_for_method"]
+        EL_callee_actor  [label="resolve_callee_for_actor_method"]
+        EL_callee_generic[label="resolve_callee_for_generic_method"]
+        EL_user_args     [label="elaborate_user_args"]
+        EL_type_args     [label="elaborate_type_args"]
+        EL_implicit_args [label="elaborate_implicit_trait_args"]
+        EL_arguments     [label="elaborate_arguments"]
+        EL_build_call    [label="build_typed_call"]
+        EL_elab_call     [label="elaborate_call"]
+        EL_elab_list     [label="elaborate_list_literal"]
+        EL_elab_select   [label="elaborate_select"]
+        EL_elab_if       [label="elaborate_if_else"]
+        EL_elab_struct   [label="elaborate_struct_literal"]
+        EL_elab_field    [label="elaborate_field_access"]
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // EDGES  solid = direct call  |  dashed red = accumulated::<> indirect read
+    // ──────────────────────────────────────────────────────────────────────────
+
+    // lib.rs pipeline
+    TC_check -> TC_populate
+    TC_check -> TC_make_inputs
+    TC_check -> TC_run_check
+    TC_check -> TC_run_solve
+    TC_check -> TC_run_elaborate
+    TC_populate -> C_build
+    TC_run_check     -> DB_check_program
+    TC_run_solve     -> SL_solve
+    TC_run_elaborate -> DB_elab_metadata
+
+    // indirect accumulations (dashed red, constraint=false so they don't distort ranks)
+    TC_run_check     -> DB_check_program [style=dashed label="accumulated TypeError"  color="#ff6b6b" fontcolor="#ff6b6b" constraint=false]
+    TC_run_solve     -> SL_solve         [style=dashed label="accumulated TypeError"  color="#ff6b6b" fontcolor="#ff6b6b" constraint=false]
+    TC_run_elaborate -> DB_elab_metadata [style=dashed label="accumulated TypeError"  color="#ff6b6b" fontcolor="#ff6b6b" constraint=false]
+    SL_solve -> DB_check_program         [style=dashed label="accumulated Constraint" color="#ff6b6b" fontcolor="#ff6b6b" constraint=false]
+    SY_check_def -> DB_check_program     [style=dashed label="Constraint accumulate"  color="#ff6b6b" fontcolor="#ff6b6b" constraint=false]
+
+    // collection internals
+    C_new -> C_seed
+    C_build -> C_native
+    C_build -> C_reg_type_defs
+    C_build -> C_reg_fn_defs
+    C_build -> C_reg_fn_sigs
+    C_build -> C_reg_module_def
+    C_reg_type_defs -> C_reg_struct
+    C_reg_type_defs -> C_reg_trait
+    C_reg_type_defs -> C_reg_impl
+    C_reg_type_defs -> C_reg_module_type
+    C_reg_fn_defs   -> C_reg_regular
+    C_reg_fn_defs   -> C_reg_external
+    C_reg_fn_defs   -> C_reg_impl_fn
+    C_reg_fn_sigs   -> C_reg_sig
+    C_reg_regular   -> C_insert_fn
+    C_reg_external  -> C_insert_fn
+    C_reg_impl_fn   -> C_insert_fn
+    C_reg_module_def -> C_collect_exports
+    C_reg_impl      -> C_reg_module_type
+    C_native        -> C_runtime_to_ast
+
+    // db
+    DB_check_program    -> DB_check_module
+    DB_check_module     -> SY_check_def
+    DB_get_fn_sig       -> DB_lookup_fn_def
+    DB_get_fn_sig       -> DB_lookup_type_def
+    DB_get_fn_sig       -> SY_resolve
+    DB_get_struct_fields -> TR_resolve
+    DB_get_struct_fields -> DB_lookup_type_def
+    DB_resolve_fn_call  -> TR_resolve
+    DB_resolve_fn_call  -> DB_lookup_type_def
+    DB_resolve_path     -> TR_resolve
+    DB_resolve_path     -> DB_lookup_type_def
+    DB_build_mod_inst   -> DB_resolve_path
+    DB_ast_type_to_name -> TR_resolve
+    DB_conv_gen_params  -> DB_ast_type_to_name
+    DB_conv_type_kind   -> DB_ast_type_to_name
+    DB_conv_type_kind   -> DB_conv_gen_params
+    DB_elab_fn_def      -> DB_lookup_fn_def
+    DB_elab_fn_def      -> EL_elab_fn
+    DB_elab_metadata    -> DB_elab_fn_def
+    DB_elab_metadata    -> DB_conv_type_kind
+
+    // type_resolver (back-edges use constraint=false)
+    TR_resolve -> DB_lookup_type_syms
+    TR_resolve -> TR_sibling
+    TR_resolve -> TR_child
+    TR_resolve -> TR_alias
+    TR_resolve -> TR_use
+    TR_use          -> TR_resolve_local
+    TR_sibling      -> TR_resolve [constraint=false]
+    TR_child        -> TR_resolve [constraint=false]
+    TR_alias        -> TR_resolve [constraint=false]
+    TR_resolve_local -> TR_resolve [constraint=false]
+    TR_cycle_recovery -> TR_resolve [constraint=false]
+
+    // synthesize — forward
+    SY_resolve      -> SY_resolve_name
+    SY_resolve      -> TR_resolve
+    SY_resolve_name -> TR_resolve
+    SY_check_def    -> SY_resolve
+    SY_check_def    -> SY_check_fn
+    SY_check_def    -> SY_check_impl_fn
+    SY_check_def    -> TR_resolve
+    SY_check_fn     -> DB_get_fn_sig
+    SY_check_fn     -> SY_check_block
+    SY_check_impl_fn -> DB_get_fn_sig
+    SY_check_impl_fn -> SY_check_block
+    SY_check_block  -> SY_check_stmt
+    SY_check_stmt   -> SY_synth_expr
+    SY_check_stmt   -> SY_check_bool
+    SY_check_expr   -> SY_synth_expr
+    SY_check_bool   -> SY_check_expr
+    SY_synth_expr   -> SY_synth_call
+    SY_synth_expr   -> SY_synth_list
+    SY_synth_expr   -> SY_synth_select
+    SY_synth_expr   -> SY_synth_if
+    SY_synth_expr   -> SY_synth_struct
+    SY_synth_expr   -> SY_synth_field
+    SY_synth_expr   -> SY_resolve
+    SY_synth_expr   -> SY_method_sig
+    SY_method_sig   -> DB_get_fn_sig
+    SY_method_sig   -> SY_gen_method_sig
+    SY_method_sig   -> DB_find_impl_fn
+    SY_gen_method_sig -> SY_sig_for_bound
+    SY_sig_for_bound -> TR_resolve
+    SY_sig_for_bound -> DB_lookup_type_def
+    SY_sig_for_bound -> SY_resolve
+    SY_synth_call   -> DB_resolve_fn_call
+    SY_synth_call   -> DB_get_fn_sig
+    SY_synth_call   -> SY_resolve
+    SY_synth_struct -> DB_get_struct_fields
+    SY_synth_struct -> SY_resolve
+    SY_synth_field  -> DB_get_struct_fields
+    SY_synth_field  -> SY_resolve
+
+    // synthesize — back-edges (mutual recursion)
+    SY_check_stmt   -> SY_check_block  [constraint=false]
+    SY_check_bool   -> SY_check_expr   [constraint=false]
+    SY_synth_expr   -> SY_synth_expr   [constraint=false]
+    SY_synth_call   -> SY_synth_expr   [constraint=false]
+    SY_synth_list   -> SY_synth_expr   [constraint=false]
+    SY_synth_select -> SY_synth_expr   [constraint=false]
+    SY_synth_if     -> SY_synth_expr   [constraint=false]
+    SY_synth_struct -> SY_synth_expr   [constraint=false]
+    SY_synth_field  -> SY_synth_expr   [constraint=false]
+
+    // solver
+    SL_solve      -> SL_trait_impl
+    SL_solve      -> SL_type_bound
+
+    // elaboration — forward
+    EL_elab_fn      -> SY_resolve
+    EL_elab_fn      -> EL_elab_block
+    EL_elab_fn      -> TR_resolve
+    EL_elab_fn      -> DB_lookup_type_def
+    EL_elab_block   -> EL_elab_stmt
+    EL_elab_stmt    -> EL_elab_expr
+    EL_elab_stmt    -> SL_solve
+    EL_elab_expr    -> EL_elab_call
+    EL_elab_expr    -> EL_elab_list
+    EL_elab_expr    -> EL_elab_select
+    EL_elab_expr    -> EL_elab_if
+    EL_elab_expr    -> EL_elab_struct
+    EL_elab_expr    -> EL_elab_field
+    EL_elab_expr    -> EL_elab_method
+    EL_elab_expr    -> EL_elab_spawn
+    EL_elab_method  -> EL_resolve_callee
+    EL_elab_method  -> EL_build_call
+    EL_resolve_callee -> EL_callee_call
+    EL_resolve_callee -> EL_callee_method
+    EL_resolve_callee -> EL_callee_actor
+    EL_resolve_callee -> EL_callee_generic
+    EL_elab_spawn   -> DB_build_mod_inst
+    EL_callee_call  -> DB_resolve_fn_call
+    EL_callee_call  -> DB_get_fn_sig
+    EL_callee_method -> DB_find_impl_fn
+    EL_callee_method -> DB_get_fn_sig
+    EL_callee_actor -> DB_get_fn_sig
+    EL_callee_generic -> SY_gen_method_sig
+    EL_user_args    -> EL_elab_expr    [constraint=false]
+    EL_type_args    -> SY_resolve
+    EL_implicit_args -> SL_solve
+    EL_implicit_args -> TR_resolve
+    EL_implicit_args -> DB_lookup_type_def
+    EL_implicit_args -> DB_impl_for_tt
+    EL_arguments    -> EL_user_args
+    EL_arguments    -> EL_type_args
+    EL_arguments    -> EL_implicit_args
+    EL_build_call   -> SY_resolve
+    EL_build_call   -> EL_arguments
+    EL_elab_call    -> EL_callee_call
+    EL_elab_call    -> EL_build_call
+    EL_elab_struct  -> DB_get_struct_fields
+    EL_elab_struct  -> SY_resolve
+    EL_elab_struct  -> TR_resolve
+    EL_elab_field   -> DB_get_struct_fields
+    EL_elab_field   -> SY_resolve
+
+    // elaboration — back-edges (mutual recursion)
+    EL_elab_method  -> EL_elab_expr   [constraint=false]
+    EL_elab_spawn   -> EL_elab_expr   [constraint=false]
+    EL_elab_stmt    -> EL_elab_block  [constraint=false]
+    EL_elab_list    -> EL_elab_expr   [constraint=false]
+    EL_elab_select  -> EL_elab_expr   [constraint=false]
+    EL_elab_if      -> EL_elab_expr   [constraint=false]
+    EL_elab_struct  -> EL_elab_expr   [constraint=false]
+    EL_elab_field   -> EL_elab_expr   [constraint=false]
+}

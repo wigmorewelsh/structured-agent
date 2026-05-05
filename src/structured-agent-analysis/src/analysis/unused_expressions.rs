@@ -22,6 +22,7 @@ impl UnusedExpressionAnalyzer {
                 | Expression::BooleanLiteral { span, .. }
                 | Expression::IntLiteral { span, .. }
                 | Expression::ListLiteral { span, .. }
+                | Expression::StringTemplate { span, .. }
                 | Expression::UnitLiteral { span } => {
                     self.warnings.push(Warning::UnusedExpression {
                         span: *span,
@@ -129,6 +130,7 @@ impl UnusedExpressionAnalyzer {
             | Expression::IntLiteral { .. }
             | Expression::ListLiteral { .. }
             | Expression::UnitLiteral { .. }
+            | Expression::StringTemplate { .. }
             | Expression::Placeholder { .. } => {}
         }
     }

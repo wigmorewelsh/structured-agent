@@ -930,6 +930,7 @@ mod vm_execution_tests {
             },
             AE::MethodCall { .. } => unimplemented!("MethodCall not supported in test helper"),
             AE::Spawn { .. } => unimplemented!("Spawn not supported in test helper"),
+            AE::StringTemplate { .. } => unreachable!("StringTemplate not yet produced by parser"),
             AE::Select(select) => typed_ast::Expression::Select(
                 typed_ast::SelectExpression {
                     clauses: select

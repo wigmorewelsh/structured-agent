@@ -184,6 +184,9 @@ impl VM {
                 Instruction::ListCreate { dest, elements } => {
                     self.execute_list_create(state, dest, &elements)?
                 }
+                Instruction::StrConcat { dest, parts } => {
+                    self.execute_str_concat(state, dest, &parts)?
+                }
                 Instruction::LlmPlaceholder {
                     dest,
                     param_name,
@@ -508,6 +511,25 @@ impl VM {
             .collect::<Result<_, String>>()?;
         let list_value = ExpressionValue::from_elements(elements)?;
         Self::write_slot(&mut state, dest, ExpressionResult::new(list_value));
+        Ok(Self::advance_pc(state))
+    }
+
+    fn execute_str_concat(
+        &self,
+        mut state: VMState,
+        dest: Slot,
+        parts: &[Slot],
+    ) -> Result<VMState, String> {
+        let concatenated: String = parts
+            .iter()
+            .map(|slot| Ok(Self::read_slot(&state, *slot)?.value.format_for_llm()))
+            .collect::<Result<Vec<String>, String>>()?
+            .join("");
+        Self::write_slot(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::string(&concatenated)),
+        );
         Ok(Self::advance_pc(state))
     }
 
@@ -1024,6 +1046,46 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(outcome, VMOutcome::Yielded(_)));
+    }
+
+    #[tokio::test]
+    async fn execute_str_concat_concatenates_string_slots() {
+        let instructions = vec![
+            Instruction::LdcStr {
+                dest: Slot(1),
+                value: "hello ".to_string(),
+            },
+            Instruction::LdcStr {
+                dest: Slot(2),
+                value: "world".to_string(),
+            },
+            Instruction::StrConcat {
+                dest: Slot(0),
+                parts: vec![Slot(1), Slot(2)],
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let context = make_context();
+        let frame = vec![None, None, None];
+        let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
+        assert_eq!(result.value, ExpressionValue::string("hello world"));
+    }
+
+    #[tokio::test]
+    async fn execute_str_concat_empty_parts_produces_empty_string() {
+        let instructions = vec![
+            Instruction::StrConcat {
+                dest: Slot(0),
+                parts: vec![],
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let context = make_context();
+        let frame = vec![None];
+        let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
+        assert_eq!(result.value, ExpressionValue::string(""));
     }
 
     #[tokio::test]

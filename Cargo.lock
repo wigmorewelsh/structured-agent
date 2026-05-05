@@ -3052,6 +3052,7 @@ dependencies = [
  "structured-agent-il",
  "structured-agent-parser",
  "structured-agent-runtime",
+ "structured-agent-stdlib",
  "structured-agent-typed-ast",
 ]
 

@@ -97,6 +97,11 @@ pub enum Instruction {
         elements: Vec<Slot>,
     },
 
+    StrConcat {
+        dest: Slot,
+        parts: Vec<Slot>,
+    },
+
     LlmPlaceholder {
         dest: Slot,
         param_name: String,
@@ -243,6 +248,17 @@ impl fmt::Display for Instruction {
             Instruction::ListCreate { dest, elements } => {
                 write!(f, "list.create {}, [", dest)?;
                 for (i, var) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", var)?;
+                }
+                write!(f, "]")
+            }
+
+            Instruction::StrConcat { dest, parts } => {
+                write!(f, "str.concat {}, [", dest)?;
+                for (i, var) in parts.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }

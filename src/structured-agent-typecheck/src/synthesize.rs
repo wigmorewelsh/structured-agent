@@ -886,6 +886,9 @@ pub fn synthesize_expression(
             }
             Some(unifier.apply_subst(&sig.return_type))
         }
+        Expression::StringTemplate { .. } => {
+            unreachable!("StringTemplate not yet produced by parser")
+        }
     }
 }
 

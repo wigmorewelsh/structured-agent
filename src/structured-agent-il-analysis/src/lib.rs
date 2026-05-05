@@ -61,6 +61,7 @@ pub fn instruction_reads(instruction: &Instruction) -> Vec<Slot> {
         }
         Instruction::CtxEvent { var } => vec![*var],
         Instruction::ListCreate { elements, .. } => elements.clone(),
+        Instruction::StrConcat { parts, .. } => parts.clone(),
         Instruction::LlmSelect { metadata_vars, .. } => metadata_vars.clone(),
         Instruction::StructNew { fields, .. } => fields.iter().map(|(_, src)| *src).collect(),
         Instruction::StructGet { src, .. } => vec![*src],
@@ -95,6 +96,7 @@ pub fn instruction_writes(instruction: &Instruction) -> Option<Slot> {
         Instruction::CallNative { dest, .. } => Some(*dest),
         Instruction::MetaFunction { dest, .. } => Some(*dest),
         Instruction::ListCreate { dest, .. } => Some(*dest),
+        Instruction::StrConcat { dest, .. } => Some(*dest),
         Instruction::LlmPlaceholder { dest, .. } => Some(*dest),
         Instruction::LlmSelect { dest, .. } => Some(*dest),
         Instruction::LlmGenerate { dest, .. } => Some(*dest),

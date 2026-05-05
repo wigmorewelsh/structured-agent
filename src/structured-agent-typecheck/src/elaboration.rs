@@ -319,6 +319,9 @@ pub fn elaborate_expression(
             key,
             span,
         } => elaborate_spawn(db, type_arg, key, *span, env, ctx),
+        Expression::StringTemplate { .. } => {
+            unreachable!("StringTemplate not yet produced by parser")
+        }
     }
 }
 

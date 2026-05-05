@@ -334,6 +334,12 @@ pub struct SelectClause {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum StringPart {
+    Literal(String),
+    Interpolated(Box<Expression>),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Call {
@@ -364,6 +370,10 @@ pub enum Expression {
     },
     StringLiteral {
         value: String,
+        span: Span,
+    },
+    StringTemplate {
+        parts: Vec<StringPart>,
         span: Span,
     },
     BooleanLiteral {
@@ -415,6 +425,7 @@ impl Spanned for Expression {
             Expression::FieldAccess { span, .. } => *span,
             Expression::MethodCall { span, .. } => *span,
             Expression::Spawn { span, .. } => *span,
+            Expression::StringTemplate { span, .. } => *span,
         }
     }
 }
@@ -805,8 +816,40 @@ impl fmt::Display for Expression {
             Expression::Spawn { type_arg, key, .. } => {
                 write!(f, "spawn<{}>({})", type_arg, key)
             }
+            Expression::StringTemplate { parts, .. } => {
+                write!(f, "\"")?;
+                for part in parts {
+                    match part {
+                        StringPart::Literal(s) => write!(f, "{}", s)?,
+                        StringPart::Interpolated(expr) => write!(f, "${{{}}}", expr)?,
+                    }
+                }
+                write!(f, "\"")
+            }
         }
     }
 }
 
 impl TypeAnnotation for Type {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Span;
+
+    #[test]
+    fn string_part_literal_roundtrip() {
+        let part = StringPart::Literal("hello".to_string());
+        assert_eq!(part, StringPart::Literal("hello".to_string()));
+    }
+
+    #[test]
+    fn string_template_span() {
+        let span = Span::dummy();
+        let expr = Expression::StringTemplate {
+            parts: vec![StringPart::Literal("hi".to_string())],
+            span,
+        };
+        assert_eq!(expr.span(), span);
+    }
+}

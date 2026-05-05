@@ -396,6 +396,9 @@ impl BytecodeCompiler {
             typed_ast::Expression::Spawn { key, ty, .. } => {
                 self.compile_spawn_expression(ctx, key, ty, dest_var)
             }
+            typed_ast::Expression::StringTemplate { .. } => {
+                unreachable!("StringTemplate not yet produced by parser")
+            }
         }
     }
 

@@ -1,4 +1,6 @@
 
+use ::io::print
+
 struct ActorState {
     // Define any state variables for the actor here
 }

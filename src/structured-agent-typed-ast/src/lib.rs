@@ -133,6 +133,12 @@ pub enum MethodBinding {
 }
 
 #[derive(Clone, Debug)]
+pub enum StringPart {
+    Literal(String),
+    Interpolated(Box<Expression>),
+}
+
+#[derive(Clone, Debug)]
 pub enum Expression {
     Call {
         function: String,
@@ -163,6 +169,11 @@ pub enum Expression {
     },
     StringLiteral {
         value: String,
+        ty: Type,
+        span: Span,
+    },
+    StringTemplate {
+        parts: Vec<StringPart>,
         ty: Type,
         span: Span,
     },
@@ -231,6 +242,7 @@ impl Expression {
             Expression::Select(_, ty) => ty,
             Expression::IfElse { ty, .. } => ty,
             Expression::Spawn { ty, .. } => ty,
+            Expression::StringTemplate { ty, .. } => ty,
         }
     }
 
@@ -251,6 +263,7 @@ impl Expression {
             Expression::Select(s, _) => s.span,
             Expression::IfElse { span, .. } => *span,
             Expression::Spawn { span, .. } => *span,
+            Expression::StringTemplate { span, .. } => *span,
         }
     }
 }
