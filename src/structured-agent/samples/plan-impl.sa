@@ -23,12 +23,82 @@ fn project_context(): String {
     let readme = read_file("README.md")
     let agent_instructions = read_file(".github/copilot-instructions.md")
     let claude_instructions = read_file("CLAUDE.md")
+    let index = read_file(".structured-agent/index.md")
     readme!
     agent_instructions!
     claude_instructions!
+    index!
     '''
     Based on the above, describe the project: what it does, what it is for, the major components, and the tech stack.
     '''
+}
+
+# --- Knowledge store ---
+
+fn select_relevant_knowledge_files(context: String): List<String> {
+    let index = read_file(".structured-agent/index.md")
+    index!
+    context!
+    '''
+    From the index, select the knowledge files most relevant to the context.
+    Return only file paths, one per line.
+    '''
+}
+
+fn load_relevant_knowledge(context: String): () {
+    let files = select_relevant_knowledge_files(context)
+    for file in files {
+        let content = read_file(file)
+        content!
+    }
+}
+
+fn merge_into_file(existing: String, new_info: String): String {
+    existing!
+    new_info!
+    '''
+    Merge the new information into the existing content.
+    Resolve any contradictions explicitly, noting why one was preferred.
+    Summarize if the result would exceed 500 words.
+    '''
+}
+
+fn update_knowledge_file(path: String, new_info: String): () {
+    let existing = read_file(path)
+    let merged = merge_into_file(existing, new_info)
+    write_file(path, merged)
+}
+
+fn update_knowledge_index(summary: String): () {
+    let existing = read_file(".structured-agent/index.md")
+    existing!
+    summary!
+    let updated = '''
+    Update the index to reflect any new or changed knowledge files.
+    Each entry should list the file path and a one-line description of its contents.
+    '''
+    write_file(".structured-agent/index.md", updated)
+}
+
+fn store_feature_knowledge(feature: String, summary: String): () {
+    update_knowledge_file(".structured-agent/features/{feature}.md", summary)
+}
+
+fn extract_cross_cutting_knowledge(stage_summary: String): () {
+    stage_summary!
+    '''
+    From this summary identify any new conventions, architecture decisions, or failed approaches.
+    Describe each briefly, one per category.
+    '''!
+    update_knowledge_file(".structured-agent/conventions.md", stage_summary)
+    update_knowledge_file(".structured-agent/decisions.md", stage_summary)
+    update_knowledge_file(".structured-agent/failed-approaches.md", stage_summary)
+}
+
+fn store_stage_knowledge(feature: String, stage_summary: String): () {
+    extract_cross_cutting_knowledge(stage_summary)
+    store_feature_knowledge(feature, stage_summary)
+    update_knowledge_index(stage_summary)
 }
 
 # --- Read-only planning agent loop ---
@@ -69,16 +139,11 @@ fn planner_loop(): String {
     }
 }
 
-fn planner_agent(stage: String, knowledge: String): String {
+fn planner_agent(stage: String): String {
+    load_relevant_knowledge(stage)
     '''
     You are planning implementation work. Do NOT implement anything.
     Explore the codebase then produce a precise, ordered plan.
-
-    ## Project
-    {project_context()}
-
-    ## Prior knowledge
-    {knowledge}
 
     ## Stage
     {stage}
@@ -206,21 +271,6 @@ fn impl_agent(plan: String): String {
     return summarize_stage(plan)
 }
 
-# --- Learning ---
-
-fn update_knowledge(knowledge: String, stage_summary: String): String {
-    '''
-    Combine the existing knowledge with the stage summary into an updated record of knowledge.
-    Keep it concise. Focus on patterns, pitfalls, and conventions discovered.
-
-    ## Existing knowledge
-    {knowledge}
-
-    ## Stage summary
-    {stage_summary}
-    '''
-}
-
 # --- Commit ---
 
 fn generate_commit_message(result: String): String {
@@ -244,12 +294,11 @@ fn high_level_plan(feature: String): List<String> {
 
 fn process(feature: String): () {
     let stages = high_level_plan(feature)
-    let knowledge = ""
 
     for stage in stages {
-        let stage_plan = planner_agent(stage, knowledge)
+        let stage_plan = planner_agent(stage)
         let result = impl_agent(stage_plan)
-        knowledge = update_knowledge(knowledge, result)
+        store_stage_knowledge(feature, result)
         commit_with_single_message(result)
     }
 }
@@ -280,6 +329,8 @@ fn main(): () {
     You are a structured agent implementing a software feature using a test-driven process.
     You will discuss requirements with the user, plan stages, implement with TDD, and commit each stage.
     '''!
+
+    project_context()!
 
     let feature = discuss()
     process(feature)

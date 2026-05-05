@@ -86,4 +86,21 @@ fn test(): () {
 
         assert_eq!(warnings.len(), 1);
     }
+
+    #[test]
+    fn detects_redundant_select_inside_interpolation() {
+        let code = r#"
+extern fn compute(): String
+
+fn test(): String {
+    return "result: ${select { compute() }}"
+}
+"#;
+
+        let module = parse_code(code);
+        let mut analyzer = RedundantSelectAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 1);
+    }
 }

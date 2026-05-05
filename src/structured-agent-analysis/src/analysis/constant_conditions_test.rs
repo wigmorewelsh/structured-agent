@@ -143,4 +143,21 @@ fn test(): String {
 
         assert_eq!(warnings.len(), 2);
     }
+
+    #[test]
+    fn detects_constant_condition_inside_interpolation() {
+        let code = r#"
+extern fn value(): String
+
+fn test(): String {
+    return "${if true { value() } else { value() }}"
+}
+"#;
+
+        let module = parse_code(code);
+        let mut analyzer = ConstantConditionAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 1);
+    }
 }

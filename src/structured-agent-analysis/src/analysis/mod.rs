@@ -52,6 +52,9 @@ mod unused_return_values_test;
 #[cfg(test)]
 mod missing_return_or_injection_test;
 
+#[cfg(test)]
+mod unused_variables_test;
+
 pub use constant_conditions::ConstantConditionAnalyzer;
 pub use duplicate_injections::DuplicateInjectionAnalyzer;
 pub use empty_blocks::EmptyBlockAnalyzer;

@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
 use std::collections::{HashMap, HashSet};
-use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
+use structured_agent_ast::ast::{Definition, Expression, Module, Statement, StringPart};
 use structured_agent_ast::types::{FileId, Span};
 
 pub struct OverwrittenValueAnalyzer;
@@ -34,6 +34,13 @@ impl OverwrittenValueAnalyzer {
                 Self::collect_reads_in_expression(condition, reads);
                 Self::collect_reads_in_expression(then_expr, reads);
                 Self::collect_reads_in_expression(else_expr, reads);
+            }
+            Expression::StringTemplate { parts, .. } => {
+                for part in parts {
+                    if let StringPart::Interpolated(expr) = part {
+                        Self::collect_reads_in_expression(expr, reads);
+                    }
+                }
             }
             _ => {}
         }

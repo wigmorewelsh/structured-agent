@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
 use std::collections::HashMap;
-use structured_agent_ast::ast::{Expression, Function, Statement};
+use structured_agent_ast::ast::{Expression, Function, Statement, StringPart};
 use structured_agent_ast::types::{FileId, Span};
 
 #[derive(Debug, Clone)]
@@ -130,12 +130,18 @@ impl UnusedVariableAnalyzer {
             Expression::Spawn { key, .. } => {
                 self.analyze_expression(key);
             }
+            Expression::StringTemplate { parts, .. } => {
+                for part in parts {
+                    if let StringPart::Interpolated(expr) = part {
+                        self.analyze_expression(expr);
+                    }
+                }
+            }
             Expression::StringLiteral { .. }
             | Expression::BooleanLiteral { .. }
             | Expression::IntLiteral { .. }
             | Expression::ListLiteral { .. }
             | Expression::UnitLiteral { .. }
-            | Expression::StringTemplate { .. }
             | Expression::Placeholder { .. } => {}
         }
     }

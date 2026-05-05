@@ -1,5 +1,5 @@
 use crate::analysis::{Analyzer, Warning};
-use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
+use structured_agent_ast::ast::{Definition, Expression, Module, Statement, StringPart};
 use structured_agent_ast::types::FileId;
 
 pub struct RedundantSelectAnalyzer;
@@ -25,6 +25,13 @@ impl RedundantSelectAnalyzer {
             Expression::Call { arguments, .. } => {
                 for arg in arguments {
                     self.analyze_expression(arg, file_id, warnings);
+                }
+            }
+            Expression::StringTemplate { parts, .. } => {
+                for part in parts {
+                    if let StringPart::Interpolated(expr) = part {
+                        self.analyze_expression(expr, file_id, warnings);
+                    }
                 }
             }
             _ => {}

@@ -88,6 +88,24 @@ fn test(): () {
     }
 
     #[test]
+    fn no_warning_when_value_read_in_interpolation() {
+        let code = r#"
+fn test(): String {
+    let x = "first"
+    let result = "${x}"
+    let x = "second"
+    return result
+}
+"#;
+
+        let module = parse_code(code);
+        let mut analyzer = OverwrittenValueAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
     fn detects_multiple_overwrites() {
         let code = r#"
 fn test(): () {

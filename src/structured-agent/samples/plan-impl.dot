@@ -1,0 +1,155 @@
+digraph plan_impl {
+    rankdir=TB
+    node [fontname="Helvetica" fontsize=11 shape=box style=filled]
+    edge [fontsize=9]
+
+    // Entry point
+    main [fillcolor="#4a90d9" fontcolor=white]
+
+    // Discussion
+    discuss [fillcolor="#7ab648" fontcolor=white]
+    is_feature_understood [fillcolor="#e8e8e8" shape=diamond]
+    summarize_feature [fillcolor="#e8e8e8"]
+    ask_for_supervisor_help [fillcolor="#e05c5c" fontcolor=white]
+
+    // Project context
+    project_context [fillcolor="#7ab648" fontcolor=white]
+
+    // Top-level process
+    process [fillcolor="#4a90d9" fontcolor=white]
+    high_level_plan [fillcolor="#e8e8e8"]
+    planner_agent [fillcolor="#7ab648" fontcolor=white]
+    impl_agent [fillcolor="#d98c4a" fontcolor=white]
+    store_stage_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+    commit_with_single_message [fillcolor="#e8e8e8"]
+    generate_commit_message [fillcolor="#e8e8e8"]
+
+    // Knowledge store
+    load_relevant_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+    select_relevant_knowledge_files [fillcolor="#9b6bb5" fontcolor=white]
+    update_knowledge_file [fillcolor="#9b6bb5" fontcolor=white]
+    merge_into_file [fillcolor="#9b6bb5" fontcolor=white]
+    update_knowledge_index [fillcolor="#9b6bb5" fontcolor=white]
+    store_feature_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+    extract_cross_cutting_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+
+    // Planner loop
+    planner_loop [fillcolor="#7ab648" fontcolor=white]
+    is_plan_ready [fillcolor="#e8e8e8" shape=diamond]
+    plan_is_blocked [fillcolor="#e8e8e8" shape=diamond]
+    summarize_plan [fillcolor="#e8e8e8"]
+
+    // TDD loop
+    create_test_list [fillcolor="#e8e8e8"]
+    implement_test [fillcolor="#d98c4a" fontcolor=white]
+    write_failing_test [fillcolor="#d98c4a" fontcolor=white]
+    make_test_pass [fillcolor="#d98c4a" fontcolor=white]
+    make_test_pass_loop [fillcolor="#d98c4a" fontcolor=white]
+    refactor [fillcolor="#d98c4a" fontcolor=white]
+    refactor_loop [fillcolor="#d98c4a" fontcolor=white]
+    summarize_stage [fillcolor="#e8e8e8"]
+    summarize_changes [fillcolor="#e8e8e8"]
+    is_all_tests_passing [fillcolor="#e8e8e8" shape=diamond]
+    is_impl_stuck [fillcolor="#e8e8e8" shape=diamond]
+    is_refactor_done [fillcolor="#e8e8e8" shape=diamond]
+
+    // Extern fns
+    read_file [fillcolor="#c8c8c8" shape=parallelogram]
+    write_file [fillcolor="#c8c8c8" shape=parallelogram]
+    list_directory [fillcolor="#c8c8c8" shape=parallelogram]
+    grep [fillcolor="#c8c8c8" shape=parallelogram]
+    execute_command [fillcolor="#c8c8c8" shape=parallelogram]
+
+    // main
+    main -> project_context
+    main -> discuss
+    main -> process
+
+    // discuss
+    discuss -> ask_for_supervisor_help
+    discuss -> is_feature_understood
+    discuss -> summarize_feature
+    discuss -> discuss [label="recurse"]
+
+    // project_context
+    project_context -> read_file
+
+    // process
+    process -> high_level_plan
+    process -> planner_agent
+    process -> impl_agent
+    process -> store_stage_knowledge
+    process -> commit_with_single_message
+
+    // commit
+    commit_with_single_message -> generate_commit_message
+    commit_with_single_message -> execute_command
+
+    // knowledge store
+    select_relevant_knowledge_files -> read_file
+    load_relevant_knowledge -> select_relevant_knowledge_files
+    load_relevant_knowledge -> read_file
+    merge_into_file
+    update_knowledge_file -> read_file
+    update_knowledge_file -> merge_into_file
+    update_knowledge_file -> write_file
+    update_knowledge_index -> read_file
+    update_knowledge_index -> write_file
+    store_feature_knowledge -> update_knowledge_file
+    extract_cross_cutting_knowledge -> update_knowledge_file
+    store_stage_knowledge -> extract_cross_cutting_knowledge
+    store_stage_knowledge -> store_feature_knowledge
+    store_stage_knowledge -> update_knowledge_index
+
+    // planner
+    planner_agent -> load_relevant_knowledge
+    planner_agent -> planner_loop
+    planner_loop -> read_file
+    planner_loop -> list_directory
+    planner_loop -> grep
+    planner_loop -> plan_is_blocked
+    planner_loop -> ask_for_supervisor_help
+    planner_loop -> is_plan_ready
+    planner_loop -> summarize_plan
+    planner_loop -> planner_loop [label="recurse"]
+
+    // impl
+    impl_agent -> create_test_list
+    impl_agent -> implement_test
+    impl_agent -> summarize_stage
+    implement_test -> write_failing_test
+    implement_test -> make_test_pass
+    implement_test -> refactor
+    make_test_pass -> make_test_pass_loop
+    make_test_pass_loop -> read_file
+    make_test_pass_loop -> list_directory
+    make_test_pass_loop -> grep
+    make_test_pass_loop -> write_file
+    make_test_pass_loop -> execute_command
+    make_test_pass_loop -> is_impl_stuck
+    make_test_pass_loop -> ask_for_supervisor_help
+    make_test_pass_loop -> is_all_tests_passing
+    make_test_pass_loop -> summarize_changes
+    make_test_pass_loop -> make_test_pass_loop [label="recurse"]
+    refactor -> refactor_loop
+    refactor_loop -> read_file
+    refactor_loop -> list_directory
+    refactor_loop -> grep
+    refactor_loop -> write_file
+    refactor_loop -> execute_command
+    refactor_loop -> is_refactor_done
+    refactor_loop -> refactor_loop [label="recurse"]
+
+    // Legend
+    subgraph cluster_legend {
+        label="Legend"
+        fontsize=10
+        l1 [label="entry / orchestration" fillcolor="#4a90d9" fontcolor=white style=filled shape=box fontsize=9]
+        l2 [label="planning (read-only)" fillcolor="#7ab648" fontcolor=white style=filled shape=box fontsize=9]
+        l3 [label="impl / TDD" fillcolor="#d98c4a" fontcolor=white style=filled shape=box fontsize=9]
+        l4 [label="knowledge store" fillcolor="#9b6bb5" fontcolor=white style=filled shape=box fontsize=9]
+        l5 [label="supervisor / human" fillcolor="#e05c5c" fontcolor=white style=filled shape=box fontsize=9]
+        l6 [label="extern fn" fillcolor="#c8c8c8" style=filled shape=parallelogram fontsize=9]
+        l7 [label="predicate" fillcolor="#e8e8e8" style=filled shape=diamond fontsize=9]
+    }
+}

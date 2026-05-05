@@ -106,4 +106,21 @@ fn test(): () {
 
         assert_eq!(warnings.len(), 0);
     }
+
+    #[test]
+    fn detects_placeholder_overuse_inside_interpolation() {
+        let code = r#"
+extern fn process(a: String, b: String, c: String): String
+
+fn test(): String {
+    return "result: ${process(_, _, _)}"
+}
+"#;
+
+        let module = parse_code(code);
+        let mut analyzer = PlaceholderOveruseAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 1);
+    }
 }

@@ -986,7 +986,7 @@ combine::parser! {
                 char('"'),
                 many(choice((
                     attempt(
-                        string("${").with(parse_simple_expression()).skip(char('}'))
+                        string("${").with(parse_expression()).skip(char('}'))
                     ).map(|expr| StringPart::Interpolated(Box::new(expr))),
                     choice((
                         char('\\').with(satisfy(|_: char| true))
@@ -1032,7 +1032,7 @@ combine::parser! {
                 string("'''"),
                 many(choice((
                     attempt(
-                        string("${").with(parse_simple_expression()).skip(char('}'))
+                        string("${").with(parse_expression()).skip(char('}'))
                     ).map(|expr| StringPart::Interpolated(Box::new(expr))),
                     choice((
                         char('\\').with(satisfy(|_: char| true))

@@ -1,6 +1,6 @@
 use crate::analysis::{Analyzer, Warning};
 use std::collections::HashMap;
-use structured_agent_ast::ast::{Definition, Expression, Module, Statement};
+use structured_agent_ast::ast::{Definition, Expression, Module, Statement, StringPart};
 use structured_agent_ast::types::{FileId, Spanned};
 
 pub struct ConstantConditionAnalyzer;
@@ -91,6 +91,13 @@ impl ConstantConditionAnalyzer {
                 }
                 self.analyze_expression(then_expr, file_id, variable_values, warnings);
                 self.analyze_expression(else_expr, file_id, variable_values, warnings);
+            }
+            Expression::StringTemplate { parts, .. } => {
+                for part in parts {
+                    if let StringPart::Interpolated(expr) = part {
+                        self.analyze_expression(expr, file_id, variable_values, warnings);
+                    }
+                }
             }
             _ => {}
         }
