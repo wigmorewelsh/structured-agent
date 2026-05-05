@@ -2975,6 +2975,7 @@ dependencies = [
  "arrow",
  "async-trait",
  "schemars 0.8.22",
+ "structured-agent-il",
  "structured-agent-runtime",
  "tokio",
 ]

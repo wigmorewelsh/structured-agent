@@ -1,7 +1,0 @@
-mod logger(out: console)
-
-use out::write
-
-pub fn info(msg: String): String {
-    return write(msg)
-}

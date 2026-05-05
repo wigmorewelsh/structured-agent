@@ -24,7 +24,7 @@ An actor is created with `spawn`, which takes the module type as a type paramete
 ```sa
 pub fn main(): String {
     let actor = spawn<SomeActor>("MyActor")
-    let value = actor::push_state_with_value()
+    let value = actor.push_state_with_value()
     return value
 }
 ```
@@ -88,13 +88,13 @@ A function that yields in an infinite loop never returns in the conventional sen
 ```sa
 pub fn main(): String {
     let actor = spawn<SomeActor>("MyActor")
-    defer actor::push_state()
-    let value = actor::push_state_with_value()
+    defer actor.push_state()
+    let value = actor.push_state_with_value()
     return value
 }
 ```
 
-`defer actor::push_state()` starts the background task on the actor. The runtime runs it to its first `yield`, at which point control returns to the caller and execution proceeds to `actor::push_state_with_value()`. The deferred task and subsequent direct calls are interleaved cooperatively, with `yield` as the only preemption point.
+`defer actor.push_state()` starts the background task on the actor. The runtime runs it to its first `yield`, at which point control returns to the caller and execution proceeds to `actor.push_state_with_value()`. The deferred task and subsequent direct calls are interleaved cooperatively, with `yield` as the only preemption point.
 
 `defer` returns `()`. The deferred function's return type is irrelevant since the result is never awaited. The background task runs for the lifetime of the actor unless it exits naturally.
 

@@ -341,6 +341,19 @@ fn resolve_method_callee(
     resolve_callee_for_method(db, &struct_type_name, method, env, ctx)
 }
 
+fn module_instantiation_to_type(inst: &ModuleInstantiation) -> RT {
+    if inst.params.is_empty() {
+        RT::Named(inst.path.clone())
+    } else {
+        let args: Vec<RT> = inst
+            .params
+            .iter()
+            .map(|p| module_instantiation_to_type(p))
+            .collect();
+        RT::Parameterized(inst.path.clone(), args)
+    }
+}
+
 fn elaborate_spawn(
     db: &dyn TypeCheckDatabase,
     type_arg: &AstType,
@@ -351,9 +364,9 @@ fn elaborate_spawn(
 ) -> Option<typed_ast::Expression> {
     let current_module = InternedModuleName::new(db, ctx.module_name.clone());
     let instantiation = build_module_instantiation(db, current_module, &type_arg.path)?;
-    let module_type = RT::Named(instantiation.path.clone());
+    let module_type = module_instantiation_to_type(&instantiation);
     let typed_key = elaborate_expression(db, key, env, ctx)?;
-    let actor_ref_type = RT::actor_ref(module_type);
+    let actor_ref_type = RT::actor_ref(module_type.clone());
     Some(typed_ast::Expression::Spawn {
         key: Box::new(typed_key),
         ty: actor_ref_type,
@@ -424,6 +437,26 @@ fn resolve_callee_for_method(
     })
 }
 
+fn module_instantiation_from_rt(rt: &RT) -> ModuleInstantiation {
+    match rt {
+        RT::Named(p) => ModuleInstantiation {
+            path: p.clone(),
+            params: vec![],
+        },
+        RT::Parameterized(p, args) => ModuleInstantiation {
+            path: p.clone(),
+            params: args
+                .iter()
+                .map(|a| module_instantiation_from_rt(a))
+                .collect(),
+        },
+        _ => ModuleInstantiation {
+            path: DefinitionPath::root(),
+            params: vec![],
+        },
+    }
+}
+
 fn resolve_callee_for_actor_method(
     db: &dyn TypeCheckDatabase,
     receiver_type: &RT,
@@ -435,7 +468,7 @@ fn resolve_callee_for_actor_method(
         RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
         _ => return None,
     };
-    let fn_path = DefinitionPath::for_function(module_path, method);
+    let fn_path = DefinitionPath::for_function(module_path.clone(), method);
     let sig = get_function_sig(
         db,
         InternedFunctionName::new(db, fn_path.clone()),
@@ -443,10 +476,22 @@ fn resolve_callee_for_actor_method(
     )?
     .get()
     .clone();
+
+    let inst = module_instantiation_from_rt(module_type);
+    let module_args: Vec<CallModuleArg> = inst
+        .params
+        .into_iter()
+        .map(CallModuleArg::Concrete)
+        .collect();
+    let routing = CallRouting {
+        via_module_param: None,
+        module_args,
+    };
+
     Some(ResolvedCallee {
         sig,
         binding: typed_ast::MethodBinding::Early(fn_path),
-        routing: None,
+        routing: Some(routing),
         receiver_is_target: true,
     })
 }
@@ -641,10 +686,10 @@ fn elaborate_arguments(
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Expression>> {
     let param_offset = usize::from(elaborated_receiver.is_some());
-    let user_args = elaborate_user_args(db, sig, unifier, param_offset, pending_args, env, ctx)?;
     let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
     let routing_exprs = elaborate_routing_args(routing, span, env);
     let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
+    let user_args = elaborate_user_args(db, sig, unifier, param_offset, pending_args, env, ctx)?;
     let mut all_args = type_exprs;
     all_args.extend(routing_exprs);
     all_args.extend(trait_exprs);

@@ -9,7 +9,7 @@ use combine::parser::token::satisfy;
 use combine::{attempt, between, not_followed_by, optional, position, sep_by1, Parser, Stream};
 use structured_agent_ast::ast::{
     AstPath, AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction,
-    Function, FunctionBody, Module, ModuleParam, Parameter, PathArg, PathSegment, SelectClause,
+    Function, FunctionBody, Module, Parameter, PathArg, PathSegment, SelectClause,
     SelectExpression, SigFunction, Statement, StructDefinition, StructField, Type, TypeParam, Use,
 };
 use structured_agent_ast::types::{FileId, Span, Spanned};
@@ -188,24 +188,14 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (position(), attempt(lex_string("mod"))).then(|(start, _)| {
-        (
-            identifier().skip(not_followed_by(char('{'))),
-            optional(attempt(between(
-                lex_char('('),
-                lex_char(')'),
-                sep_by(parse_module_param(), lex_char(',')),
-            ))),
-            position(),
-        )
-            .then(move |(name, params, end)| {
-                not_followed_by(skip_spaces_and_comments().with(char('{'))).map(move |_| {
-                    Definition::ModuleHeader {
-                        name: name.clone(),
-                        params: params.clone().unwrap_or_default(),
-                        span: Span::new(start, end),
-                    }
-                })
+        (identifier().skip(not_followed_by(char('{'))), position()).then(move |(name, end)| {
+            not_followed_by(skip_spaces_and_comments().with(char('{'))).map(move |_| {
+                Definition::ModuleHeader {
+                    name: name.clone(),
+                    span: Span::new(start, end),
+                }
             })
+        })
     })
 }
 
@@ -215,71 +205,29 @@ where
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     (position(), attempt(lex_string("mod")), identifier()).then(|(start, _, name)| {
-        (
-            optional(attempt(between(
-                lex_char('('),
-                lex_char(')'),
-                sep_by::<Vec<_>, _, _, _>(parse_module_param(), lex_char(',')),
-            ))),
-            between(
-                lex_char('{').skip(skip_spaces_and_comments()),
-                lex_char('}'),
-                many(
-                    choice((
-                        parse_use(),
-                        parse_sig_definition(),
-                        parse_trait_impl(),
-                        parse_trait(),
-                        parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
-                        parse_external_function()
-                            .map(|f| Definition::ExternalFunction(Arc::new(f))),
-                        parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
-                    ))
-                    .skip(skip_spaces_and_comments()),
-                ),
+        between(
+            lex_char('{').skip(skip_spaces_and_comments()),
+            lex_char('}'),
+            many(
+                choice((
+                    parse_use(),
+                    parse_sig_definition(),
+                    parse_trait_impl(),
+                    parse_trait(),
+                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                    parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
+                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+                ))
+                .skip(skip_spaces_and_comments()),
             ),
         )
-            .and(position())
-            .map(move |(inner, end)| {
-                let (params, mut definitions): (Option<Vec<ModuleParam>>, Vec<Definition>) = inner;
-                if let Some(p) = params {
-                    if !p.is_empty() {
-                        definitions.insert(
-                            0,
-                            Definition::ModuleHeader {
-                                name: name.clone(),
-                                params: p,
-                                span: Span::new(start, end),
-                            },
-                        );
-                    }
-                }
-                Definition::InlineModule {
-                    name: name.clone(),
-                    definitions,
-                    span: Span::new(start, end),
-                }
-            })
-    })
-}
-
-fn parse_module_param<Input>() -> impl Parser<Input, Output = ModuleParam>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        position(),
-        identifier(),
-        lex_char(':'),
-        parse_ast_path().skip(skip_spaces()),
-        position(),
-    )
-        .map(|(start, name, _, path, end)| ModuleParam {
-            name,
-            path,
+        .and(position())
+        .map(move |(definitions, end)| Definition::InlineModule {
+            name: name.clone(),
+            definitions,
             span: Span::new(start, end),
         })
+    })
 }
 
 fn parse_sig_definition<Input>() -> impl Parser<Input, Output = Definition>
@@ -3201,30 +3149,8 @@ fn main(): String {
         let (module, _) = result.unwrap();
         assert_eq!(module.definitions.len(), 2);
         match &module.definitions[0] {
-            Definition::ModuleHeader { name, params, .. } => {
+            Definition::ModuleHeader { name, .. } => {
                 assert_eq!(name, "tasks");
-                assert!(params.is_empty());
-            }
-            other => panic!("Expected ModuleHeader, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_module_header_with_params() {
-        let input = "mod db(io: storage::Storage)\n\nfn main(): () {}\n";
-        let stream = Stream::with_positioner(input, IndexPositioner::default());
-        let result = parse_program(TEST_FILE_ID).parse(stream);
-        assert!(result.is_ok(), "parse failed: {:?}", result.err());
-        let (module, _) = result.unwrap();
-        assert!(module.definitions.len() >= 2);
-        match &module.definitions[0] {
-            Definition::ModuleHeader { name, params, .. } => {
-                assert_eq!(name, "db");
-                assert_eq!(params.len(), 1);
-                assert_eq!(params[0].name, "io");
-                assert_eq!(params[0].path.len(), 2);
-                assert_eq!(params[0].path[0].name, "storage");
-                assert_eq!(params[0].path[1].name, "Storage");
             }
             other => panic!("Expected ModuleHeader, got {:?}", other),
         }

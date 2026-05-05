@@ -594,7 +594,7 @@ mod type_resolver {
     fn resolve_type_as_mod_param<'db>(
         db: &'db dyn TypeCheckDatabase,
         current_module: InternedModuleName<'db>,
-        symbol: InternedString<'db>,
+        _symbol: InternedString<'db>,
     ) -> Option<ResolvedType> {
         let module_def = db
             .symbol_tables()
@@ -602,25 +602,9 @@ mod type_resolver {
             .get()
             .get(&current_module.name(db))?
             .clone();
-        let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+        let CheckerAstRef::Module(_) = &module_def.ast_ref else {
             return None;
         };
-        for def in &ast_module.definitions {
-            if let Definition::ModuleHeader { params, .. } = def {
-                for param in params {
-                    if param.name == symbol.value(db) {
-                        let ty = resolve_absolute_path(db, param.path.clone())?;
-                        return Some(ResolvedType::new(ty).with_segment(
-                            ResolveSegment::ModuleHeader(
-                                param.name.clone(),
-                                current_module.name(db),
-                                vec![],
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
         None
     }
 
@@ -915,32 +899,15 @@ fn collect_module_params_for_path(
         None => return vec![],
     };
 
-    let mut params = if let Some(parent) = &module_def.parent_module {
+    let params = if let Some(parent) = &module_def.parent_module {
         collect_module_params_for_path(db, parent)
     } else {
         vec![]
     };
 
-    let CheckerAstRef::Module(ast_module) = &module_def.ast_ref else {
+    let CheckerAstRef::Module(_) = &module_def.ast_ref else {
         return params;
     };
-    for def in &ast_module.definitions {
-        if let Definition::ModuleHeader {
-            params: header_params,
-            ..
-        } = def
-        {
-            let own: Vec<(String, DefinitionPath)> = header_params
-                .iter()
-                .filter_map(|p| {
-                    let path = type_resolver::resolve_absolute_path(db, p.path.clone())?;
-                    Some((p.name.clone(), path))
-                })
-                .collect();
-            params.extend(own);
-            break;
-        }
-    }
     params
 }
 

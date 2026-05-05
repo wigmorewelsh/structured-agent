@@ -311,11 +311,7 @@ fn deps_from_definitions(base: &[String], definitions: &[Definition]) -> Vec<Vec
                 }
                 deps.push(dep);
             }
-            Definition::ModuleHeader { params, .. } => {
-                for param in params {
-                    deps.push(vec![param.path.first().name.clone()]);
-                }
-            }
+            Definition::ModuleHeader { .. } => {}
             Definition::InlineModule {
                 definitions: inner_defs,
                 ..

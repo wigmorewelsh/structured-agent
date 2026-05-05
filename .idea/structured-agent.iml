@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-analysis/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-ast/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-bytecode-compiler/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-gemini/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-il-analysis/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-il/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-interpreter-runtime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-macros/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-openai/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-parser/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-runtime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-stdlib/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-typecheck/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-typed-ast/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-vm/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent-zed/tree-sitter-structured-agent/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/structured-agent/tests" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

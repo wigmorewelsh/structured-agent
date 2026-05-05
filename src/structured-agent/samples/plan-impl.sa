@@ -1,0 +1,32 @@
+
+# phase 1. discuss with the user (interactive back and forth)
+# phase 2. plan/impl/verify loop
+# phase 2a. plan then the top level agent reviews (loop if more work needed)
+# phase 2b. have an agent implement (if the agent fails
+
+fn process(): () {
+
+    let stages = high_level_plan()
+
+    for stage in stages {
+        let stage_plan = planner_agent(stage)
+        let result = ""
+        if check_plan(stage_plan, stage) {
+            result = impl_agent(stage_plan)
+        }
+        
+        
+    }
+}
+
+fn high_level_plan(): List<String> {
+
+}
+
+fn planner_agent(stage: String): String {
+
+}
+
+fn impl_agent(plan: String): String {
+
+}

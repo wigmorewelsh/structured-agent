@@ -22,13 +22,6 @@ pub struct Module {
     pub file_id: FileId,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModuleParam {
-    pub name: String,
-    pub path: AstPath,
-    pub span: Span,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeParam {
     pub name: String,
@@ -165,7 +158,6 @@ pub enum Definition {
     Use(Arc<Use>),
     ModuleHeader {
         name: String,
-        params: Vec<ModuleParam>,
         span: Span,
     },
     Signature(Arc<AstSignature>),
@@ -618,21 +610,8 @@ impl fmt::Display for Definition {
                 }
                 Ok(())
             }
-            Definition::ModuleHeader { name, params, .. } => {
-                write!(f, "mod {}", name)?;
-                if !params.is_empty() {
-                    write!(f, "(")?;
-                    for (i, p) in params.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        let path_str: Vec<String> =
-                            p.path.iter().map(|seg| seg.to_string()).collect();
-                        write!(f, "{}: {}", p.name, path_str.join("::"))?;
-                    }
-                    write!(f, ")")?;
-                }
-                Ok(())
+            Definition::ModuleHeader { name, .. } => {
+                write!(f, "mod {}", name)
             }
             Definition::Signature(s) => {
                 writeln!(f, "sig {} {{", s.name)?;
