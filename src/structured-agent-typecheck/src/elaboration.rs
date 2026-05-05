@@ -198,22 +198,16 @@ fn elaborate_statement(
             span,
         } => {
             let typed_iterable = elaborate_expression(db, iterable, &env, ctx)?;
-            let type_name_str = match typed_iterable.ty() {
-                RT::Named(p) | RT::Parameterized(p, _) => p.last_name().to_string(),
+            let type_path = match typed_iterable.ty() {
+                RT::Named(p) | RT::Parameterized(p, _) => p.clone(),
                 _ => return None,
             };
-            let impls = db.symbol_tables().impls(db);
-            let impl_key = impls
-                .get()
-                .values()
-                .find(|i| {
-                    i.type_name.name() == type_name_str
-                        && i.trait_name
-                            .as_ref()
-                            .map(|t| t.name() == "Iterator")
-                            .unwrap_or(false)
-                })
-                .map(|i| i.key.clone())?;
+            let solved = crate::solver::solve_constraints(db, ctx.program);
+            let impl_key = solved
+                .impls
+                .iter()
+                .find(|((tp, trait_p), _)| tp == &type_path && trait_p.last_name() == "Iterator")
+                .map(|(_, k)| k.clone())?;
             let move_next_fn = DefinitionPath::for_impl_fn(&impl_key, "move_next");
             let current_fn = DefinitionPath::for_impl_fn(&impl_key, "current");
             let mut child_env = env.create_child();
@@ -419,7 +413,7 @@ fn resolve_callee_for_method(
     _env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
-    let impl_fn_path = find_impl_fn(db, struct_type_name, method)?;
+    let impl_fn_path = find_impl_fn(db, ctx.module_name, struct_type_name, method)?;
     let sig = get_function_sig(
         db,
         InternedFunctionName::new(db, impl_fn_path.clone()),

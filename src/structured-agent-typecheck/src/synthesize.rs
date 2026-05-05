@@ -337,7 +337,18 @@ pub fn check_definition(
             let impl_entry = impls
                 .get()
                 .values()
-                .find(|i| i.type_name.name() == t.type_name && i.module == *ctx.module_name)
+                .find(|i| {
+                    i.type_name.name() == t.type_name
+                        && i.module == *ctx.module_name
+                        && match &t.trait_name {
+                            Some(tn) => i
+                                .trait_name
+                                .as_ref()
+                                .map(|itn| itn.name() == tn.as_str())
+                                .unwrap_or(false),
+                            None => i.trait_name.is_none(),
+                        }
+                })
                 .or_accumulate(
                     db,
                     TypeError::UnsupportedType {
@@ -776,7 +787,7 @@ fn resolve_method_sig(
         RT::Named(tn) | RT::Parameterized(tn, _) => tn.last_name().to_string(),
         _ => return None,
     };
-    let impl_fn_path = find_impl_fn(db, &struct_type_name, method).or_accumulate(
+    let impl_fn_path = find_impl_fn(db, ctx.module_name, &struct_type_name, method).or_accumulate(
         db,
         TypeError::UnknownFunction {
             name: method.to_string(),

@@ -1651,6 +1651,73 @@ mod tests {
     }
 
     #[test]
+    fn test_inherent_method_resolves_when_trait_impl_also_present() {
+        let input = concat!(
+            "struct Foo {}\n",
+            "trait Bar {\n",
+            "    fn bar_fn(self: Self): String\n",
+            "}\n",
+            "impl Foo {\n",
+            "    pub fn get(self): String {\n",
+            "        return \"ok\"\n",
+            "    }\n",
+            "}\n",
+            "impl Foo: Bar {\n",
+            "    fn bar_fn(self: Foo): String {\n",
+            "        return \"ok\"\n",
+            "    }\n",
+            "}\n",
+            "fn main(): String {\n",
+            "    let f = Foo {}\n",
+            "    return f.get()\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "inherent method should resolve even when a trait impl is also present: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trait_only_method_not_resolved_as_inherent() {
+        let input = concat!(
+            "struct Foo {}\n",
+            "trait Bar {\n",
+            "    fn bar_fn(self: Self): String\n",
+            "}\n",
+            "impl Foo: Bar {\n",
+            "    fn bar_fn(self: Foo): String {\n",
+            "        return \"ok\"\n",
+            "    }\n",
+            "}\n",
+            "fn main(): String {\n",
+            "    let f = Foo {}\n",
+            "    return f.bar_fn()\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        assert!(
+            check(module).is_err(),
+            "trait-only method should not be resolved via inherent impl lookup"
+        );
+    }
+
+    #[test]
     fn test_method_call_type_checks() {
         let input = concat!(
             "struct Foo {\n",

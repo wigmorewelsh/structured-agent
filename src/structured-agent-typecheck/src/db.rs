@@ -328,16 +328,19 @@ pub fn get_struct_fields(
     })
 }
 
+// this should only ever be used to look up direct impls, not trait impls
 pub fn find_impl_fn(
     db: &dyn TypeCheckDatabase,
+    current_module: &DefinitionPath,
     type_name: &str,
     method_name: &str,
 ) -> Option<DefinitionPath> {
     let impls = db.symbol_tables().impls(db);
-    let impl_entry = impls
-        .get()
-        .values()
-        .find(|i| i.type_name.name() == type_name)?;
+    let impl_entry = impls.get().values().find(|i| {
+        (matches!(i.ast_ref, CheckerAstRef::Primitive) || i.module == *current_module)
+            && i.type_name.name() == type_name
+            && i.trait_name.is_none()
+    })?;
     Some(DefinitionPath::for_impl_fn(&impl_entry.key, method_name))
 }
 
