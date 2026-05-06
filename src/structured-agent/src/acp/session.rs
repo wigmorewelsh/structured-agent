@@ -285,14 +285,17 @@ impl AcpSession {
     }
 
     pub async fn send_prompt(&self, content: String) -> Result<(), AgentError> {
+        debug!("send_prompt: checking pending_input");
         let mut pending = self.pending_input.lock().await;
         if let Some(tx) = pending.take() {
+            debug!("send_prompt: routing via pending_input channel");
             drop(pending);
             tx.send(content).map_err(|_| AgentError::Cancelled)?;
             return Ok(());
         }
         drop(pending);
 
+        debug!("send_prompt: sending to messagebox");
         let (ack_tx, ack_rx) = oneshot::channel();
         let msg = AgentMessage {
             source: AgentId("client".to_string()),
@@ -302,7 +305,10 @@ impl AcpSession {
             .messagebox_tx()
             .send((msg, ack_tx))
             .map_err(|_| AgentError::Cancelled)?;
-        ack_rx.await.map_err(|_| AgentError::Cancelled)
+        debug!("send_prompt: awaiting ack");
+        let result = ack_rx.await.map_err(|_| AgentError::Cancelled);
+        debug!("send_prompt: ack received, result ok={}", result.is_ok());
+        result
     }
 
     pub async fn wait(mut self) -> Result<ExpressionValue, AgentError> {

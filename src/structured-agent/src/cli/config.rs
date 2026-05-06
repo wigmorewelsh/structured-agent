@@ -226,14 +226,25 @@ impl Config {
             process::exit(1);
         });
 
-        toml::from_str(&content).unwrap_or_else(|e| {
+        let mut config: FileConfig = toml::from_str(&content).unwrap_or_else(|e| {
             eprintln!(
                 "Error parsing config file '{}': {}",
                 absolute_path.display(),
                 e
             );
             process::exit(1);
-        })
+        });
+
+        if let Some(file) = config.file.as_ref() {
+            let file_path = std::path::Path::new(file);
+            if file_path.is_relative() {
+                if let Ok(abs) = file_path.canonicalize() {
+                    config.file = Some(abs.to_string_lossy().into_owned());
+                }
+            }
+        }
+
+        config
     }
 
     fn merge_program_source(

@@ -42,28 +42,20 @@ class EventCollector(acp.Client):
         self.events_before_prompt = []
         self.events_after_prompt = []
         self.prompt_sent = False
-        self.first_event_time = None
-        self.prompt_send_time = None
+        self.event1_received = asyncio.Event()
 
     async def session_update(self, session_id: str, update, **kwargs):
         """Handle session updates from agent."""
         if isinstance(update, acp.schema.AgentMessageChunk):
             content = update.content
-            # Handle both TextContent and TextContentBlock
             if hasattr(content, 'text'):
                 text = content.text.strip()
-
-                if self.first_event_time is None:
-                    self.first_event_time = asyncio.get_event_loop().time()
-                    print(f"[TIMING] First event received at T+0.000s")
-
                 if self.prompt_sent:
                     self.events_after_prompt.append(text)
                 else:
                     self.events_before_prompt.append(text)
-                    if self.prompt_send_time:
-                        elapsed = asyncio.get_event_loop().time() - self.prompt_send_time
-                        print(f"[TIMING] Event arrived {elapsed:.3f}s AFTER prompt was sent (BAD!)")
+                if "Event 1" in text:
+                    self.event1_received.set()
 
     async def request_permission(self, options, session_id: str, tool_call, **kwargs):
         """Required by Client protocol."""
@@ -78,17 +70,13 @@ async def test_events_sent_before_receive_blocks(binary_path):
     This verifies that the handle_io task runs concurrently and flushes writes.
     """
     test_program = """
-extern fn receive(): String
+use io::print
+use messaging::receive
 
-fn marker(msg: String): String {
-    return msg
-}
-
-fn main(): String {
-    marker("Event 1: Before receive")
+fn main(): () {
+    print("Event 1: Before receive")
     let input = receive()
-    marker("Event 2: After receive")
-    return input
+    print("Event 2: After receive")
 }
 """
 
@@ -106,7 +94,11 @@ fn main(): String {
             "acp",
             "--engine", "print",
             "--file", temp_file,
-            cwd=project_root
+            "--with-default-functions",
+            "--with-acp-functions",
+            cwd=project_root,
+            transport_kwargs={"stderr": None},
+            env={"RUST_LOG": "debug"},
         ) as (conn, process):
             await conn.initialize(
                 protocol_version=acp.PROTOCOL_VERSION,
@@ -115,13 +107,8 @@ fn main(): String {
 
             session = await conn.new_session(cwd=str(project_root), mcp_servers=[])
 
-            # Wait for events to arrive
-            print("[TIMING] Waiting 1 second for events...")
-            await asyncio.sleep(1)
+            await asyncio.wait_for(collector.event1_received.wait(), timeout=20)
 
-            # NOW send the prompt
-            print(f"[TIMING] Setting prompt_sent=True and sending prompt")
-            collector.prompt_send_time = asyncio.get_event_loop().time()
             collector.prompt_sent = True
             await conn.prompt(
                 prompt=[acp.text_block("test")],
@@ -129,15 +116,6 @@ fn main(): String {
             )
 
             await asyncio.sleep(0.5)
-
-            # THE CRITICAL ASSERTION
-            print(f"\n[DEBUG] Events before prompt ({len(collector.events_before_prompt)}):")
-            for i, event in enumerate(collector.events_before_prompt):
-                print(f"  {i+1}. {repr(event)}")
-
-            print(f"\n[DEBUG] Events after prompt ({len(collector.events_after_prompt)}):")
-            for i, event in enumerate(collector.events_after_prompt):
-                print(f"  {i+1}. {repr(event)}")
 
             assert any("Event 1" in e for e in collector.events_before_prompt), \
                 f"Event 1 should arrive BEFORE prompt. Got: {collector.events_before_prompt}"

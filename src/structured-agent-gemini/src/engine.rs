@@ -218,7 +218,12 @@ impl GeminiEngine {
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
         match return_type {
-            Type::Named(_) if !return_type.is_unit() => {
+            Type::Named(_)
+                if !return_type.is_unit()
+                    && !return_type.is_string()
+                    && !return_type.is_boolean()
+                    && !return_type.is_int() =>
+            {
                 Self::parse_json_value(response_json, return_type, context)
             }
             _ => {
@@ -414,6 +419,33 @@ mod tests {
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             20
         );
+    }
+
+    #[test]
+    fn test_parse_typed_response_string() {
+        let context = empty_context();
+        let response = r#"{"value": "hello world"}"#;
+        let result = GeminiEngine::parse_typed_response(response, &Type::string(), &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        assert_eq!(result.unwrap().as_string().unwrap(), "hello world");
+    }
+
+    #[test]
+    fn test_parse_typed_response_boolean() {
+        let context = empty_context();
+        let response = r#"{"value": true}"#;
+        let result = GeminiEngine::parse_typed_response(response, &Type::boolean(), &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        assert!(result.unwrap().as_boolean().unwrap());
+    }
+
+    #[test]
+    fn test_parse_typed_response_int() {
+        let context = empty_context();
+        let response = r#"{"value": 42}"#;
+        let result = GeminiEngine::parse_typed_response(response, &Type::int(), &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        assert_eq!(result.unwrap().as_integer().unwrap(), 42);
     }
 
     #[test]
