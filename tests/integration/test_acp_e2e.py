@@ -97,6 +97,11 @@ class AgentEventCollector(acp.Client):
             if self.task_sent:
                 self.events_after_task.append(("tool_update", update))
                 self.got_response_after_task.set()
+                if self.expected_text and update.content:
+                    for c in update.content:
+                        if hasattr(c, "content") and hasattr(c.content, "text"):
+                            if self.expected_text in c.content.text:
+                                self.task_complete.set()
 
     async def request_permission(self, options, session_id: str, tool_call, **kwargs):
         pass
@@ -174,9 +179,108 @@ async def test_agent_sa_with_config_toml(binary_path, gemini_api_key):
         pytest.fail(f"{failure_reason}\nStderr:\n{stderr}")
 
     assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
-    response_text = " ".join(e for e in collector.events_after_task if isinstance(e, str))
+
+    def extract_text(events):
+        parts = []
+        for e in events:
+            if isinstance(e, str):
+                parts.append(e)
+            elif isinstance(e, tuple) and e[0] in ("tool_update", "tool_call"):
+                update = e[1]
+                if hasattr(update, "content") and update.content:
+                    for c in update.content:
+                        if hasattr(c, "content") and hasattr(c.content, "text"):
+                            parts.append(c.content.text)
+        return " ".join(parts)
+
+    response_text = extract_text(collector.events_after_task)
     assert "BANANA" in response_text, (
         f"Expected agent to report the secret word. Got: {collector.events_after_task}"
+    )
+
+
+RESOURCE_LINK_PROGRAM = """
+extern fn read_file(path: String): String
+use io::print
+use messaging::receive
+
+fn extract_path(): String {
+    "Extract the full absolute file path from the attached resource link and return only the path string, nothing else"!
+}
+
+fn main(): () {
+    print("Starting agent loop...")
+    let task = receive()
+    task!
+    let path = extract_path()
+    let content = read_file(path)
+    print(content)
+}
+"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(60)
+async def test_resource_link_path_resolved_to_full_path(binary_path, gemini_api_key):
+    env = {**os.environ, "GEMINI_API_KEY": gemini_api_key}
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        subdir = Path(work_dir) / "subdir" / "nested"
+        subdir.mkdir(parents=True)
+        secret_file = subdir / "secret.txt"
+        secret_file.write_text("RASPBERRY")
+
+        collector = AgentEventCollector(expected_text="RASPBERRY")
+
+        async with acp.spawn_agent_process(
+            lambda agent: collector,
+            str(binary_path),
+            "acp",
+            "--engine", "gemini",
+            "--inline", RESOURCE_LINK_PROGRAM,
+            "--with-default-functions",
+            "--with-acp-functions",
+            "--mcp-server", "common-tools",
+            cwd=PROJECT_ROOT,
+            transport_kwargs={"stderr": subprocess.PIPE},
+            env=env,
+        ) as (conn, process):
+            await conn.initialize(
+                protocol_version=acp.PROTOCOL_VERSION,
+                client_info=acp.schema.Implementation(name="test", version="1.0"),
+            )
+
+            session = await conn.new_session(cwd=work_dir, mcp_servers=[])
+
+            await asyncio.wait_for(collector.started.wait(), timeout=30)
+
+            collector.task_sent = True
+            await conn.prompt(
+                prompt=[
+                    acp.resource_link_block(name="secret.txt", uri=secret_file.as_uri()),
+                    acp.text_block("Read the attached file."),
+                ],
+                session_id=session.session_id,
+            )
+
+            try:
+                await asyncio.wait_for(collector.task_complete.wait(), timeout=45)
+            except asyncio.TimeoutError:
+                pass
+
+    stderr = ""
+    if process.stderr is not None:
+        stderr = (await process.stderr.read()).decode()
+
+    print("\n--- All events ---")
+    for event in collector.all_events:
+        print(event)
+    print("--- End events ---")
+
+    assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
+    response_text = " ".join(e for e in collector.events_after_task if isinstance(e, str))
+    assert "RASPBERRY" in response_text, (
+        f"Expected agent to print file contents. Got: {collector.events_after_task}\nStderr: {stderr}"
     )
 
 

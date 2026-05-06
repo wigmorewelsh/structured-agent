@@ -13,6 +13,108 @@ use crate::cli::config::Config;
 
 const ACP_INTERNAL_ERROR: i32 = -32603;
 
+fn format_prompt(blocks: &[acp::ContentBlock]) -> String {
+    blocks
+        .iter()
+        .map(|block| match block {
+            acp::ContentBlock::Text(t) => t.text.clone(),
+            acp::ContentBlock::ResourceLink(r) => {
+                let path = r.uri.strip_prefix("file://").unwrap_or(&r.uri);
+                format!("[file: {}]", path)
+            }
+            acp::ContentBlock::Resource(e) => match &e.resource {
+                acp::EmbeddedResourceResource::TextResourceContents(t) => {
+                    let path = t.uri.strip_prefix("file://").unwrap_or(&t.uri);
+                    format!("[file: {}]\n{}", path, t.text)
+                }
+                acp::EmbeddedResourceResource::BlobResourceContents(b) => {
+                    let path = b.uri.strip_prefix("file://").unwrap_or(&b.uri);
+                    format!("[file: {}]", path)
+                }
+                _ => format!("{:?}", e),
+            },
+            other => format!("{:?}", other),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_block() {
+        let blocks = vec![acp::ContentBlock::Text(acp::TextContent::new(
+            "hello world",
+        ))];
+        assert_eq!(format_prompt(&blocks), "hello world");
+    }
+
+    #[test]
+    fn test_resource_link_strips_file_scheme() {
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "agent.sa",
+            "file:///home/user/project/agent.sa",
+        ))];
+        assert_eq!(
+            format_prompt(&blocks),
+            "[file: /home/user/project/agent.sa]"
+        );
+    }
+
+    #[test]
+    fn test_resource_link_without_file_scheme_is_unchanged() {
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "notes.txt",
+            "notes.txt",
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: notes.txt]");
+    }
+
+    #[test]
+    fn test_embedded_text_resource_strips_file_scheme() {
+        let resource = acp::EmbeddedResourceResource::TextResourceContents(
+            acp::TextResourceContents::new("RASPBERRY", "file:///tmp/secret.txt"),
+        );
+        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+            resource,
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: /tmp/secret.txt]\nRASPBERRY");
+    }
+
+    #[test]
+    fn test_embedded_blob_resource_strips_file_scheme() {
+        let resource = acp::EmbeddedResourceResource::BlobResourceContents(
+            acp::BlobResourceContents::new("abc123", "file:///tmp/image.png"),
+        );
+        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+            resource,
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: /tmp/image.png]");
+    }
+
+    #[test]
+    fn test_mixed_blocks_joined_with_newline() {
+        let blocks = vec![
+            acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+                "foo.txt",
+                "file:///path/to/foo.txt",
+            )),
+            acp::ContentBlock::Text(acp::TextContent::new("Read the attached file.")),
+        ];
+        assert_eq!(
+            format_prompt(&blocks),
+            "[file: /path/to/foo.txt]\nRead the attached file."
+        );
+    }
+
+    #[test]
+    fn test_empty_prompt() {
+        assert_eq!(format_prompt(&[]), "");
+    }
+}
+
 pub struct AcpServer {
     config: Arc<Config>,
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
@@ -188,7 +290,7 @@ impl acp::Agent for AcpServer {
 
     async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
         debug!("Prompt request for session: {}", args.session_id.0);
-        let prompt_content = format!("{:?}", args.prompt);
+        let prompt_content = format_prompt(&args.prompt);
         debug!("Prompt content: {}", prompt_content);
 
         if prompt_content.contains("/reload") {
