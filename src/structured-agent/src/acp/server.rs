@@ -18,7 +18,7 @@ pub struct AcpServer {
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     next_session_id: AtomicU64,
     agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
-    agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    agent_tasks: Arc<std::sync::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
 async fn send_available_commands(
@@ -62,7 +62,7 @@ impl AcpServer {
             session_update_tx,
             next_session_id: AtomicU64::new(0),
             agents: Arc::new(Mutex::new(HashMap::new())),
-            agent_tasks: Arc::new(Mutex::new(HashMap::new())),
+            agent_tasks: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -88,7 +88,7 @@ impl AcpServer {
 
         self.agent_tasks
             .lock()
-            .await
+            .unwrap()
             .insert(session_id.0.to_string(), handle);
     }
 
@@ -98,7 +98,7 @@ impl AcpServer {
         session_id: acp::SessionId,
         update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
         agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
-        agent_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+        agent_tasks: Arc<std::sync::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
         working_dir: Option<String>,
     ) {
         let result: Result<(), String> = async {
@@ -126,21 +126,18 @@ impl AcpServer {
             error!("Failed to create/start session for {}: {}", session_id.0, e);
         }
 
-        agent_tasks.lock().await.remove(&session_id.0.to_string());
+        agent_tasks
+            .lock()
+            .unwrap()
+            .remove(&session_id.0.to_string());
     }
 }
 
 impl Drop for AcpServer {
     fn drop(&mut self) {
-        let tasks = Arc::clone(&self.agent_tasks);
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut task_map = tasks.lock().await;
-                for (_id, handle) in task_map.drain() {
-                    handle.abort();
-                }
-            })
-        });
+        for (_id, handle) in self.agent_tasks.lock().unwrap().drain() {
+            handle.abort();
+        }
     }
 }
 

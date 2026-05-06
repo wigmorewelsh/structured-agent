@@ -97,7 +97,7 @@ fn main(): () {
             "--with-default-functions",
             "--with-acp-functions",
             cwd=project_root,
-            transport_kwargs={"stderr": None},
+            transport_kwargs={"stderr": subprocess.PIPE},
             env={"RUST_LOG": "debug"},
         ) as (conn, process):
             await conn.initialize(
@@ -122,6 +122,9 @@ fn main(): () {
 
             assert any("Event 2" in e for e in collector.events_after_prompt), \
                 f"Event 2 should arrive AFTER prompt. Got: {collector.events_after_prompt}"
+
+        stderr = (await process.stderr.read()).decode()
+        assert "panicked" not in stderr, f"Process panicked on shutdown:\n{stderr}"
 
     finally:
         Path(temp_file).unlink()
