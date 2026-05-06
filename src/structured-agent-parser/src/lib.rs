@@ -39,6 +39,18 @@ where
     string(s).skip(skip_spaces())
 }
 
+fn lex_keyword<Input>(s: &'static str) -> impl Parser<Input, Output = &'static str>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    string(s)
+        .skip(not_followed_by(satisfy(|c: char| {
+            c.is_alphanumeric() || c == '_'
+        })))
+        .skip(skip_spaces())
+}
+
 fn comment_line<Input>() -> impl Parser<Input, Output = String>
 where
     Input: Stream<Token = char, Position = usize>,
@@ -152,34 +164,25 @@ where
 {
     (
         position(),
-        skip_spaces_and_comments().with((
-            optional(attempt(parse_module_header()).skip(skip_spaces_and_comments())),
-            many(
-                choice((
-                    attempt(parse_inline_module()),
-                    parse_use(),
-                    parse_sig_definition(),
-                    parse_trait_impl(),
-                    parse_trait(),
-                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
-                    parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
-                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
-                ))
-                .skip(skip_spaces_and_comments()),
-            ),
+        skip_spaces_and_comments().with(many(
+            choice((
+                parse_inline_module(),
+                parse_use(),
+                parse_sig_definition(),
+                parse_trait_impl(),
+                parse_trait(),
+                parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
+                parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+            ))
+            .skip(skip_spaces_and_comments()),
         )),
         position(),
     )
-        .map(move |(start, header_and_defs, end)| {
-            let (header, mut definitions): (Option<Definition>, Vec<Definition>) = header_and_defs;
-            if let Some(h) = header {
-                definitions.insert(0, h);
-            }
-            Module {
-                definitions,
-                span: Span::new(start, end),
-                file_id,
-            }
+        .map(move |(start, definitions, end)| Module {
+            definitions,
+            span: Span::new(start, end),
+            file_id,
         })
 }
 
@@ -188,7 +191,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("mod"))).then(|(start, _)| {
+    (position(), attempt(lex_keyword("mod"))).then(|(start, _)| {
         (identifier().skip(not_followed_by(char('{'))), position()).then(move |(name, end)| {
             not_followed_by(skip_spaces_and_comments().with(char('{'))).map(move |_| {
                 Definition::ModuleHeader {
@@ -205,7 +208,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("mod")), identifier()).then(|(start, _, name)| {
+    (position(), attempt(lex_keyword("mod")), identifier()).then(|(start, _, name)| {
         between(
             lex_char('{').skip(skip_spaces_and_comments()),
             lex_char('}'),
@@ -236,7 +239,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    attempt((position(), lex_string("sig"))).then(|(start, _)| {
+    attempt((position(), lex_keyword("sig"))).then(|(start, _)| {
         (
             identifier(),
             between(
@@ -267,7 +270,7 @@ where
 {
     (
         position(),
-        lex_string("fn"),
+        lex_keyword("fn"),
         identifier(),
         optional(attempt(between(
             lex_char('<'),
@@ -310,12 +313,12 @@ where
 {
     attempt((
         position(),
-        optional(attempt(lex_string("pub"))),
-        lex_string("extern"),
+        optional(attempt(lex_keyword("pub"))),
+        lex_keyword("extern"),
     ))
     .then(|(start, pub_kw, _)| {
         (
-            lex_string("fn"),
+            lex_keyword("fn"),
             identifier(),
             optional(attempt(between(
                 lex_char('<'),
@@ -544,15 +547,15 @@ where
 {
     attempt((
         position(),
-        optional(attempt(lex_string("pub"))),
-        lex_string("use"),
+        optional(attempt(lex_keyword("pub"))),
+        lex_keyword("use"),
     ))
     .then(|(start, pub_kw, _): (usize, Option<&str>, &str)| {
         (
             optional(attempt(string("::").skip(skip_spaces()))),
             parse_ast_path(),
             optional(attempt(
-                (skip_spaces(), lex_string("as"), identifier_raw()).map(|(_, _, a)| a),
+                (skip_spaces(), lex_keyword("as"), identifier_raw()).map(|(_, _, a)| a),
             )),
             position(),
         )
@@ -623,7 +626,7 @@ where
 {
     (
         position(),
-        lex_string("struct"),
+        lex_keyword("struct"),
         identifier(),
         optional(attempt(between(
             lex_char('<'),
@@ -720,7 +723,7 @@ where
 {
     (
         position(),
-        attempt(lex_string("let")),
+        attempt(lex_keyword("let")),
         identifier(),
         lex_char('='),
         parse_expression(),
@@ -837,11 +840,11 @@ combine::parser! {
     fn parse_if_else_expression[Input]()(Input) -> Expression
     where [Input: Stream<Token = char, Position = usize>]
     {
-        (position(), attempt(lex_string("if"))).then(|(start, _)| {
+        (position(), attempt(lex_keyword("if"))).then(|(start, _)| {
         (
             parse_simple_expression(),
             between(lex_char('{'), lex_char('}'), parse_expression()),
-            lex_string("else"),
+            lex_keyword("else"),
             between(lex_char('{'), lex_char('}'), parse_expression()),
             position(),
         )
@@ -936,7 +939,7 @@ where
 {
     (
         position(),
-        attempt(lex_string("spawn")),
+        attempt(lex_keyword("spawn")),
         between(lex_char('<'), lex_char('>'), parse_type()),
         between(lex_char('('), char(')'), parse_argument()),
         position(),
@@ -1173,7 +1176,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("select"))).then(|(start, _)| {
+    (position(), attempt(lex_keyword("select"))).then(|(start, _)| {
         (
             between(
                 lex_char('{'),
@@ -1203,7 +1206,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("select"))).then(|(start, _)| {
+    (position(), attempt(lex_keyword("select"))).then(|(start, _)| {
         (
             between(
                 lex_char('{'),
@@ -1244,7 +1247,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("if"))).then(|(start, _)| {
+    (position(), attempt(lex_keyword("if"))).then(|(start, _)| {
         (
             parse_simple_expression(),
             between(
@@ -1252,7 +1255,7 @@ where
                 lex_char('}'),
                 many(statement_with_comments()),
             ),
-            optional(lex_string("else").skip(skip_spaces()).with(between(
+            optional(lex_keyword("else").with(between(
                 lex_char('{'),
                 lex_char('}'),
                 many(statement_with_comments()),
@@ -1275,7 +1278,7 @@ where
 {
     (
         position(),
-        attempt((lex_string("for"), identifier(), lex_string("in"))),
+        attempt((lex_keyword("for"), identifier(), lex_keyword("in"))),
     )
         .then(|(start, (_, variable, _))| {
             (
@@ -1301,7 +1304,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), attempt(lex_string("while"))).then(|(start, _)| {
+    (position(), attempt(lex_keyword("while"))).then(|(start, _)| {
         (
             parse_simple_expression(),
             between(
@@ -1324,7 +1327,7 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    attempt(lex_string("return"))
+    attempt(lex_keyword("return"))
         .with(parse_expression())
         .map(Statement::Return)
 }
@@ -1333,7 +1336,7 @@ combine::parser! {
     fn parse_yield_statement[Input]()(Input) -> Statement
     where [Input: Stream<Token = char, Position = usize>]
     {
-        (position(), attempt(lex_string("yield")), position())
+        (position(), attempt(lex_keyword("yield")), position())
             .map(|(start, _, end)| Statement::Yield { span: Span::new(start, end) })
     }
 }
