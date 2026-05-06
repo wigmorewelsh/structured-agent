@@ -565,6 +565,12 @@ impl VM {
             )
             .await?;
         if let Some(t) = thinking {
+            state
+                .context
+                .agent_handle()
+                .publish(AgentMessageContent::Thinking {
+                    content: t.content.clone(),
+                });
             state.context.add_thinking_event(t);
         }
         Self::write_slot(&mut state, dest, ExpressionResult::new(value));
@@ -601,6 +607,12 @@ impl VM {
             )
             .await?;
         if let Some(t) = thinking {
+            state
+                .context
+                .agent_handle()
+                .publish(AgentMessageContent::Thinking {
+                    content: t.content.clone(),
+                });
             state.context.add_thinking_event(t);
         }
         let selected_index = value
@@ -659,6 +671,12 @@ impl VM {
             )
             .await?;
         if let Some(t) = thinking {
+            state
+                .context
+                .agent_handle()
+                .publish(AgentMessageContent::Thinking {
+                    content: t.content.clone(),
+                });
             state.context.add_thinking_event(t);
         }
         state
@@ -1259,5 +1277,98 @@ mod tests {
         };
         let outcome2 = vm.resume_outcome(state).await.unwrap();
         assert!(matches!(outcome2, VMOutcome::Complete(_, _)));
+    }
+
+    struct ThinkingEngine;
+
+    #[async_trait::async_trait]
+    impl structured_agent_interpreter_runtime::LanguageEngine for ThinkingEngine {
+        async fn request(
+            &self,
+            _context: &structured_agent_interpreter_runtime::Context,
+            request: &dyn structured_agent_interpreter_runtime::Event,
+        ) -> Result<
+            (
+                ExpressionValue,
+                Option<structured_agent_interpreter_runtime::ThinkingEvent>,
+            ),
+            String,
+        > {
+            use structured_agent_interpreter_runtime::ThinkingEvent;
+            let return_type = request.return_type();
+            let value = if return_type.is_boolean() {
+                ExpressionValue::boolean(true)
+            } else {
+                ExpressionValue::string("result".to_string())
+            };
+            let thinking = ThinkingEvent {
+                content: "some thoughts".to_string(),
+                thought_signature: None,
+            };
+            Ok((value, Some(thinking)))
+        }
+    }
+
+    struct ThinkingEngineRuntime;
+
+    impl RuntimeService for ThinkingEngineRuntime {
+        fn get_native_function(&self, _name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+        fn get_bytecode_ref(&self, _name: &DefinitionPath) -> Option<BytecodeRef> {
+            None
+        }
+        fn engine(&self) -> &dyn structured_agent_interpreter_runtime::LanguageEngine {
+            &ThinkingEngine
+        }
+        fn type_to_arrow_datatype(
+            &self,
+            _ty: &structured_agent_runtime::Type,
+        ) -> arrow::datatypes::DataType {
+            arrow::datatypes::DataType::Null
+        }
+        fn get_struct(
+            &self,
+            _type_name: &DefinitionPath,
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+        fn get_struct_with_args(
+            &self,
+            _type_name: &DefinitionPath,
+            _args: &[structured_agent_runtime::Type],
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_publishes_thinking_event_when_engine_returns_thinking() {
+        use structured_agent_runtime::{AgentHandle, AgentMessageContent};
+        let handle = AgentHandle::detached();
+        let mut subscriber = handle.subscribe();
+        let runtime = Arc::new(ThinkingEngineRuntime);
+        let context = structured_agent_interpreter_runtime::Context::with_runtime_and_handle(
+            runtime.clone(),
+            handle,
+        );
+
+        let instructions = vec![
+            Instruction::LlmGenerate {
+                dest: Slot(0),
+                return_type: Type::string(),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(runtime);
+        let frame = vec![None];
+        vm.execute(&instructions, context, frame).await.unwrap();
+
+        let msgs: Vec<_> = std::iter::from_fn(|| subscriber.try_recv().ok()).collect();
+        assert!(
+            msgs.iter()
+                .any(|m| matches!(m.content, AgentMessageContent::Thinking { .. })),
+            "expected a Thinking event to be published"
+        );
     }
 }

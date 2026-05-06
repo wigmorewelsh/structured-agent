@@ -6,6 +6,7 @@ use crate::runtime::{
 use agent_client_protocol as acp;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tracing::{debug, error, warn};
 
@@ -175,6 +176,9 @@ impl AcpSession {
                         )
                         .await?;
                     }
+                    AgentMessageContent::Thinking { content } => {
+                        Self::handle_thinking(content, &session_id, &update_tx).await?;
+                    }
                 },
                 Err(broadcast::error::RecvError::Closed) => return Ok(()),
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -277,6 +281,39 @@ impl AcpSession {
                     .status(acp::ToolCallStatus::Completed)
                     .title(tool_name)
                     .content(content),
+            )),
+            session_id,
+            update_tx,
+        )
+        .await
+    }
+
+    async fn handle_thinking(
+        content: String,
+        session_id: &acp::SessionId,
+        update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Result<(), ()> {
+        static THINKING_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let call_id = THINKING_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+        Self::send_notification(
+            acp::SessionUpdate::ToolCall(
+                acp::ToolCall::new(call_id.clone(), "thinking")
+                    .status(acp::ToolCallStatus::InProgress),
+            ),
+            session_id,
+            update_tx,
+        )
+        .await?;
+        let thinking_content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
+            acp::TextContent::new(content),
+        ))];
+        Self::send_notification(
+            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                call_id,
+                acp::ToolCallUpdateFields::new()
+                    .status(acp::ToolCallStatus::Completed)
+                    .title("thinking")
+                    .content(thinking_content),
             )),
             session_id,
             update_tx,

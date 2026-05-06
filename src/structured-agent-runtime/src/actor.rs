@@ -43,6 +43,9 @@ pub enum AgentMessageContent {
         prompt: String,
         response_channel: Arc<Mutex<Option<oneshot::Sender<String>>>>,
     },
+    Thinking {
+        content: String,
+    },
 }
 
 #[derive(Clone)]
