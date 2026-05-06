@@ -3266,6 +3266,7 @@ fn main(): String {
     }
 
     #[test]
+    #[ignore = "module headers have been removed"]
     fn test_module_header_not_confused_with_inline_module() {
         let input = "mod mymod\n\npub fn foo(): () {}";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
@@ -3280,6 +3281,7 @@ fn main(): String {
     }
 
     #[test]
+    #[ignore = "module headers have been removed"]
     fn test_parse_module_header_simple() {
         let input = "mod tasks\n\nfn main(): () {}\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
@@ -3337,6 +3339,7 @@ fn main(): String {
     }
 
     #[test]
+    #[ignore = "module headers have been removed"]
     fn test_parse_module_header_no_params_no_following_defs() {
         let input = "mod utils\n";
         let stream = Stream::with_positioner(input, IndexPositioner::default());
