@@ -197,7 +197,7 @@ impl Compiler {
             }
             errors
                 .iter()
-                .map(|e| format!("Type error: {}", e))
+                .map(|e| tc_reporter.format_type_error(e))
                 .collect::<Vec<_>>()
                 .join("\n")
         })?;
@@ -422,12 +422,11 @@ impl CodespanParser {
                 let error_str = format!("{}", e);
                 error!("Parse error at {}: {}", e.position, error_str);
                 let clean = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
-                if let Err(io_err) =
-                    reporter.emit_parse_error(file_id, &clean, Some((e.position, e.position + 1)))
-                {
+                let span = Some((e.position, e.position + 1));
+                if let Err(io_err) = reporter.emit_parse_error(file_id, &clean, span) {
                     eprintln!("Failed to emit parse error: {}", io_err);
                 }
-                "Parse error".to_string()
+                reporter.format_parse_error(file_id, &clean, span)
             })
     }
 }

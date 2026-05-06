@@ -54,7 +54,9 @@ fn main(): () {
             result.is_err(),
             "Program with type error should fail to compile"
         );
-        assert!(result.unwrap_err().contains("Type error"));
+        let err = result.unwrap_err();
+        assert!(err.contains("mismatched argument type"));
+        assert!(err.contains("in function `greet`, parameter `name`"));
     }
 
     #[test]
@@ -78,8 +80,8 @@ fn get_number(): String {
             "Return type mismatch should fail to compile"
         );
         let err = result.unwrap_err();
-        assert!(err.contains("Type error"));
-        assert!(err.contains("return type mismatch"));
+        assert!(err.contains("mismatched return type"));
+        assert!(err.contains("in function `get_number`"));
     }
 
     #[test]
@@ -156,7 +158,7 @@ fn main(): String {
             "Select statement with mismatched types should fail"
         );
         let err = result.unwrap_err();
-        assert!(err.contains("Type error"));
+        assert!(err.contains("select branches have incompatible types"));
     }
 
     #[test]
@@ -205,7 +207,8 @@ fn main(): () {
             "If/else else-branch type error should fail compilation"
         );
         let err = result.unwrap_err();
-        assert!(err.contains("Type error"));
+        assert!(err.contains("type mismatch"));
+        assert!(err.contains("expected `Boolean`, found `String`"));
     }
 
     #[test]
@@ -274,7 +277,8 @@ fn main(): () {
             result.is_err(),
             "Mismatched types on same type param should fail"
         );
-        assert!(result.unwrap_err().contains("Type error"));
+        let err = result.unwrap_err();
+        assert!(err.contains("type mismatch for field `second` of struct `Pair`"));
     }
 
     #[test]
@@ -427,5 +431,83 @@ fn main(): Int {
             .unwrap();
 
         assert_eq!(runtime_result.as_integer().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_private_module_function_call_gives_clear_error() {
+        let code = r#"
+mod greet {
+    fn hello(): String {
+        "hello"
+    }
+}
+use greet::hello
+fn main(): () {
+    hello()!
+}
+"#;
+
+        let result = compile(code);
+        assert!(
+            result.is_err(),
+            "Calling a private module function should fail to compile"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("private"),
+            "Error should mention 'private', got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_main_is_found_with_inline_modules() {
+        let code = r#"
+mod greet {
+    pub fn hello(): String {
+        return "hello"
+    }
+}
+use greet::hello
+fn main(): String {
+    return hello()
+}
+"#;
+
+        let result = compile(code);
+        assert!(
+            result.is_ok(),
+            "Program with inline modules should compile: {:?}",
+            result.err()
+        );
+        let compiled = result.unwrap();
+        assert!(
+            compiled.main_function_name().is_some(),
+            "main function should be discoverable when inline modules are present"
+        );
+    }
+
+    #[test]
+    fn test_plan_impl_sample_main_is_found() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/samples/plan-impl.sa");
+        let result = Compiler::new()
+            .with_module(std::sync::Arc::new(structured_agent_stdlib::io::IoModule))
+            .with_module(std::sync::Arc::new(
+                structured_agent_stdlib::messaging::MessagingModule,
+            ))
+            .with_module(std::sync::Arc::new(structured_agent_stdlib::fs::FsModule))
+            .with_module(std::sync::Arc::new(
+                structured_agent_stdlib::iterator::IteratorModule,
+            ))
+            .compile_file(path);
+        assert!(
+            result.is_ok(),
+            "plan-impl.sa should compile: {:?}",
+            result.err()
+        );
+        assert!(
+            result.unwrap().main_function_name().is_some(),
+            "main function should be discoverable in plan-impl.sa"
+        );
     }
 }

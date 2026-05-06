@@ -1,293 +1,350 @@
 use messaging::receive
 use io::print
 
-## Read the full contents of a file at the given path
-extern fn read_file(path: String): String
-## Write content to a file, overwriting any existing content
-extern fn write_file(path: String, content: String): String
-## List the files and directories at the given path
-extern fn list_directory(path: String): String
-## Search file contents using a regular expression
-extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
-## Execute a shell command and return its output
-extern fn execute_command(command: String): String
+use knowledge::load_relevant_knowledge
+use knowledge::store_stage_knowledge
+use planning::planner_agent
+use tdd::impl_agent
+use discuss::discuss
+use commit::commit_with_single_message
 
-## Ask the supervising human for input when blocked or uncertain
-fn ask_for_supervisor_help(context: String): String {
-    print(context)
-    let response = receive()
-    return response
+mod extern_fns {
+    ## Read the full contents of a file at the given path
+    pub extern fn read_file(path: String): String
+    ## Write content to a file, overwriting any existing content
+    pub extern fn write_file(path: String, content: String): String
+    ## List the files and directories at the given path
+    pub extern fn list_directory(path: String): String
+    ## Search file contents using a regular expression
+    pub extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
+    ## Execute a shell command and return its output
+    pub extern fn execute_command(command: String): String
 }
 
-fn project_context(): String {
-    let readme = read_file("README.md")
-    let agent_instructions = read_file(".github/copilot-instructions.md")
-    let claude_instructions = read_file("CLAUDE.md")
-    let index = read_file(".structured-agent/index.md")
-    readme!
-    agent_instructions!
-    claude_instructions!
-    index!
-    '''
-    Based on the above, describe the project: what it does, what it is for, the major components, and the tech stack.
-    '''
-}
+mod supervisor {
+    use ::io::print
+    use ::messaging::receive
 
-# --- Knowledge store ---
-
-fn select_relevant_knowledge_files(context: String): List<String> {
-    let index = read_file(".structured-agent/index.md")
-    index!
-    context!
-    '''
-    From the index, select the knowledge files most relevant to the context.
-    Return only file paths, one per line.
-    '''
-}
-
-fn load_relevant_knowledge(context: String): () {
-    let files = select_relevant_knowledge_files(context)
-    for file in files {
-        let content = read_file(file)
-        content!
+    ## Ask the supervising human for input when blocked or uncertain
+    pub fn ask_for_supervisor_help(context: String): String {
+        print(context)
+        let response = receive()
+        return response
     }
 }
 
-fn merge_into_file(existing: String, new_info: String): String {
-    existing!
-    new_info!
-    '''
-    Merge the new information into the existing content.
-    Resolve any contradictions explicitly, noting why one was preferred.
-    Summarize if the result would exceed 500 words.
-    '''
+mod context {
+    use extern_fns::read_file
+
+    pub fn project_context(): String {
+        let readme = read_file("README.md")
+        let agent_instructions = read_file(".github/copilot-instructions.md")
+        let claude_instructions = read_file("CLAUDE.md")
+        let index = read_file(".structured-agent/index.md")
+        readme!
+        agent_instructions!
+        claude_instructions!
+        index!
+        '''
+        Based on the above, describe the project: what it does, what it is for, the major components, and the tech stack.
+        '''!
+    }
 }
 
-fn update_knowledge_file(path: String, new_info: String): () {
-    let existing = read_file(path)
-    let merged = merge_into_file(existing, new_info)
-    write_file(path, merged)
-}
+mod knowledge {
+    use extern_fns::read_file
+    use extern_fns::write_file
 
-fn update_knowledge_index(summary: String): () {
-    let existing = read_file(".structured-agent/index.md")
-    existing!
-    summary!
-    let updated = '''
-    Update the index to reflect any new or changed knowledge files.
-    Each entry should list the file path and a one-line description of its contents.
-    '''
-    write_file(".structured-agent/index.md", updated)
-}
-
-fn store_feature_knowledge(feature: String, summary: String): () {
-    update_knowledge_file(".structured-agent/features/{feature}.md", summary)
-}
-
-fn extract_cross_cutting_knowledge(stage_summary: String): () {
-    stage_summary!
-    '''
-    From this summary identify any new conventions, architecture decisions, or failed approaches.
-    Describe each briefly, one per category.
-    '''!
-    update_knowledge_file(".structured-agent/conventions.md", stage_summary)
-    update_knowledge_file(".structured-agent/decisions.md", stage_summary)
-    update_knowledge_file(".structured-agent/failed-approaches.md", stage_summary)
-}
-
-fn store_stage_knowledge(feature: String, stage_summary: String): () {
-    extract_cross_cutting_knowledge(stage_summary)
-    store_feature_knowledge(feature, stage_summary)
-    update_knowledge_index(stage_summary)
-}
-
-# --- Read-only planning agent loop ---
-
-fn is_plan_ready(): Boolean {
-    "Is the plan precise and complete enough to hand to an implementer, with specific file paths, type names, and test names?"!
-}
-
-fn plan_is_blocked(): Boolean {
-    "Is there an ambiguity or blocker that cannot be resolved by reading the codebase?"!
-}
-
-fn summarize_plan(): String {
-    '''
-    Produce the final plan: an ordered list of file changes and test cases.
-    Include file paths, function or type names, and test names.
-    '''
-}
-
-fn planner_loop(): String {
-    let action = select {
-        read_file(_),
-        list_directory(_),
-        grep(_, _, _, _, _)
+    fn select_relevant_knowledge_files(context: String): List<String> {
+        let index = read_file(".structured-agent/index.md")
+        index!
+        context!
+        '''
+        From the index, select the knowledge files most relevant to the context.
+        Return only file paths, one per line.
+        '''
     }
 
-    action!
-
-    if plan_is_blocked() {
-        let guidance = ask_for_supervisor_help("Planning is blocked, supervisor input needed:")
-        guidance!
+    pub fn load_relevant_knowledge(context: String): () {
+        let files = select_relevant_knowledge_files(context)
+        for file in files.iter() {
+            let content = read_file(file)
+            content!
+        }
     }
 
-    if is_plan_ready() {
-        return summarize_plan()
-    } else {
+    fn merge_into_file(existing: String, new_info: String): String {
+        existing!
+        new_info!
+        '''
+        Merge the new information into the existing content.
+        Resolve any contradictions explicitly, noting why one was preferred.
+        Summarize if the result would exceed 500 words.
+        '''
+    }
+
+    fn update_knowledge_file(path: String, new_info: String): () {
+        let existing = read_file(path)
+        let merged = merge_into_file(existing, new_info)
+        write_file(path, merged)
+    }
+
+    fn update_knowledge_index(summary: String): () {
+        let existing = read_file(".structured-agent/index.md")
+        existing!
+        summary!
+        let updated = '''
+        Update the index to reflect any new or changed knowledge files.
+        Each entry should list the file path and a one-line description of its contents.
+        '''
+        write_file(".structured-agent/index.md", updated)
+    }
+
+    fn store_feature_knowledge(feature: String, summary: String): () {
+        update_knowledge_file(".structured-agent/features/${feature}.md", summary)
+    }
+
+    fn extract_cross_cutting_knowledge(stage_summary: String): () {
+        stage_summary!
+        '''
+        From this summary identify any new conventions, architecture decisions, or failed approaches.
+        Describe each briefly, one per category.
+        '''!
+        update_knowledge_file(".structured-agent/conventions.md", stage_summary)
+        update_knowledge_file(".structured-agent/decisions.md", stage_summary)
+        update_knowledge_file(".structured-agent/failed-approaches.md", stage_summary)
+    }
+
+    pub fn store_stage_knowledge(feature: String, stage_summary: String): () {
+        extract_cross_cutting_knowledge(stage_summary)
+        store_feature_knowledge(feature, stage_summary)
+        update_knowledge_index(stage_summary)
+    }
+}
+
+mod planning {
+    use extern_fns::read_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use knowledge::load_relevant_knowledge
+    use supervisor::ask_for_supervisor_help
+
+    fn is_plan_ready(): Boolean {
+        "Is the plan precise and complete enough to hand to an implementer, with specific file paths, type names, and test names?"!
+    }
+
+    fn plan_is_blocked(): Boolean {
+        "Is there an ambiguity or blocker that cannot be resolved by reading the codebase?"!
+    }
+
+    fn summarize_plan(): String {
+        '''
+        Produce the final plan: an ordered list of file changes and test cases.
+        Include file paths, function or type names, and test names.
+        '''
+    }
+
+    fn planner_loop(): String {
+        let action = select {
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _)
+        }
+
+        action!
+
+        if plan_is_blocked() {
+            let guidance = ask_for_supervisor_help("Planning is blocked, supervisor input needed:")
+            guidance!
+        }
+
+        if is_plan_ready() {
+            return summarize_plan()
+        } else {
+            return planner_loop()
+        }
+    }
+
+    pub fn planner_agent(stage: String): String {
+        load_relevant_knowledge(stage)
+        '''
+        You are planning implementation work. Do NOT implement anything.
+        Explore the codebase then produce a precise, ordered plan.
+
+        ## Stage
+        ${stage}
+        '''!
+
         return planner_loop()
     }
 }
 
-fn planner_agent(stage: String): String {
-    load_relevant_knowledge(stage)
-    '''
-    You are planning implementation work. Do NOT implement anything.
-    Explore the codebase then produce a precise, ordered plan.
+mod tdd {
+    use extern_fns::read_file
+    use extern_fns::write_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use extern_fns::execute_command
+    use supervisor::ask_for_supervisor_help
 
-    ## Stage
-    {stage}
-    '''!
-
-    return planner_loop()
-}
-
-# --- TDD impl agent loop ---
-
-fn is_all_tests_passing(): Boolean {
-    "Are all tests currently passing?"!
-}
-
-fn is_impl_stuck(): Boolean {
-    "Have you been unable to make progress after multiple attempts?"!
-}
-
-fn is_refactor_done(): Boolean {
-    "Is the code clean and are all tests still passing?"!
-}
-
-fn summarize_changes(): String {
-    "List the files changed and a one-line description of each change."!
-}
-
-fn write_failing_test(test_description: String): String {
-    '''
-    Write a single failing test for: {test_description}
-    Do not write any implementation code.
-    Consider the right API, extending existing APIs where appropriate.
-    '''!
-    test_description!
-}
-
-fn make_test_pass_loop(test_name: String): String {
-    let action = select {
-        read_file(_),
-        list_directory(_),
-        grep(_, _, _, _, _),
-        write_file(_, _),
-        execute_command(_)
+    fn is_all_tests_passing(): Boolean {
+        "Are all tests currently passing?"!
     }
 
-    action!
-
-    if is_impl_stuck() {
-        let guidance = ask_for_supervisor_help("Cannot make {test_name} pass, supervisor input needed:")
-        guidance!
+    fn is_impl_stuck(): Boolean {
+        "Have you been unable to make progress after multiple attempts?"!
     }
 
-    if is_all_tests_passing() {
-        return summarize_changes()
-    } else {
+    fn is_refactor_done(): Boolean {
+        "Is the code clean and are all tests still passing?"!
+    }
+
+    fn summarize_changes(): String {
+        "List the files changed and a one-line description of each change."!
+    }
+
+    fn write_failing_test(test_description: String): String {
+        '''
+        Write a single failing test for: ${test_description}
+        Do not write any implementation code.
+        Consider the right API, extending existing APIs where appropriate.
+        '''!
+        test_description!
+    }
+
+    fn make_test_pass_loop(test_name: String): String {
+        let action = select {
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _),
+            write_file(_, _),
+            execute_command(_)
+        }
+
+        action!
+
+        if is_impl_stuck() {
+            let guidance = ask_for_supervisor_help("Cannot make ${test_name} pass, supervisor input needed:")
+            guidance!
+        }
+
+        if is_all_tests_passing() {
+            return summarize_changes()
+        } else {
+            return make_test_pass_loop(test_name)
+        }
+    }
+
+    fn make_test_pass(test_name: String): String {
+        '''
+        Write only enough implementation to make ${test_name} pass.
+        Do not over-engineer. Run the test after each change.
+        '''!
         return make_test_pass_loop(test_name)
     }
-}
 
-fn make_test_pass(test_name: String): String {
-    '''
-    Write only enough implementation to make {test_name} pass.
-    Do not over-engineer. Run the test after each change.
-    '''!
-    return make_test_pass_loop(test_name)
-}
+    fn refactor_loop(): () {
+        let action = select {
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _),
+            write_file(_, _),
+            execute_command(_)
+        }
 
-fn refactor_loop(): () {
-    let action = select {
-        read_file(_),
-        list_directory(_),
-        grep(_, _, _, _, _),
-        write_file(_, _),
-        execute_command(_)
+        action!
+
+        if is_refactor_done() {
+            return ()
+        } else {
+            return refactor_loop()
+        }
     }
 
-    action!
+    fn refactor(changes: String): () {
+        '''
+        Refactor the code changed in: ${changes}
+        Remove duplication, improve names. Do not change behaviour. Run tests after each change.
+        '''!
+        refactor_loop()
+    }
 
-    if is_refactor_done() {
-        return
-    } else {
-        return refactor_loop()
+    fn implement_test(test: String): () {
+        let test_name = write_failing_test(test)
+        let changes = make_test_pass(test_name)
+        refactor(changes)
+    }
+
+    fn create_test_list(plan: String): List<String> {
+        '''
+        From the following plan, produce a minimal ordered list of test cases to implement.
+        Each entry should be a single sentence describing one test.
+
+        ${plan}
+        '''
+    }
+
+    fn summarize_stage(plan: String): String {
+        '''
+        Summarize what was implemented, what tests were added, and what files changed.
+        Note anything that deviated from the plan and any patterns or pitfalls discovered.
+        '''!
+        plan!
+    }
+
+    pub fn impl_agent(plan: String): String {
+        plan!
+
+        let test_list = create_test_list(plan)
+
+        for test in test_list.iter() {
+            implement_test(test)
+        }
+
+        return summarize_stage(plan)
     }
 }
 
-fn refactor(changes: String): () {
-    '''
-    Refactor the code changed in: {changes}
-    Remove duplication, improve names. Do not change behaviour. Run tests after each change.
-    '''!
-    refactor_loop()
-}
+mod commit {
+    use extern_fns::execute_command
 
-fn implement_test(test: String): () {
-    let test_name = write_failing_test(test)
-    let changes = make_test_pass(test_name)
-    refactor(changes)
-}
-
-fn create_test_list(plan: String): List<String> {
-    '''
-    From the following plan, produce a minimal ordered list of test cases to implement.
-    Each entry should be a single sentence describing one test.
-
-    {plan}
-    '''
-}
-
-fn summarize_stage(plan: String): String {
-    '''
-    Summarize what was implemented, what tests were added, and what files changed.
-    Note anything that deviated from the plan and any patterns or pitfalls discovered.
-    '''!
-    plan!
-}
-
-fn impl_agent(plan: String): String {
-    plan!
-
-    let test_list = create_test_list(plan)
-
-    for test in test_list {
-        implement_test(test)
+    fn generate_commit_message(result: String): String {
+        "Write a single-line git commit message summarising: ${result}"
     }
 
-    return summarize_stage(plan)
+    pub fn commit_with_single_message(result: String): () {
+        let message = generate_commit_message(result)
+        execute_command("git add -A")
+        execute_command("git commit -m \"${message}\"")
+    }
 }
 
-# --- Commit ---
+mod discuss_mod {
+    use supervisor::ask_for_supervisor_help
 
-fn generate_commit_message(result: String): String {
-    "Write a single-line git commit message summarising: {result}"
+    fn is_feature_understood(): Boolean {
+        "Do you have enough context to write a high-level plan for this feature?"!
+    }
+
+    fn summarize_feature(): String {
+        "Summarize the feature requirements clearly and concisely."!
+    }
+
+    pub fn discuss(): String {
+        let response = ask_for_supervisor_help("What feature would you like to implement?")
+        response!
+
+        if is_feature_understood() {
+            return summarize_feature()
+        } else {
+            return discuss()
+        }
+    }
 }
-
-fn commit_with_single_message(result: String): () {
-    let message = generate_commit_message(result)
-    execute_command("git add -A")
-    execute_command("git commit -m \"{message}\"")
-}
-
-# --- Top-level process ---
 
 fn high_level_plan(feature: String): List<String> {
     '''
-    Write a high-level plan for implementing: {feature}
+    Write a high-level plan for implementing: ${feature}
     Split into independently deliverable stages that can each be built and tested on their own.
     '''
 }
@@ -295,7 +352,7 @@ fn high_level_plan(feature: String): List<String> {
 fn process(feature: String): () {
     let stages = high_level_plan(feature)
 
-    for stage in stages {
+    for stage in stages.iter() {
         let stage_plan = planner_agent(stage)
         let result = impl_agent(stage_plan)
         store_stage_knowledge(feature, result)
@@ -303,26 +360,8 @@ fn process(feature: String): () {
     }
 }
 
-# --- Discussion phase ---
-
-fn is_feature_understood(): Boolean {
-    "Do you have enough context to write a high-level plan for this feature?"!
-}
-
-fn summarize_feature(): String {
-    "Summarize the feature requirements clearly and concisely."!
-}
-
-fn discuss(): String {
-    let response = ask_for_supervisor_help("What feature would you like to implement?")
-    response!
-
-    if is_feature_understood() {
-        return summarize_feature()
-    } else {
-        return discuss()
-    }
-}
+use context::project_context
+use discuss_mod::discuss as discuss
 
 fn main(): () {
     '''

@@ -23,6 +23,10 @@ impl DiagnosticReporter {
         self.emit_diagnostic(&diagnostic)
     }
 
+    pub fn format_type_error(&self, error: &TypeError) -> String {
+        self.format_diagnostic(&error.to_diagnostic())
+    }
+
     pub fn emit_parse_error(
         &self,
         file_id: FileId,

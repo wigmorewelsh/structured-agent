@@ -1,0 +1,445 @@
+use messaging::receive
+use io::print
+
+use knowledge::load_relevant_knowledge
+use knowledge::store_stage_knowledge
+use supervisor::ask_for_supervisor_help
+use reproduce::reproduction_test
+use observe::observe
+use hypothesise::form_hypothesis
+use verify::verify_hypothesis
+use fix::fix
+use commit::commit_with_single_message
+use discuss::discuss
+
+mod extern_fns {
+    ## Read the full contents of a file at the given path
+    pub extern fn read_file(path: String): String
+    ## Write content to a file, overwriting any existing content
+    pub extern fn write_file(path: String, content: String): String
+    ## List the files and directories at the given path
+    pub extern fn list_directory(path: String): String
+    ## Search file contents using a regular expression
+    pub extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
+    ## Execute a shell command and return its output
+    pub extern fn execute_command(command: String): String
+}
+
+mod supervisor {
+    use ::io::print
+    use ::messaging::receive
+
+    ## Ask the supervising human for input when blocked or uncertain
+    pub fn ask_for_supervisor_help(context: String): String {
+        print(context)
+        let response = receive()
+        return response
+    }
+}
+
+mod context {
+    use extern_fns::read_file
+
+    pub fn project_context(): String {
+        let readme = read_file("README.md")
+        let agent_instructions = read_file(".github/copilot-instructions.md")
+        let claude_instructions = read_file("CLAUDE.md")
+        let index = read_file(".structured-agent/index.md")
+        readme!
+        agent_instructions!
+        claude_instructions!
+        index!
+        '''
+        Based on the above, describe the project: what it does, what it is for, the major components, and the tech stack.
+        '''!
+    }
+}
+
+mod knowledge {
+    use extern_fns::read_file
+    use extern_fns::write_file
+
+    fn select_relevant_knowledge_files(context: String): List<String> {
+        let index = read_file(".structured-agent/index.md")
+        index!
+        context!
+        '''
+        From the index, select the knowledge files most relevant to the context.
+        Return only file paths, one per line.
+        '''
+    }
+
+    pub fn load_relevant_knowledge(context: String): () {
+        let files = select_relevant_knowledge_files(context)
+        for file in files {
+            let content = read_file(file)
+            content!
+        }
+    }
+
+    fn merge_into_file(existing: String, new_info: String): String {
+        existing!
+        new_info!
+        '''
+        Merge the new information into the existing content.
+        Resolve any contradictions explicitly, noting why one was preferred.
+        Summarize if the result would exceed 500 words.
+        '''
+    }
+
+    fn update_knowledge_file(path: String, new_info: String): () {
+        let existing = read_file(path)
+        let merged = merge_into_file(existing, new_info)
+        write_file(path, merged)
+    }
+
+    fn update_knowledge_index(summary: String): () {
+        let existing = read_file(".structured-agent/index.md")
+        existing!
+        summary!
+        let updated = '''
+        Update the index to reflect any new or changed knowledge files.
+        Each entry should list the file path and a one-line description of its contents.
+        '''
+        write_file(".structured-agent/index.md", updated)
+    }
+
+    fn store_feature_knowledge(feature: String, summary: String): () {
+        update_knowledge_file(".structured-agent/features/${feature}.md", summary)
+    }
+
+    fn extract_cross_cutting_knowledge(stage_summary: String): () {
+        stage_summary!
+        '''
+        From this summary identify any new conventions, architecture decisions, or failed approaches.
+        Describe each briefly, one per category.
+        '''!
+        update_knowledge_file(".structured-agent/conventions.md", stage_summary)
+        update_knowledge_file(".structured-agent/decisions.md", stage_summary)
+        update_knowledge_file(".structured-agent/failed-approaches.md", stage_summary)
+    }
+
+    pub fn store_stage_knowledge(feature: String, stage_summary: String): () {
+        extract_cross_cutting_knowledge(stage_summary)
+        store_feature_knowledge(feature, stage_summary)
+        update_knowledge_index(stage_summary)
+    }
+}
+
+mod reproduce {
+    use extern_fns::read_file
+    use extern_fns::write_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use extern_fns::execute_command
+    use knowledge::load_relevant_knowledge
+    use supervisor::ask_for_supervisor_help
+
+    fn is_reproduction_isolated(): Boolean {
+        "Does the failing test isolate the symptom precisely, failing for the right reason and not a side effect?"!
+    }
+
+    fn is_reproduction_stuck(): Boolean {
+        "Have you been unable to write a reproduction after multiple attempts?"!
+    }
+
+    fn summarize_reproduction(): String {
+        "Describe the reproduction: test name, what it asserts, and the exact failure message."!
+    }
+
+    fn reproduction_loop(): String {
+        let action = select {
+            write_file(_, _),
+            execute_command(_),
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _)
+        }
+
+        action!
+
+        if is_reproduction_stuck() {
+            let guidance = ask_for_supervisor_help("Cannot reproduce the issue, supervisor input needed:")
+            guidance!
+        }
+
+        if is_reproduction_isolated() {
+            return summarize_reproduction()
+        } else {
+            return reproduction_loop()
+        }
+    }
+
+    pub fn reproduction_test(issue: String): String {
+        load_relevant_knowledge(issue)
+        '''
+        Write a minimal failing test that reproduces: ${issue}
+        Do not read source code to understand implementation yet.
+        Base the test on observed behaviour only.
+        Run it to confirm it fails for the right reason.
+        Do NOT form any hypotheses about the root cause yet.
+        '''!
+        return reproduction_loop()
+    }
+}
+
+mod observe {
+    use extern_fns::read_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use extern_fns::write_file
+    use extern_fns::execute_command
+    use supervisor::ask_for_supervisor_help
+
+    fn have_enough_evidence(): Boolean {
+        "Do you have concrete evidence (test output, log lines, error messages) that points to a specific location in the code?"!
+    }
+
+    fn observe_is_stuck(): Boolean {
+        "Have you been unable to narrow down the cause after multiple observations?"!
+    }
+
+    fn summarize_evidence(): String {
+        '''
+        Summarize the evidence gathered. Include:
+        - Exact test output and error messages observed
+        - What was ruled out
+        - What the evidence points to, without stating a hypothesis
+        '''
+    }
+
+    fn observe_loop(): String {
+        let action = select {
+            execute_command(_),
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _),
+            write_file(_, _)
+        }
+
+        action!
+
+        if observe_is_stuck() {
+            let guidance = ask_for_supervisor_help("Cannot narrow down the cause, supervisor input needed:")
+            guidance!
+        }
+
+        if have_enough_evidence() {
+            return summarize_evidence()
+        } else {
+            return observe_loop()
+        }
+    }
+
+    pub fn observe(reproduction: String): String {
+        reproduction!
+        '''
+        Gather evidence about the failing test.
+        Run the test. Add logging or narrow the reproduction if needed. Read output carefully.
+        Do NOT read source code to guess at a cause.
+        Do NOT write any fixes yet.
+        '''!
+        return observe_loop()
+    }
+}
+
+mod hypothesise {
+    use extern_fns::read_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use extern_fns::execute_command
+    use supervisor::ask_for_supervisor_help
+
+    fn is_hypothesis_testable(): Boolean {
+        "Is the hypothesis specific enough to write a test that would confirm or refute it without ambiguity?"!
+    }
+
+    fn hypothesis_is_stuck(): Boolean {
+        "Are you unable to form a testable hypothesis even after reading the relevant source?"!
+    }
+
+    fn state_hypothesis(): String {
+        '''
+        State the hypothesis:
+        - The root cause
+        - Why it explains the observed behaviour
+        - What a confirming test would look like
+        '''
+    }
+
+    fn hypothesis_loop(): String {
+        let action = select {
+            read_file(_),
+            grep(_, _, _, _, _),
+            list_directory(_),
+            execute_command(_)
+        }
+
+        action!
+
+        if hypothesis_is_stuck() {
+            let guidance = ask_for_supervisor_help("Cannot form a testable hypothesis, supervisor input needed:")
+            guidance!
+        }
+
+        if is_hypothesis_testable() {
+            return state_hypothesis()
+        } else {
+            return hypothesis_loop()
+        }
+    }
+
+    pub fn form_hypothesis(evidence: String): String {
+        evidence!
+        '''
+        Based on the evidence, form a single specific hypothesis about the root cause.
+        You may now read source code to support or refute the hypothesis.
+        Do NOT fix anything yet.
+        '''!
+        return hypothesis_loop()
+    }
+}
+
+mod verify {
+    use extern_fns::write_file
+    use extern_fns::execute_command
+    use supervisor::ask_for_supervisor_help
+
+    fn is_hypothesis_confirmed(): Boolean {
+        "Does the test fail for exactly the predicted reason, confirming the hypothesis?"!
+    }
+
+    fn write_verification_test(hypothesis: String): String {
+        '''
+        Write a test that confirms the hypothesis by failing for exactly the predicted root cause.
+        The test should not pass until the root cause is fixed.
+        ${hypothesis}
+        '''!
+        hypothesis!
+    }
+
+    pub fn verify_hypothesis(hypothesis: String): String {
+        let test_name = write_verification_test(hypothesis)
+        execute_command("cargo nextest run ${test_name}")!
+
+        if is_hypothesis_confirmed() {
+            return test_name
+        } else {
+            let guidance = ask_for_supervisor_help("Verification test did not confirm hypothesis:")
+            guidance!
+            return verify_hypothesis(hypothesis)
+        }
+    }
+}
+
+mod fix {
+    use extern_fns::read_file
+    use extern_fns::write_file
+    use extern_fns::list_directory
+    use extern_fns::grep
+    use extern_fns::execute_command
+    use supervisor::ask_for_supervisor_help
+
+    fn is_all_tests_passing(): Boolean {
+        "Are all tests currently passing?"!
+    }
+
+    fn is_fix_stuck(): Boolean {
+        "Have you been unable to make progress after multiple attempts?"!
+    }
+
+    fn summarize_fix(): String {
+        "Summarize the fix: what changed, why it works, and which files were modified."!
+    }
+
+    fn fix_loop(): String {
+        let action = select {
+            read_file(_),
+            list_directory(_),
+            grep(_, _, _, _, _),
+            write_file(_, _),
+            execute_command(_)
+        }
+
+        action!
+
+        if is_fix_stuck() {
+            let guidance = ask_for_supervisor_help("Cannot fix the issue, supervisor input needed:")
+            guidance!
+        }
+
+        if is_all_tests_passing() {
+            return summarize_fix()
+        } else {
+            return fix_loop()
+        }
+    }
+
+    pub fn fix(verification_test: String): String {
+        '''
+        Apply the smallest possible change to make ${verification_test} pass.
+        Do not refactor unrelated code. Run the full test suite after the fix.
+        '''!
+        return fix_loop()
+    }
+}
+
+mod commit {
+    use extern_fns::execute_command
+
+    fn generate_commit_message(summary: String): String {
+        "Write a single-line git commit message summarising the fix: ${summary}"
+    }
+
+    pub fn commit_with_single_message(summary: String): () {
+        let message = generate_commit_message(summary)
+        execute_command("git add -A")
+        execute_command("git commit -m \"${message}\"")
+    }
+}
+
+mod discuss {
+    use supervisor::ask_for_supervisor_help
+
+    fn is_issue_understood(): Boolean {
+        "Do you have enough context to write a reproduction test for this issue?"!
+    }
+
+    fn summarize_issue(): String {
+        "Summarize the issue: expected behaviour, actual behaviour, and any context provided."!
+    }
+
+    pub fn discuss(): String {
+        let response = ask_for_supervisor_help("Describe the issue to debug:")
+        response!
+
+        if is_issue_understood() {
+            return summarize_issue()
+        } else {
+            return discuss()
+        }
+    }
+}
+
+fn debug_issue(issue: String): () {
+    let repro = reproduction_test(issue)
+    let evidence = observe(repro)
+    let hypothesis = form_hypothesis(evidence)
+    let verification_test = verify_hypothesis(hypothesis)
+    let fix_summary = fix(verification_test)
+    commit_with_single_message(fix_summary)
+    store_stage_knowledge(issue, fix_summary)
+}
+
+fn main(): () {
+    '''
+    You are a structured debugging agent.
+    You gather evidence before forming hypotheses, and verify hypotheses before writing any fix.
+    You do not read source code to guess — you observe actual behaviour first.
+    '''!
+
+    context::project_context()!
+
+    let issue = discuss()
+    debug_issue(issue)
+}

@@ -209,7 +209,8 @@ fn main(): () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("Type error"));
+    assert!(error_message.contains("type mismatch"));
+    assert!(error_message.contains("expected `Boolean`, found `String`"));
     assert_eq!(
         control_fns::MESSAGES.lock().unwrap().clone(),
         Vec::<String>::new()
@@ -235,7 +236,8 @@ fn main(): () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("Type error"));
+    assert!(error_message.contains("type mismatch"));
+    assert!(error_message.contains("expected `Boolean`, found `String`"));
     assert_eq!(
         control_fns::MESSAGES.lock().unwrap().clone(),
         Vec::<String>::new()
@@ -301,7 +303,8 @@ fn main(): () {
 
     assert!(result.is_err());
     let error_message = format!("{:?}", result.unwrap_err());
-    assert!(error_message.contains("Type error"));
+    assert!(error_message.contains("type mismatch"));
+    assert!(error_message.contains("expected `Boolean`, found `String`"));
     assert_eq!(
         control_fns::MESSAGES.lock().unwrap().clone(),
         Vec::<String>::new()

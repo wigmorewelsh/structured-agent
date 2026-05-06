@@ -153,3 +153,21 @@ async fn test_absolute_import_resolves_and_executes() {
     let value = run_fixture("absolute-import").await;
     assert_eq!(value.as_string().unwrap(), "absolute");
 }
+
+#[tokio::test]
+async fn test_main_found_with_inline_modules() {
+    let code = r#"
+mod greet {
+    pub fn hello(): String {
+        return "hello"
+    }
+}
+use greet::hello
+fn main(): String {
+    return hello()
+}
+"#;
+
+    let value = run_program(code).await;
+    assert_eq!(value.as_string().unwrap(), "hello");
+}
