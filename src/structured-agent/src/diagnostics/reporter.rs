@@ -1,8 +1,8 @@
-use structured_agent_runtime::TypeError;
 use crate::types::{FileId, SourceFiles};
 use codespan_reporting::diagnostic::Diagnostic;
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use codespan_reporting::term::termcolor::{Buffer, ColorChoice, StandardStream};
 use codespan_reporting::term::{self, Config};
+use structured_agent_runtime::TypeError;
 
 #[derive(Clone)]
 pub struct DiagnosticReporter {
@@ -41,6 +41,37 @@ impl DiagnosticReporter {
         };
 
         self.emit_diagnostic(&diagnostic)
+    }
+
+    pub fn format_diagnostic(&self, diagnostic: &Diagnostic<FileId>) -> String {
+        let mut buffer = Buffer::no_color();
+        let files = self.files.files();
+        let _ = term::emit(
+            &mut buffer,
+            &self.config,
+            &*files.lock().unwrap(),
+            diagnostic,
+        );
+        String::from_utf8_lossy(buffer.as_slice()).into_owned()
+    }
+
+    pub fn format_parse_error(
+        &self,
+        file_id: FileId,
+        error: &str,
+        span: Option<(usize, usize)>,
+    ) -> String {
+        let diagnostic = if let Some((start, end)) = span {
+            Diagnostic::error()
+                .with_message("parse error")
+                .with_labels(vec![
+                    codespan_reporting::diagnostic::Label::primary(file_id, start..end)
+                        .with_message(error),
+                ])
+        } else {
+            Diagnostic::error().with_message(format!("parse error: {}", error))
+        };
+        self.format_diagnostic(&diagnostic)
     }
 
     pub fn emit_diagnostic(

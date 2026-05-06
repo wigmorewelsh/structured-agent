@@ -9,6 +9,7 @@ use nonempty::NonEmpty;
 
 use crate::ast::{Definition, Module, ParsedModule, PathArg};
 use crate::compiler::parser;
+use crate::diagnostics::reporter::DiagnosticReporter;
 use crate::types::{FileId, SourceFiles};
 
 pub trait Discoverer: Send + Sync {
@@ -75,6 +76,7 @@ pub struct ModuleSource {
 #[salsa::db]
 pub trait DiscoveryDatabase: salsa::Database {
     fn input(&self, logical: Vec<String>) -> Option<ModuleSource>;
+    fn source_files(&self) -> SourceFiles;
 }
 
 #[salsa::db]
@@ -111,6 +113,10 @@ impl salsa::Database for DiscoveryDb {}
 
 #[salsa::db]
 impl DiscoveryDatabase for DiscoveryDb {
+    fn source_files(&self) -> SourceFiles {
+        self.source_files.clone()
+    }
+
     fn input(&self, logical: Vec<String>) -> Option<ModuleSource> {
         if logical.iter().any(|s| s.is_empty()) {
             return None;
@@ -199,11 +205,15 @@ fn parse_module_source(db: &dyn DiscoveryDatabase, src: ModuleSource) -> ParsedM
     ));
     match parser::parse_program(file_id).parse(stream) {
         Ok((module, _)) => ParsedModuleAst(Ok(module)),
-        Err(e) => ParsedModuleAst(Err(format!(
-            "Parse error in {}: {}",
-            src.display_name(db),
-            e
-        ))),
+        Err(e) => {
+            let reporter = DiagnosticReporter::new(db.source_files());
+            let error_str = format!("{}", e);
+            let clean = error_str.lines().skip(1).collect::<Vec<_>>().join("\n");
+            let span = Some((e.position, e.position + 1));
+            let _ = reporter.emit_parse_error(file_id, &clean, span);
+            let formatted = reporter.format_parse_error(file_id, &clean, span);
+            ParsedModuleAst(Err(formatted))
+        }
     }
 }
 
