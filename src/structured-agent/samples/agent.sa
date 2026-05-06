@@ -129,6 +129,13 @@ fn update_history(task_summary: String): String {
 
 }
 
+fn user_response(task_summary: String): String {
+    '''
+    Write a response to the user base on the task set by the user and the task_summary
+    '''!
+    task_summary!
+}
+
 fn main(): () {
     '''
     You are running as a structured agent, the process is defined in a programing language that you dont have access to.
@@ -151,6 +158,9 @@ fn main(): () {
         plan()!
 
         let task_summary = agent_loop()
+
+        let response = user_response(task_summary)
+        print(response)
 
         history = update_history(task_summary)
         write_file("history.md", history)
