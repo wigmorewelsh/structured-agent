@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 use structured_agent_il::slot::Slot;
 use structured_agent_il::{BytecodeRef, Instruction};
 use structured_agent_interpreter_runtime::{
@@ -410,8 +410,7 @@ impl VM {
         params: &[Slot],
         dest: Slot,
     ) -> Result<VMState, String> {
-        static CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let call_id = CALL_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+        let call_id = structured_agent_runtime::next_call_id();
         let name_str = function_name.to_string();
         let lookup_name = function_name.last_name().to_string();
 
@@ -630,8 +629,7 @@ impl VM {
         dest: Slot,
         return_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
-        static GENERATE_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let call_id = GENERATE_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+        let call_id = structured_agent_runtime::next_call_id();
 
         let display_name = state
             .call_stack

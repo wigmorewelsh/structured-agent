@@ -1,6 +1,7 @@
 use crate::error::GeminiResult;
 use crate::types::GenerationConfig;
 use crate::types::JsonSchemaBuilder;
+use crate::types::ThinkingConfig;
 use crate::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use async_trait::async_trait;
 use schemars::schema::SchemaObject;
@@ -288,7 +289,7 @@ impl LanguageEngine for GeminiEngine {
             .with_top_p(0.95)
             .with_response_mime_type("application/json".to_string())
             .with_response_schema(schema)
-            .with_minimal_thinking();
+            .with_thinking_config(ThinkingConfig::low().with_include_thoughts(true));
 
         let response = self
             .client

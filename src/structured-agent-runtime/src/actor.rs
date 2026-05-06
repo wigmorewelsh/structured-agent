@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use arrow::array::{Array, NullArray};
@@ -8,6 +9,12 @@ use arrow::array::{Array, NullArray};
 use crate::expression::{ExpressionResult, ExpressionValue};
 use crate::runtime_value::RuntimeValue;
 use crate::symbols::DefinitionPath;
+
+static CALL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub fn next_call_id() -> String {
+    CALL_ID_COUNTER.fetch_add(1, Ordering::Relaxed).to_string()
+}
 
 type MessageboxRx = Arc<Mutex<mpsc::UnboundedReceiver<(AgentMessage, oneshot::Sender<()>)>>>;
 
@@ -59,7 +66,7 @@ pub struct AgentHandle {
 impl AgentHandle {
     // this is for tests only
     pub fn detached() -> Self {
-        let (events_tx, _) = broadcast::channel(16);
+        let (events_tx, _) = broadcast::channel(256);
         let (_, messagebox_rx) = mpsc::unbounded_channel();
         Self {
             id: AgentId::default(),
@@ -73,7 +80,7 @@ impl AgentHandle {
         AgentHandle,
         mpsc::UnboundedSender<(AgentMessage, oneshot::Sender<()>)>,
     ) {
-        let (events_tx, _) = broadcast::channel(16);
+        let (events_tx, _) = broadcast::channel(256);
         let (messagebox_tx, messagebox_rx) = mpsc::unbounded_channel();
         let handle = AgentHandle {
             id: AgentId::default(),

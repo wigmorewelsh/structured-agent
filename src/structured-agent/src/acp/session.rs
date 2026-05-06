@@ -6,7 +6,7 @@ use crate::runtime::{
 use agent_client_protocol as acp;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tracing::{debug, error, warn};
 
@@ -293,8 +293,7 @@ impl AcpSession {
         session_id: &acp::SessionId,
         update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Result<(), ()> {
-        static THINKING_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let call_id = THINKING_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+        let call_id = structured_agent_runtime::next_call_id();
         Self::send_notification(
             acp::SessionUpdate::ToolCall(
                 acp::ToolCall::new(call_id.clone(), "thinking")
