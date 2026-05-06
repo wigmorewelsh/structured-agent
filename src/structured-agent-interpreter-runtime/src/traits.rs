@@ -88,6 +88,7 @@ impl Event for SelectEvent {
 }
 
 pub struct FillParameterEvent {
+    pub function_name: String,
     pub param_name: String,
     pub param_type: Type,
 }
@@ -95,9 +96,8 @@ pub struct FillParameterEvent {
 impl Event for FillParameterEvent {
     fn format(&self) -> String {
         format!(
-            "Provide a value for '{}' of type '{}'",
-            self.param_name,
-            self.param_type.name()
+            "Return only the value for parameter '{}' of '{}'. Do not include any explanation or surrounding text.",
+            self.param_name, self.function_name
         )
     }
 
@@ -280,19 +280,22 @@ mod tests {
     }
 
     #[test]
-    fn fill_parameter_event_format_contains_name_and_type() {
+    fn fill_parameter_event_format_contains_name() {
         let event = FillParameterEvent {
+            function_name: "some_fn".to_string(),
             param_name: "age".to_string(),
             param_type: Type::int(),
         };
         let formatted = event.format();
         assert!(formatted.contains("age"));
-        assert!(formatted.contains("Int"));
+        assert!(formatted.contains("some_fn"));
+        assert!(!formatted.contains("Int"));
     }
 
     #[test]
     fn fill_parameter_event_return_type_matches() {
         let event = FillParameterEvent {
+            function_name: "some_fn".to_string(),
             param_name: "score".to_string(),
             param_type: Type::int(),
         };
@@ -367,6 +370,7 @@ mod tests {
         let engine = PrintEngine {};
         let context = make_context();
         let request = FillParameterEvent {
+            function_name: "some_fn".to_string(),
             param_name: "username".to_string(),
             param_type: Type::string(),
         };

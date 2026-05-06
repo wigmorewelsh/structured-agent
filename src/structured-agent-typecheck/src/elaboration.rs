@@ -497,6 +497,7 @@ fn elaborate_user_args(
     unifier: &mut synthesize::Unifier,
     param_offset: usize,
     pending_args: &[Expression],
+    function_name: &str,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Expression>> {
@@ -508,6 +509,8 @@ fn elaborate_user_args(
         if matches!(arg, Expression::Placeholder { .. }) {
             user_args.push(typed_ast::Expression::Placeholder {
                 ty: param.param_type.clone(),
+                param_name: param.name.clone(),
+                function_name: function_name.to_string(),
                 span: arg.span(),
             });
             continue;
@@ -625,12 +628,22 @@ fn elaborate_arguments(
     type_args: &[AstType],
     pending_args: &[Expression],
     elaborated_receiver: Option<typed_ast::Expression>,
+    function_name: &str,
     span: Span,
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Expression>> {
     let param_offset = usize::from(elaborated_receiver.is_some());
-    let user_args = elaborate_user_args(db, sig, unifier, param_offset, pending_args, env, ctx)?;
+    let user_args = elaborate_user_args(
+        db,
+        sig,
+        unifier,
+        param_offset,
+        pending_args,
+        function_name,
+        env,
+        ctx,
+    )?;
     let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
     let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
     let mut all_args = type_exprs;
@@ -678,6 +691,7 @@ fn build_typed_call(
         type_args,
         pending_args,
         elaborated_receiver,
+        &function_name,
         span,
         env,
         ctx,

@@ -105,6 +105,7 @@ pub enum Instruction {
     LlmPlaceholder {
         dest: Slot,
         param_name: String,
+        function_name: String,
         param_type: Type,
     },
     LlmSelect {
@@ -270,12 +271,13 @@ impl fmt::Display for Instruction {
             Instruction::LlmPlaceholder {
                 dest,
                 param_name,
+                function_name,
                 param_type,
             } => {
                 write!(
                     f,
-                    "llm.placeholder {}, {}, {}",
-                    dest, param_name, param_type
+                    "llm.placeholder {}, {}, {}, {}",
+                    dest, function_name, param_name, param_type
                 )
             }
             Instruction::LlmSelect {

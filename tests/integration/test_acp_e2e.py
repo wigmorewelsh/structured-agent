@@ -114,7 +114,7 @@ fn main(): () {
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agent_sa_with_config_toml(binary_path, gemini_api_key):
-    collector = AgentEventCollector()
+    collector = AgentEventCollector(expected_text="BANANA")
     env = {**os.environ, "GEMINI_API_KEY": gemini_api_key}
     config_path = SAMPLES_DIR / "config.toml"
     failure_reason = None
@@ -156,10 +156,10 @@ async def test_agent_sa_with_config_toml(binary_path, gemini_api_key):
                 )
 
                 try:
-                    await asyncio.wait_for(collector.got_response_after_task.wait(), timeout=120)
+                    await asyncio.wait_for(collector.task_complete.wait(), timeout=120)
                 except asyncio.TimeoutError:
                     failure_reason = (
-                        f"No response received after sending task.\n"
+                        f"Agent never reported the secret word.\n"
                         f"All events: {collector.all_events}"
                     )
 
@@ -174,12 +174,9 @@ async def test_agent_sa_with_config_toml(binary_path, gemini_api_key):
         pytest.fail(f"{failure_reason}\nStderr:\n{stderr}")
 
     assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
-    tool_call_titles = [
-        e[1].title for e in collector.all_events
-        if isinstance(e, tuple) and e[0] == "tool_call"
-    ]
-    assert any("read_file" in t for t in tool_call_titles), (
-        f"Expected read_file to be called after task. Tool calls: {tool_call_titles}"
+    response_text = " ".join(e for e in collector.events_after_task if isinstance(e, str))
+    assert "BANANA" in response_text, (
+        f"Expected agent to report the secret word. Got: {collector.events_after_task}"
     )
 
 

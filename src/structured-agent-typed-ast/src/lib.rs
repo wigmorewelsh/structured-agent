@@ -194,6 +194,8 @@ pub enum Expression {
     },
     Placeholder {
         ty: Type,
+        param_name: String,
+        function_name: String,
         span: Span,
     },
     UnitLiteral {

@@ -372,9 +372,12 @@ impl BytecodeCompiler {
             typed_ast::Expression::ListLiteral { elements, .. } => {
                 self.compile_list_literal(ctx, elements, dest_var)
             }
-            typed_ast::Expression::Placeholder { ty, .. } => {
-                Self::compile_placeholder(ctx, dest_var, ty)
-            }
+            typed_ast::Expression::Placeholder {
+                ty,
+                param_name,
+                function_name,
+                ..
+            } => Self::compile_placeholder(ctx, dest_var, param_name, function_name, ty),
             typed_ast::Expression::UnitLiteral { .. } => Self::compile_unit_literal(ctx, dest_var),
             typed_ast::Expression::Select(select, _ty) => {
                 self.compile_select_expression(ctx, select, dest_var)
@@ -616,11 +619,14 @@ impl BytecodeCompiler {
     fn compile_placeholder(
         ctx: &mut CompilerCtx,
         dest_var: Slot,
+        param_name: &str,
+        function_name: &str,
         ty: &structured_agent_runtime::Type,
     ) -> Result<(), String> {
         ctx.builder.emit(Instruction::LlmPlaceholder {
             dest: dest_var,
-            param_name: "placeholder".to_string(),
+            param_name: param_name.to_string(),
+            function_name: function_name.to_string(),
             param_type: ty.clone(),
         });
         Ok(())

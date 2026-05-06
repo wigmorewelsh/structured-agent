@@ -190,10 +190,17 @@ impl VM {
                 Instruction::LlmPlaceholder {
                     dest,
                     param_name,
+                    function_name,
                     param_type,
                 } => {
-                    self.execute_llm_placeholder(state, dest, &param_name, &param_type)
-                        .await?
+                    self.execute_llm_placeholder(
+                        state,
+                        dest,
+                        &function_name,
+                        &param_name,
+                        &param_type,
+                    )
+                    .await?
                 }
                 Instruction::LlmSelect {
                     metadata_vars,
@@ -540,6 +547,7 @@ impl VM {
         &self,
         mut state: VMState,
         dest: Slot,
+        function_name: &str,
         param_name: &str,
         param_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
@@ -550,6 +558,7 @@ impl VM {
             .request(
                 &state.context,
                 &FillParameterEvent {
+                    function_name: function_name.to_string(),
                     param_name: param_name.to_string(),
                     param_type: param_type.clone(),
                 },

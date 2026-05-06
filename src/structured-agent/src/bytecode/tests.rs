@@ -683,7 +683,7 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): String {
-      0: llm.placeholder s2, placeholder, String
+      0: llm.placeholder s2, foo, x, String
       1: call.external test::foo, [s2], s1
       2: ret s1
 }
@@ -917,6 +917,8 @@ mod vm_execution_tests {
             },
             AE::Placeholder { span } => typed_ast::Expression::Placeholder {
                 ty: Type::unit(),
+                param_name: String::new(),
+                function_name: String::new(),
                 span: *span,
             },
             AE::Call {
