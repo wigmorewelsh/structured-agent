@@ -536,11 +536,7 @@ impl From<&ChatRequest> for GeminiApiRequest {
 
                 let parts = if matches!(msg.role, Role::Model) {
                     if let Some(sig) = &msg.thought_signature {
-                        let mut p = vec![Part::thought_signature(sig.clone())];
-                        if !msg.content.is_empty() {
-                            p.push(Part::text(msg.content.clone()));
-                        }
-                        p
+                        vec![Part::thought_signature(sig.clone())]
                     } else {
                         vec![Part::text(msg.content.clone())]
                     }
@@ -787,10 +783,7 @@ mod tests {
         let response = GeminiResponse {
             candidates: vec![Candidate {
                 content: ResponseContent {
-                    parts: vec![
-                        Part::text("Hello "),
-                        Part::text("world!"),
-                    ],
+                    parts: vec![Part::text("Hello "), Part::text("world!")],
                 },
                 finish_reason: None,
                 safety_ratings: None,

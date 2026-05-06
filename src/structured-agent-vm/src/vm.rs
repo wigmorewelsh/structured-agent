@@ -475,12 +475,15 @@ impl VM {
         function_name: &DefinitionPath,
         dest: Slot,
     ) -> Result<VMState, String> {
-        let body = self
-            .runtime
-            .get_bytecode_ref(function_name)
-            .ok_or_else(|| format!("Function not found: {}", function_name))?;
         let name_str = function_name.to_string();
-        let metadata = ExpressionValue::metadata(&name_str, body.documentation);
+        let documentation = if let Some(body) = self.runtime.get_bytecode_ref(function_name) {
+            body.documentation
+        } else if let Some(func) = self.runtime.get_native_function(function_name.last_name()) {
+            func.documentation().map(|s| s.to_string())
+        } else {
+            return Err(format!("Function not found: {}", function_name));
+        };
+        let metadata = ExpressionValue::metadata(&name_str, documentation);
         Self::write_slot(&mut state, dest, ExpressionResult::new(metadata));
         Ok(Self::advance_pc(state))
     }
