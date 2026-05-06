@@ -618,6 +618,35 @@ impl VM {
         dest: Slot,
         return_type: &structured_agent_runtime::Type,
     ) -> Result<VMState, String> {
+        static GENERATE_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let call_id = GENERATE_COUNTER.fetch_add(1, Ordering::Relaxed).to_string();
+
+        let display_name = state
+            .call_stack
+            .last()
+            .map(|f| f.display_name.clone())
+            .unwrap_or_default();
+
+        let params = state
+            .call_stack
+            .last()
+            .map(|f| {
+                f.evaluated_parameters
+                    .iter()
+                    .map(|p| (p.name.clone(), p.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        state
+            .context
+            .agent_handle()
+            .publish(AgentMessageContent::ToolCallStarted {
+                tool_name: display_name.clone(),
+                call_id: call_id.clone(),
+                params,
+            });
+
         let (value, thinking) = state
             .context
             .runtime()
@@ -635,7 +664,11 @@ impl VM {
         state
             .context
             .agent_handle()
-            .publish(AgentMessageContent::String(value.format_for_llm()));
+            .publish(AgentMessageContent::ToolCallFinished {
+                tool_name: display_name,
+                call_id,
+                result: value.clone(),
+            });
         Self::write_slot(&mut state, dest, ExpressionResult::new(value));
         Ok(Self::advance_pc(state))
     }
@@ -1098,6 +1131,113 @@ mod tests {
         let frame = vec![None];
         let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
         assert_eq!(result.value, ExpressionValue::string(""));
+    }
+
+    struct EngineRuntime {
+        engine: Arc<structured_agent_interpreter_runtime::PrintEngine>,
+    }
+
+    impl RuntimeService for EngineRuntime {
+        fn get_native_function(&self, _name: &str) -> Option<Arc<dyn ExecutableFunction>> {
+            None
+        }
+        fn get_bytecode_ref(&self, _name: &DefinitionPath) -> Option<BytecodeRef> {
+            None
+        }
+        fn engine(&self) -> &dyn structured_agent_interpreter_runtime::LanguageEngine {
+            self.engine.as_ref()
+        }
+        fn type_to_arrow_datatype(
+            &self,
+            _ty: &structured_agent_runtime::Type,
+        ) -> arrow::datatypes::DataType {
+            arrow::datatypes::DataType::Null
+        }
+        fn get_struct(
+            &self,
+            _type_name: &DefinitionPath,
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+        fn get_struct_with_args(
+            &self,
+            _type_name: &DefinitionPath,
+            _args: &[structured_agent_runtime::Type],
+        ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
+            None
+        }
+    }
+
+    fn make_engine_context_with_handle(
+        handle: structured_agent_runtime::AgentHandle,
+    ) -> (Arc<EngineRuntime>, Context) {
+        let runtime = Arc::new(EngineRuntime {
+            engine: Arc::new(structured_agent_interpreter_runtime::PrintEngine {}),
+        });
+        let context = Context::with_runtime_and_handle(runtime.clone(), handle);
+        (runtime, context)
+    }
+
+    #[tokio::test]
+    async fn generate_string_publishes_tool_call_started_and_finished() {
+        use structured_agent_runtime::{AgentHandle, AgentMessageContent};
+        let handle = AgentHandle::detached();
+        let mut subscriber = handle.subscribe();
+        let (runtime, context) = make_engine_context_with_handle(handle);
+
+        let instructions = vec![
+            Instruction::LlmGenerate {
+                dest: Slot(0),
+                return_type: Type::string(),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(runtime);
+        let frame = vec![None];
+        vm.execute(&instructions, context, frame).await.unwrap();
+
+        let msg1 = subscriber.try_recv().unwrap();
+        assert!(matches!(
+            msg1.content,
+            AgentMessageContent::ToolCallStarted { .. }
+        ));
+
+        let msg2 = subscriber.try_recv().unwrap();
+        assert!(matches!(
+            msg2.content,
+            AgentMessageContent::ToolCallFinished { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn generate_boolean_publishes_tool_call_started_and_finished() {
+        use structured_agent_runtime::{AgentHandle, AgentMessageContent};
+        let handle = AgentHandle::detached();
+        let mut subscriber = handle.subscribe();
+        let (runtime, context) = make_engine_context_with_handle(handle);
+
+        let instructions = vec![
+            Instruction::LlmGenerate {
+                dest: Slot(0),
+                return_type: Type::boolean(),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(runtime);
+        let frame = vec![None];
+        vm.execute(&instructions, context, frame).await.unwrap();
+
+        let msg1 = subscriber.try_recv().unwrap();
+        assert!(matches!(
+            msg1.content,
+            AgentMessageContent::ToolCallStarted { .. }
+        ));
+
+        let msg2 = subscriber.try_recv().unwrap();
+        assert!(matches!(
+            msg2.content,
+            AgentMessageContent::ToolCallFinished { .. }
+        ));
     }
 
     #[tokio::test]

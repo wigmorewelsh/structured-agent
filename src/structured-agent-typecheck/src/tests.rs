@@ -2175,7 +2175,6 @@ mod typed_ast_tests {
     #[test]
     fn call_carries_solved_type_arguments() {
         let code = r#"
-            mod test
             fn test_func<T: Int>(x: T): T { return x }
             fn main(): () { test_func(42) }
         "#;
