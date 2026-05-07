@@ -44,6 +44,7 @@ mod tests {
             IlWarning::VariableUsedBeforeAllocation {
                 name: "s0".to_string(),
                 instruction_index: 0,
+                function_name: None,
             }
         );
     }
@@ -84,6 +85,7 @@ mod tests {
             IlWarning::VariableUsedBeforeAllocation {
                 name: "s2".to_string(),
                 instruction_index: 0,
+                function_name: None,
             }
         );
     }

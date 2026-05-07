@@ -116,6 +116,7 @@ pub enum IlWarning {
     VariableUsedBeforeAllocation {
         name: String,
         instruction_index: usize,
+        function_name: Option<String>,
     },
     InvalidBranchTarget {
         instruction_index: usize,
@@ -145,10 +146,17 @@ impl IlWarning {
             IlWarning::VariableUsedBeforeAllocation {
                 name,
                 instruction_index,
-            } => format!(
-                "variable `{}` used at instruction {} before being allocated",
-                name, instruction_index
-            ),
+                function_name,
+            } => match function_name {
+                Some(f) => format!(
+                    "variable `{}` used at instruction {} before being allocated in function `{}`",
+                    name, instruction_index, f
+                ),
+                None => format!(
+                    "variable `{}` used at instruction {} before being allocated",
+                    name, instruction_index
+                ),
+            },
             IlWarning::InvalidBranchTarget {
                 instruction_index,
                 target,

@@ -33,6 +33,7 @@ impl IlAnalyzer for VariableAllocationAnalyzer {
                     warnings.push(IlWarning::VariableUsedBeforeAllocation {
                         name: format!("s{}", slot.0),
                         instruction_index: index,
+                        function_name: None,
                     });
                 }
             }

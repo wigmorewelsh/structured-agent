@@ -365,9 +365,22 @@ fn analyse_il(metadata: &MetaData<BytecodeRefs>) -> Vec<IlWarning> {
         IlAnalysisRunner::new().with_analyzer(Box::new(VariableAllocationAnalyzer::new()));
     metadata
         .functions
-        .values()
-        .filter_map(|d| d.body_ref.as_ref())
-        .flat_map(|b| runner.run(b))
+        .iter()
+        .filter_map(|(name, d)| d.body_ref.as_ref().map(|b| (name.to_string(), b)))
+        .flat_map(|(name, b)| {
+            runner.run(b).into_iter().map(move |w| match w {
+                IlWarning::VariableUsedBeforeAllocation {
+                    name: var_name,
+                    instruction_index,
+                    function_name: _,
+                } => IlWarning::VariableUsedBeforeAllocation {
+                    name: var_name,
+                    instruction_index,
+                    function_name: Some(name.clone()),
+                },
+                other => other,
+            })
+        })
         .collect()
 }
 
