@@ -17,8 +17,9 @@ use structured_agent_runtime::actor::ActorRegistry;
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{DefinitionPath, SymbolQuery};
 use structured_agent_stdlib::{
-    actor::ActorModule, fs::FsModule, io::IoModule, messaging::MessagingModule,
-    unstable::UnstableModule,
+    actor::ActorModule, equality::EqualityModule, fs::FsModule, io::IoModule,
+    iterator::IteratorModule, logic::LogicModule, math::MathModule, messaging::MessagingModule,
+    prelude::PreludeModule, unstable::UnstableModule,
 };
 use tracing::{debug, error};
 
@@ -175,18 +176,18 @@ impl RuntimeBuilder {
 
         self = self.with_language_engine(engine);
 
-        if config.with_default_functions {
-            self = self.with_module(Arc::new(IoModule));
-        }
+        self = self
+            .with_module(Arc::new(IoModule))
+            .with_module(Arc::new(MessagingModule))
+            .with_module(Arc::new(FsModule))
+            .with_module(Arc::new(IteratorModule))
+            .with_module(Arc::new(LogicModule))
+            .with_module(Arc::new(MathModule))
+            .with_module(Arc::new(EqualityModule))
+            .with_module(Arc::new(PreludeModule));
 
         if config.with_unstable_functions {
             self = self.with_module(Arc::new(UnstableModule));
-        }
-
-        if config.with_acp_functions {
-            self = self
-                .with_module(Arc::new(MessagingModule))
-                .with_module(Arc::new(FsModule));
         }
 
         Ok(self.build())

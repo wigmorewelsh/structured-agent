@@ -17,9 +17,7 @@ async fn test_reload_executes_new_code() {
             program_source: structured_agent::cli::config::ProgramSource::File(file_path.clone()),
             engine: structured_agent::cli::config::EngineType::Print,
             mcp_servers: vec![],
-            with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: false,
             mode: structured_agent::cli::config::Mode::Acp,
         };
 

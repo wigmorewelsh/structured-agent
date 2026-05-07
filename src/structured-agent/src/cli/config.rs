@@ -12,9 +12,7 @@ struct EngineArgs {
     openai_base_url: Option<String>,
     hf_token: Option<String>,
     hf_model: Option<String>,
-    with_default_functions: bool,
     with_unstable_functions: bool,
-    with_acp_functions: bool,
 }
 use std::env;
 use std::fs;
@@ -25,9 +23,7 @@ pub struct Config {
     pub program_source: ProgramSource,
     pub mcp_servers: Vec<McpServerConfig>,
     pub engine: EngineType,
-    pub with_default_functions: bool,
     pub with_unstable_functions: bool,
-    pub with_acp_functions: bool,
     pub mode: Mode,
 }
 
@@ -98,9 +94,7 @@ impl Config {
                 openai_base_url: args.openai_base_url,
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
-                with_default_functions: args.with_default_functions,
                 with_unstable_functions: args.with_unstable_functions,
-                with_acp_functions: args.with_acp_functions,
             },
             file_config,
             Mode::Run,
@@ -110,20 +104,13 @@ impl Config {
     fn from_check_args(args: CheckArgs, file_config: &FileConfig) -> Self {
         let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
         let mcp_servers = Self::merge_mcp_servers(&args.mcp_server, file_config);
-        let with_default_functions =
-            args.with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
             args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
-        let with_acp_functions =
-            args.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
-
         Config {
             program_source,
             mcp_servers,
             engine: EngineType::Print,
-            with_default_functions,
             with_unstable_functions,
-            with_acp_functions,
             mode: Mode::Check,
         }
     }
@@ -142,9 +129,7 @@ impl Config {
                 openai_base_url: args.openai_base_url,
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
-                with_default_functions: args.with_default_functions,
                 with_unstable_functions: args.with_unstable_functions,
-                with_acp_functions: args.with_acp_functions,
             },
             file_config,
             Mode::Acp,
@@ -178,20 +163,14 @@ impl Config {
             hf_token,
             hf_model,
         );
-        let with_default_functions =
-            ea.with_default_functions || file_config.with_default_functions.unwrap_or(false);
         let with_unstable_functions =
             ea.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
-        let with_acp_functions =
-            ea.with_acp_functions || file_config.with_acp_functions.unwrap_or(false);
 
         Config {
             program_source,
             mcp_servers,
             engine,
-            with_default_functions,
             with_unstable_functions,
-            with_acp_functions,
             mode,
         }
     }

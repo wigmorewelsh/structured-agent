@@ -133,16 +133,14 @@ mod tests {
     use crate::cli::config::EngineType;
 
     #[tokio::test]
-    async fn test_build_runtime_with_default_functions() {
+    async fn test_build_runtime_runs_successfully() {
         let config = Config {
             program_source: crate::cli::config::ProgramSource::Inline(
                 "use io::print\n\nfn main(): () { print(\"hello\") }".to_string(),
             ),
             mcp_servers: vec![],
             engine: EngineType::Print,
-            with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: false,
             mode: Mode::Run,
         };
 
@@ -153,28 +151,5 @@ mod tests {
 
         let result = runtime.run().await;
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_build_runtime_without_default_functions() {
-        let config = Config {
-            program_source: crate::cli::config::ProgramSource::Inline(
-                "use io::print\n\nfn main(): () { print(\"hello\") }".to_string(),
-            ),
-            mcp_servers: vec![],
-            engine: EngineType::Print,
-            with_default_functions: false,
-            with_unstable_functions: false,
-            with_acp_functions: false,
-            mode: Mode::Run,
-        };
-
-        let runtime = Runtime::builder(config.program_source.clone())
-            .with_config(&config)
-            .await
-            .unwrap();
-
-        let result = runtime.run().await;
-        assert!(result.is_err());
     }
 }

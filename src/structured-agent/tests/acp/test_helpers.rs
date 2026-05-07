@@ -25,9 +25,7 @@ impl TestAgent {
             program_source: ProgramSource::Inline(program.to_string()),
             engine: EngineType::Print,
             mcp_servers: vec![],
-            with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: true,
             mode: Mode::Acp,
         };
         Self::from_config(config).await
@@ -42,9 +40,7 @@ impl TestAgent {
             program_source: ProgramSource::Inline(program.to_string()),
             engine: EngineType::Print,
             mcp_servers: vec![],
-            with_default_functions: true,
             with_unstable_functions: false,
-            with_acp_functions: true,
             mode: Mode::Acp,
         };
         Self::from_config_with_tracing(config, true).await

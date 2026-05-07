@@ -57,17 +57,11 @@ pub struct RunArgs {
     )]
     pub engine: String,
 
-    #[arg(long, help = "Include default functions (input, print)")]
-    pub with_default_functions: bool,
-
     #[arg(
         long,
         help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
     )]
     pub with_unstable_functions: bool,
-
-    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
-    pub with_acp_functions: bool,
 
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
@@ -111,17 +105,11 @@ pub struct CheckArgs {
     )]
     pub mcp_server: Vec<String>,
 
-    #[arg(long, help = "Include default functions (input, print)")]
-    pub with_default_functions: bool,
-
     #[arg(
         long,
         help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
     )]
     pub with_unstable_functions: bool,
-
-    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
-    pub with_acp_functions: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -149,17 +137,11 @@ pub struct AcpArgs {
     )]
     pub engine: String,
 
-    #[arg(long, help = "Include default functions (input, print)")]
-    pub with_default_functions: bool,
-
     #[arg(
         long,
         help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
     )]
     pub with_unstable_functions: bool,
-
-    #[arg(long, help = "Include ACP functions (receive, try_receive)")]
-    pub with_acp_functions: bool,
 
     #[arg(long, value_name = "KEY", help = "Gemini API key for authentication")]
     pub gemini_api_key: Option<String>,
@@ -193,9 +175,7 @@ pub struct FileConfig {
     pub inline: Option<String>,
     pub mcp_server: Option<Vec<McpServerEntry>>,
     pub engine: Option<String>,
-    pub with_default_functions: Option<bool>,
     pub with_unstable_functions: Option<bool>,
-    pub with_acp_functions: Option<bool>,
     pub gemini_api_key: Option<String>,
     pub gemini_model: Option<String>,
     pub openai_api_key: Option<String>,
