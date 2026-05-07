@@ -83,8 +83,42 @@ fn summarize_sub_task(summary: String): String {
 #     return result
 # }
 
+fn has_repeated_last_action(max_repeat: Int): Boolean {
+    '''
+    has the last tool calls been repeated more than ${max_repeat} times?
+    '''!
+}
+
+fn summarize_repeated_action(): String {
+    '''
+    Summarize the repeated action and why it might be happening.
+    '''!
+    summarize()!
+}
+
+fn make_report(context: String): String {
+    context!
+}
+
+## A tool for writing up reports for the user to review.
+## Should be used when the user assigned task is complete.
+## The user may then respond asking for more detail.
+## Takes content to report on as a parameter. This should be a description of what the report should contain.
+fn report_to_user(content: String): String {
+    let report = make_report(content)
+    print(report)
+    let user_response = receive()
+    return user_response
+}
+
+## A tool for thinking through problems, brainstorming ideas, or planning without executing any actions.
+## Use this tool when you need to work through complex problems, develop strategies, or outline approaches before taking action.
+## Takes content to think about as a parameter. This should be a description of what to think about or a problem to solve.
+fn thinking(content: String): String {
+    content!
+}
+
 fn agent_loop(): String {
-    "what is the next action to perform?"!
 
     let result = select {
         edit_file(_),
@@ -94,11 +128,17 @@ fn agent_loop(): String {
         grep(_, _, _, _, _),
         copy_path(_, _),
         execute_command(_),
-        ask_for_more_info(_)
+        ask_for_more_info(_),
+        thinking(_),
+        report_to_user(_)
         # sub_tasks()
     }
 
     result!
+
+    if has_repeated_last_action(3) {
+        return summarize_repeated_action()
+    }
 
     if is_task_complete() {
         return summarize()
@@ -131,7 +171,10 @@ fn update_history(task_summary: String): String {
 
 fn user_response(task_summary: String): String {
     '''
-    Write a response to the user base on the task set by the user and the task_summary
+    The user set a task to work on and the agent has provided a task_summary detailing what has been done.
+    Respond to the user giving an update on the task.
+    Note if it was successful or if there were any issues.
+    If there were issues, ask the user for more information to resolve them.
     '''!
     task_summary!
 }
@@ -139,10 +182,9 @@ fn user_response(task_summary: String): String {
 fn main(): () {
     '''
     You are running as a structured agent, the process is defined in a programing language that you dont have access to.
-    You will be asked to SELECT between tools/functions and generate content based on input.
+    You will be asked to SELECT between actions/tools/functions to respond to a users query or task.
+    At no other point can you call tools.
     Youll have to decide what to use in a given context.
-
-    Use print to respond to users queries or questions.
     '''!
 
     print("Starting agent loop...")
