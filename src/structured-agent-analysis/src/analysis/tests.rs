@@ -3,11 +3,11 @@ mod tests {
     use crate::analysis::{
         Analyzer, InfiniteLoopAnalyzer, ReachabilityAnalyzer, UnusedVariableAnalyzer, Warning,
     };
+    use std::sync::Arc;
     use structured_agent_ast::ast::{
         Definition, Expression, Function, FunctionBody, Module, Parameter, Statement, Type,
     };
     use structured_agent_ast::types::Span;
-    use std::sync::Arc;
 
     fn create_test_function(
         name: &str,
@@ -504,6 +504,33 @@ mod tests {
 
         let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
         let mut analyzer = InfiniteLoopAnalyzer::new();
+        let warnings = analyzer.analyze_module(&module, 0);
+
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_for_in_body_is_reachable() {
+        let func = create_test_function(
+            "test",
+            vec![],
+            Type::simple("Unit"),
+            vec![Statement::ForIn {
+                variable: "item".to_string(),
+                iterable: Expression::Variable {
+                    name: "items".to_string(),
+                    span: Span::dummy(),
+                },
+                body: vec![Statement::Injection(Expression::StringLiteral {
+                    value: "body".to_string(),
+                    span: Span::new(10, 20),
+                })],
+                span: Span::new(0, 30),
+            }],
+        );
+
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        let mut analyzer = ReachabilityAnalyzer::new();
         let warnings = analyzer.analyze_module(&module, 0);
 
         assert_eq!(warnings.len(), 0);

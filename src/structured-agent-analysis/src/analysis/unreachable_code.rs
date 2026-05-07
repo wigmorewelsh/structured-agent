@@ -83,6 +83,11 @@ impl ReachabilityAnalyzer {
                         }
                     }
                 }
+                Statement::ForIn { body, .. } => {
+                    if current_reachable {
+                        self.analyze_statements(body, true);
+                    }
+                }
                 Statement::Return(_) => {
                     current_reachable = false;
                 }
