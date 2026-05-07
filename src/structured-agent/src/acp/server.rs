@@ -280,7 +280,11 @@ impl acp::Agent for AcpServer {
 
         debug!("Session {} creation initiated", session_id.0);
 
-        send_available_commands(&session_id, &self.session_update_tx).await?;
+        let tx = self.session_update_tx.clone();
+        let sid = session_id.clone();
+        tokio::task::spawn_local(async move {
+            send_available_commands(&sid, &tx).await.ok();
+        });
 
         Ok(acp::NewSessionResponse::new(session_id.0.to_string()))
     }

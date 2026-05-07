@@ -284,6 +284,57 @@ async def test_resource_link_path_resolved_to_full_path(binary_path, gemini_api_
     )
 
 
+class CommandsCollector(acp.Client):
+    def __init__(self):
+        self.available_commands = []
+        self.got_commands = asyncio.Event()
+        self.session_ids_seen = []
+
+    async def session_update(self, session_id: str, update, **kwargs):
+        if isinstance(update, acp.schema.AvailableCommandsUpdate):
+            self.session_ids_seen.append(session_id)
+            self.available_commands.extend(update.available_commands)
+            self.got_commands.set()
+
+    async def request_permission(self, options, session_id: str, tool_call, **kwargs):
+        pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_available_commands_received_after_new_session(binary_path):
+    collector = CommandsCollector()
+
+    async with acp.spawn_agent_process(
+        lambda agent: collector,
+        str(binary_path),
+        "acp",
+        "--engine", "print",
+        "--inline", 'extern fn print(v: String): () fn main(): () { print("hi") }',
+        cwd=PROJECT_ROOT,
+        transport_kwargs={"stderr": subprocess.PIPE},
+    ) as (conn, process):
+        await conn.initialize(
+            protocol_version=acp.PROTOCOL_VERSION,
+            client_info=acp.schema.Implementation(name="test", version="1.0"),
+        )
+
+        session = await conn.new_session(cwd=str(PROJECT_ROOT), mcp_servers=[])
+
+        try:
+            await asyncio.wait_for(collector.got_commands.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            pass
+
+    assert collector.got_commands.is_set(), "AvailableCommandsUpdate was never received"
+    assert session.session_id in collector.session_ids_seen, (
+        f"Notification arrived for unknown session before new_session response. "
+        f"Got session_ids: {collector.session_ids_seen}, expected: {session.session_id}"
+    )
+    command_names = [c.name for c in collector.available_commands]
+    assert "reload" in command_names, f"Expected 'reload' command, got: {command_names}"
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
 async def test_runtime_error_reported_when_extern_fn_has_no_provider(binary_path, gemini_api_key):
