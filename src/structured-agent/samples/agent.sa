@@ -47,41 +47,39 @@ fn summarize(): String {
     '''!
 }
 
-fn plan_sub_tasks(): List<String> {
-    "create sub tasks"!
+fn plan_sub_tasks(task_description: String): List<String> {
+    "create sub tasks for `${task_description}`"!
 }
 
-fn summarize_sub_task(summary: String): String {
-    "Summarize the sub-task that was completed:"!
-    summary!
+fn summarize_sub_task(progress_report: String, task_summary: String): String {
+    progress_report!
+    "Create an updated progress_report with the recently completed task_summary"!
+    task_summary!
 }
 
-# fn sub_tasks(): String {
-#     let plan = plan_sub_tasks()
-#     let result = ""
-#     let remaining = plan
-#     let continue_loop = true
+## Break a large task or project up into smaller sub tasks and work on them each in isolation.
+## Use task_description to give a the high level task to brake down and work on.
+fn sub_tasks(task_description: String): String {
+    let plan = plan_sub_tasks(task_description)
 
-#     while continue_loop {
-#         let next_option = head(remaining)
-#         if is_some(next_option) {
-#             let sub_task = some_value(next_option)
-#             sub_task!
-#             let summary = agent_loop()
-#             result = summarize_sub_task(summary)
+    let progress_report = ""
+    for sub_task in plan.iter() {
+        sub_task!
 
-#             let tail_option = tail(remaining)
-#             if is_some_list(tail_option) {
-#                 remaining = some_value_list(tail_option)
-#             } else {
-#                 continue_loop = false
-#             }
-#         } else {
-#             continue_loop = false
-#         }
-#     }
-#     return result
-# }
+        let summary = agent_loop()
+        progress_report = summarize_sub_task(progress_report, summary)
+    }
+
+    return progress_report
+}
+
+## When a task or feature is too large to work on in one sequential process use this to perform the work in a sub-agent and return a summary of the work
+## Use the content param to give the sub-agent context on what to work on, this should be a description of the task or feature to work on and any relevant information to complete the task.
+fn sub_process(content: String): String {
+    content!
+
+    return agent_loop()
+}
 
 fn has_repeated_last_action(max_repeat: Int): Boolean {
     '''
@@ -130,8 +128,9 @@ fn agent_loop(): String {
         execute_command(_),
         ask_for_more_info(_),
         thinking(_),
-        report_to_user(_)
-        # sub_tasks()
+        report_to_user(_),
+        sub_tasks(_),
+        sub_process(_)
     }
 
     result!
