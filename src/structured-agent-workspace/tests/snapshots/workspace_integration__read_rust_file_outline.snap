@@ -1,0 +1,12 @@
+---
+source: src/structured-agent-workspace/tests/workspace_integration.rs
+expression: text_str.text
+---
+1-3 function hello_world
+5-8 class Person
+10-14 impl Person
+11-13 method Person::new
+16-19 class Status
+21-23 interface Greet
+25-29 impl Greet for Person
+26-28 method Person::greet

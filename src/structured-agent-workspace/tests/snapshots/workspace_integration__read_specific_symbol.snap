@@ -1,0 +1,8 @@
+---
+source: src/structured-agent-workspace/tests/workspace_integration.rs
+expression: text_str.text
+---
+struct Person {
+    name: String,
+    age: u32,
+}
