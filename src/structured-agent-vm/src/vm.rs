@@ -594,6 +594,7 @@ impl VM {
             }
             metadata_values.push(value.value.clone());
         }
+        let option_count = metadata_values.len();
         let (value, thinking) = state
             .context
             .runtime()
@@ -618,6 +619,12 @@ impl VM {
             .as_integer()
             .map_err(|e| format!("Expected integer selection: {}", e))?
             as usize;
+        if selected_index >= option_count {
+            return Err(format!(
+                "Selected index {} is out of bounds for {} options",
+                selected_index, option_count
+            ));
+        }
         let result = ExpressionResult::new(ExpressionValue::string(selected_index.to_string()));
         Self::write_slot(&mut state, dest, result);
         Ok(Self::advance_pc(state))

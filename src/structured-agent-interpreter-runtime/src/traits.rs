@@ -73,8 +73,8 @@ impl Event for SelectEvent {
                 .as_metadata()
                 .ok()
                 .map(|(name, doc)| match doc {
-                    Some(d) => format!("Function Name: '{}' Documentation: {}", name, d),
-                    None => format!("Function Name: '{}'", name),
+                    Some(d) => format!("Action: '{}' - {}", name, d),
+                    None => format!("Action: '{}'", name),
                 })
                 .unwrap_or_else(|| option.format_for_llm());
             selection_prompt.push_str(&format!("{}: {}\n", index, description));
