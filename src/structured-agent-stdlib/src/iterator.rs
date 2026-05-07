@@ -69,7 +69,7 @@ impl Module for IteratorModule {
                             Ok(ExpressionValue::list_iterator(arc))
                         })
                     }),
-                    params: vec![Slot(2)],
+                    params: vec![Slot(1)],
                     dest: Slot(0),
                 },
                 Instruction::Ret { var: Slot(0) },
