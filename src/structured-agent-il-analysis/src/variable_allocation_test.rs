@@ -7,13 +7,19 @@ mod tests {
     use structured_agent_runtime::{Parameter, Type};
 
     fn make_function(parameters: Vec<Parameter>, instructions: Vec<Instruction>) -> BytecodeRef {
+        use structured_agent_il::SlotKind;
+        let mut slot_table = SlotTable::new();
+        slot_table.push(SlotKind::ReturnSlot, "__ret");
+        for param in &parameters {
+            slot_table.push(SlotKind::ValueParam, &param.name);
+        }
         BytecodeRef {
             instructions,
             labels: HashMap::new(),
             parameters,
             return_type: Type::unit(),
             documentation: None,
-            slot_table: SlotTable::new(),
+            slot_table,
         }
     }
 

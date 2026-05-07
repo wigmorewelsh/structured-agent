@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{IlAnalyzer, IlWarning, instruction_reads, instruction_writes};
-use structured_agent_il::BytecodeRef;
+use structured_agent_il::{BytecodeRef, SlotKind};
 
 pub struct VariableAllocationAnalyzer;
 
@@ -23,8 +23,12 @@ impl IlAnalyzer for VariableAllocationAnalyzer {
     }
 
     fn analyze_function(&mut self, function: &BytecodeRef) -> Vec<IlWarning> {
-        let param_count = function.parameters.len();
-        let mut initialized: HashSet<u32> = (1..=(param_count as u32)).collect();
+        let mut initialized: HashSet<u32> = function
+            .slot_table
+            .iter()
+            .filter(|s| matches!(s.kind, SlotKind::ValueParam))
+            .map(|s| s.slot.0)
+            .collect();
         let mut warnings = Vec::new();
 
         for (index, instruction) in function.instructions.iter().enumerate() {
