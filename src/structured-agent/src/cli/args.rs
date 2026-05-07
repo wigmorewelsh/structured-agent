@@ -30,6 +30,9 @@ pub enum Command {
 
     #[command(about = "Run as ACP (Agent Client Protocol) server")]
     Acp(AcpArgs),
+
+    #[command(about = "Dump the IL bytecode for a program")]
+    DumpIl(DumpIlArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -167,6 +170,21 @@ pub struct AcpArgs {
 
     #[arg(long, value_name = "MODEL", help = "Hugging Face model name")]
     pub hf_model: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct DumpIlArgs {
+    #[arg(short = 'f', long, value_name = "FILE", conflicts_with = "inline")]
+    pub file: Option<String>,
+
+    #[arg(short = 'i', long, value_name = "CODE", conflicts_with = "file")]
+    pub inline: Option<String>,
+
+    #[arg(
+        long,
+        help = "Include unstable functions (head, tail, is_some, some_value, is_some_list, some_value_list)"
+    )]
+    pub with_unstable_functions: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]

@@ -11,6 +11,7 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use structured_agent_il::CompiledFunction;
 use structured_agent_il::Module;
 use structured_agent_openai::{HF_BASE_URL, OpenAIEngine};
 use structured_agent_runtime::actor::ActorRegistry;
@@ -258,6 +259,30 @@ impl Runtime {
 
     pub fn compiler(&self) -> &Compiler {
         &self.compiler
+    }
+
+    pub fn dump_il(&self) -> Result<Vec<CompiledFunction>, RuntimeError> {
+        let cached = self.ensure_compiled()?;
+        let mut functions: Vec<CompiledFunction> = cached
+            .metadata
+            .functions
+            .iter()
+            .filter_map(|(name, func_def)| {
+                let body = func_def.body_ref.as_ref()?;
+                Some(CompiledFunction {
+                    name: name.clone(),
+                    module_name: None,
+                    parameters: body.parameters.clone(),
+                    return_type: body.return_type.clone(),
+                    instructions: body.instructions.clone(),
+                    labels: body.labels.clone(),
+                    documentation: body.documentation.clone(),
+                    slot_table: body.slot_table.clone(),
+                })
+            })
+            .collect();
+        functions.sort_by(|a, b| a.name.to_string().cmp(&b.name.to_string()));
+        Ok(functions)
     }
 
     pub fn check(&self) -> Result<(), RuntimeError> {

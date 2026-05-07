@@ -5,7 +5,7 @@ use structured_agent_runtime::symbols::{BodyRef, DefinitionPath};
 use structured_agent_runtime::{Parameter, Type};
 
 use crate::Instruction;
-use crate::slot::SlotTable;
+use crate::slot::{SlotKind, SlotTable};
 
 #[derive(Clone, Debug)]
 pub struct BytecodeRef {
@@ -42,6 +42,17 @@ impl fmt::Display for CompiledFunction {
         }
         writeln!(f, "\n): {} {{", self.return_type.name())?;
 
+        writeln!(f, "  .slots:")?;
+        for info in self.slot_table.iter() {
+            let kind = match info.kind {
+                SlotKind::ReturnSlot => "ret  ",
+                SlotKind::ValueParam => "param",
+                SlotKind::Local => "local",
+                SlotKind::Temp => "temp ",
+            };
+            writeln!(f, "    {:<4}  {}  {}", info.slot, kind, info.name)?;
+        }
+
         let mut label_positions: Vec<(usize, &str)> = self
             .labels
             .iter()
@@ -60,9 +71,15 @@ impl fmt::Display for CompiledFunction {
                     break;
                 }
             }
-            writeln!(f, "    {:3}: {}", i, instr)?;
+            writeln!(
+                f,
+                "    {:3}: {}",
+                i,
+                instr.display_with_table(&self.slot_table)
+            )?;
         }
 
-        writeln!(f, "}}")
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }

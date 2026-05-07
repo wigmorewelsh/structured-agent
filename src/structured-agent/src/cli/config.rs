@@ -1,4 +1,4 @@
-use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, FileConfig, RunArgs};
+use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, DumpIlArgs, FileConfig, RunArgs};
 
 struct EngineArgs {
     file: Option<String>,
@@ -32,6 +32,7 @@ pub enum Mode {
     Run,
     Check,
     Acp,
+    DumpIl,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +78,7 @@ impl Config {
             Command::Run(run_args) => Self::from_run_args(run_args, &file_config),
             Command::Check(check_args) => Self::from_check_args(check_args, &file_config),
             Command::Acp(acp_args) => Self::from_acp_args(acp_args, &file_config),
+            Command::DumpIl(dump_il_args) => Self::from_dump_il_args(dump_il_args, &file_config),
         }
     }
 
@@ -112,6 +114,19 @@ impl Config {
             engine: EngineType::Print,
             with_unstable_functions,
             mode: Mode::Check,
+        }
+    }
+
+    fn from_dump_il_args(args: DumpIlArgs, file_config: &FileConfig) -> Self {
+        let program_source = Self::merge_program_source(&args.file, &args.inline, file_config);
+        let with_unstable_functions =
+            args.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
+        Config {
+            program_source,
+            mcp_servers: vec![],
+            engine: EngineType::Print,
+            with_unstable_functions,
+            mode: Mode::DumpIl,
         }
     }
 

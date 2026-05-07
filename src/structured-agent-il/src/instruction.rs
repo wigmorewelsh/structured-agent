@@ -1,7 +1,7 @@
 use std::fmt;
 use structured_agent_runtime::{DefinitionPath, NativeFnPtr, Type};
 
-use crate::slot::Slot;
+use crate::slot::{Slot, SlotTable};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -326,6 +326,74 @@ impl fmt::Display for Instruction {
             }
         }
     }
+}
+
+pub struct InstrDisplay<'a> {
+    instruction: &'a Instruction,
+    table: &'a SlotTable,
+}
+
+impl Instruction {
+    pub fn display_with_table<'a>(&'a self, table: &'a SlotTable) -> InstrDisplay<'a> {
+        InstrDisplay {
+            instruction: self,
+            table,
+        }
+    }
+}
+
+impl<'a> fmt::Display for InstrDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let raw = format!("{}", self.instruction);
+        write!(f, "{}", annotate_slots(&raw, self.table))
+    }
+}
+
+fn annotate_slots(s: &str, table: &SlotTable) -> String {
+    let mut result = String::with_capacity(s.len() + s.len() / 2);
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut in_string = false;
+
+    while i < bytes.len() {
+        if in_string {
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                result.push(bytes[i] as char);
+                result.push(bytes[i + 1] as char);
+                i += 2;
+            } else if bytes[i] == b'"' {
+                in_string = false;
+                result.push('"');
+                i += 1;
+            } else {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+        } else if bytes[i] == b'"' {
+            in_string = true;
+            result.push('"');
+            i += 1;
+        } else if bytes[i] == b's' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+            result.push('s');
+            i += 1;
+            let mut num = 0u32;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                num = num * 10 + (bytes[i] - b'0') as u32;
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            if let Some(info) = table.get(Slot(num)) {
+                result.push_str(" (");
+                result.push_str(&info.name);
+                result.push(')');
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]

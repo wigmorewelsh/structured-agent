@@ -231,8 +231,11 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): String {
-      0: ldc.str s1, "hello"
-      1: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+      0: ldc.str s1 ($t0), "hello"
+      1: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -249,8 +252,11 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Boolean {
-      0: ldc.bool s1, true
-      1: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+      0: ldc.bool s1 ($t0), true
+      1: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -267,9 +273,13 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-      0: ldc.str s1, "test"
-      1: ldc.unit s2
-      2: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  local  x
+    s2  temp   $t0
+      0: ldc.str s1 (x), "test"
+      1: ldc.unit s2 ($t0)
+      2: ret s2 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -286,10 +296,14 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-      0: ldc.str s1, "event"
-      1: ctx.event s1
-      2: ldc.unit s2
-      3: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+      0: ldc.str s1 ($t0), "event"
+      1: ctx.event s1 ($t0)
+      2: ldc.unit s2 ($t1)
+      3: ret s2 ($t1)
 }
 "#;
         compile_and_check(code, expected);
@@ -307,10 +321,15 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): String {
-      0: ldc.str s2, "arg1"
-      1: ldc.bool s3, true
-      2: call.external test::foo, [s2, s3], s1
-      3: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+      0: ldc.str s2 ($t1), "arg1"
+      1: ldc.bool s3 ($t2), true
+      2: call.external test::foo, [s2 ($t1), s3 ($t2)], s1 ($t0)
+      3: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -331,22 +350,28 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
-      0: ldc.bool s1, true
-      1: brfalse s1, 7
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+    s4  temp   $t3
+      0: ldc.bool s1 ($t0), true
+      1: brfalse s1 ($t0), 7
       2: ctx.child
-      3: ldc.str s2, "then"
-      4: ctx.event s2
+      3: ldc.str s2 ($t1), "then"
+      4: ctx.event s2 ($t1)
       5: ctx.restore
       6: br 11
   else_0:
       7: ctx.child
-      8: ldc.str s3, "else"
-      9: ctx.event s3
+      8: ldc.str s3 ($t2), "else"
+      9: ctx.event s3 ($t2)
      10: ctx.restore
   end_0:
      11: nop
-     12: ldc.unit s4
-     13: ret s4
+     12: ldc.unit s4 ($t3)
+     13: ret s4 ($t3)
 }
 "#;
         compile_and_check(code, expected);
@@ -365,18 +390,23 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): Unit {
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
   loop_start_0:
-      0: ldc.bool s1, true
-      1: brfalse s1, 7
+      0: ldc.bool s1 ($t0), true
+      1: brfalse s1 ($t0), 7
       2: ctx.child
-      3: ldc.str s2, "loop"
-      4: ctx.event s2
+      3: ldc.str s2 ($t1), "loop"
+      4: ctx.event s2 ($t1)
       5: ctx.restore
       6: br 0
   loop_end_0:
       7: nop
-      8: ldc.unit s3
-      9: ret s3
+      8: ldc.unit s3 ($t2)
+      9: ret s3 ($t2)
 }
 "#;
         compile_and_check(code, expected);
@@ -393,10 +423,15 @@ fn main(): String {
         let expected = r#"fn test(
 
 ): List<String> {
-      0: ldc.str s2, "a"
-      1: ldc.str s3, "b"
-      2: list.create s1, [s2, s3]
-      3: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+      0: ldc.str s2 ($t1), "a"
+      1: ldc.str s3 ($t2), "b"
+      2: list.create s1 ($t0), [s2 ($t1), s3 ($t2)]
+      3: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -415,11 +450,17 @@ fn greet(name: String): () {
         let expected = r#"fn greet(
     name: String
 ): Unit {
-      0: ldc.str s2, "Hello"
-      1: mov s3, s2
-      2: ctx.event s3
-      3: ldc.unit s4
-      4: ret s4
+  .slots:
+    s0  ret    $ret
+    s1  param  name
+    s2  local  message
+    s3  temp   $t0
+    s4  temp   $t1
+      0: ldc.str s2 (message), "Hello"
+      1: mov s3 ($t0), s2 (message)
+      2: ctx.event s3 ($t0)
+      3: ldc.unit s4 ($t1)
+      4: ret s4 ($t1)
 }
 "#;
         compile_and_check_named(code, "greet", expected);
@@ -439,10 +480,17 @@ fn greet(name: String): () {
     x: String,
     y: Boolean
 ): String {
-      0: mov s4, s1
-      1: call.external test::process, [s4], s3
-      2: mov s5, s3
-      3: ret s5
+  .slots:
+    s0  ret    $ret
+    s1  param  x
+    s2  param  y
+    s3  local  result
+    s4  temp   $t0
+    s5  temp   $t1
+      0: mov s4 ($t0), s1 (x)
+      1: call.external test::process, [s4 ($t0)], s3 (result)
+      2: mov s5 ($t1), s3 (result)
+      3: ret s5 ($t1)
 }
 "#;
         compile_and_check_named(code, "calculate", expected);
@@ -468,25 +516,35 @@ fn greet(name: String): () {
     items: List<String>,
     filter: Boolean
 ): String {
-      0: ldc.str s3, "initial"
-      1: mov s4, s2
-      2: brfalse s4, 10
+  .slots:
+    s0  ret    $ret
+    s1  param  items
+    s2  param  filter
+    s3  local  result
+    s4  temp   $t0
+    s5  temp   $t1
+    s6  temp   $t2
+    s7  temp   $t3
+    s8  temp   $t4
+      0: ldc.str s3 (result), "initial"
+      1: mov s4 ($t0), s2 (filter)
+      2: brfalse s4 ($t0), 10
       3: ctx.child
-      4: mov s5, s1
-      5: call.external test::transform, [s5], s3
-      6: mov s6, s3
-      7: ctx.event s6
+      4: mov s5 ($t1), s1 (items)
+      5: call.external test::transform, [s5 ($t1)], s3 (result)
+      6: mov s6 ($t2), s3 (result)
+      7: ctx.event s6 ($t2)
       8: ctx.restore
       9: br 14
   else_0:
      10: ctx.child
-     11: ldc.str s7, "skipped"
-     12: ctx.event s7
+     11: ldc.str s7 ($t3), "skipped"
+     12: ctx.event s7 ($t3)
      13: ctx.restore
   end_0:
      14: nop
-     15: mov s8, s3
-     16: ret s8
+     15: mov s8 ($t4), s3 (result)
+     16: ret s8 ($t4)
 }
 "#;
         compile_and_check_named(code, "process_items", expected);
@@ -508,22 +566,30 @@ fn greet(name: String): () {
         let expected = r#"fn test(
 
 ): String {
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+    s4  temp   $t3
+    s5  temp   $t4
+    s6  temp   $t5
   select_start_0:
-      0: meta.function test::analyze, s2
-      1: meta.function test::summarize, s3
-      2: llm.select [s2, s3], s4
-      3: switch s4, [4, 7]
+      0: meta.function test::analyze, s2 ($t1)
+      1: meta.function test::summarize, s3 ($t2)
+      2: llm.select [s2 ($t1), s3 ($t2)], s4 ($t3)
+      3: switch s4 ($t3), [4, 7]
   clause_0_1:
-      4: ldc.str s5, "code"
-      5: call.external test::analyze, [s5], s1
+      4: ldc.str s5 ($t4), "code"
+      5: call.external test::analyze, [s5 ($t4)], s1 ($t0)
       6: br 10
   clause_1_2:
-      7: ldc.str s6, "text"
-      8: call.external test::summarize, [s6], s1
+      7: ldc.str s6 ($t5), "text"
+      8: call.external test::summarize, [s6 ($t5)], s1 ($t0)
       9: br 10
   select_end_3:
      10: nop
-     11: ret s1
+     11: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -540,15 +606,20 @@ fn greet(name: String): () {
         let expected = r#"fn test(
     x: Boolean
 ): String {
-      0: mov s3, s1
-      1: brfalse s3, 4
-      2: ldc.str s2, "yes"
+  .slots:
+    s0  ret    $ret
+    s1  param  x
+    s2  temp   $t0
+    s3  temp   $t1
+      0: mov s3 ($t1), s1 (x)
+      1: brfalse s3 ($t1), 4
+      2: ldc.str s2 ($t0), "yes"
       3: br 5
   ifelse_else_0:
-      4: ldc.str s2, "no"
+      4: ldc.str s2 ($t0), "no"
   ifelse_end_0:
       5: nop
-      6: ret s2
+      6: ret s2 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -567,10 +638,14 @@ fn greet(name: String): () {
         let expected = r#"fn test(
 
 ): String {
-      0: ldc.str s1, "initial"
-      1: ldc.str s1, "updated"
-      2: mov s2, s1
-      3: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  local  x
+    s2  temp   $t0
+      0: ldc.str s1 (x), "initial"
+      1: ldc.str s1 (x), "updated"
+      2: mov s2 ($t0), s1 (x)
+      3: ret s2 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -590,10 +665,15 @@ fn test(): Point {
         let expected = r#"fn test(
 
 ): Point {
-      0: ldc.int s2, 1
-      1: ldc.int s3, 2
-      2: struct.new s1, Point, {x: s2, y: s3}
-      3: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+      0: ldc.int s2 ($t1), 1
+      1: ldc.int s3 ($t2), 2
+      2: struct.new s1 ($t0), Point, {x: s2 ($t1), y: s3 ($t2)}
+      3: ret s1 ($t0)
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -613,9 +693,14 @@ fn test(p: Point): Int {
         let expected = r#"fn test(
     p: Point
 ): Int {
-      0: mov s3, s1
-      1: struct.get s2, s3, x
-      2: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  param  p
+    s2  temp   $t0
+    s3  temp   $t1
+      0: mov s3 ($t1), s1 (p)
+      1: struct.get s2 ($t0), s3 ($t1), x
+      2: ret s2 ($t0)
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -637,10 +722,16 @@ fn test(p: Person): String {
         let expected = r#"fn test(
     p: Person
 ): String {
-      0: mov s4, s1
-      1: struct.get s3, s4, address
-      2: struct.get s2, s3, city
-      3: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  param  p
+    s2  temp   $t0
+    s3  temp   $t1
+    s4  temp   $t2
+      0: mov s4 ($t2), s1 (p)
+      1: struct.get s3 ($t1), s4 ($t2), address
+      2: struct.get s2 ($t0), s3 ($t1), city
+      3: ret s2 ($t0)
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -663,9 +754,13 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Int {
-      0: call.bytecode test::make_point, [], s2
-      1: struct.get s1, s2, x
-      2: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+      0: call.bytecode test::make_point, [], s2 ($t1)
+      1: struct.get s1 ($t0), s2 ($t1), x
+      2: ret s1 ($t0)
 }
 "#;
         compile_and_check_named(code, "test", expected);
@@ -683,9 +778,13 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): String {
-      0: llm.placeholder s2, foo, x, String
-      1: call.external test::foo, [s2], s1
-      2: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+      0: llm.placeholder s2 ($t1), foo, x, String
+      1: call.external test::foo, [s2 ($t1)], s1 ($t0)
+      2: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -702,8 +801,11 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Unit {
-      0: ldc.unit s1
-      1: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+      0: ldc.unit s1 ($t0)
+      1: ret s1 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -721,9 +823,13 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): Unit {
-      0: ldc.unit s1
-      1: mov s2, s1
-      2: ret s2
+  .slots:
+    s0  ret    $ret
+    s1  local  x
+    s2  temp   $t0
+      0: ldc.unit s1 (x)
+      1: mov s2 ($t0), s1 (x)
+      2: ret s2 ($t0)
 }
 "#;
         compile_and_check(code, expected);
@@ -762,10 +868,15 @@ fn test(): Int {
         let expected = r#"fn test(
 
 ): String {
-      0: ldc.str s2, "hello "
-      1: ldc.int s3, 42
-      2: str.concat s1, [s2, s3]
-      3: ret s1
+  .slots:
+    s0  ret    $ret
+    s1  temp   $t0
+    s2  temp   $t1
+    s3  temp   $t2
+      0: ldc.str s2 ($t1), "hello "
+      1: ldc.int s3 ($t2), 42
+      2: str.concat s1 ($t0), [s2 ($t1), s3 ($t2)]
+      3: ret s1 ($t0)
 }
 "#;
         assert_eq!(format!("{}", compiled), expected);
