@@ -3,10 +3,10 @@ use agent_client_protocol::Client as _;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, warn};
+use uuid::Uuid;
 
 use super::session::AcpSession;
 use crate::cli::config::Config;
@@ -118,7 +118,6 @@ mod tests {
 pub struct AcpServer {
     config: Arc<Config>,
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
-    next_session_id: AtomicU64,
     agents: Arc<Mutex<HashMap<String, Arc<Mutex<AcpSession>>>>>,
     agent_tasks: Arc<std::sync::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
@@ -162,7 +161,6 @@ impl AcpServer {
         Self {
             config: Arc::new(config),
             session_update_tx,
-            next_session_id: AtomicU64::new(0),
             agents: Arc::new(Mutex::new(HashMap::new())),
             agent_tasks: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
@@ -273,8 +271,7 @@ impl acp::Agent for AcpServer {
         if let Err(e) = std::env::set_current_dir(&args.cwd) {
             error!("Failed to set working directory to {:?}: {}", args.cwd, e);
         }
-        let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
-        let session_id = acp::SessionId::new(session_id.to_string());
+        let session_id = acp::SessionId::new(Uuid::new_v4().to_string());
 
         debug!("New session request: {}", session_id.0);
 
