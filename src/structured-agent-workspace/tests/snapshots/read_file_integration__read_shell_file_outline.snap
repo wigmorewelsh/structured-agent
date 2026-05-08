@@ -1,0 +1,7 @@
+---
+source: src/structured-agent-workspace/tests/workspace_integration.rs
+expression: text_str.text
+---
+3-6 function greet
+8-10 function add
+12-15 function main

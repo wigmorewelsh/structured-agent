@@ -1,5 +1,7 @@
+mod directory;
 mod file;
 
+use directory::WorkspaceDirectory;
 use file::WorkspaceFile;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -7,6 +9,14 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::path::PathBuf;
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListDirectoryRequest {
+    #[schemars(
+        description = "Path to the directory relative to the workspace root. Use '.' for the root."
+    )]
+    pub path: String,
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ReadFileRequest {
@@ -29,6 +39,15 @@ impl WorkspaceServer {
             workspace_root,
             tool_router: Self::tool_router(),
         }
+    }
+
+    #[tool(description = "List files and directories in a workspace directory.")]
+    pub fn list_directory(
+        &self,
+        Parameters(request): Parameters<ListDirectoryRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = WorkspaceDirectory::open(&self.workspace_root, &request.path)?;
+        Ok(CallToolResult::success(vec![Content::text(dir.list())]))
     }
 
     #[tool(
