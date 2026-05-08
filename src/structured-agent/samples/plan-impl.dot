@@ -3,76 +3,101 @@ digraph plan_impl {
     node [fontname="Helvetica" fontsize=11 shape=box style=filled]
     edge [fontsize=9]
 
-    // Entry point
-    main [fillcolor="#4a90d9" fontcolor=white]
+    // extern_fns module
+    subgraph cluster_extern_fns {
+        label="extern_fns"
+        style=dashed
+        read_file [fillcolor="#c8c8c8" shape=parallelogram]
+        write_file [fillcolor="#c8c8c8" shape=parallelogram]
+        list_directory [fillcolor="#c8c8c8" shape=parallelogram]
+        grep [fillcolor="#c8c8c8" shape=parallelogram]
+        execute_command [fillcolor="#c8c8c8" shape=parallelogram]
+    }
 
-    // Discussion
-    discuss [fillcolor="#7ab648" fontcolor=white]
-    is_feature_understood [fillcolor="#e8e8e8" shape=diamond]
-    summarize_feature [fillcolor="#e8e8e8"]
-    ask_for_supervisor_help [fillcolor="#e05c5c" fontcolor=white]
+    // supervisor module
+    subgraph cluster_supervisor {
+        label="supervisor"
+        style=dashed
+        ask_for_supervisor_help [fillcolor="#e05c5c" fontcolor=white]
+    }
 
-    // Project context
-    project_context [fillcolor="#7ab648" fontcolor=white]
+    // context module
+    subgraph cluster_context {
+        label="context"
+        style=dashed
+        project_context [fillcolor="#7ab648" fontcolor=white]
+    }
 
-    // Top-level process
-    process [fillcolor="#4a90d9" fontcolor=white]
+    // knowledge module
+    subgraph cluster_knowledge {
+        label="knowledge"
+        style=dashed
+        select_relevant_knowledge_files [fillcolor="#9b6bb5" fontcolor=white]
+        load_relevant_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+        merge_into_file [fillcolor="#9b6bb5" fontcolor=white]
+        update_knowledge_file [fillcolor="#9b6bb5" fontcolor=white]
+        update_knowledge_index [fillcolor="#9b6bb5" fontcolor=white]
+        store_feature_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+        extract_cross_cutting_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+        store_stage_knowledge [fillcolor="#9b6bb5" fontcolor=white]
+    }
+
+    // planning module
+    subgraph cluster_planning {
+        label="planning"
+        style=dashed
+        is_plan_ready [fillcolor="#e8e8e8" shape=diamond]
+        plan_is_blocked [fillcolor="#e8e8e8" shape=diamond]
+        summarize_plan [fillcolor="#e8e8e8"]
+        planner_loop [fillcolor="#7ab648" fontcolor=white]
+        planner_agent [fillcolor="#7ab648" fontcolor=white]
+    }
+
+    // tdd module
+    subgraph cluster_tdd {
+        label="tdd"
+        style=dashed
+        is_all_tests_passing [fillcolor="#e8e8e8" shape=diamond]
+        is_impl_stuck [fillcolor="#e8e8e8" shape=diamond]
+        is_refactor_done [fillcolor="#e8e8e8" shape=diamond]
+        summarize_changes [fillcolor="#e8e8e8"]
+        write_failing_test [fillcolor="#d98c4a" fontcolor=white]
+        make_test_pass_loop [fillcolor="#d98c4a" fontcolor=white]
+        make_test_pass [fillcolor="#d98c4a" fontcolor=white]
+        refactor_loop [fillcolor="#d98c4a" fontcolor=white]
+        refactor [fillcolor="#d98c4a" fontcolor=white]
+        implement_test [fillcolor="#d98c4a" fontcolor=white]
+        create_test_list [fillcolor="#e8e8e8"]
+        summarize_stage [fillcolor="#e8e8e8"]
+        impl_agent [fillcolor="#d98c4a" fontcolor=white]
+    }
+
+    // commit module
+    subgraph cluster_commit {
+        label="commit"
+        style=dashed
+        generate_commit_message [fillcolor="#e8e8e8"]
+        commit_with_single_message [fillcolor="#e8e8e8"]
+    }
+
+    // discuss module
+    subgraph cluster_discuss {
+        label="discuss"
+        style=dashed
+        is_feature_understood [fillcolor="#e8e8e8" shape=diamond]
+        summarize_feature [fillcolor="#e8e8e8"]
+        discuss [fillcolor="#7ab648" fontcolor=white]
+    }
+
+    // top-level
     high_level_plan [fillcolor="#e8e8e8"]
-    planner_agent [fillcolor="#7ab648" fontcolor=white]
-    impl_agent [fillcolor="#d98c4a" fontcolor=white]
-    store_stage_knowledge [fillcolor="#9b6bb5" fontcolor=white]
-    commit_with_single_message [fillcolor="#e8e8e8"]
-    generate_commit_message [fillcolor="#e8e8e8"]
-
-    // Knowledge store
-    load_relevant_knowledge [fillcolor="#9b6bb5" fontcolor=white]
-    select_relevant_knowledge_files [fillcolor="#9b6bb5" fontcolor=white]
-    update_knowledge_file [fillcolor="#9b6bb5" fontcolor=white]
-    merge_into_file [fillcolor="#9b6bb5" fontcolor=white]
-    update_knowledge_index [fillcolor="#9b6bb5" fontcolor=white]
-    store_feature_knowledge [fillcolor="#9b6bb5" fontcolor=white]
-    extract_cross_cutting_knowledge [fillcolor="#9b6bb5" fontcolor=white]
-
-    // Planner loop
-    planner_loop [fillcolor="#7ab648" fontcolor=white]
-    is_plan_ready [fillcolor="#e8e8e8" shape=diamond]
-    plan_is_blocked [fillcolor="#e8e8e8" shape=diamond]
-    summarize_plan [fillcolor="#e8e8e8"]
-
-    // TDD loop
-    create_test_list [fillcolor="#e8e8e8"]
-    implement_test [fillcolor="#d98c4a" fontcolor=white]
-    write_failing_test [fillcolor="#d98c4a" fontcolor=white]
-    make_test_pass [fillcolor="#d98c4a" fontcolor=white]
-    make_test_pass_loop [fillcolor="#d98c4a" fontcolor=white]
-    refactor [fillcolor="#d98c4a" fontcolor=white]
-    refactor_loop [fillcolor="#d98c4a" fontcolor=white]
-    summarize_stage [fillcolor="#e8e8e8"]
-    summarize_changes [fillcolor="#e8e8e8"]
-    is_all_tests_passing [fillcolor="#e8e8e8" shape=diamond]
-    is_impl_stuck [fillcolor="#e8e8e8" shape=diamond]
-    is_refactor_done [fillcolor="#e8e8e8" shape=diamond]
-
-    // Extern fns
-    read_file [fillcolor="#c8c8c8" shape=parallelogram]
-    write_file [fillcolor="#c8c8c8" shape=parallelogram]
-    list_directory [fillcolor="#c8c8c8" shape=parallelogram]
-    grep [fillcolor="#c8c8c8" shape=parallelogram]
-    execute_command [fillcolor="#c8c8c8" shape=parallelogram]
+    process [fillcolor="#4a90d9" fontcolor=white]
+    main [fillcolor="#4a90d9" fontcolor=white]
 
     // main
     main -> project_context
     main -> discuss
     main -> process
-
-    // discuss
-    discuss -> ask_for_supervisor_help
-    discuss -> is_feature_understood
-    discuss -> summarize_feature
-    discuss -> discuss [label="recurse"]
-
-    // project_context
-    project_context -> read_file
 
     // process
     process -> high_level_plan
@@ -81,15 +106,19 @@ digraph plan_impl {
     process -> store_stage_knowledge
     process -> commit_with_single_message
 
-    // commit
-    commit_with_single_message -> generate_commit_message
-    commit_with_single_message -> execute_command
+    // discuss
+    discuss -> ask_for_supervisor_help
+    discuss -> is_feature_understood
+    discuss -> summarize_feature
+    discuss -> discuss [label="recurse"]
 
-    // knowledge store
+    // context
+    project_context -> read_file
+
+    // knowledge
     select_relevant_knowledge_files -> read_file
     load_relevant_knowledge -> select_relevant_knowledge_files
     load_relevant_knowledge -> read_file
-    merge_into_file
     update_knowledge_file -> read_file
     update_knowledge_file -> merge_into_file
     update_knowledge_file -> write_file
@@ -101,7 +130,7 @@ digraph plan_impl {
     store_stage_knowledge -> store_feature_knowledge
     store_stage_knowledge -> update_knowledge_index
 
-    // planner
+    // planning
     planner_agent -> load_relevant_knowledge
     planner_agent -> planner_loop
     planner_loop -> read_file
@@ -113,7 +142,7 @@ digraph plan_impl {
     planner_loop -> summarize_plan
     planner_loop -> planner_loop [label="recurse"]
 
-    // impl
+    // tdd
     impl_agent -> create_test_list
     impl_agent -> implement_test
     impl_agent -> summarize_stage
@@ -139,6 +168,10 @@ digraph plan_impl {
     refactor_loop -> execute_command
     refactor_loop -> is_refactor_done
     refactor_loop -> refactor_loop [label="recurse"]
+
+    // commit
+    commit_with_single_message -> generate_commit_message
+    commit_with_single_message -> execute_command
 
     // Legend
     subgraph cluster_legend {

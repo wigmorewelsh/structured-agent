@@ -33,6 +33,7 @@ tree-sitter-python = "0.23"
 tree-sitter-bash = "0.23"
 tree-sitter-md = "0.3"
 streaming-iterator = "0.1"
+blake3 = "1"
 
 [dev-dependencies]
 tempfile = "3.0"

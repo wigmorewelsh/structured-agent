@@ -1,8 +1,8 @@
 ---
-source: src/structured-agent-workspace/tests/workspace_integration.rs
-expression: text_str.text
+source: src/structured-agent-workspace/tests/read_file_integration.rs
+expression: "result.unwrap().content[0].as_text().expect(\"Expected text content\").text"
 ---
-struct Person {
-    name: String,
-    age: u32,
-}
+1de5cac8|struct Person {
+18d4a9cd|    name: String,
+628a0452|    age: u32,
+9f7fe02a|}

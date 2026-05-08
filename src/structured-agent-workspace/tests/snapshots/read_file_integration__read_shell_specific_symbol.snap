@@ -1,8 +1,8 @@
 ---
-source: src/structured-agent-workspace/tests/workspace_integration.rs
-expression: text_str.text
+source: src/structured-agent-workspace/tests/read_file_integration.rs
+expression: "result.unwrap().content[0].as_text().expect(\"Expected text content\").text"
 ---
-greet() {
-    local name="$1"
-    echo "Hello, $name!"
-}
+9ea926e6|greet() {
+abbc8e9e|    local name="$1"
+0a2f54b7|    echo "Hello, $name!"
+9f7fe02a|}

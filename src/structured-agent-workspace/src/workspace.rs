@@ -29,6 +29,36 @@ pub struct ReadFileRequest {
     pub symbol: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ReplaceSymbolRequest {
+    #[schemars(description = "Path to the file relative to the workspace root")]
+    pub path: String,
+    #[schemars(description = "Name of the symbol to replace")]
+    pub symbol: String,
+    #[schemars(description = "Full replacement text for the symbol")]
+    pub replacement: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct WriteFileRequest {
+    #[schemars(description = "Path to the file relative to the workspace root")]
+    pub path: String,
+    #[schemars(description = "Content to write to the file")]
+    pub content: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PatchLinesRequest {
+    #[schemars(description = "Path to the file relative to the workspace root")]
+    pub path: String,
+    #[schemars(description = "Hash anchor of the first line in the range to replace")]
+    pub start_anchor: String,
+    #[schemars(description = "Hash anchor of the last line in the range to replace")]
+    pub end_anchor: String,
+    #[schemars(description = "Replacement text (plain, without anchor prefixes)")]
+    pub replacement: String,
+}
+
 #[derive(Clone)]
 pub struct WorkspaceServer {
     workspace_root: Arc<RwLock<Option<PathBuf>>>,
@@ -110,6 +140,52 @@ impl WorkspaceServer {
         };
 
         Ok(CallToolResult::success(vec![Content::text(content)]))
+    }
+
+    #[tool(
+        description = "Replace the entire contents of a file. Creates the file if it does not exist."
+    )]
+    pub fn write_file(
+        &self,
+        Parameters(request): Parameters<WriteFileRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = self.workspace_root()?;
+        WorkspaceFile::write_file(&root, &request.path, &request.content)?;
+        Ok(CallToolResult::success(vec![Content::text("File written")]))
+    }
+
+    #[tool(
+        description = "Replace a named symbol in a file. The symbol is located using tree-sitter and its exact source range is replaced."
+    )]
+    pub fn replace_symbol(
+        &self,
+        Parameters(request): Parameters<ReplaceSymbolRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = self.workspace_root()?;
+        WorkspaceFile::replace_symbol(&root, &request.path, &request.symbol, &request.replacement)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            "Symbol replaced",
+        )]))
+    }
+
+    #[tool(
+        description = "Replace a contiguous range of lines identified by hash anchors. Read the file first to obtain anchors from the annotated output."
+    )]
+    pub fn patch_lines(
+        &self,
+        Parameters(request): Parameters<PatchLinesRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = self.workspace_root()?;
+        WorkspaceFile::patch_lines_with_anchors(
+            &root,
+            &request.path,
+            &request.start_anchor,
+            &request.end_anchor,
+            &request.replacement,
+        )?;
+        Ok(CallToolResult::success(vec![Content::text(
+            "Lines patched",
+        )]))
     }
 }
 

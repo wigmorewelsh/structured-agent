@@ -1,8 +1,9 @@
 use crate::expressions::ExternalFunctionExpr;
-use crate::runtime::RuntimeError;
+use crate::runtime::{ExpressionValue, RuntimeError};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
 };
+use arrow::array::Array;
 use async_trait::async_trait;
 use rmcp::model::{CallToolRequestParams, Tool};
 use rmcp::{RoleClient, ServiceError, ServiceExt};
@@ -45,6 +46,42 @@ impl From<std::io::Error> for McpError {
     fn from(e: std::io::Error) -> Self {
         McpError::ConnectionError(e.to_string())
     }
+}
+
+fn serialise_args(
+    args: &[(String, ExpressionValue)],
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    for (name, value) in args {
+        let json_value = if let Ok(s) = value.as_string() {
+            Value::String(s)
+        } else if let Ok(b) = value.as_boolean() {
+            Value::Bool(b)
+        } else if let Ok(n) = value.as_integer() {
+            Value::Number(n.into())
+        } else if value.type_name() == "Unit" {
+            Value::Null
+        } else if let Ok(list) = value.as_list() {
+            if list.len() == 0 {
+                Value::Array(vec![])
+            } else {
+                let values = list.value(0);
+                let mut items = Vec::new();
+                if let Some(string_array) =
+                    values.as_any().downcast_ref::<arrow::array::StringArray>()
+                {
+                    for i in 0..string_array.len() {
+                        items.push(Value::String(string_array.value(i).to_string()));
+                    }
+                }
+                Value::Array(items)
+            }
+        } else {
+            Value::Null
+        };
+        map.insert(name.clone(), json_value);
+    }
+    map
 }
 
 pub struct McpClient {
@@ -120,8 +157,9 @@ impl McpClient {
     pub async fn call_tool(
         &self,
         name: &str,
-        arguments: Value,
-    ) -> std::result::Result<rmcp::model::CallToolResult, McpError> {
+        args: &[(String, ExpressionValue)],
+        _return_type: &Type,
+    ) -> Result<ExpressionValue, McpError> {
         self.ensure_connected().await?;
 
         let client_lock = self.client.read().await;
@@ -129,15 +167,11 @@ impl McpClient {
             .as_ref()
             .ok_or_else(|| McpError::ConnectionError("No client available".to_string()))?;
 
-        let params = if let Value::Object(map) = arguments {
-            Some(map)
-        } else {
-            None
-        };
+        let params = serialise_args(args);
 
         let request = CallToolRequestParams {
             name: name.to_string().into(),
-            arguments: params,
+            arguments: Some(params),
             meta: None,
             task: None,
         };
@@ -147,7 +181,23 @@ impl McpClient {
             .await
             .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
 
-        Ok(response)
+        if response.content.is_empty() {
+            return Ok(ExpressionValue::unit());
+        }
+
+        if response.content.len() != 1 {
+            return Err(McpError::ToolError(format!(
+                "Expected one result, got {}",
+                response.content.len()
+            )));
+        }
+
+        match &*response.content[0] {
+            rmcp::model::RawContent::Text(text_content) => {
+                Ok(ExpressionValue::string(text_content.text.clone()))
+            }
+            other => Ok(ExpressionValue::string(format!("{:?}", other))),
+        }
     }
 
     pub async fn shutdown(&self) -> std::result::Result<(), McpError> {
@@ -235,6 +285,7 @@ pub fn create_client_info(name: &str, version: &str) -> rmcp::model::Implementat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::ExpressionValue;
     use serde_json::json;
 
     #[test]
@@ -260,7 +311,51 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_with_invalid_server() {
         let client = McpClient::new_stdio("echo", vec![], None).await.unwrap();
-        let result = client.call_tool("test_tool", json!({"arg": "value"})).await;
+        let result = client
+            .call_tool(
+                "test_tool",
+                &[("arg".to_string(), ExpressionValue::string("value"))],
+                &Type::string(),
+            )
+            .await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn call_tool_serialises_string_arg() {
+        let result = serialise_args(&[("msg".to_string(), ExpressionValue::string("hello"))]);
+        assert_eq!(serde_json::Value::Object(result), json!({"msg": "hello"}));
+    }
+
+    #[test]
+    fn call_tool_serialises_bool_arg() {
+        let result = serialise_args(&[("flag".to_string(), ExpressionValue::boolean(true))]);
+        assert_eq!(serde_json::Value::Object(result), json!({"flag": true}));
+    }
+
+    #[test]
+    fn call_tool_serialises_integer_arg() {
+        let result = serialise_args(&[("n".to_string(), ExpressionValue::integer(42))]);
+        assert_eq!(serde_json::Value::Object(result), json!({"n": 42}));
+    }
+
+    #[test]
+    fn call_tool_serialises_list_of_strings_arg() {
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::string("a"),
+            ExpressionValue::string("b"),
+        ])
+        .unwrap();
+        let result = serialise_args(&[("items".to_string(), list)]);
+        assert_eq!(
+            serde_json::Value::Object(result),
+            json!({"items": ["a", "b"]})
+        );
+    }
+
+    #[test]
+    fn call_tool_serialises_unit_arg_as_null() {
+        let result = serialise_args(&[("x".to_string(), ExpressionValue::unit())]);
+        assert_eq!(serde_json::Value::Object(result), json!({"x": null}));
     }
 }

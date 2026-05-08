@@ -53,6 +53,16 @@ impl ParsedSource {
         Ok(SymbolOutline::new(symbols))
     }
 
+    pub fn replace_symbol(&self, symbol_name: &str, replacement: &str) -> Result<String> {
+        let outline = self.extract_symbols()?;
+        let (start_byte, end_byte) = outline
+            .find_byte_range(symbol_name)
+            .ok_or_else(|| anyhow!("Symbol '{}' not found", symbol_name))?;
+        let mut new_source = self.source.clone();
+        new_source.replace_range(start_byte..end_byte, replacement);
+        Ok(new_source)
+    }
+
     pub fn find_symbol(&self, symbol_name: &str) -> Result<Option<String>> {
         let outline = self.extract_symbols()?;
         outline.find(symbol_name, &self.source)

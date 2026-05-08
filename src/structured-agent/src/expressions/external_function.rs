@@ -1,9 +1,7 @@
 use crate::mcp::McpClient;
 use crate::runtime::{Context, ExpressionResult, ExpressionValue};
 use crate::types::{ExecutableFunction, Function, Parameter, Type};
-use arrow::array::Array;
 use async_trait::async_trait;
-use serde_json::json;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -76,72 +74,22 @@ impl Function for ExternalFunctionExpr {
         context: Context,
         args: Vec<ExpressionResult>,
     ) -> Result<(Context, ExpressionResult), String> {
-        let mut arguments = json!({});
+        let named_args: Vec<(String, ExpressionValue)> = self
+            .parameters
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.name.clone(), args[i].value.clone()))
+            .collect();
 
-        fn expr_result_to_json(value: &ExpressionValue) -> serde_json::Value {
-            if let Ok(s) = value.as_string() {
-                json!(s)
-            } else if let Ok(b) = value.as_boolean() {
-                json!(b)
-            } else if value.type_name() == "Unit" {
-                json!(null)
-            } else if let Ok(list) = value.as_list() {
-                if list.len() == 0 {
-                    json!([])
-                } else {
-                    let values = list.value(0);
-                    let mut items = Vec::new();
-                    if let Some(string_array) =
-                        values.as_any().downcast_ref::<arrow::array::StringArray>()
-                    {
-                        for i in 0..string_array.len() {
-                            items.push(json!(string_array.value(i)));
-                        }
-                    }
-                    json!(items)
-                }
-            } else {
-                json!(null)
-            }
-        }
-
-        for (i, param) in self.parameters.iter().enumerate() {
-            let json_value = expr_result_to_json(&args[i].value);
-            arguments[&param.name] = json_value;
-        }
-
-        let result_raw = self
+        let result = self
             .mcp_client
-            .call_tool(&self.name, arguments)
+            .call_tool(&self.name, &named_args, &self.return_type)
             .await
             .map_err(|e| format!("MCP tool call failed: {}", e));
 
-        if let Err(e) = result_raw {
-            return Ok((context, ExpressionResult::new(ExpressionValue::string(e))));
-        }
-
-        let result = result_raw?;
-
-        if result.content.is_empty() {
-            Ok((context, ExpressionResult::new(ExpressionValue::unit())))
-        } else {
-            if result.content.len() != 1 {
-                return Err(format!("Expected one result, got {}", result.content.len()));
-            }
-
-            match &*result.content[0] {
-                rmcp::model::RawContent::Text(text_content) => Ok((
-                    context,
-                    ExpressionResult::new(ExpressionValue::string(text_content.text.clone())),
-                )),
-                _ => {
-                    let content_str = format!("{:?}", result.content);
-                    Ok((
-                        context,
-                        ExpressionResult::new(ExpressionValue::string(content_str)),
-                    ))
-                }
-            }
+        match result {
+            Err(e) => Ok((context, ExpressionResult::new(ExpressionValue::string(e)))),
+            Ok(value) => Ok((context, ExpressionResult::new(value))),
         }
     }
 

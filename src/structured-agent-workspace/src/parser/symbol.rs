@@ -7,9 +7,7 @@ pub struct Symbol {
     pub kind: String,
     pub start_line: usize,
     pub end_line: usize,
-    #[allow(dead_code)]
     pub start_byte: usize,
-    #[allow(dead_code)]
     pub end_byte: usize,
     pub parent_start_line: Option<usize>,
     pub trait_name: Option<String>,
@@ -51,6 +49,13 @@ impl SymbolOutline {
         Self::assign_parents(&mut symbols);
         symbols.sort_by_key(|s| s.start_line);
         Self { symbols }
+    }
+
+    pub fn find_byte_range(&self, name: &str) -> Option<(usize, usize)> {
+        self.symbols
+            .iter()
+            .find(|s| s.name == name)
+            .map(|s| (s.start_byte, s.end_byte))
     }
 
     pub fn find(&self, name: &str, source: &str) -> Result<Option<String>> {
