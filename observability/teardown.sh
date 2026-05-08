@@ -4,7 +4,7 @@ set -e
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 DATA_DIR="${DATA_DIR:-$HOME/.structured-agent/observability}"
 
-for SERVICE in prometheus grafana tempo loki; do
+for SERVICE in prometheus grafana jaeger loki; do
   PLIST="$LAUNCH_AGENTS_DIR/com.structured-agent.$SERVICE.plist"
   launchctl unload "$PLIST" 2>/dev/null || true
   rm -f "$PLIST"

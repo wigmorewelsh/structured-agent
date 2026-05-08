@@ -34,11 +34,11 @@ check_http() {
 printf 'Launchd agent status:\n'
 check_launchd prometheus
 check_launchd grafana
-check_launchd tempo
+check_launchd jaeger
 check_launchd loki
 
 printf '\nHTTP health checks:\n'
 check_http prometheus "http://localhost:$PROMETHEUS_PORT/-/healthy"
 check_http grafana    "http://localhost:$GRAFANA_PORT/api/health"
-check_http tempo      "http://localhost:$TEMPO_HTTP_PORT/ready"
+check_http jaeger     "http://localhost:${JAEGER_UI_PORT:-16686}/"
 check_http loki       "http://localhost:$LOKI_PORT/ready"
