@@ -349,14 +349,20 @@ fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Typ
             )),
         }
     } else {
-        Type::Parameterized(
-            DefinitionPath::for_type(module.clone(), ast_type.name().to_string()),
-            ast_type
-                .args
-                .iter()
-                .map(|a| ast_type_to_type(a, module))
-                .collect(),
-        )
+        let inner_args: Vec<Type> = ast_type
+            .args
+            .iter()
+            .map(|a| ast_type_to_type(a, module))
+            .collect();
+        match (ast_type.name(), inner_args.as_slice()) {
+            ("List", [inner]) => Type::list(inner.clone()),
+            ("Option", [inner]) => Type::option(inner.clone()),
+            ("ActorRef", [inner]) => Type::actor_ref(inner.clone()),
+            _ => Type::Parameterized(
+                DefinitionPath::for_type(module.clone(), ast_type.name().to_string()),
+                inner_args,
+            ),
+        }
     }
 }
 

@@ -89,6 +89,13 @@ fn json_schema_to_type(schema: &Value) -> Option<Type> {
         Some("integer") => Some(Type::int()),
         Some("boolean") => Some(Type::boolean()),
         Some("string") => Some(Type::string()),
+        Some("array") => {
+            let item_type = schema
+                .get("items")
+                .and_then(|items| json_schema_to_type(items))
+                .unwrap_or_else(Type::string);
+            Some(Type::list(item_type))
+        }
         _ => None,
     }
 }
@@ -104,6 +111,17 @@ fn parse_text_content(text: &str, return_type: &Type) -> Result<ExpressionValue,
             .parse::<bool>()
             .map(ExpressionValue::boolean)
             .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as boolean", text)))
+    } else if return_type.is_list() {
+        let json: serde_json::Value = serde_json::from_str(text)
+            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as JSON", text)))?;
+        let arr = json
+            .as_array()
+            .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", text)))?;
+        let elements: Vec<ExpressionValue> = arr
+            .iter()
+            .map(|v| ExpressionValue::string(v.as_str().unwrap_or("").to_string()))
+            .collect();
+        ExpressionValue::from_elements(elements).map_err(McpError::ToolError)
     } else {
         Ok(ExpressionValue::string(text.to_string()))
     }
@@ -426,6 +444,36 @@ mod tests {
     #[test]
     fn parse_text_content_bool_invalid() {
         let result = parse_text_content("yes", &Type::boolean());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_text_content_list_of_strings() {
+        let result = parse_text_content("[\"a\",\"b\",\"c\"]", &Type::list(Type::string()));
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
+        let value = result.unwrap();
+        let list = value.as_list().unwrap();
+        assert_eq!(list.value(0).len(), 3);
+    }
+
+    #[test]
+    fn parse_text_content_empty_list() {
+        let result = parse_text_content("[]", &Type::list(Type::string()));
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
+        let value = result.unwrap();
+        let list = value.as_list().unwrap();
+        assert_eq!(list.value(0).len(), 0);
+    }
+
+    #[test]
+    fn parse_text_content_list_invalid_json() {
+        let result = parse_text_content("not json", &Type::list(Type::string()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_text_content_list_not_array() {
+        let result = parse_text_content("{\"key\":\"val\"}", &Type::list(Type::string()));
         assert!(result.is_err());
     }
 

@@ -124,14 +124,11 @@ impl WorkspaceServer {
         Parameters(request): Parameters<ReadFileRequest>,
     ) -> Result<CallToolResult, McpError> {
         let root = self.workspace_root()?;
-        let file = WorkspaceFile::open(&root, &request.path)?;
-
-        let content = match &request.symbol {
-            Some(symbol_name) => file.get_symbol(symbol_name)?,
-            None => file.get_outline()?,
-        };
-
-        Ok(CallToolResult::success(vec![Content::text(content)]))
+        let location =
+            WorkspaceFile::locate(&root, &request.path, request.symbol.as_deref(), None, None)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            location.read()?.content,
+        )]))
     }
 
     #[tool(
@@ -142,39 +139,14 @@ impl WorkspaceServer {
         Parameters(request): Parameters<EditFileRequest>,
     ) -> Result<CallToolResult, McpError> {
         let root = self.workspace_root()?;
-        match (&request.symbol, &request.start_anchor, &request.end_anchor) {
-            (Some(symbol), Some(start), Some(end)) => {
-                WorkspaceFile::patch_symbol_lines_with_anchors(
-                    &root,
-                    &request.path,
-                    symbol,
-                    start,
-                    end,
-                    &request.content,
-                )?;
-            }
-            (Some(symbol), None, None) => {
-                WorkspaceFile::replace_symbol(&root, &request.path, symbol, &request.content)?;
-            }
-            (None, Some(start), Some(end)) => {
-                WorkspaceFile::patch_lines_with_anchors(
-                    &root,
-                    &request.path,
-                    start,
-                    end,
-                    &request.content,
-                )?;
-            }
-            (None, None, None) => {
-                WorkspaceFile::write_file(&root, &request.path, &request.content)?;
-            }
-            _ => {
-                return Err(McpError::invalid_params(
-                    "Provide both start_anchor and end_anchor, or neither".to_string(),
-                    None,
-                ));
-            }
-        }
+        let location = WorkspaceFile::locate(
+            &root,
+            &request.path,
+            request.symbol.as_deref(),
+            request.start_anchor.as_deref(),
+            request.end_anchor.as_deref(),
+        )?;
+        location.save(&request.content)?;
         Ok(CallToolResult::success(vec![Content::text("File edited")]))
     }
 }

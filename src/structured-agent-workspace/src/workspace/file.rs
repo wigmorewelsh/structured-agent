@@ -1,8 +1,55 @@
 use crate::anchor::{self, PatchError};
-use crate::parser::{LanguageType, ParsedSource, SymbolOutline};
+use crate::parser::{LanguageType, ParsedSource};
 use rmcp::ErrorData as McpError;
-use serde_json::json;
+use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
+
+#[derive(Debug, thiserror::Error)]
+enum WorkspaceError {
+    #[error("path '{0}' escapes workspace root")]
+    PathTraversal(String),
+    #[error("file '{0}' does not exist")]
+    FileNotFound(String),
+    #[error("'{0}' is not a file")]
+    NotAFile(String),
+    #[error("unsupported file type '{0}'")]
+    UnsupportedFileType(String),
+    #[error("symbol '{symbol}' not found in '{path}'")]
+    SymbolNotFound { path: String, symbol: String },
+    #[error("anchor not found: {0}")]
+    AnchorNotFound(String),
+    #[error("ambiguous anchor: {0}")]
+    AmbiguousAnchor(String),
+    #[error("start anchor is after end anchor")]
+    AnchorOrderInvalid,
+    #[error("provide both start_anchor and end_anchor, or neither")]
+    InconsistentAnchors,
+    #[error("I/O error on '{path}': {error}")]
+    Io { path: String, error: std::io::Error },
+    #[error("parse error in '{path}': {error}")]
+    Parse { path: String, error: String },
+}
+
+impl From<WorkspaceError> for McpError {
+    fn from(e: WorkspaceError) -> Self {
+        match e {
+            WorkspaceError::Io { .. } | WorkspaceError::Parse { .. } => {
+                McpError::internal_error(e.to_string(), None)
+            }
+            _ => McpError::invalid_params(e.to_string(), None),
+        }
+    }
+}
+
+impl From<PatchError> for WorkspaceError {
+    fn from(e: PatchError) -> Self {
+        match e {
+            PatchError::AnchorNotFound(a) => WorkspaceError::AnchorNotFound(a),
+            PatchError::AmbiguousAnchor(a) => WorkspaceError::AmbiguousAnchor(a),
+            PatchError::AnchorOrderInvalid => WorkspaceError::AnchorOrderInvalid,
+        }
+    }
+}
 
 fn normalize_path(path: &Path) -> PathBuf {
     let mut components: Vec<Component> = vec![];
@@ -31,10 +78,6 @@ impl FileLocation {
             relative_path: relative_path.to_string(),
         }
     }
-
-    fn relative_path(&self) -> &str {
-        &self.relative_path
-    }
 }
 
 impl AsRef<Path> for FileLocation {
@@ -43,237 +86,211 @@ impl AsRef<Path> for FileLocation {
     }
 }
 
-pub struct WorkspaceFile {
-    location: FileLocation,
-    parsed: ParsedSource,
+pub struct ReadResult {
+    pub content: String,
+    source: String,
+    span: Span,
+    file_path: PathBuf,
+    relative_path: String,
 }
 
-impl WorkspaceFile {
-    pub fn open(workspace_root: &Path, relative_path: &str) -> Result<Self, McpError> {
-        let location = FileLocation::new(workspace_root, relative_path);
+enum Span {
+    WholeFile,
+    Bytes(Range<usize>),
+}
 
-        Self::validate_path(&location, workspace_root)?;
+impl ReadResult {
+    fn overwrite(&self, text: &str) -> Result<(), WorkspaceError> {
+        let new_source = match &self.span {
+            Span::WholeFile => text.to_string(),
+            Span::Bytes(range) => {
+                let mut s = self.source.clone();
+                s.replace_range(range.clone(), text);
+                s
+            }
+        };
+        std::fs::write(&self.file_path, new_source).map_err(|e| WorkspaceError::Io {
+            path: self.relative_path.clone(),
+            error: e,
+        })
+    }
+}
 
-        let content = Self::read_content(&location)?;
-        let language = Self::detect_language(&location)?;
+enum LocationKind {
+    WholeFile,
+    Symbol(String),
+    AnchorRange { start: String, end: String },
+    SymbolWithAnchors { symbol: String, start: String, end: String },
+}
 
-        let parsed = ParsedSource::new(content, language).map_err(|e| {
-            McpError::internal_error(
-                format!("Failed to parse source: {}", e),
-                Some(json!({"path": location.relative_path(), "language": format!("{:?}", language)})),
-            )
-        })?;
+pub struct ContentLocation {
+    full_path: PathBuf,
+    relative_path: String,
+    kind: LocationKind,
+}
 
-        Ok(Self { location, parsed })
+impl ContentLocation {
+    pub fn read(&self) -> Result<ReadResult, McpError> {
+        match &self.kind {
+            LocationKind::WholeFile => {
+                let (source, parsed) = self.load()?;
+                let content = parsed
+                    .extract_symbols()
+                    .map_err(|e| WorkspaceError::Parse {
+                        path: self.relative_path.clone(),
+                        error: e.to_string(),
+                    })?
+                    .to_string();
+                Ok(ReadResult {
+                    content,
+                    source,
+                    span: Span::WholeFile,
+                    file_path: self.full_path.clone(),
+                    relative_path: self.relative_path.clone(),
+                })
+            }
+            LocationKind::Symbol(name) => self.read_symbol(name).map_err(Into::into),
+            LocationKind::AnchorRange { .. } => {
+                let source = self.read_source()?;
+                let content = anchor::annotate(&source);
+                Ok(ReadResult {
+                    content,
+                    source,
+                    span: Span::WholeFile,
+                    file_path: self.full_path.clone(),
+                    relative_path: self.relative_path.clone(),
+                })
+            }
+            LocationKind::SymbolWithAnchors { symbol, .. } => {
+                self.read_symbol(symbol).map_err(Into::into)
+            }
+        }
     }
 
-    pub fn relative_path(&self) -> &str {
-        self.location.relative_path()
+    pub fn save(&self, new_content: &str) -> Result<(), McpError> {
+        if let LocationKind::WholeFile = &self.kind {
+            return std::fs::write(&self.full_path, new_content)
+                .map_err(|e| WorkspaceError::Io { path: self.relative_path.clone(), error: e }.into());
+        }
+        let result = self.read()?;
+        match &self.kind {
+            LocationKind::WholeFile => unreachable!(),
+            LocationKind::Symbol(_) => result.overwrite(new_content).map_err(Into::into),
+            LocationKind::AnchorRange { start, end }
+            | LocationKind::SymbolWithAnchors { start, end, .. } => {
+                let patched = anchor::patch(&result.content, start, end, new_content)
+                    .map_err(WorkspaceError::from)?;
+                result
+                    .overwrite(&anchor::strip_annotations(&patched))
+                    .map_err(Into::into)
+            }
+        }
     }
 
-    pub fn get_outline(&self) -> Result<String, McpError> {
-        let outline = self.extract_symbols()?;
-        Ok(outline.to_string())
-    }
-
-    pub fn replace_symbol(
-        workspace_root: &Path,
-        relative_path: &str,
-        symbol_name: &str,
-        replacement: &str,
-    ) -> Result<(), McpError> {
-        let file = Self::open(workspace_root, relative_path)?;
-        let new_source = file
-            .parsed
-            .replace_symbol(symbol_name, replacement)
-            .map_err(|e| {
-                McpError::invalid_params(
-                    format!("Failed to replace symbol: {}", e),
-                    Some(json!({"path": relative_path, "symbol": symbol_name})),
-                )
-            })?;
-        Self::write_content(&file.location, &new_source)
-    }
-
-    pub fn write_file(
-        workspace_root: &Path,
-        relative_path: &str,
-        content: &str,
-    ) -> Result<(), McpError> {
-        let location = FileLocation::new(workspace_root, relative_path);
-        Self::validate_write_path(&location, workspace_root)?;
-        Self::write_content(&location, content)
-    }
-
-    pub fn get_symbol(&self, symbol_name: &str) -> Result<String, McpError> {
-        let symbol_content = self.parsed.find_symbol(symbol_name).map_err(|e| {
-            McpError::internal_error(
-                format!("Failed to find symbol: {}", e),
-                Some(json!({"path": self.relative_path(), "symbol": symbol_name})),
-            )
-        })?;
-
-        let content = symbol_content.ok_or_else(|| {
-            McpError::invalid_params(
-                format!("Symbol '{}' not found", symbol_name),
-                Some(json!({"path": self.relative_path(), "symbol": symbol_name})),
-            )
-        })?;
-
-        Ok(anchor::annotate(&content))
-    }
-
-    pub fn patch_symbol_lines_with_anchors(
-        workspace_root: &Path,
-        relative_path: &str,
-        symbol_name: &str,
-        start_anchor: &str,
-        end_anchor: &str,
-        replacement: &str,
-    ) -> Result<(), McpError> {
-        let file = Self::open(workspace_root, relative_path)?;
-        let symbol_text = file
-            .parsed
-            .find_symbol(symbol_name)
-            .map_err(|e| {
-                McpError::internal_error(
-                    format!("Failed to find symbol: {}", e),
-                    Some(json!({"path": relative_path, "symbol": symbol_name})),
-                )
+    fn read_symbol(&self, name: &str) -> Result<ReadResult, WorkspaceError> {
+        let (source, parsed) = self.load()?;
+        let (text, start_byte, end_byte) = parsed
+            .find_symbol_with_range(name)
+            .map_err(|e| WorkspaceError::Parse {
+                path: self.relative_path.clone(),
+                error: e.to_string(),
             })?
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    format!("Symbol '{}' not found", symbol_name),
-                    Some(json!({"path": relative_path, "symbol": symbol_name})),
-                )
+            .ok_or_else(|| WorkspaceError::SymbolNotFound {
+                path: self.relative_path.clone(),
+                symbol: name.to_string(),
             })?;
-        let annotated = anchor::annotate(&symbol_text);
-        let patched = anchor::patch(&annotated, start_anchor, end_anchor, replacement).map_err(
-            |e| match e {
-                PatchError::AnchorNotFound(a) => McpError::invalid_params(
-                    format!("Anchor not found: {}", a),
-                    Some(json!({"path": relative_path, "anchor": a})),
-                ),
-                PatchError::AmbiguousAnchor(a) => McpError::invalid_params(
-                    format!("Ambiguous anchor: {}", a),
-                    Some(json!({"path": relative_path, "anchor": a})),
-                ),
-                PatchError::AnchorOrderInvalid => McpError::invalid_params(
-                    "Start anchor comes after end anchor".to_string(),
-                    Some(json!({"path": relative_path})),
-                ),
-            },
-        )?;
-        let new_symbol_text = anchor::strip_annotations(&patched);
-        let new_source = file
-            .parsed
-            .replace_symbol(symbol_name, &new_symbol_text)
-            .map_err(|e| {
-                McpError::internal_error(
-                    format!("Failed to replace symbol: {}", e),
-                    Some(json!({"path": relative_path, "symbol": symbol_name})),
-                )
-            })?;
-        Self::write_content(&file.location, &new_source)
-    }
-
-    pub fn patch_lines_with_anchors(
-        workspace_root: &Path,
-        relative_path: &str,
-        start_anchor: &str,
-        end_anchor: &str,
-        replacement: &str,
-    ) -> Result<(), McpError> {
-        let file = Self::open(workspace_root, relative_path)?;
-        let annotated = anchor::annotate(file.parsed.source());
-        let patched = anchor::patch(&annotated, start_anchor, end_anchor, replacement).map_err(
-            |e| match e {
-                PatchError::AnchorNotFound(a) => McpError::invalid_params(
-                    format!("Anchor not found: {}", a),
-                    Some(json!({"path": relative_path, "anchor": a})),
-                ),
-                PatchError::AmbiguousAnchor(a) => McpError::invalid_params(
-                    format!("Ambiguous anchor: {}", a),
-                    Some(json!({"path": relative_path, "anchor": a})),
-                ),
-                PatchError::AnchorOrderInvalid => McpError::invalid_params(
-                    "Start anchor comes after end anchor".to_string(),
-                    Some(json!({"path": relative_path})),
-                ),
-            },
-        )?;
-        let new_content = anchor::strip_annotations(&patched);
-        Self::write_content(&file.location, &new_content)
-    }
-
-    fn extract_symbols(&self) -> Result<SymbolOutline, McpError> {
-        self.parsed.extract_symbols().map_err(|e| {
-            McpError::internal_error(
-                format!("Failed to extract symbols: {}", e),
-                Some(json!({"path": self.relative_path()})),
-            )
+        Ok(ReadResult {
+            content: anchor::annotate(&text),
+            source,
+            span: Span::Bytes(start_byte..end_byte),
+            file_path: self.full_path.clone(),
+            relative_path: self.relative_path.clone(),
         })
     }
 
-    fn validate_write_path(location: &FileLocation, workspace_root: &Path) -> Result<(), McpError> {
-        if !location.as_ref().starts_with(workspace_root) {
-            return Err(McpError::invalid_params(
-                "Path escapes workspace root".to_string(),
-                Some(json!({"path": location.relative_path()})),
-            ));
-        }
-        Ok(())
+    fn load(&self) -> Result<(String, ParsedSource), WorkspaceError> {
+        let source = self.read_source()?;
+        let language =
+            LanguageType::try_from(self.full_path.as_path()).map_err(|_| WorkspaceError::UnsupportedFileType(self.relative_path.clone()))?;
+        let parsed = ParsedSource::new(source.clone(), language).map_err(|e| WorkspaceError::Parse {
+            path: self.relative_path.clone(),
+            error: e.to_string(),
+        })?;
+        Ok((source, parsed))
     }
 
-    fn write_content(location: &FileLocation, content: &str) -> Result<(), McpError> {
-        std::fs::write(location.as_ref(), content).map_err(|e| {
-            McpError::internal_error(
-                format!("Failed to write file: {}", e),
-                Some(json!({"path": location.relative_path()})),
-            )
+    fn read_source(&self) -> Result<String, WorkspaceError> {
+        std::fs::read_to_string(&self.full_path).map_err(|e| WorkspaceError::Io {
+            path: self.relative_path.clone(),
+            error: e,
+        })
+    }
+}
+
+pub struct WorkspaceFile;
+
+impl WorkspaceFile {
+    pub fn locate(
+        root: &Path,
+        path: &str,
+        symbol: Option<&str>,
+        start_anchor: Option<&str>,
+        end_anchor: Option<&str>,
+    ) -> Result<ContentLocation, McpError> {
+        let loc = FileLocation::new(root, path);
+
+        let kind = match (symbol, start_anchor, end_anchor) {
+            (None, None, None) => {
+                Self::validate_write_path(&loc, root)?;
+                LocationKind::WholeFile
+            }
+            (Some(s), None, None) => {
+                Self::validate_path(&loc, root)?;
+                LocationKind::Symbol(s.to_string())
+            }
+            (None, Some(start), Some(end)) => {
+                Self::validate_path(&loc, root)?;
+                LocationKind::AnchorRange {
+                    start: start.to_string(),
+                    end: end.to_string(),
+                }
+            }
+            (Some(s), Some(start), Some(end)) => {
+                Self::validate_path(&loc, root)?;
+                LocationKind::SymbolWithAnchors {
+                    symbol: s.to_string(),
+                    start: start.to_string(),
+                    end: end.to_string(),
+                }
+            }
+            _ => return Err(WorkspaceError::InconsistentAnchors.into()),
+        };
+
+        Ok(ContentLocation {
+            full_path: loc.full_path,
+            relative_path: loc.relative_path,
+            kind,
         })
     }
 
     fn validate_path(location: &FileLocation, workspace_root: &Path) -> Result<(), McpError> {
-        if !location.as_ref().starts_with(workspace_root) {
-            return Err(McpError::invalid_params(
-                "Path escapes workspace root".to_string(),
-                Some(json!({"path": location.relative_path()})),
-            ));
-        }
+        Self::validate_write_path(location, workspace_root)?;
 
         if !location.as_ref().exists() {
-            return Err(McpError::invalid_params(
-                "File does not exist".to_string(),
-                Some(json!({"path": location.relative_path()})),
-            ));
+            return Err(WorkspaceError::FileNotFound(location.relative_path.clone()).into());
         }
 
         if !location.as_ref().is_file() {
-            return Err(McpError::invalid_params(
-                "Path is not a file".to_string(),
-                Some(json!({"path": location.relative_path()})),
-            ));
+            return Err(WorkspaceError::NotAFile(location.relative_path.clone()).into());
         }
 
         Ok(())
     }
 
-    fn read_content(location: &FileLocation) -> Result<String, McpError> {
-        std::fs::read_to_string(location.as_ref()).map_err(|e| {
-            McpError::internal_error(
-                format!("Failed to read file: {}", e),
-                Some(json!({"path": location.relative_path()})),
-            )
-        })
-    }
-
-    fn detect_language(location: &FileLocation) -> Result<LanguageType, McpError> {
-        LanguageType::try_from(location.as_ref()).map_err(|_| {
-            McpError::invalid_params(
-                "Unsupported file type".to_string(),
-                Some(json!({"path": location.relative_path()})),
-            )
-        })
+    fn validate_write_path(location: &FileLocation, workspace_root: &Path) -> Result<(), McpError> {
+        if !location.as_ref().starts_with(workspace_root) {
+            return Err(WorkspaceError::PathTraversal(location.relative_path.clone()).into());
+        }
+        Ok(())
     }
 }

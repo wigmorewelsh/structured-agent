@@ -35,5 +35,11 @@ def echo_bool(value: bool) -> bool:
     return value
 
 
+@mcp.tool
+def echo_list(items: list[str]) -> list[str]:
+    """Echo back the list of strings exactly as received."""
+    return items
+
+
 if __name__ == "__main__":
     mcp.run()

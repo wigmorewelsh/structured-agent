@@ -355,3 +355,38 @@ fn main(): Boolean {
     assert!(result.is_ok(), "echo_bool test failed: {:?}", result.err());
     assert_eq!(result.unwrap().as_boolean().unwrap(), true);
 }
+
+#[tokio::test]
+async fn test_mcp_echo_list_full_pipeline() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo_list(items: List<String>): List<String>
+
+fn main(): List<String> {
+    return echo_list(["a", "b", "c"])
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "echo_list test failed: {:?}", result.err());
+
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    assert_eq!(list.value(0).len(), 3);
+}

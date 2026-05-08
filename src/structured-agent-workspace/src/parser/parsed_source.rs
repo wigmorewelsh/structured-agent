@@ -63,6 +63,14 @@ impl ParsedSource {
         Ok(new_source)
     }
 
+    pub fn find_symbol_with_range(
+        &self,
+        symbol_name: &str,
+    ) -> Result<Option<(String, usize, usize)>> {
+        let outline = self.extract_symbols()?;
+        outline.find_with_byte_range(symbol_name, &self.source)
+    }
+
     pub fn find_symbol(&self, symbol_name: &str) -> Result<Option<String>> {
         let outline = self.extract_symbols()?;
         outline.find(symbol_name, &self.source)

@@ -58,6 +58,21 @@ impl SymbolOutline {
             .map(|s| (s.start_byte, s.end_byte))
     }
 
+    pub fn find_with_byte_range(
+        &self,
+        name: &str,
+        source: &str,
+    ) -> Result<Option<(String, usize, usize)>> {
+        for symbol in &self.symbols {
+            if symbol.name == name {
+                if let Some(text) = Self::extract_symbol_lines(symbol, source)? {
+                    return Ok(Some((text, symbol.start_byte, symbol.end_byte)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub fn find(&self, name: &str, source: &str) -> Result<Option<String>> {
         for symbol in &self.symbols {
             if symbol.name == name {
