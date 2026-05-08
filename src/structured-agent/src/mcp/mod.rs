@@ -228,11 +228,21 @@ impl McpClient {
             return Ok(ExpressionValue::unit());
         }
 
-        if response.content.len() != 1 {
-            return Err(McpError::ToolError(format!(
-                "Expected one result, got {}",
-                response.content.len()
-            )));
+        if response.content.len() > 1 {
+            let mut elements = Vec::new();
+            for block in &response.content {
+                match &**block {
+                    rmcp::model::RawContent::Text(text_content) => {
+                        elements.push(ExpressionValue::string(text_content.text.clone()));
+                    }
+                    _ => {
+                        return Err(McpError::ToolError(
+                            "Multi-block response contained non-text content".to_string(),
+                        ));
+                    }
+                }
+            }
+            return ExpressionValue::from_elements(elements).map_err(McpError::ToolError);
         }
 
         match &*response.content[0] {

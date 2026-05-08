@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastmcp import FastMCP
+from mcp.types import TextContent
 
 mcp = FastMCP("Echo Server")
 
@@ -39,6 +40,12 @@ def echo_bool(value: bool) -> bool:
 def echo_list(items: list[str]) -> list[str]:
     """Echo back the list of strings exactly as received."""
     return items
+
+
+@mcp.tool
+def multi_echo(messages: list[str]) -> list[TextContent]:
+    """Return one text content block per message."""
+    return [TextContent(type="text", text=msg) for msg in messages]
 
 
 if __name__ == "__main__":

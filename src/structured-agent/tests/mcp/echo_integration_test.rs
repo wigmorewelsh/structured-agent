@@ -1,3 +1,4 @@
+use arrow::array::StringArray;
 use std::sync::Arc;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::compiler::Compiler;
@@ -354,6 +355,85 @@ fn main(): Boolean {
     let result = runtime.run().await;
     assert!(result.is_ok(), "echo_bool test failed: {:?}", result.err());
     assert_eq!(result.unwrap().as_boolean().unwrap(), true);
+}
+
+#[tokio::test]
+async fn test_mcp_multi_echo_returns_list() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn multi_echo(messages: List<String>): List<String>
+
+fn main(): List<String> {
+    return multi_echo(["hello", "world", "foo"])
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "multi_echo test failed: {:?}", result.err());
+
+    let value = result.unwrap();
+    let list = value.as_list().unwrap();
+    let inner = list.value(0);
+    assert_eq!(inner.len(), 3);
+    let strings = inner
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(strings.value(0), "hello");
+    assert_eq!(strings.value(1), "world");
+    assert_eq!(strings.value(2), "foo");
+}
+
+#[tokio::test]
+async fn test_mcp_single_content_block_still_returns_string() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo(message: String): String
+
+fn main(): String {
+    return echo("single block")
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(
+        result.is_ok(),
+        "single-block regression test failed: {:?}",
+        result.err()
+    );
+    assert_eq!(result.unwrap().as_string().unwrap(), "single block");
 }
 
 #[tokio::test]
