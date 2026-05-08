@@ -10,6 +10,7 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -31,6 +32,7 @@ pub struct ReadFileRequest {
 #[derive(Clone)]
 pub struct WorkspaceServer {
     workspace_root: Arc<RwLock<Option<PathBuf>>>,
+    roots_generation: Arc<AtomicU64>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -39,6 +41,7 @@ impl WorkspaceServer {
     pub fn new(workspace_root: PathBuf) -> Self {
         Self {
             workspace_root: Arc::new(RwLock::new(Some(workspace_root))),
+            roots_generation: Arc::new(AtomicU64::new(0)),
             tool_router: Self::tool_router(),
         }
     }
@@ -46,6 +49,7 @@ impl WorkspaceServer {
     pub fn new_uninitialized() -> Self {
         Self {
             workspace_root: Arc::new(RwLock::new(None)),
+            roots_generation: Arc::new(AtomicU64::new(0)),
             tool_router: Self::tool_router(),
         }
     }
@@ -59,8 +63,12 @@ impl WorkspaceServer {
     }
 
     async fn apply_roots(&self, peer: &Peer<RoleServer>) {
+        let generation = self.roots_generation.fetch_add(1, Ordering::SeqCst) + 1;
         match peer.list_roots().await {
             Ok(result) => {
+                if self.roots_generation.load(Ordering::SeqCst) != generation {
+                    return;
+                }
                 if let Some(root) = result.roots.first() {
                     let path = PathBuf::from(root.uri.trim_start_matches("file://"));
                     match path.canonicalize() {
@@ -108,11 +116,19 @@ impl WorkspaceServer {
 #[tool_handler]
 impl ServerHandler for WorkspaceServer {
     async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
-        self.apply_roots(&context.peer).await;
+        let this = self.clone();
+        let peer = context.peer.clone();
+        tokio::spawn(async move {
+            this.apply_roots(&peer).await;
+        });
     }
 
     async fn on_roots_list_changed(&self, context: NotificationContext<RoleServer>) {
-        self.apply_roots(&context.peer).await;
+        let this = self.clone();
+        let peer = context.peer.clone();
+        tokio::spawn(async move {
+            this.apply_roots(&peer).await;
+        });
     }
 
     fn get_info(&self) -> ServerInfo {
