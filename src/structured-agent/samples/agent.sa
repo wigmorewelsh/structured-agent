@@ -40,6 +40,7 @@ fn is_task_complete(): Boolean {
 }
 
 fn summarize(): String {
+    # it looks like this function is breaking reporting in normal loops
     '''
     Summarize what has been done and why.
     Add a list of files changed.
@@ -66,7 +67,7 @@ fn sub_tasks(task_description: String): String {
     for sub_task in plan.iter() {
         sub_task!
 
-        let summary = agent_loop()
+        let summary = agent_loop(20)
         progress_report = summarize_sub_task(progress_report, summary)
     }
 
@@ -78,21 +79,9 @@ fn sub_tasks(task_description: String): String {
 fn sub_process(content: String): String {
     content!
 
-    return agent_loop()
+    return agent_loop(20)
 }
 
-fn has_repeated_last_action(max_repeat: Int): Boolean {
-    '''
-    has the last tool calls been repeated more than ${max_repeat} times?
-    '''!
-}
-
-fn summarize_repeated_action(): String {
-    '''
-    Summarize the repeated action and why it might be happening.
-    '''!
-    summarize()!
-}
 
 fn make_report(context: String): String {
     context!
@@ -116,7 +105,11 @@ fn thinking(content: String): String {
     content!
 }
 
-fn agent_loop(): String {
+fn agent_loop(turns_remaining: Int): String {
+
+    if turns_remaining.equal(0) {
+        return summarize()
+    }
 
     let result = select {
         edit_file(_),
@@ -135,14 +128,10 @@ fn agent_loop(): String {
 
     result!
 
-    if has_repeated_last_action(3) {
-        return summarize_repeated_action()
-    }
-
     if is_task_complete() {
         return summarize()
     } else {
-        return agent_loop()
+        return agent_loop(turns_remaining.subtract(1))
     }
 }
 
@@ -198,7 +187,7 @@ fn main(): () {
 
         plan()!
 
-        let task_summary = agent_loop()
+        let task_summary = agent_loop(20)
 
         let response = user_response(task_summary)
         print(response)

@@ -13,6 +13,10 @@ with_acp_functions = true
 # - gemini-3-pro-preview
 # - Or specify a custom model name
 
+metrics_port = 9091
+otlp_endpoint = "http://localhost:4317"
+loki_url = "http://localhost:3100"
+
 [[mcp_server]]
 command = "common-tools"
 args = []
