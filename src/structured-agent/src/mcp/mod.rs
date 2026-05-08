@@ -49,50 +49,35 @@ impl From<std::io::Error> for McpError {
     }
 }
 
-fn serialise_args(
-    args: &[(String, ExpressionValue)],
-) -> serde_json::Map<String, serde_json::Value> {
+fn expression_to_json(value: &ExpressionValue) -> Value {
+    if let Ok(s) = value.as_string() {
+        return Value::String(s);
+    }
+    if let Ok(n) = value.as_integer() {
+        return Value::Number(n.into());
+    }
+    if let Ok(b) = value.as_boolean() {
+        return Value::Bool(b);
+    }
+    if value.type_name() == "Unit" {
+        return Value::Null;
+    }
+    if value.is_option() {
+        return match value.as_option() {
+            Ok(Some(inner)) => expression_to_json(&inner),
+            _ => Value::Null,
+        };
+    }
+    if let Ok(elements) = value.as_list_elements() {
+        return Value::Array(elements.iter().map(expression_to_json).collect());
+    }
+    Value::Null
+}
+
+fn serialise_args(args: &[(String, ExpressionValue)]) -> serde_json::Map<String, Value> {
     let mut map = serde_json::Map::new();
     for (name, value) in args {
-        let json_value = if let Ok(s) = value.as_string() {
-            Value::String(s)
-        } else if let Ok(b) = value.as_boolean() {
-            Value::Bool(b)
-        } else if let Ok(n) = value.as_integer() {
-            Value::Number(n.into())
-        } else if value.type_name() == "Unit" {
-            Value::Null
-        } else if let Ok(list) = value.as_list() {
-            if list.len() == 0 {
-                Value::Array(vec![])
-            } else {
-                let values = list.value(0);
-                let mut items = Vec::new();
-                if let Some(string_array) =
-                    values.as_any().downcast_ref::<arrow::array::StringArray>()
-                {
-                    for i in 0..string_array.len() {
-                        items.push(Value::String(string_array.value(i).to_string()));
-                    }
-                } else if let Some(int_array) =
-                    values.as_any().downcast_ref::<arrow::array::Int64Array>()
-                {
-                    for i in 0..int_array.len() {
-                        items.push(Value::Number(int_array.value(i).into()));
-                    }
-                } else if let Some(bool_array) =
-                    values.as_any().downcast_ref::<arrow::array::BooleanArray>()
-                {
-                    for i in 0..bool_array.len() {
-                        items.push(Value::Bool(bool_array.value(i)));
-                    }
-                }
-                Value::Array(items)
-            }
-        } else {
-            Value::Null
-        };
-        map.insert(name.clone(), json_value);
+        map.insert(name.clone(), expression_to_json(value));
     }
     map
 }
@@ -652,6 +637,43 @@ mod tests {
         let elements = result.as_list_elements().unwrap();
         assert_eq!(elements.len(), 3);
         assert_eq!(elements[0].as_integer().unwrap(), 1);
+    }
+
+    #[test]
+    fn serialise_args_list_of_int() {
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::integer(1),
+            ExpressionValue::integer(2),
+            ExpressionValue::integer(3),
+        ])
+        .unwrap();
+        let map = serialise_args(&[("items".to_string(), list)]);
+        assert_eq!(map["items"], serde_json::json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn serialise_args_list_of_bool() {
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::boolean(true),
+            ExpressionValue::boolean(false),
+        ])
+        .unwrap();
+        let map = serialise_args(&[("flags".to_string(), list)]);
+        assert_eq!(map["flags"], serde_json::json!([true, false]));
+    }
+
+    #[test]
+    fn serialise_args_option_some_string() {
+        let opt = ExpressionValue::option_some(ExpressionValue::string("x"));
+        let map = serialise_args(&[("val".to_string(), opt)]);
+        assert_eq!(map["val"], serde_json::json!("x"));
+    }
+
+    #[test]
+    fn serialise_args_option_none() {
+        let opt = ExpressionValue::option_none_utf8();
+        let map = serialise_args(&[("val".to_string(), opt)]);
+        assert_eq!(map["val"], serde_json::Value::Null);
     }
 
     #[test]
