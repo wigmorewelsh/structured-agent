@@ -4,6 +4,7 @@ use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
 };
 use arrow::array::Array;
+use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
 use rmcp::model::{CallToolRequestParams, Tool};
 use rmcp::{RoleClient, ServiceError, ServiceExt};
@@ -73,6 +74,18 @@ fn serialise_args(
                     for i in 0..string_array.len() {
                         items.push(Value::String(string_array.value(i).to_string()));
                     }
+                } else if let Some(int_array) =
+                    values.as_any().downcast_ref::<arrow::array::Int64Array>()
+                {
+                    for i in 0..int_array.len() {
+                        items.push(Value::Number(int_array.value(i).into()));
+                    }
+                } else if let Some(bool_array) =
+                    values.as_any().downcast_ref::<arrow::array::BooleanArray>()
+                {
+                    for i in 0..bool_array.len() {
+                        items.push(Value::Bool(bool_array.value(i)));
+                    }
                 }
                 Value::Array(items)
             }
@@ -100,31 +113,84 @@ fn json_schema_to_type(schema: &Value) -> Option<Type> {
     }
 }
 
-fn parse_text_content(text: &str, return_type: &Type) -> Result<ExpressionValue, McpError> {
-    if return_type.is_int() {
-        text.trim()
-            .parse::<i64>()
-            .map(ExpressionValue::integer)
-            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as integer", text)))
-    } else if return_type.is_boolean() {
-        text.trim()
-            .parse::<bool>()
-            .map(ExpressionValue::boolean)
-            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as boolean", text)))
-    } else if return_type.is_list() {
-        let json: serde_json::Value = serde_json::from_str(text)
-            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as JSON", text)))?;
-        let arr = json
-            .as_array()
-            .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", text)))?;
-        let elements: Vec<ExpressionValue> = arr
-            .iter()
-            .map(|v| ExpressionValue::string(v.as_str().unwrap_or("").to_string()))
-            .collect();
-        ExpressionValue::from_elements(elements).map_err(McpError::ToolError)
+fn ty_to_datatype(ty: &Type) -> DataType {
+    if ty.is_string() {
+        DataType::Utf8
+    } else if ty.is_int() {
+        DataType::Int64
+    } else if ty.is_boolean() {
+        DataType::Boolean
+    } else if ty.is_unit() {
+        DataType::Null
+    } else if ty.is_list() {
+        if let Type::Parameterized(_, args) = ty {
+            if let Some(inner) = args.first() {
+                return DataType::List(Arc::new(Field::new("item", ty_to_datatype(inner), true)));
+            }
+        }
+        DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))
     } else {
-        Ok(ExpressionValue::string(text.to_string()))
+        DataType::Null
     }
+}
+
+
+
+fn json_to_expression(json: &serde_json::Value, ty: &Type) -> Result<ExpressionValue, McpError> {
+    if ty.is_string() {
+        return Ok(ExpressionValue::string(
+            json.as_str().unwrap_or(&json.to_string()).to_string(),
+        ));
+    }
+    if ty.is_int() {
+        let n = json.as_i64()
+            .or_else(|| json.as_str().and_then(|s| s.parse::<i64>().ok()))
+            .ok_or_else(|| McpError::ToolError(format!("Cannot parse {:?} as integer", json)))?;
+        return Ok(ExpressionValue::integer(n));
+    }
+    if ty.is_boolean() {
+        let b = json.as_bool()
+            .or_else(|| json.as_str().and_then(|s| s.parse::<bool>().ok()))
+            .ok_or_else(|| McpError::ToolError(format!("Cannot parse {:?} as boolean", json)))?;
+        return Ok(ExpressionValue::boolean(b));
+    }
+    if ty.is_unit() {
+        return Ok(ExpressionValue::unit());
+    }
+    if ty.is_list() {
+        if let Type::Parameterized(_, args) = ty {
+            if let Some(inner) = args.first() {
+                let arr = json.as_array()
+                    .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", json)))?;
+                let elements: Result<Vec<ExpressionValue>, McpError> =
+                    arr.iter().map(|v| json_to_expression(v, inner)).collect();
+                return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
+            }
+        }
+    }
+    if ty.is_option() {
+        if let Type::Parameterized(_, args) = ty {
+            if let Some(inner) = args.first() {
+                if json.is_null() {
+                    return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(inner)));
+                }
+                return json_to_expression(json, inner).map(ExpressionValue::option_some);
+            }
+        }
+    }
+    Err(McpError::ToolError(format!(
+        "Type '{}' must be explicitly declared in SA; user-defined types are not supported for external function calls",
+        ty.name()
+    )))
+}
+
+fn parse_text_content(text: &str, return_type: &Type) -> Result<ExpressionValue, McpError> {
+    if return_type.is_string() {
+        return Ok(ExpressionValue::string(text.to_string()));
+    }
+    let json: serde_json::Value = serde_json::from_str(text)
+        .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as JSON", text)))?;
+    json_to_expression(&json, return_type)
 }
 
 pub struct McpClient {
@@ -428,6 +494,21 @@ mod tests {
     }
 
     #[test]
+    fn call_tool_serialises_list_of_integers_arg() {
+        let list = ExpressionValue::from_elements(vec![
+            ExpressionValue::integer(1),
+            ExpressionValue::integer(2),
+            ExpressionValue::integer(3),
+        ])
+        .unwrap();
+        let result = serialise_args(&[("items".to_string(), list)]);
+        assert_eq!(
+            serde_json::Value::Object(result),
+            json!({"items": [1, 2, 3]})
+        );
+    }
+
+    #[test]
     fn parse_text_content_string() {
         let result = parse_text_content("hello", &Type::string());
         assert!(result.is_ok());
@@ -501,5 +582,82 @@ mod tests {
     fn call_tool_serialises_unit_arg_as_null() {
         let result = serialise_args(&[("x".to_string(), ExpressionValue::unit())]);
         assert_eq!(serde_json::Value::Object(result), json!({"x": null}));
+    }
+
+    #[test]
+    fn json_to_expression_string() {
+        let result = json_to_expression(&serde_json::json!("hi"), &Type::string()).unwrap();
+        assert_eq!(result.as_string().unwrap(), "hi");
+    }
+
+    #[test]
+    fn json_to_expression_int() {
+        let result = json_to_expression(&serde_json::json!(42), &Type::int()).unwrap();
+        assert_eq!(result.as_integer().unwrap(), 42);
+    }
+
+    #[test]
+    fn json_to_expression_bool() {
+        let result = json_to_expression(&serde_json::json!(true), &Type::boolean()).unwrap();
+        assert!(result.as_boolean().unwrap());
+    }
+
+    #[test]
+    fn json_to_expression_list_of_int() {
+        let result = json_to_expression(&serde_json::json!([1, 2, 3]), &Type::list(Type::int())).unwrap();
+        let elements = result.as_list_elements().unwrap();
+        assert_eq!(elements.len(), 3);
+        assert_eq!(elements[0].as_integer().unwrap(), 1);
+        assert_eq!(elements[1].as_integer().unwrap(), 2);
+        assert_eq!(elements[2].as_integer().unwrap(), 3);
+    }
+
+    #[test]
+    fn json_to_expression_list_of_bool() {
+        let result = json_to_expression(&serde_json::json!([true, false]), &Type::list(Type::boolean())).unwrap();
+        let elements = result.as_list_elements().unwrap();
+        assert_eq!(elements.len(), 2);
+        assert!(elements[0].as_boolean().unwrap());
+        assert!(!elements[1].as_boolean().unwrap());
+    }
+
+    #[test]
+    fn json_to_expression_option_some() {
+        let result = json_to_expression(&serde_json::json!("x"), &Type::option(Type::string())).unwrap();
+        let inner = result.as_option().unwrap().unwrap();
+        assert_eq!(inner.as_string().unwrap(), "x");
+    }
+
+    #[test]
+    fn json_to_expression_option_none() {
+        let result = json_to_expression(&serde_json::Value::Null, &Type::option(Type::string())).unwrap();
+        assert!(result.as_option().unwrap().is_none());
+    }
+
+    #[test]
+    fn json_to_expression_unknown_type_is_error() {
+        use nonempty::NonEmpty;
+        use structured_agent_runtime::symbols::DefinitionPath;
+        let ty = Type::Named(DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "Person",
+        ));
+        let result = json_to_expression(&serde_json::json!({"name": "alice"}), &ty);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_text_content_list_of_int() {
+        let result = parse_text_content("[1,2,3]", &Type::list(Type::int())).unwrap();
+        let elements = result.as_list_elements().unwrap();
+        assert_eq!(elements.len(), 3);
+        assert_eq!(elements[0].as_integer().unwrap(), 1);
+    }
+
+    #[test]
+    fn parse_text_content_option_some_string() {
+        let result = parse_text_content("\"hello\"", &Type::option(Type::string())).unwrap();
+        let inner = result.as_option().unwrap().unwrap();
+        assert_eq!(inner.as_string().unwrap(), "hello");
     }
 }

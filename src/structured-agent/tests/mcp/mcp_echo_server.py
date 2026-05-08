@@ -43,6 +43,12 @@ def echo_list(items: list[str]) -> list[str]:
 
 
 @mcp.tool
+def echo_list_int(items: list[int]) -> list[int]:
+    """Echo back the list of integers exactly as received."""
+    return items
+
+
+@mcp.tool
 def echo_error(message: str) -> str:
     """Raise an error with the given message."""
     raise ValueError(message)

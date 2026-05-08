@@ -501,3 +501,40 @@ fn main(): List<String> {
     let list = value.as_list().unwrap();
     assert_eq!(list.value(0).len(), 3);
 }
+
+#[tokio::test]
+async fn test_mcp_echo_list_int_full_pipeline() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo_list_int(items: List<Int>): List<Int>
+
+fn main(): List<Int> {
+    return echo_list_int([1, 2, 3])
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "echo_list_int failed: {:?}", result.err());
+
+    let elements = result.unwrap().as_list_elements().unwrap();
+    assert_eq!(elements.len(), 3);
+    assert_eq!(elements[0].as_integer().unwrap(), 1);
+    assert_eq!(elements[1].as_integer().unwrap(), 2);
+    assert_eq!(elements[2].as_integer().unwrap(), 3);
+}
