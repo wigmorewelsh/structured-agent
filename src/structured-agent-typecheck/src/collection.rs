@@ -85,8 +85,25 @@ impl SymbolTableBuilder {
             Arc::new(TypeDefinition {
                 name: option_name,
                 kind: TypeDefinitionKind::Native {
-                    generic_parameters: vec![t_param],
+                    generic_parameters: vec![t_param.clone()],
                     factory: Arc::new(structured_agent_runtime::runtime_value::OptionValueFactory),
+                },
+                source_ref: SourceLocation(0, crate::types::Span::dummy()),
+                ast_ref: CheckerAstRef::Primitive,
+            }),
+        );
+
+        let list_iterator_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("iterator".to_string())),
+            "ListIterator",
+        );
+        self.metadata.register_type(
+            list_iterator_name.clone(),
+            Arc::new(TypeDefinition {
+                name: list_iterator_name,
+                kind: TypeDefinitionKind::Struct {
+                    fields: vec![],
+                    generic_parameters: vec![t_param],
                 },
                 source_ref: SourceLocation(0, crate::types::Span::dummy()),
                 ast_ref: CheckerAstRef::Primitive,
@@ -178,31 +195,7 @@ impl SymbolTableBuilder {
 
             for (idx, impl_decl) in native_mod.native_impls().iter().enumerate() {
                 let impl_key = DefinitionPath::for_impl(module_name.clone(), Some(idx as u32));
-                if impl_decl.trait_name.is_some() {
-                    let type_path =
-                        DefinitionPath::for_type(module_name.clone(), &impl_decl.type_name);
-                    if !self.metadata.types.contains_key(&type_path) {
-                        let generic_parameters: Vec<GenericParameterDefinition<CheckerRefs>> =
-                            impl_decl
-                                .type_params
-                                .iter()
-                                .map(|s| GenericParameterDefinition {
-                                    name: s.clone(),
-                                    constraints: vec![],
-                                })
-                                .collect();
-                        let type_entry = TypeDefinition {
-                            name: type_path.clone(),
-                            kind: TypeDefinitionKind::Struct {
-                                fields: vec![],
-                                generic_parameters,
-                            },
-                            source_ref: SourceLocation(0, Span::dummy()),
-                            ast_ref: CheckerAstRef::Primitive,
-                        };
-                        self.metadata.register_type(type_path, Arc::new(type_entry));
-                    }
-                }
+
                 let impl_entry = ImplDefinition {
                     key: impl_key.clone(),
                     module: module_name.clone(),
