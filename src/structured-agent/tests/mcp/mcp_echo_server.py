@@ -43,6 +43,12 @@ def echo_list(items: list[str]) -> list[str]:
 
 
 @mcp.tool
+def echo_error(message: str) -> str:
+    """Raise an error with the given message."""
+    raise ValueError(message)
+
+
+@mcp.tool
 def multi_echo(messages: list[str]) -> list[TextContent]:
     """Return one text content block per message."""
     return [TextContent(type="text", text=msg) for msg in messages]

@@ -224,6 +224,16 @@ impl McpClient {
             .await
             .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
 
+        if response.is_error == Some(true) {
+            let msg = response.content.first()
+                .and_then(|block| match &**block {
+                    rmcp::model::RawContent::Text(t) => Some(t.text.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "Tool returned an error".to_string());
+            return Err(McpError::ToolError(msg));
+        }
+
         if response.content.is_empty() {
             return Ok(ExpressionValue::unit());
         }

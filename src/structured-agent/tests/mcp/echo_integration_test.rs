@@ -437,6 +437,37 @@ fn main(): String {
 }
 
 #[tokio::test]
+async fn test_mcp_tool_error_propagates() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo_error(message: String): String
+
+fn main(): String {
+    return echo_error("oops")
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_err(), "Expected Err from echo_error, got Ok({:?})", result.ok());
+}
+
+#[tokio::test]
 async fn test_mcp_echo_list_full_pipeline() {
     let mcp_client = McpClient::new_stdio(
         "uv",
