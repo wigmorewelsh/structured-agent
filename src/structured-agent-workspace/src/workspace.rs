@@ -3,12 +3,14 @@ mod file;
 
 use directory::WorkspaceDirectory;
 use file::WorkspaceFile;
+use rmcp::service::{NotificationContext, Peer, RoleServer};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
     schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListDirectoryRequest {
@@ -28,7 +30,7 @@ pub struct ReadFileRequest {
 
 #[derive(Clone)]
 pub struct WorkspaceServer {
-    workspace_root: PathBuf,
+    workspace_root: Arc<RwLock<Option<PathBuf>>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -36,8 +38,41 @@ pub struct WorkspaceServer {
 impl WorkspaceServer {
     pub fn new(workspace_root: PathBuf) -> Self {
         Self {
-            workspace_root,
+            workspace_root: Arc::new(RwLock::new(Some(workspace_root))),
             tool_router: Self::tool_router(),
+        }
+    }
+
+    pub fn new_uninitialized() -> Self {
+        Self {
+            workspace_root: Arc::new(RwLock::new(None)),
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    fn workspace_root(&self) -> Result<PathBuf, McpError> {
+        self.workspace_root
+            .read()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| McpError::invalid_request("Workspace root not set", None))
+    }
+
+    async fn apply_roots(&self, peer: &Peer<RoleServer>) {
+        match peer.list_roots().await {
+            Ok(result) => {
+                if let Some(root) = result.roots.first() {
+                    let path = PathBuf::from(root.uri.trim_start_matches("file://"));
+                    match path.canonicalize() {
+                        Ok(canonical) => {
+                            tracing::info!("Workspace root set to: {:?}", canonical);
+                            *self.workspace_root.write().unwrap() = Some(canonical);
+                        }
+                        Err(e) => tracing::warn!("Cannot canonicalize workspace root: {e}"),
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("Failed to list roots: {e:?}"),
         }
     }
 
@@ -46,7 +81,8 @@ impl WorkspaceServer {
         &self,
         Parameters(request): Parameters<ListDirectoryRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = WorkspaceDirectory::open(&self.workspace_root, &request.path)?;
+        let root = self.workspace_root()?;
+        let dir = WorkspaceDirectory::open(&root, &request.path)?;
         Ok(CallToolResult::success(vec![Content::text(dir.list())]))
     }
 
@@ -57,7 +93,8 @@ impl WorkspaceServer {
         &self,
         Parameters(request): Parameters<ReadFileRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let file = WorkspaceFile::open(&self.workspace_root, &request.path)?;
+        let root = self.workspace_root()?;
+        let file = WorkspaceFile::open(&root, &request.path)?;
 
         let content = match &request.symbol {
             Some(symbol_name) => file.get_symbol(symbol_name)?,
@@ -70,6 +107,14 @@ impl WorkspaceServer {
 
 #[tool_handler]
 impl ServerHandler for WorkspaceServer {
+    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
+        self.apply_roots(&context.peer).await;
+    }
+
+    async fn on_roots_list_changed(&self, context: NotificationContext<RoleServer>) {
+        self.apply_roots(&context.peer).await;
+    }
+
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,

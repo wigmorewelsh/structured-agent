@@ -1,13 +1,10 @@
 use anyhow::Result;
-use clap::Parser;
 use rmcp::{transport::stdio, ServiceExt};
 use tracing_subscriber::{self, EnvFilter};
 
-mod cli;
 pub mod parser;
 pub mod workspace;
 
-use cli::Args;
 use workspace::WorkspaceServer;
 
 #[tokio::main]
@@ -18,18 +15,9 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    let args = Args::parse();
-
-    let workspace_root = args.workspace.canonicalize()?;
-
-    if !workspace_root.is_dir() {
-        anyhow::bail!("Workspace path is not a directory: {:?}", workspace_root);
-    }
-
     tracing::info!("Starting structured-agent-workspace MCP server");
-    tracing::info!("Workspace root: {:?}", workspace_root);
 
-    let service = WorkspaceServer::new(workspace_root)
+    let service = WorkspaceServer::new_uninitialized()
         .serve(stdio())
         .await
         .inspect_err(|e| {
