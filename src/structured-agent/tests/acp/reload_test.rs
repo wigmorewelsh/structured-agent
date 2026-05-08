@@ -19,6 +19,7 @@ async fn test_reload_executes_new_code() {
             mcp_servers: vec![],
             with_unstable_functions: false,
             mode: structured_agent::cli::config::Mode::Acp,
+            observability: Default::default(),
         };
 
         let mut agent = TestAgent::from_config(config).await;

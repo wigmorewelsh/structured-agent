@@ -311,6 +311,8 @@ pub struct UsageMetadata {
     pub total_token_count: Option<u32>,
     #[serde(rename = "thoughtsTokenCount")]
     pub thoughts_token_count: Option<u32>,
+    #[serde(rename = "cachedContentTokenCount")]
+    pub cached_content_token_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

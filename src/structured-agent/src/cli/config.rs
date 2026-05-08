@@ -1,4 +1,7 @@
 use crate::cli::args::{AcpArgs, Args, CheckArgs, Command, DumpIlArgs, FileConfig, RunArgs};
+use std::env;
+use std::fs;
+use std::process;
 
 struct EngineArgs {
     file: Option<String>,
@@ -13,18 +16,16 @@ struct EngineArgs {
     hf_token: Option<String>,
     hf_model: Option<String>,
     with_unstable_functions: bool,
+    metrics_port: Option<u16>,
+    otlp_endpoint: Option<String>,
+    loki_url: Option<String>,
 }
-use std::env;
-use std::fs;
-use std::process;
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub program_source: ProgramSource,
-    pub mcp_servers: Vec<McpServerConfig>,
-    pub engine: EngineType,
-    pub with_unstable_functions: bool,
-    pub mode: Mode,
+#[derive(Debug, Clone, Default)]
+pub struct ObservabilityConfig {
+    pub metrics_port: Option<u16>,
+    pub otlp_endpoint: Option<String>,
+    pub loki_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +67,16 @@ pub struct McpServerConfig {
     pub working_dir: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub program_source: ProgramSource,
+    pub mcp_servers: Vec<McpServerConfig>,
+    pub engine: EngineType,
+    pub with_unstable_functions: bool,
+    pub mode: Mode,
+    pub observability: ObservabilityConfig,
+}
+
 impl Config {
     pub fn from_args(args: Args) -> Self {
         let file_config = args
@@ -97,6 +108,9 @@ impl Config {
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
                 with_unstable_functions: args.with_unstable_functions,
+                metrics_port: args.metrics_port,
+                otlp_endpoint: args.otlp_endpoint,
+                loki_url: args.loki_url,
             },
             file_config,
             Mode::Run,
@@ -114,6 +128,7 @@ impl Config {
             engine: EngineType::Print,
             with_unstable_functions,
             mode: Mode::Check,
+            observability: ObservabilityConfig::default(),
         }
     }
 
@@ -127,6 +142,7 @@ impl Config {
             engine: EngineType::Print,
             with_unstable_functions,
             mode: Mode::DumpIl,
+            observability: ObservabilityConfig::default(),
         }
     }
 
@@ -145,6 +161,9 @@ impl Config {
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
                 with_unstable_functions: args.with_unstable_functions,
+                metrics_port: args.metrics_port,
+                otlp_endpoint: args.otlp_endpoint,
+                loki_url: args.loki_url,
             },
             file_config,
             Mode::Acp,
@@ -180,6 +199,11 @@ impl Config {
         );
         let with_unstable_functions =
             ea.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
+        let metrics_port = ea.metrics_port.or(file_config.metrics_port);
+        let otlp_endpoint = ea
+            .otlp_endpoint
+            .or_else(|| file_config.otlp_endpoint.clone());
+        let loki_url = ea.loki_url.or_else(|| file_config.loki_url.clone());
 
         Config {
             program_source,
@@ -187,6 +211,11 @@ impl Config {
             engine,
             with_unstable_functions,
             mode,
+            observability: ObservabilityConfig {
+                metrics_port,
+                otlp_endpoint,
+                loki_url,
+            },
         }
     }
 

@@ -5,6 +5,7 @@ use crate::types::ThinkingConfig;
 use crate::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use async_trait::async_trait;
 use schemars::schema::SchemaObject;
+use std::time::Instant;
 
 use structured_agent_interpreter_runtime::{
     Context, ContextEvent, Event, ExpressionValue, LanguageEngine, ThinkingEvent, Type,
@@ -284,6 +285,12 @@ impl LanguageEngine for GeminiEngine {
             chat_messages.push(ChatMessage::user(user_message));
         }
 
+        let message_count = chat_messages.len();
+        let model_name = self.model.as_str();
+
+        metrics::histogram!("gemini.context.message_count", "model" => model_name.to_string())
+            .record(message_count as f64);
+
         let generation_config = GenerationConfig::new()
             .with_temperature(temperature)
             .with_top_p(0.95)
@@ -291,11 +298,45 @@ impl LanguageEngine for GeminiEngine {
             .with_response_schema(schema)
             .with_thinking_config(ThinkingConfig::low().with_include_thoughts(true));
 
+        let start = Instant::now();
         let response = self
             .client
             .structured_chat(chat_messages, self.model.clone(), Some(generation_config))
             .await
             .map_err(|e| format!("Error communicating with Gemini: {}", e))?;
+        let elapsed_ms = start.elapsed().as_millis() as f64;
+
+        metrics::histogram!("gemini.request.duration_ms", "model" => model_name.to_string())
+            .record(elapsed_ms);
+
+        if let Some(usage) = &response.usage_metadata {
+            tracing::debug!(
+                model = model_name,
+                prompt_tokens = usage.prompt_token_count,
+                output_tokens = usage.candidates_token_count,
+                thoughts_tokens = usage.thoughts_token_count,
+                cached_tokens = usage.cached_content_token_count,
+                total_tokens = usage.total_token_count,
+                duration_ms = elapsed_ms,
+                "gemini usage"
+            );
+            if let Some(count) = usage.prompt_token_count {
+                metrics::histogram!("gemini.tokens.prompt", "model" => model_name.to_string())
+                    .record(count as f64);
+            }
+            if let Some(count) = usage.candidates_token_count {
+                metrics::histogram!("gemini.tokens.output", "model" => model_name.to_string())
+                    .record(count as f64);
+            }
+            if let Some(count) = usage.thoughts_token_count {
+                metrics::histogram!("gemini.tokens.thoughts", "model" => model_name.to_string())
+                    .record(count as f64);
+            }
+            if let Some(count) = usage.cached_content_token_count {
+                metrics::histogram!("gemini.tokens.cached", "model" => model_name.to_string())
+                    .record(count as f64);
+            }
+        }
 
         let thinking = response
             .first_thinking()

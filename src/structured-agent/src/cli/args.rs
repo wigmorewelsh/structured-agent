@@ -90,6 +90,27 @@ pub struct RunArgs {
 
     #[arg(long, value_name = "MODEL", help = "Hugging Face model name")]
     pub hf_model: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PORT",
+        help = "Expose Prometheus metrics scrape endpoint on this port"
+    )]
+    pub metrics_port: Option<u16>,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "OTLP gRPC endpoint for trace export (e.g. http://localhost:4317)"
+    )]
+    pub otlp_endpoint: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Loki push URL for log shipping (e.g. http://localhost:3100)"
+    )]
+    pub loki_url: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -170,6 +191,27 @@ pub struct AcpArgs {
 
     #[arg(long, value_name = "MODEL", help = "Hugging Face model name")]
     pub hf_model: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PORT",
+        help = "Expose Prometheus metrics scrape endpoint on this port"
+    )]
+    pub metrics_port: Option<u16>,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "OTLP gRPC endpoint for trace export (e.g. http://localhost:4317)"
+    )]
+    pub otlp_endpoint: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Loki push URL for log shipping (e.g. http://localhost:3100)"
+    )]
+    pub loki_url: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -201,6 +243,9 @@ pub struct FileConfig {
     pub openai_base_url: Option<String>,
     pub hf_token: Option<String>,
     pub hf_model: Option<String>,
+    pub metrics_port: Option<u16>,
+    pub otlp_endpoint: Option<String>,
+    pub loki_url: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

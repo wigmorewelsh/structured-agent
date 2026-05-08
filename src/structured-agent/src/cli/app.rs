@@ -156,6 +156,7 @@ mod tests {
             engine: EngineType::Print,
             with_unstable_functions: false,
             mode: Mode::Run,
+            observability: Default::default(),
         };
 
         let runtime = Runtime::builder(config.program_source.clone())
@@ -180,6 +181,7 @@ fn main(): () { add(1, 2) }"
             engine: EngineType::Print,
             with_unstable_functions: false,
             mode: Mode::DumpIl,
+            observability: Default::default(),
         };
 
         let runtime = Runtime::builder(config.program_source.clone())

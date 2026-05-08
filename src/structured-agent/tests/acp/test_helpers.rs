@@ -27,6 +27,7 @@ impl TestAgent {
             mcp_servers: vec![],
             with_unstable_functions: false,
             mode: Mode::Acp,
+            observability: Default::default(),
         };
         Self::from_config(config).await
     }
@@ -42,6 +43,7 @@ impl TestAgent {
             mcp_servers: vec![],
             with_unstable_functions: false,
             mode: Mode::Acp,
+            observability: Default::default(),
         };
         Self::from_config_with_tracing(config, true).await
     }
