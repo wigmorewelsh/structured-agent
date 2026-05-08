@@ -7,6 +7,8 @@ use tempfile::TempDir;
 
 const TEST_RS_FIXTURE: &str = include_str!("fixtures/test.rs");
 const TEST_PY_FIXTURE: &str = include_str!("fixtures/test.py");
+const TEST_SH_FIXTURE: &str = include_str!("fixtures/test.sh");
+const TEST_MD_FIXTURE: &str = include_str!("fixtures/test.md");
 
 fn create_test_workspace() -> (TempDir, WorkspaceServer) {
     let temp_dir = TempDir::new().unwrap();
@@ -14,6 +16,8 @@ fn create_test_workspace() -> (TempDir, WorkspaceServer) {
 
     fs::write(workspace_root.join("test.rs"), TEST_RS_FIXTURE).unwrap();
     fs::write(workspace_root.join("test.py"), TEST_PY_FIXTURE).unwrap();
+    fs::write(workspace_root.join("test.sh"), TEST_SH_FIXTURE).unwrap();
+    fs::write(workspace_root.join("test.md"), TEST_MD_FIXTURE).unwrap();
 
     let server = WorkspaceServer::new(workspace_root);
     (temp_dir, server)
@@ -34,6 +38,17 @@ fn test_language_type_from_path() {
         Some(LanguageType::Python)
     );
     assert!(LanguageType::try_from(unknown_path).is_err());
+
+    let shell_path = std::path::Path::new("test.sh");
+    let md_path = std::path::Path::new("test.md");
+    assert_eq!(
+        LanguageType::try_from(shell_path).ok(),
+        Some(LanguageType::Shell)
+    );
+    assert_eq!(
+        LanguageType::try_from(md_path).ok(),
+        Some(LanguageType::Markdown)
+    );
 }
 
 #[test]
@@ -148,4 +163,61 @@ fn test_unsupported_file_type() {
 
     let result = server.read_file(Parameters(request));
     assert!(result.is_err());
+}
+
+#[test]
+fn test_read_shell_file_outline() {
+    let (_temp_dir, server) = create_test_workspace();
+
+    let request = ReadFileRequest {
+        path: "test.sh".to_string(),
+        symbol: None,
+    };
+
+    let result = server.read_file(Parameters(request));
+    assert!(result.is_ok());
+
+    let tool_result = result.unwrap();
+    let content = &tool_result.content[0];
+    let text_str = content.as_text().expect("Expected text content");
+
+    assert_snapshot!(text_str.text);
+}
+
+#[test]
+fn test_read_markdown_file_outline() {
+    let (_temp_dir, server) = create_test_workspace();
+
+    let request = ReadFileRequest {
+        path: "test.md".to_string(),
+        symbol: None,
+    };
+
+    let result = server.read_file(Parameters(request));
+    assert!(result.is_ok());
+
+    let tool_result = result.unwrap();
+    let content = &tool_result.content[0];
+    let text_str = content.as_text().expect("Expected text content");
+
+    assert_snapshot!(text_str.text);
+}
+
+#[test]
+fn test_read_shell_specific_symbol() {
+    let (_temp_dir, server) = create_test_workspace();
+
+    let request = ReadFileRequest {
+        path: "test.sh".to_string(),
+        symbol: Some("greet".to_string()),
+    };
+
+    let result = server.read_file(Parameters(request));
+    assert!(result.is_ok());
+
+    let tool_result = result.unwrap();
+    let content = &tool_result.content[0];
+    let text_str = content.as_text().expect("Expected text content");
+
+    assert_snapshot!(text_str.text);
 }
