@@ -290,5 +290,68 @@ fn main(): String {{
         "Expected echo_with_prefix to return '{}', got '{}'",
         expected, s
     );
-    println!("echo_with_prefix test passed! Returned: {}", s);
+}
+
+#[tokio::test]
+async fn test_mcp_echo_int_full_pipeline() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo_int(value: Int): Int
+
+fn main(): Int {
+    return echo_int(42)
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "echo_int test failed: {:?}", result.err());
+    assert_eq!(result.unwrap().as_integer().unwrap(), 42);
+}
+
+#[tokio::test]
+async fn test_mcp_echo_bool_full_pipeline() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+extern fn echo_bool(value: Boolean): Boolean
+
+fn main(): Boolean {
+    return echo_bool(true)
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "echo_bool test failed: {:?}", result.err());
+    assert_eq!(result.unwrap().as_boolean().unwrap(), true);
 }

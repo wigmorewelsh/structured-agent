@@ -30,33 +30,25 @@ pub struct ReadFileRequest {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ReplaceSymbolRequest {
+pub struct EditFileRequest {
     #[schemars(description = "Path to the file relative to the workspace root")]
     pub path: String,
-    #[schemars(description = "Name of the symbol to replace")]
-    pub symbol: String,
-    #[schemars(description = "Full replacement text for the symbol")]
-    pub replacement: String,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct WriteFileRequest {
-    #[schemars(description = "Path to the file relative to the workspace root")]
-    pub path: String,
-    #[schemars(description = "Content to write to the file")]
+    #[schemars(
+        description = "Content to write. For symbol or anchor edits this is the replacement text; for whole-file writes this is the full new content."
+    )]
     pub content: String,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct PatchLinesRequest {
-    #[schemars(description = "Path to the file relative to the workspace root")]
-    pub path: String,
-    #[schemars(description = "Hash anchor of the first line in the range to replace")]
-    pub start_anchor: String,
-    #[schemars(description = "Hash anchor of the last line in the range to replace")]
-    pub end_anchor: String,
-    #[schemars(description = "Replacement text (plain, without anchor prefixes)")]
-    pub replacement: String,
+    #[schemars(
+        description = "Symbol name to replace. If set, tree-sitter locates the symbol and replaces its exact source range."
+    )]
+    pub symbol: Option<String>,
+    #[schemars(
+        description = "Hash anchor of the first line to replace. Obtain from annotated read_file output. Requires end_anchor."
+    )]
+    pub start_anchor: Option<String>,
+    #[schemars(
+        description = "Hash anchor of the last line to replace. Obtain from annotated read_file output. Requires start_anchor."
+    )]
+    pub end_anchor: Option<String>,
 }
 
 #[derive(Clone)]
@@ -143,49 +135,47 @@ impl WorkspaceServer {
     }
 
     #[tool(
-        description = "Replace the entire contents of a file. Creates the file if it does not exist."
+        description = "Edit a file. Provide only path+content to overwrite the whole file. Provide symbol to replace a named symbol located by tree-sitter. Provide start_anchor+end_anchor (from annotated read_file output) to replace a line range by hash anchor."
     )]
-    pub fn write_file(
+    pub fn edit_file(
         &self,
-        Parameters(request): Parameters<WriteFileRequest>,
+        Parameters(request): Parameters<EditFileRequest>,
     ) -> Result<CallToolResult, McpError> {
         let root = self.workspace_root()?;
-        WorkspaceFile::write_file(&root, &request.path, &request.content)?;
-        Ok(CallToolResult::success(vec![Content::text("File written")]))
-    }
-
-    #[tool(
-        description = "Replace a named symbol in a file. The symbol is located using tree-sitter and its exact source range is replaced."
-    )]
-    pub fn replace_symbol(
-        &self,
-        Parameters(request): Parameters<ReplaceSymbolRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        let root = self.workspace_root()?;
-        WorkspaceFile::replace_symbol(&root, &request.path, &request.symbol, &request.replacement)?;
-        Ok(CallToolResult::success(vec![Content::text(
-            "Symbol replaced",
-        )]))
-    }
-
-    #[tool(
-        description = "Replace a contiguous range of lines identified by hash anchors. Read the file first to obtain anchors from the annotated output."
-    )]
-    pub fn patch_lines(
-        &self,
-        Parameters(request): Parameters<PatchLinesRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        let root = self.workspace_root()?;
-        WorkspaceFile::patch_lines_with_anchors(
-            &root,
-            &request.path,
-            &request.start_anchor,
-            &request.end_anchor,
-            &request.replacement,
-        )?;
-        Ok(CallToolResult::success(vec![Content::text(
-            "Lines patched",
-        )]))
+        match (&request.symbol, &request.start_anchor, &request.end_anchor) {
+            (Some(symbol), Some(start), Some(end)) => {
+                WorkspaceFile::patch_symbol_lines_with_anchors(
+                    &root,
+                    &request.path,
+                    symbol,
+                    start,
+                    end,
+                    &request.content,
+                )?;
+            }
+            (Some(symbol), None, None) => {
+                WorkspaceFile::replace_symbol(&root, &request.path, symbol, &request.content)?;
+            }
+            (None, Some(start), Some(end)) => {
+                WorkspaceFile::patch_lines_with_anchors(
+                    &root,
+                    &request.path,
+                    start,
+                    end,
+                    &request.content,
+                )?;
+            }
+            (None, None, None) => {
+                WorkspaceFile::write_file(&root, &request.path, &request.content)?;
+            }
+            _ => {
+                return Err(McpError::invalid_params(
+                    "Provide both start_anchor and end_anchor, or neither".to_string(),
+                    None,
+                ));
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::text("File edited")]))
     }
 }
 

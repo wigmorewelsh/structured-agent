@@ -167,6 +167,150 @@ async def test_read_file_unsupported_extension_returns_error(binary_path, worksp
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
+async def test_edit_file_whole_file_write(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        result = await client.call_tool(
+            "edit_file",
+            {"path": "lib.rs", "content": "pub fn zero() -> i32 { 0 }\n"},
+        )
+
+    assert not result.is_error
+    assert (workspace / "lib.rs").read_text() == "pub fn zero() -> i32 { 0 }\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_creates_new_file(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        result = await client.call_tool(
+            "edit_file",
+            {"path": "new.rs", "content": "pub fn new() {}\n"},
+        )
+
+    assert not result.is_error
+    assert (workspace / "new.rs").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_replace_symbol(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        result = await client.call_tool(
+            "edit_file",
+            {
+                "path": "lib.rs",
+                "symbol": "add",
+                "content": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b + 1\n}",
+            },
+        )
+
+    assert not result.is_error
+    content = (workspace / "lib.rs").read_text()
+    assert "a + b + 1" in content
+    assert "Counter" in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_anchor_patch(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        read = await client.call_tool("read_file", {"path": "lib.rs", "symbol": "add"})
+        annotated = read.content[0].text
+        lines = annotated.splitlines()
+        body_anchor = lines[1].split("|")[0]
+
+        result = await client.call_tool(
+            "edit_file",
+            {
+                "path": "lib.rs",
+                "start_anchor": body_anchor,
+                "end_anchor": body_anchor,
+                "content": "    a - b",
+            },
+        )
+
+    assert not result.is_error
+    content = (workspace / "lib.rs").read_text()
+    assert "a - b" in content
+    assert "a + b" not in content
+    assert "Counter" in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_symbol_with_anchors(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        read = await client.call_tool("read_file", {"path": "lib.rs", "symbol": "add"})
+        annotated = read.content[0].text
+        lines = annotated.splitlines()
+        body_anchor = lines[1].split("|")[0]
+
+        result = await client.call_tool(
+            "edit_file",
+            {
+                "path": "lib.rs",
+                "symbol": "add",
+                "start_anchor": body_anchor,
+                "end_anchor": body_anchor,
+                "content": "    a * b",
+            },
+        )
+
+    assert not result.is_error
+    content = (workspace / "lib.rs").read_text()
+    assert "a * b" in content
+    assert "a + b" not in content
+    assert "Counter" in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_path_traversal_returns_error(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        with pytest.raises(McpError, match="escapes workspace root"):
+            await client.call_tool(
+                "edit_file",
+                {"path": "../outside.rs", "content": "fn escape() {}"},
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_nonexistent_symbol_returns_error(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        with pytest.raises(McpError, match="not found"):
+            await client.call_tool(
+                "edit_file",
+                {"path": "lib.rs", "symbol": "nonexistent", "content": "fn nonexistent() {}"},
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_edit_file_stale_anchor_returns_error(binary_path, workspace):
+    async with make_client(binary_path, str(workspace)) as client:
+        await asyncio.sleep(0.3)
+        with pytest.raises(McpError, match="Anchor not found"):
+            await client.call_tool(
+                "edit_file",
+                {
+                    "path": "lib.rs",
+                    "start_anchor": "deadbeef",
+                    "end_anchor": "deadbeef",
+                    "content": "x",
+                },
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_read_file_missing_symbol_returns_error(binary_path, workspace):
     async with make_client(binary_path, str(workspace)) as client:
         await asyncio.sleep(0.3)

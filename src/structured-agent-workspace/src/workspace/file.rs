@@ -123,6 +123,60 @@ impl WorkspaceFile {
         Ok(anchor::annotate(&content))
     }
 
+    pub fn patch_symbol_lines_with_anchors(
+        workspace_root: &Path,
+        relative_path: &str,
+        symbol_name: &str,
+        start_anchor: &str,
+        end_anchor: &str,
+        replacement: &str,
+    ) -> Result<(), McpError> {
+        let file = Self::open(workspace_root, relative_path)?;
+        let symbol_text = file
+            .parsed
+            .find_symbol(symbol_name)
+            .map_err(|e| {
+                McpError::internal_error(
+                    format!("Failed to find symbol: {}", e),
+                    Some(json!({"path": relative_path, "symbol": symbol_name})),
+                )
+            })?
+            .ok_or_else(|| {
+                McpError::invalid_params(
+                    format!("Symbol '{}' not found", symbol_name),
+                    Some(json!({"path": relative_path, "symbol": symbol_name})),
+                )
+            })?;
+        let annotated = anchor::annotate(&symbol_text);
+        let patched = anchor::patch(&annotated, start_anchor, end_anchor, replacement).map_err(
+            |e| match e {
+                PatchError::AnchorNotFound(a) => McpError::invalid_params(
+                    format!("Anchor not found: {}", a),
+                    Some(json!({"path": relative_path, "anchor": a})),
+                ),
+                PatchError::AmbiguousAnchor(a) => McpError::invalid_params(
+                    format!("Ambiguous anchor: {}", a),
+                    Some(json!({"path": relative_path, "anchor": a})),
+                ),
+                PatchError::AnchorOrderInvalid => McpError::invalid_params(
+                    "Start anchor comes after end anchor".to_string(),
+                    Some(json!({"path": relative_path})),
+                ),
+            },
+        )?;
+        let new_symbol_text = anchor::strip_annotations(&patched);
+        let new_source = file
+            .parsed
+            .replace_symbol(symbol_name, &new_symbol_text)
+            .map_err(|e| {
+                McpError::internal_error(
+                    format!("Failed to replace symbol: {}", e),
+                    Some(json!({"path": relative_path, "symbol": symbol_name})),
+                )
+            })?;
+        Self::write_content(&file.location, &new_source)
+    }
+
     pub fn patch_lines_with_anchors(
         workspace_root: &Path,
         relative_path: &str,

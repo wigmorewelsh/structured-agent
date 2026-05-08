@@ -84,6 +84,31 @@ fn serialise_args(
     map
 }
 
+fn json_schema_to_type(schema: &Value) -> Option<Type> {
+    match schema.get("type").and_then(|t| t.as_str()) {
+        Some("integer") => Some(Type::int()),
+        Some("boolean") => Some(Type::boolean()),
+        Some("string") => Some(Type::string()),
+        _ => None,
+    }
+}
+
+fn parse_text_content(text: &str, return_type: &Type) -> Result<ExpressionValue, McpError> {
+    if return_type.is_int() {
+        text.trim()
+            .parse::<i64>()
+            .map(ExpressionValue::integer)
+            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as integer", text)))
+    } else if return_type.is_boolean() {
+        text.trim()
+            .parse::<bool>()
+            .map(ExpressionValue::boolean)
+            .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as boolean", text)))
+    } else {
+        Ok(ExpressionValue::string(text.to_string()))
+    }
+}
+
 pub struct McpClient {
     client: Arc<RwLock<Option<RmcpClient>>>,
     command: String,
@@ -158,7 +183,7 @@ impl McpClient {
         &self,
         name: &str,
         args: &[(String, ExpressionValue)],
-        _return_type: &Type,
+        return_type: &Type,
     ) -> Result<ExpressionValue, McpError> {
         self.ensure_connected().await?;
 
@@ -194,7 +219,7 @@ impl McpClient {
 
         match &*response.content[0] {
             rmcp::model::RawContent::Text(text_content) => {
-                Ok(ExpressionValue::string(text_content.text.clone()))
+                parse_text_content(&text_content.text, return_type)
             }
             other => Ok(ExpressionValue::string(format!("{:?}", other))),
         }
@@ -227,16 +252,27 @@ impl FunctionProvider for McpClient {
                     .get("properties")
                     .and_then(|properties| properties.as_object())
                     .map(|obj| {
-                        obj.keys()
-                            .map(|k| Parameter::new(k.clone(), Type::string()))
+                        obj.iter()
+                            .map(|(k, v)| {
+                                Parameter::new(
+                                    k.clone(),
+                                    json_schema_to_type(v).unwrap_or_else(Type::string),
+                                )
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
 
+                let return_type = tool
+                    .output_schema
+                    .as_ref()
+                    .and_then(|schema| json_schema_to_type(&Value::Object((**schema).clone())))
+                    .unwrap_or_else(|| Type::Generic("_".to_string()));
+
                 ExternalFunctionDefinition::new_with_docs(
                     tool.name.to_string(),
                     parameters,
-                    Type::string(),
+                    return_type,
                     tool.description.map(|d| d.to_string()),
                 )
             })
@@ -351,6 +387,46 @@ mod tests {
             serde_json::Value::Object(result),
             json!({"items": ["a", "b"]})
         );
+    }
+
+    #[test]
+    fn parse_text_content_string() {
+        let result = parse_text_content("hello", &Type::string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_string().unwrap(), "hello");
+    }
+
+    #[test]
+    fn parse_text_content_integer() {
+        let result = parse_text_content("42", &Type::int());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_integer().unwrap(), 42);
+    }
+
+    #[test]
+    fn parse_text_content_integer_invalid() {
+        let result = parse_text_content("abc", &Type::int());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_text_content_bool_true() {
+        let result = parse_text_content("true", &Type::boolean());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_boolean().unwrap(), true);
+    }
+
+    #[test]
+    fn parse_text_content_bool_false() {
+        let result = parse_text_content("false", &Type::boolean());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_boolean().unwrap(), false);
+    }
+
+    #[test]
+    fn parse_text_content_bool_invalid() {
+        let result = parse_text_content("yes", &Type::boolean());
+        assert!(result.is_err());
     }
 
     #[test]

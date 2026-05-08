@@ -23,5 +23,17 @@ def echo_json(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+@mcp.tool
+def echo_int(value: int) -> int:
+    """Echo back the provided integer exactly as received."""
+    return value
+
+
+@mcp.tool
+def echo_bool(value: bool) -> bool:
+    """Echo back the provided boolean exactly as received."""
+    return value
+
+
 if __name__ == "__main__":
     mcp.run()

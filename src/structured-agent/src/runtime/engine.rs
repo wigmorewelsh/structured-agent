@@ -8,6 +8,7 @@ use crate::runtime::{Context, ExpressionValue, RuntimeService};
 use crate::typecheck::{CheckerAstRef, TypedCheckerAstRef};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, Function, FunctionProvider, LanguageEngine,
+    Type,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -464,7 +465,9 @@ impl Runtime {
             return false;
         }
 
-        if provider_def.return_type != definition.return_type {
+        if !matches!(&provider_def.return_type, Type::Generic(_))
+            && provider_def.return_type != definition.return_type
+        {
             return false;
         }
 
