@@ -155,6 +155,12 @@ async fn test_absolute_import_resolves_and_executes() {
 }
 
 #[tokio::test]
+async fn test_cross_module_trait_dispatch() {
+    let value = run_fixture("cross-module-trait").await;
+    assert_eq!(value.as_string().unwrap(), "alice");
+}
+
+#[tokio::test]
 async fn test_main_found_with_inline_modules() {
     let code = r#"
 mod greet {

@@ -1,0 +1,5 @@
+use a::Greet
+
+pub fn describe<T: Greet>(p: T): String {
+    return p.greet()
+}

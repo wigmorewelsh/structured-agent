@@ -1,7 +1,7 @@
 use super::db::{
-    Intern, InternedTypeName, TypeCheckDatabase, find_impl_fn, get_function_sig, get_struct_fields,
-    lookup_function_def, lookup_type_def_in_symbol_tables, resolve_function_call,
-    resolve_type_in_module,
+    Intern, InternedTypeName, TypeCheckDatabase, find_impl_fn_by_type_path, get_function_sig,
+    get_struct_fields, lookup_function_def, lookup_type_def_in_symbol_tables,
+    resolve_function_call, resolve_type_in_module,
 };
 use super::error::OrAccumulateError;
 use crate::ensure_or_accumulate;
@@ -784,11 +784,11 @@ fn resolve_method_sig(
         let (sig, _, _) = resolve_generic_method_sig(db, param_name, method, env, span, ctx)?;
         return Some(sig);
     }
-    let struct_type_name = match receiver_type {
-        RT::Named(tn) | RT::Parameterized(tn, _) => tn.last_name().to_string(),
+    let type_path = match receiver_type {
+        RT::Named(tn) | RT::Parameterized(tn, _) => tn,
         _ => return None,
     };
-    let impl_fn_path = find_impl_fn(db, ctx.module_name, &struct_type_name, method).or_accumulate(
+    let impl_fn_path = find_impl_fn_by_type_path(db, type_path, method).or_accumulate(
         db,
         TypeError::UnknownFunction {
             name: method.to_string(),

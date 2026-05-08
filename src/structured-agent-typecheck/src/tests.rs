@@ -1688,7 +1688,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trait_only_method_not_resolved_as_inherent() {
+    fn test_trait_method_is_callable_on_concrete_type() {
         let input = concat!(
             "struct Foo {}\n",
             "trait Bar {\n",
@@ -1712,8 +1712,8 @@ mod tests {
             .unwrap()
             .0;
         assert!(
-            check(module).is_err(),
-            "trait-only method should not be resolved via inherent impl lookup"
+            check(module).is_ok(),
+            "trait method should be callable via method dispatch on a concrete type"
         );
     }
 
@@ -1865,6 +1865,329 @@ mod tests {
             "impl fn with Self return type should type check: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn method_call_on_type_from_another_module_resolves() {
+        let lib_src = concat!(
+            "struct Counter {\n",
+            "    value: Int,\n",
+            "}\n",
+            "impl Counter {\n",
+            "    pub fn get(self): Int {\n",
+            "        return self.value\n",
+            "    }\n",
+            "}\n",
+        );
+        let app_src = concat!(
+            "use lib::Counter\n",
+            "fn main(c: Counter): Int {\n",
+            "    return c.get()\n",
+            "}\n",
+        );
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let lib_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("lib".to_string()),
+            module: parse(lib_src),
+            is_entry: false,
+            file_id: 0,
+            is_inline: false,
+        };
+        let app_module = crate::ast::ParsedModule {
+            name: NonEmpty::new("app".to_string()),
+            module: parse(app_src),
+            is_entry: true,
+            file_id: 1,
+            is_inline: false,
+        };
+        let metadata = TypeChecker::new()
+            .check(&[lib_module, app_module], &std::collections::HashMap::new())
+            .unwrap();
+        let main_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.last_name() == "main" && f.name.module_prefix().to_string() == "app")
+            .unwrap();
+        let TypedCheckerAstRef::Function(f, _) = &main_fn.ast_ref else {
+            panic!("expected Function");
+        };
+        let return_expr = f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        match return_expr {
+            typed_ast::Expression::Call {
+                binding: typed_ast::MethodBinding::Early(path),
+                ..
+            } => {
+                assert_eq!(path.module_prefix().to_string(), "lib");
+                assert_eq!(path.last_name(), "get");
+            }
+            other => panic!("expected Early binding, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn trait_method_dispatch_across_modules() {
+        let module_a_src = concat!(
+            "trait Greet {\n",
+            "    fn greet(self: Self): String\n",
+            "}\n",
+        );
+        let module_b_src = concat!(
+            "use a::Greet\n",
+            "struct Person {\n",
+            "    name: String,\n",
+            "}\n",
+            "impl Person: Greet {\n",
+            "    fn greet(self: Person): String {\n",
+            "        return self.name\n",
+            "    }\n",
+            "}\n",
+        );
+        let module_c_src = concat!(
+            "use b::Person\n",
+            "pub fn describe(p: Person): String {\n",
+            "    return p.greet()\n",
+            "}\n",
+        );
+        let main_src = concat!(
+            "use b::Person\n",
+            "use c::describe\n",
+            "fn main(p: Person): String {\n",
+            "    return describe(p)\n",
+            "}\n",
+        );
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let modules = vec![
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("a".to_string()),
+                module: parse(module_a_src),
+                is_entry: false,
+                file_id: 0,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("b".to_string()),
+                module: parse(module_b_src),
+                is_entry: false,
+                file_id: 1,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("c".to_string()),
+                module: parse(module_c_src),
+                is_entry: false,
+                file_id: 2,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("main".to_string()),
+                module: parse(main_src),
+                is_entry: true,
+                file_id: 3,
+                is_inline: false,
+            },
+        ];
+        let metadata = TypeChecker::new()
+            .check(&modules, &std::collections::HashMap::new())
+            .unwrap();
+        let describe_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.last_name() == "describe" && f.name.module_prefix().to_string() == "c")
+            .unwrap();
+        let TypedCheckerAstRef::Function(f, _) = &describe_fn.ast_ref else {
+            panic!("expected Function");
+        };
+        let return_expr = f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        match return_expr {
+            typed_ast::Expression::Call {
+                binding: typed_ast::MethodBinding::Early(path),
+                ..
+            } => {
+                assert_eq!(path.module_prefix().to_string(), "b");
+                assert_eq!(path.last_name(), "greet");
+            }
+            other => panic!("expected Early binding into module b, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn generic_trait_bound_dispatch_across_modules() {
+        let module_a_src = concat!(
+            "trait Greet {\n",
+            "    fn greet(self: Self): String\n",
+            "}\n",
+        );
+        let module_b_src = concat!(
+            "use a::Greet\n",
+            "struct Person {\n",
+            "    name: String,\n",
+            "}\n",
+            "impl Person: Greet {\n",
+            "    fn greet(self: Person): String {\n",
+            "        return self.name\n",
+            "    }\n",
+            "}\n",
+        );
+        let module_c_src = concat!(
+            "use a::Greet\n",
+            "pub fn describe<T: Greet>(p: T): String {\n",
+            "    return p.greet()\n",
+            "}\n",
+        );
+        let main_src = concat!(
+            "use a::Greet\n",
+            "use b::Person\n",
+            "use c::describe\n",
+            "fn main(p: Person): String {\n",
+            "    return describe(p)\n",
+            "}\n",
+        );
+        let parse = |src: &str| {
+            parse_program(0)
+                .parse(combine::stream::position::Stream::with_positioner(
+                    src,
+                    IndexPositioner::default(),
+                ))
+                .unwrap()
+                .0
+        };
+        let modules = vec![
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("a".to_string()),
+                module: parse(module_a_src),
+                is_entry: false,
+                file_id: 0,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("b".to_string()),
+                module: parse(module_b_src),
+                is_entry: false,
+                file_id: 1,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("c".to_string()),
+                module: parse(module_c_src),
+                is_entry: false,
+                file_id: 2,
+                is_inline: false,
+            },
+            crate::ast::ParsedModule {
+                name: NonEmpty::new("main".to_string()),
+                module: parse(main_src),
+                is_entry: true,
+                file_id: 3,
+                is_inline: false,
+            },
+        ];
+        let metadata = TypeChecker::new()
+            .check(&modules, &std::collections::HashMap::new())
+            .unwrap();
+        let describe_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.last_name() == "describe" && f.name.module_prefix().to_string() == "c")
+            .unwrap();
+        let TypedCheckerAstRef::Function(describe_f, _) = &describe_fn.ast_ref else {
+            panic!("expected Function");
+        };
+        let describe_return = describe_f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        match describe_return {
+            typed_ast::Expression::Call {
+                binding: typed_ast::MethodBinding::Late(_, path),
+                ..
+            } => {
+                assert_eq!(path.last_name(), "greet");
+            }
+            other => panic!(
+                "expected Late binding in generic describe body, got {:?}",
+                other
+            ),
+        }
+        let main_fn = metadata
+            .functions
+            .values()
+            .find(|f| f.name.last_name() == "main" && f.name.module_prefix().to_string() == "main")
+            .unwrap();
+        let TypedCheckerAstRef::Function(main_f, _) = &main_fn.ast_ref else {
+            panic!("expected Function");
+        };
+        let main_return = main_f
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        match main_return {
+            typed_ast::Expression::Call { arguments, .. } => {
+                let impl_arg = arguments
+                    .iter()
+                    .find(|a| matches!(a, typed_ast::Expression::ModuleInstance { .. }));
+                let typed_ast::Expression::ModuleInstance { path, .. } =
+                    impl_arg.expect("expected ModuleInstance arg for impl witness")
+                else {
+                    unreachable!()
+                };
+                assert_eq!(path.module_prefix().to_string(), "b");
+            }
+            other => panic!("expected Call in main return, got {:?}", other),
+        }
     }
 
     #[test]

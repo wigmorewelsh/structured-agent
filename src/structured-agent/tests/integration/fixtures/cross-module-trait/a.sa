@@ -1,0 +1,3 @@
+trait Greet {
+    fn greet(self: Self): String
+}

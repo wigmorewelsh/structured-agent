@@ -328,20 +328,74 @@ pub fn get_struct_fields(
     })
 }
 
-// this should only ever be used to look up direct impls, not trait impls
-pub fn find_impl_fn(
+pub fn find_impl_fn_by_type_path(
     db: &dyn TypeCheckDatabase,
-    current_module: &DefinitionPath,
-    type_name: &str,
+    type_path: &DefinitionPath,
     method_name: &str,
 ) -> Option<DefinitionPath> {
     let impls = db.symbol_tables().impls(db);
-    let impl_entry = impls.get().values().find(|i| {
-        (matches!(i.ast_ref, CheckerAstRef::Primitive) || i.module == *current_module)
-            && i.type_name.name() == type_name
-            && i.trait_name.is_none()
-    })?;
-    Some(DefinitionPath::for_impl_fn(&impl_entry.key, method_name))
+    let fns = db.symbol_tables().functions(db);
+    let types = db.symbol_tables().types(db);
+    let impl_type_path = |i: &ImplDefinition<CheckerRefs>| -> DefinitionPath {
+        let local = DefinitionPath::for_type(i.module.clone(), i.type_name.name());
+        if types.get().contains_key(&local) {
+            local
+        } else {
+            DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
+                i.type_name.name(),
+            )
+        }
+    };
+    let inherent = impls
+        .get()
+        .iter()
+        .find(|(_, i)| i.trait_name.is_none() && impl_type_path(i) == *type_path);
+    if let Some((impl_key, _)) = inherent {
+        let candidate = DefinitionPath::for_impl_fn(impl_key, method_name);
+        if fns.get().contains_key(&candidate) {
+            return Some(candidate);
+        }
+    }
+    impls
+        .get()
+        .iter()
+        .filter(|(_, i)| i.trait_name.is_some() && impl_type_path(i) == *type_path)
+        .find_map(|(impl_key, _)| {
+            let candidate = DefinitionPath::for_impl_fn(impl_key, method_name);
+            fns.get().contains_key(&candidate).then_some(candidate)
+        })
+}
+
+pub fn find_impl_for_method(
+    db: &dyn TypeCheckDatabase,
+    solved: &crate::solver::SolvedConstraints,
+    type_path: &DefinitionPath,
+    method_name: &str,
+) -> Option<DefinitionPath> {
+    if let Some(impl_key) = solved.inherent_impls.get(type_path) {
+        let candidate = DefinitionPath::for_impl_fn(impl_key, method_name);
+        if db
+            .symbol_tables()
+            .functions(db)
+            .get()
+            .contains_key(&candidate)
+        {
+            return Some(candidate);
+        }
+    }
+    solved
+        .impls
+        .iter()
+        .filter(|((tp, _), _)| tp == type_path)
+        .find_map(|(_, impl_key)| {
+            let candidate = DefinitionPath::for_impl_fn(impl_key, method_name);
+            db.symbol_tables()
+                .functions(db)
+                .get()
+                .contains_key(&candidate)
+                .then_some(candidate)
+        })
 }
 
 pub fn impl_for_type_and_trait(

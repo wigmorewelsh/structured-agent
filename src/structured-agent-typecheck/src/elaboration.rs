@@ -2,7 +2,7 @@ use crate::db::build_module_instantiation;
 
 use super::db::{
     Intern, InternedFunctionName, InternedModuleName, InternedTypeName, TypeCheckDatabase,
-    find_impl_fn, get_function_sig, get_struct_fields, impl_for_type_and_trait,
+    find_impl_for_method, get_function_sig, get_struct_fields, impl_for_type_and_trait,
     lookup_type_def_in_symbol_tables, resolve_function_call, resolve_type_in_module,
 };
 use super::synthesize;
@@ -377,11 +377,11 @@ fn resolve_method_callee(
     if let RT::Generic(param_name) = receiver_type {
         return resolve_callee_for_generic_method(db, env, param_name, method, span, ctx);
     }
-    let struct_type_name = match receiver_type {
-        RT::Named(tn) | RT::Parameterized(tn, _) => tn.last_name().to_string(),
+    let tn = match receiver_type {
+        RT::Named(tn) | RT::Parameterized(tn, _) => tn,
         _ => return None,
     };
-    resolve_callee_for_method(db, &struct_type_name, method, env, ctx)
+    resolve_callee_for_method(db, tn, method, env, ctx)
 }
 
 fn elaborate_spawn(
@@ -425,12 +425,13 @@ fn resolve_callee_for_call(
 
 fn resolve_callee_for_method(
     db: &dyn TypeCheckDatabase,
-    struct_type_name: &str,
+    type_path: &DefinitionPath,
     method: &str,
     _env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<ResolvedCallee> {
-    let impl_fn_path = find_impl_fn(db, ctx.module_name, struct_type_name, method)?;
+    let solved = crate::solver::solve_constraints(db, ctx.program);
+    let impl_fn_path = find_impl_for_method(db, &solved, type_path, method)?;
     let sig = get_function_sig(
         db,
         InternedFunctionName::new(db, impl_fn_path.clone()),

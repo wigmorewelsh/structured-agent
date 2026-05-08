@@ -45,6 +45,7 @@ pub struct Constraint {
 pub struct SolvedConstraints {
     pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
+    pub inherent_impls: HashMap<DefinitionPath, DefinitionPath>,
 }
 
 #[salsa::tracked]
@@ -109,7 +110,29 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         }
     }
 
-    SolvedConstraints { resolved, impls }
+    let mut inherent_impls: HashMap<DefinitionPath, DefinitionPath> = HashMap::new();
+    for (impl_key, impl_def) in db.symbol_tables().impls(db).get().iter() {
+        if impl_def.trait_name.is_some() {
+            continue;
+        }
+        let type_name = impl_def.type_name.name().to_string();
+        let local_type = DefinitionPath::for_type(impl_def.module.clone(), &type_name);
+        let type_path = if db.symbol_tables().types(db).get().contains_key(&local_type) {
+            local_type
+        } else {
+            DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
+                &type_name,
+            )
+        };
+        inherent_impls.insert(type_path, impl_key.clone());
+    }
+
+    SolvedConstraints {
+        resolved,
+        impls,
+        inherent_impls,
+    }
 }
 
 fn check_trait_impl(

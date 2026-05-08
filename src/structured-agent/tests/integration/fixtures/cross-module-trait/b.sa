@@ -1,0 +1,11 @@
+use a::Greet
+
+struct Person {
+    name: String,
+}
+
+impl Person: Greet {
+    fn greet(self: Person): String {
+        return self.name
+    }
+}

@@ -1,0 +1,8 @@
+use a::Greet
+use b::Person
+use c::describe
+
+fn main(): String {
+    let p = Person { name: "alice" }
+    return describe(p)
+}
