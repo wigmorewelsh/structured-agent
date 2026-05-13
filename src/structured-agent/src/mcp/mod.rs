@@ -63,14 +63,12 @@ fn expression_to_json(value: &ExpressionValue) -> Value {
     if value.type_name() == "Unit" {
         return Value::Null;
     }
-    if value.type_name() == "Struct" {
-        if let Ok(fields) = value.as_struct_fields() {
-            let mut map = serde_json::Map::new();
-            for (name, val) in fields {
-                map.insert(name, expression_to_json(&val));
-            }
-            return Value::Object(map);
+    if let Ok(fields) = value.as_struct_fields() {
+        let mut map = serde_json::Map::new();
+        for (name, val) in fields {
+            map.insert(name, expression_to_json(&val));
         }
+        return Value::Object(map);
     }
     if value.is_option() {
         return match value.as_option() {
@@ -117,18 +115,16 @@ fn ty_to_datatype(ty: &Type) -> DataType {
         DataType::Boolean
     } else if ty.is_unit() {
         DataType::Null
-    } else if ty.is_list() {
-        if let Type::Parameterized(_, args) = ty {
-            if let Some(inner) = args.first() {
-                return DataType::List(Arc::new(Field::new("item", ty_to_datatype(inner), true)));
-            }
-        }
-        DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))
+    } else if let Type::Parameterized(_, args) = ty
+        && let Some(inner) = args.first()
+    {
+        DataType::List(Arc::new(Field::new("item", ty_to_datatype(inner), true)))
     } else {
         DataType::Null
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn json_to_expression(
     json: &serde_json::Value,
     ty: &Type,
@@ -156,52 +152,48 @@ fn json_to_expression(
     if ty.is_unit() {
         return Ok(ExpressionValue::unit());
     }
-    if ty.is_list() {
-        if let Type::Parameterized(_, args) = ty {
-            if let Some(inner) = args.first() {
-                let arr = json.as_array().ok_or_else(|| {
-                    McpError::ToolError(format!("Expected JSON array, got {:?}", json))
-                })?;
-                let elements: Result<Vec<ExpressionValue>, McpError> = arr
-                    .iter()
-                    .map(|v| json_to_expression(v, inner, resolve_struct))
-                    .collect();
-                return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
-            }
-        }
+    if ty.is_list()
+        && let Type::Parameterized(_, args) = ty
+        && let Some(inner) = args.first()
+    {
+        let arr = json
+            .as_array()
+            .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", json)))?;
+        let elements: Result<Vec<ExpressionValue>, McpError> = arr
+            .iter()
+            .map(|v| json_to_expression(v, inner, resolve_struct))
+            .collect();
+        return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
     }
-    if ty.is_option() {
-        if let Type::Parameterized(_, args) = ty {
-            if let Some(inner) = args.first() {
-                if json.is_null() {
-                    return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(
-                        inner,
-                    )));
-                }
-                return json_to_expression(json, inner, resolve_struct)
-                    .map(ExpressionValue::option_some);
-            }
+    if ty.is_option()
+        && let Type::Parameterized(_, args) = ty
+        && let Some(inner) = args.first()
+    {
+        if json.is_null() {
+            return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(
+                inner,
+            )));
         }
+        return json_to_expression(json, inner, resolve_struct).map(ExpressionValue::option_some);
     }
-    if let Type::Named(path) = ty {
-        if let Some(fields) = resolve_struct(path) {
-            let obj = json.as_object().ok_or_else(|| {
-                McpError::ToolError(format!(
-                    "Expected JSON object for type '{}', got {:?}",
-                    ty.name(),
-                    json
-                ))
-            })?;
-            let struct_fields: Result<Vec<(&str, ExpressionValue)>, McpError> = fields
-                .iter()
-                .map(|(name, field_ty)| {
-                    let field_json = obj.get(name).unwrap_or(&serde_json::Value::Null);
-                    json_to_expression(field_json, field_ty, resolve_struct)
-                        .map(|v| (name.as_str(), v))
-                })
-                .collect();
-            return Ok(ExpressionValue::struct_value(struct_fields?));
-        }
+    if let Type::Named(path) = ty
+        && let Some(fields) = resolve_struct(path)
+    {
+        let obj = json.as_object().ok_or_else(|| {
+            McpError::ToolError(format!(
+                "Expected JSON object for type '{}', got {:?}",
+                ty.name(),
+                json
+            ))
+        })?;
+        let struct_fields: Result<Vec<(&str, ExpressionValue)>, McpError> = fields
+            .iter()
+            .map(|(name, field_ty)| {
+                let field_json = obj.get(name).unwrap_or(&serde_json::Value::Null);
+                json_to_expression(field_json, field_ty, resolve_struct).map(|v| (name.as_str(), v))
+            })
+            .collect();
+        return Ok(ExpressionValue::struct_value(struct_fields?));
     }
     Err(McpError::ToolError(format!(
         "Type '{}' must be explicitly declared in SA; user-defined types are not supported for external function calls",
@@ -209,6 +201,7 @@ fn json_to_expression(
     )))
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_text_content(
     text: &str,
     return_type: &Type,
@@ -292,6 +285,7 @@ impl McpClient {
         Ok(tools)
     }
 
+    #[allow(clippy::type_complexity)]
     pub async fn call_tool(
         &self,
         name: &str,
