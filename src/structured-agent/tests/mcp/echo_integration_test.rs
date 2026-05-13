@@ -391,10 +391,7 @@ fn main(): List<String> {
     let list = value.as_list().unwrap();
     let inner = list.value(0);
     assert_eq!(inner.len(), 3);
-    let strings = inner
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
+    let strings = inner.as_any().downcast_ref::<StringArray>().unwrap();
     assert_eq!(strings.value(0), "hello");
     assert_eq!(strings.value(1), "world");
     assert_eq!(strings.value(2), "foo");
@@ -464,7 +461,11 @@ fn main(): String {
         .build();
 
     let result = runtime.run().await;
-    assert!(result.is_err(), "Expected Err from echo_error, got Ok({:?})", result.ok());
+    assert!(
+        result.is_err(),
+        "Expected Err from echo_error, got Ok({:?})",
+        result.ok()
+    );
 }
 
 #[tokio::test]
@@ -500,6 +501,52 @@ fn main(): List<String> {
     let value = result.unwrap();
     let list = value.as_list().unwrap();
     assert_eq!(list.value(0).len(), 3);
+}
+
+#[tokio::test]
+async fn test_mcp_echo_struct_full_pipeline() {
+    let mcp_client = McpClient::new_stdio(
+        "uv",
+        vec![
+            "run".to_string(),
+            "python".to_string(),
+            "tests/mcp/mcp_echo_server.py".to_string(),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let program = r#"
+struct Person {
+    name: String,
+    age: Int,
+}
+
+extern fn echo_struct(data: Person): Person
+
+fn main(): Person {
+    return echo_struct(Person { name: "alice", age: 30 })
+}
+"#;
+
+    let runtime = Runtime::builder(ProgramSource::Inline(program.to_string()))
+        .with_compiler(Arc::new(Compiler::new()))
+        .with_mcp_client(mcp_client)
+        .build();
+
+    let result = runtime.run().await;
+    assert!(result.is_ok(), "echo_struct failed: {:?}", result.err());
+
+    let val = result.unwrap();
+    assert_eq!(
+        val.get_struct_field("name").unwrap().as_string().unwrap(),
+        "alice"
+    );
+    assert_eq!(
+        val.get_struct_field("age").unwrap().as_integer().unwrap(),
+        30
+    );
 }
 
 #[tokio::test]

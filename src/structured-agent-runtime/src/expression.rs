@@ -136,6 +136,19 @@ impl ExpressionValue {
         }
     }
 
+    pub fn as_struct_fields(&self) -> Result<Vec<(String, ExpressionValue)>, String> {
+        match self {
+            ExpressionValue::Dynamic(v) => {
+                let sv = v
+                    .as_any()
+                    .downcast_ref::<StructValue>()
+                    .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+                sv.all_fields()
+            }
+            _ => Err(format!("Expected struct value, got {}", self.type_name())),
+        }
+    }
+
     pub fn option_none() -> Self {
         Self::Dynamic(Arc::new(OptionValue::none()))
     }

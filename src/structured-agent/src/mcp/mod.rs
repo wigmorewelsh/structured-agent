@@ -12,6 +12,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+use structured_agent_runtime::symbols::DefinitionPath;
 use tokio::sync::RwLock;
 
 type RmcpClient = rmcp::service::RunningService<RoleClient, ()>;
@@ -61,6 +62,15 @@ fn expression_to_json(value: &ExpressionValue) -> Value {
     }
     if value.type_name() == "Unit" {
         return Value::Null;
+    }
+    if value.type_name() == "Struct" {
+        if let Ok(fields) = value.as_struct_fields() {
+            let mut map = serde_json::Map::new();
+            for (name, val) in fields {
+                map.insert(name, expression_to_json(&val));
+            }
+            return Value::Object(map);
+        }
     }
     if value.is_option() {
         return match value.as_option() {
@@ -119,22 +129,26 @@ fn ty_to_datatype(ty: &Type) -> DataType {
     }
 }
 
-
-
-fn json_to_expression(json: &serde_json::Value, ty: &Type) -> Result<ExpressionValue, McpError> {
+fn json_to_expression(
+    json: &serde_json::Value,
+    ty: &Type,
+    resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
+) -> Result<ExpressionValue, McpError> {
     if ty.is_string() {
         return Ok(ExpressionValue::string(
             json.as_str().unwrap_or(&json.to_string()).to_string(),
         ));
     }
     if ty.is_int() {
-        let n = json.as_i64()
+        let n = json
+            .as_i64()
             .or_else(|| json.as_str().and_then(|s| s.parse::<i64>().ok()))
             .ok_or_else(|| McpError::ToolError(format!("Cannot parse {:?} as integer", json)))?;
         return Ok(ExpressionValue::integer(n));
     }
     if ty.is_boolean() {
-        let b = json.as_bool()
+        let b = json
+            .as_bool()
             .or_else(|| json.as_str().and_then(|s| s.parse::<bool>().ok()))
             .ok_or_else(|| McpError::ToolError(format!("Cannot parse {:?} as boolean", json)))?;
         return Ok(ExpressionValue::boolean(b));
@@ -145,10 +159,13 @@ fn json_to_expression(json: &serde_json::Value, ty: &Type) -> Result<ExpressionV
     if ty.is_list() {
         if let Type::Parameterized(_, args) = ty {
             if let Some(inner) = args.first() {
-                let arr = json.as_array()
-                    .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", json)))?;
-                let elements: Result<Vec<ExpressionValue>, McpError> =
-                    arr.iter().map(|v| json_to_expression(v, inner)).collect();
+                let arr = json.as_array().ok_or_else(|| {
+                    McpError::ToolError(format!("Expected JSON array, got {:?}", json))
+                })?;
+                let elements: Result<Vec<ExpressionValue>, McpError> = arr
+                    .iter()
+                    .map(|v| json_to_expression(v, inner, resolve_struct))
+                    .collect();
                 return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
             }
         }
@@ -157,10 +174,33 @@ fn json_to_expression(json: &serde_json::Value, ty: &Type) -> Result<ExpressionV
         if let Type::Parameterized(_, args) = ty {
             if let Some(inner) = args.first() {
                 if json.is_null() {
-                    return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(inner)));
+                    return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(
+                        inner,
+                    )));
                 }
-                return json_to_expression(json, inner).map(ExpressionValue::option_some);
+                return json_to_expression(json, inner, resolve_struct)
+                    .map(ExpressionValue::option_some);
             }
+        }
+    }
+    if let Type::Named(path) = ty {
+        if let Some(fields) = resolve_struct(path) {
+            let obj = json.as_object().ok_or_else(|| {
+                McpError::ToolError(format!(
+                    "Expected JSON object for type '{}', got {:?}",
+                    ty.name(),
+                    json
+                ))
+            })?;
+            let struct_fields: Result<Vec<(&str, ExpressionValue)>, McpError> = fields
+                .iter()
+                .map(|(name, field_ty)| {
+                    let field_json = obj.get(name).unwrap_or(&serde_json::Value::Null);
+                    json_to_expression(field_json, field_ty, resolve_struct)
+                        .map(|v| (name.as_str(), v))
+                })
+                .collect();
+            return Ok(ExpressionValue::struct_value(struct_fields?));
         }
     }
     Err(McpError::ToolError(format!(
@@ -169,13 +209,17 @@ fn json_to_expression(json: &serde_json::Value, ty: &Type) -> Result<ExpressionV
     )))
 }
 
-fn parse_text_content(text: &str, return_type: &Type) -> Result<ExpressionValue, McpError> {
+fn parse_text_content(
+    text: &str,
+    return_type: &Type,
+    resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
+) -> Result<ExpressionValue, McpError> {
     if return_type.is_string() {
         return Ok(ExpressionValue::string(text.to_string()));
     }
     let json: serde_json::Value = serde_json::from_str(text)
         .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as JSON", text)))?;
-    json_to_expression(&json, return_type)
+    json_to_expression(&json, return_type, resolve_struct)
 }
 
 pub struct McpClient {
@@ -253,6 +297,7 @@ impl McpClient {
         name: &str,
         args: &[(String, ExpressionValue)],
         return_type: &Type,
+        resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
     ) -> Result<ExpressionValue, McpError> {
         self.ensure_connected().await?;
 
@@ -276,7 +321,9 @@ impl McpClient {
             .map_err(|e| McpError::ToolError(format!("Failed to call tool: {}", e)))?;
 
         if response.is_error == Some(true) {
-            let msg = response.content.first()
+            let msg = response
+                .content
+                .first()
                 .and_then(|block| match &**block {
                     rmcp::model::RawContent::Text(t) => Some(t.text.clone()),
                     _ => None,
@@ -308,7 +355,7 @@ impl McpClient {
 
         match &*response.content[0] {
             rmcp::model::RawContent::Text(text_content) => {
-                parse_text_content(&text_content.text, return_type)
+                parse_text_content(&text_content.text, return_type, resolve_struct)
             }
             other => Ok(ExpressionValue::string(format!("{:?}", other))),
         }
@@ -345,7 +392,8 @@ impl FunctionProvider for McpClient {
                             .map(|(k, v)| {
                                 Parameter::new(
                                     k.clone(),
-                                    json_schema_to_type(v).unwrap_or_else(Type::string),
+                                    json_schema_to_type(v)
+                                        .unwrap_or_else(|| Type::Generic("_".to_string())),
                                 )
                             })
                             .collect()
@@ -441,6 +489,7 @@ mod tests {
                 "test_tool",
                 &[("arg".to_string(), ExpressionValue::string("value"))],
                 &Type::string(),
+                &|_| None,
             )
             .await;
         assert!(result.is_err());
@@ -495,47 +544,50 @@ mod tests {
 
     #[test]
     fn parse_text_content_string() {
-        let result = parse_text_content("hello", &Type::string());
+        let result = parse_text_content("hello", &Type::string(), &|_| None);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_string().unwrap(), "hello");
     }
 
     #[test]
     fn parse_text_content_integer() {
-        let result = parse_text_content("42", &Type::int());
+        let result = parse_text_content("42", &Type::int(), &|_| None);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_integer().unwrap(), 42);
     }
 
     #[test]
     fn parse_text_content_integer_invalid() {
-        let result = parse_text_content("abc", &Type::int());
+        let result = parse_text_content("abc", &Type::int(), &|_| None);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_bool_true() {
-        let result = parse_text_content("true", &Type::boolean());
+        let result = parse_text_content("true", &Type::boolean(), &|_| None);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_boolean().unwrap(), true);
     }
 
     #[test]
     fn parse_text_content_bool_false() {
-        let result = parse_text_content("false", &Type::boolean());
+        let result = parse_text_content("false", &Type::boolean(), &|_| None);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_boolean().unwrap(), false);
     }
 
     #[test]
     fn parse_text_content_bool_invalid() {
-        let result = parse_text_content("yes", &Type::boolean());
+        let result = parse_text_content("yes", &Type::boolean(), &|_| None);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_of_strings() {
-        let result = parse_text_content("[\"a\",\"b\",\"c\"]", &Type::list(Type::string()));
+        let result =
+            parse_text_content("[\"a\",\"b\",\"c\"]", &Type::list(Type::string()), &|_| {
+                None
+            });
         assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
         let value = result.unwrap();
         let list = value.as_list().unwrap();
@@ -544,7 +596,7 @@ mod tests {
 
     #[test]
     fn parse_text_content_empty_list() {
-        let result = parse_text_content("[]", &Type::list(Type::string()));
+        let result = parse_text_content("[]", &Type::list(Type::string()), &|_| None);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
         let value = result.unwrap();
         let list = value.as_list().unwrap();
@@ -553,13 +605,14 @@ mod tests {
 
     #[test]
     fn parse_text_content_list_invalid_json() {
-        let result = parse_text_content("not json", &Type::list(Type::string()));
+        let result = parse_text_content("not json", &Type::list(Type::string()), &|_| None);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_not_array() {
-        let result = parse_text_content("{\"key\":\"val\"}", &Type::list(Type::string()));
+        let result =
+            parse_text_content("{\"key\":\"val\"}", &Type::list(Type::string()), &|_| None);
         assert!(result.is_err());
     }
 
@@ -571,25 +624,32 @@ mod tests {
 
     #[test]
     fn json_to_expression_string() {
-        let result = json_to_expression(&serde_json::json!("hi"), &Type::string()).unwrap();
+        let result =
+            json_to_expression(&serde_json::json!("hi"), &Type::string(), &|_| None).unwrap();
         assert_eq!(result.as_string().unwrap(), "hi");
     }
 
     #[test]
     fn json_to_expression_int() {
-        let result = json_to_expression(&serde_json::json!(42), &Type::int()).unwrap();
+        let result = json_to_expression(&serde_json::json!(42), &Type::int(), &|_| None).unwrap();
         assert_eq!(result.as_integer().unwrap(), 42);
     }
 
     #[test]
     fn json_to_expression_bool() {
-        let result = json_to_expression(&serde_json::json!(true), &Type::boolean()).unwrap();
+        let result =
+            json_to_expression(&serde_json::json!(true), &Type::boolean(), &|_| None).unwrap();
         assert!(result.as_boolean().unwrap());
     }
 
     #[test]
     fn json_to_expression_list_of_int() {
-        let result = json_to_expression(&serde_json::json!([1, 2, 3]), &Type::list(Type::int())).unwrap();
+        let result = json_to_expression(
+            &serde_json::json!([1, 2, 3]),
+            &Type::list(Type::int()),
+            &|_| None,
+        )
+        .unwrap();
         let elements = result.as_list_elements().unwrap();
         assert_eq!(elements.len(), 3);
         assert_eq!(elements[0].as_integer().unwrap(), 1);
@@ -599,7 +659,12 @@ mod tests {
 
     #[test]
     fn json_to_expression_list_of_bool() {
-        let result = json_to_expression(&serde_json::json!([true, false]), &Type::list(Type::boolean())).unwrap();
+        let result = json_to_expression(
+            &serde_json::json!([true, false]),
+            &Type::list(Type::boolean()),
+            &|_| None,
+        )
+        .unwrap();
         let elements = result.as_list_elements().unwrap();
         assert_eq!(elements.len(), 2);
         assert!(elements[0].as_boolean().unwrap());
@@ -608,32 +673,94 @@ mod tests {
 
     #[test]
     fn json_to_expression_option_some() {
-        let result = json_to_expression(&serde_json::json!("x"), &Type::option(Type::string())).unwrap();
+        let result = json_to_expression(
+            &serde_json::json!("x"),
+            &Type::option(Type::string()),
+            &|_| None,
+        )
+        .unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "x");
     }
 
     #[test]
     fn json_to_expression_option_none() {
-        let result = json_to_expression(&serde_json::Value::Null, &Type::option(Type::string())).unwrap();
+        let result = json_to_expression(
+            &serde_json::Value::Null,
+            &Type::option(Type::string()),
+            &|_| None,
+        )
+        .unwrap();
         assert!(result.as_option().unwrap().is_none());
     }
 
     #[test]
     fn json_to_expression_unknown_type_is_error() {
         use nonempty::NonEmpty;
-        use structured_agent_runtime::symbols::DefinitionPath;
         let ty = Type::Named(DefinitionPath::for_type(
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "Person",
         ));
-        let result = json_to_expression(&serde_json::json!({"name": "alice"}), &ty);
+        let result = json_to_expression(&serde_json::json!({"name": "alice"}), &ty, &|_| None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn json_to_expression_struct_with_resolver() {
+        use nonempty::NonEmpty;
+        let path = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "Person",
+        );
+        let ty = Type::Named(path.clone());
+        let resolver = |p: &DefinitionPath| -> Option<Vec<(String, Type)>> {
+            if p.last_name() == "Person" {
+                Some(vec![
+                    ("name".to_string(), Type::string()),
+                    ("age".to_string(), Type::int()),
+                ])
+            } else {
+                None
+            }
+        };
+        let result = json_to_expression(
+            &serde_json::json!({"name": "alice", "age": 30}),
+            &ty,
+            &resolver,
+        )
+        .unwrap();
+        assert_eq!(
+            result
+                .get_struct_field("name")
+                .unwrap()
+                .as_string()
+                .unwrap(),
+            "alice"
+        );
+        assert_eq!(
+            result
+                .get_struct_field("age")
+                .unwrap()
+                .as_integer()
+                .unwrap(),
+            30
+        );
+    }
+
+    #[test]
+    fn json_to_expression_unknown_type_with_no_resolver_is_error() {
+        use nonempty::NonEmpty;
+        let ty = Type::Named(DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "UnknownType",
+        ));
+        let result = json_to_expression(&serde_json::json!({"x": 1}), &ty, &|_| None);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_of_int() {
-        let result = parse_text_content("[1,2,3]", &Type::list(Type::int())).unwrap();
+        let result = parse_text_content("[1,2,3]", &Type::list(Type::int()), &|_| None).unwrap();
         let elements = result.as_list_elements().unwrap();
         assert_eq!(elements.len(), 3);
         assert_eq!(elements[0].as_integer().unwrap(), 1);
@@ -678,7 +805,8 @@ mod tests {
 
     #[test]
     fn parse_text_content_option_some_string() {
-        let result = parse_text_content("\"hello\"", &Type::option(Type::string())).unwrap();
+        let result =
+            parse_text_content("\"hello\"", &Type::option(Type::string()), &|_| None).unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "hello");
     }

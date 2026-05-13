@@ -478,7 +478,10 @@ impl Runtime {
                 .find(|p| p.name == extern_param.name);
 
             match matching_provider_param {
-                Some(provider_param) if provider_param.param_type == extern_param.param_type => {
+                Some(provider_param)
+                    if matches!(&provider_param.param_type, Type::Generic(_))
+                        || provider_param.param_type == extern_param.param_type =>
+                {
                     continue;
                 }
                 _ => return false,

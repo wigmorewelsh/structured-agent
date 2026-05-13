@@ -60,5 +60,11 @@ def multi_echo(messages: list[str]) -> list[TextContent]:
     return [TextContent(type="text", text=msg) for msg in messages]
 
 
+@mcp.tool
+def echo_struct(data: dict) -> dict:
+    """Echo back the dict exactly as received."""
+    return data
+
+
 if __name__ == "__main__":
     mcp.run()

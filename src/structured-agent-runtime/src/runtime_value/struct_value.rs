@@ -38,6 +38,19 @@ impl StructValue {
         let col = self.struct_array.column(index);
         Ok(arrow_col_to_expression(col.clone()))
     }
+
+    pub fn all_fields(&self) -> Result<Vec<(String, ExpressionValue)>, String> {
+        Ok(self
+            .struct_array
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(i, field)| {
+                let col = self.struct_array.column(i);
+                (field.name().clone(), arrow_col_to_expression(col.clone()))
+            })
+            .collect())
+    }
 }
 
 impl super::RuntimeValue for StructValue {
