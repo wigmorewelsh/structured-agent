@@ -124,12 +124,14 @@ fn ty_to_datatype(ty: &Type) -> DataType {
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn json_to_expression(
+fn json_to_expression<F>(
     json: &serde_json::Value,
     ty: &Type,
-    resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
-) -> Result<ExpressionValue, McpError> {
+    resolve_struct: &F,
+) -> Result<ExpressionValue, McpError>
+where
+    F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>>,
+{
     if ty.is_string() {
         return Ok(ExpressionValue::string(
             json.as_str().unwrap_or(&json.to_string()).to_string(),
@@ -202,11 +204,14 @@ fn json_to_expression(
 }
 
 #[allow(clippy::type_complexity)]
-fn parse_text_content(
+fn parse_text_content<F>(
     text: &str,
     return_type: &Type,
-    resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
-) -> Result<ExpressionValue, McpError> {
+    resolve_struct: &F,
+) -> Result<ExpressionValue, McpError>
+where
+    F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>>,
+{
     if return_type.is_string() {
         return Ok(ExpressionValue::string(text.to_string()));
     }
@@ -285,14 +290,16 @@ impl McpClient {
         Ok(tools)
     }
 
-    #[allow(clippy::type_complexity)]
-    pub async fn call_tool(
+    pub async fn call_tool<F>(
         &self,
         name: &str,
         args: &[(String, ExpressionValue)],
         return_type: &Type,
-        resolve_struct: &(dyn Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync),
-    ) -> Result<ExpressionValue, McpError> {
+        resolve_struct: &F,
+    ) -> Result<ExpressionValue, McpError>
+    where
+        F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync,
+    {
         self.ensure_connected().await?;
 
         let client_lock = self.client.read().await;
