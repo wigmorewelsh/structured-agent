@@ -84,9 +84,7 @@ impl Function for ExternalFunctionExpr {
         let runtime = context.runtime_arc();
         let result = self
             .mcp_client
-            .call_tool(&self.name, &named_args, &self.return_type, &|path| {
-                runtime.get_struct(path)
-            })
+            .call_tool(&self.name, &named_args, &self.return_type, &*runtime)
             .await
             .map_err(|e| format!("MCP tool call failed: {}", e));
 

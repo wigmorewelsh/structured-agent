@@ -90,6 +90,8 @@ pub enum Type {
     Generic(std::string::String),
 }
 
+pub type StructFields = Vec<(String, Type)>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: String,

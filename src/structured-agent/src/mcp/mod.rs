@@ -1,4 +1,5 @@
 use crate::expressions::ExternalFunctionExpr;
+use crate::runtime::RuntimeService;
 use crate::runtime::{ExpressionValue, RuntimeError};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
@@ -124,14 +125,11 @@ fn ty_to_datatype(ty: &Type) -> DataType {
     }
 }
 
-fn json_to_expression<F>(
+fn json_to_expression(
     json: &serde_json::Value,
     ty: &Type,
-    resolve_struct: &F,
-) -> Result<ExpressionValue, McpError>
-where
-    F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>>,
-{
+    runtime: &dyn RuntimeService,
+) -> Result<ExpressionValue, McpError> {
     if ty.is_string() {
         return Ok(ExpressionValue::string(
             json.as_str().unwrap_or(&json.to_string()).to_string(),
@@ -163,7 +161,7 @@ where
             .ok_or_else(|| McpError::ToolError(format!("Expected JSON array, got {:?}", json)))?;
         let elements: Result<Vec<ExpressionValue>, McpError> = arr
             .iter()
-            .map(|v| json_to_expression(v, inner, resolve_struct))
+            .map(|v| json_to_expression(v, inner, runtime))
             .collect();
         return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
     }
@@ -176,10 +174,10 @@ where
                 inner,
             )));
         }
-        return json_to_expression(json, inner, resolve_struct).map(ExpressionValue::option_some);
+        return json_to_expression(json, inner, runtime).map(ExpressionValue::option_some);
     }
     if let Type::Named(path) = ty
-        && let Some(fields) = resolve_struct(path)
+        && let Some(fields) = runtime.get_struct(path)
     {
         let obj = json.as_object().ok_or_else(|| {
             McpError::ToolError(format!(
@@ -192,7 +190,7 @@ where
             .iter()
             .map(|(name, field_ty)| {
                 let field_json = obj.get(name).unwrap_or(&serde_json::Value::Null);
-                json_to_expression(field_json, field_ty, resolve_struct).map(|v| (name.as_str(), v))
+                json_to_expression(field_json, field_ty, runtime).map(|v| (name.as_str(), v))
             })
             .collect();
         return Ok(ExpressionValue::struct_value(struct_fields?));
@@ -203,21 +201,17 @@ where
     )))
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_text_content<F>(
+fn parse_text_content(
     text: &str,
     return_type: &Type,
-    resolve_struct: &F,
-) -> Result<ExpressionValue, McpError>
-where
-    F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>>,
-{
+    runtime: &dyn RuntimeService,
+) -> Result<ExpressionValue, McpError> {
     if return_type.is_string() {
         return Ok(ExpressionValue::string(text.to_string()));
     }
     let json: serde_json::Value = serde_json::from_str(text)
         .map_err(|_| McpError::ToolError(format!("Cannot parse {:?} as JSON", text)))?;
-    json_to_expression(&json, return_type, resolve_struct)
+    json_to_expression(&json, return_type, runtime)
 }
 
 pub struct McpClient {
@@ -290,16 +284,13 @@ impl McpClient {
         Ok(tools)
     }
 
-    pub async fn call_tool<F>(
+    pub async fn call_tool(
         &self,
         name: &str,
         args: &[(String, ExpressionValue)],
         return_type: &Type,
-        resolve_struct: &F,
-    ) -> Result<ExpressionValue, McpError>
-    where
-        F: Fn(&DefinitionPath) -> Option<Vec<(String, Type)>> + Send + Sync,
-    {
+        runtime: &dyn RuntimeService,
+    ) -> Result<ExpressionValue, McpError> {
         self.ensure_connected().await?;
 
         let client_lock = self.client.read().await;
@@ -356,7 +347,7 @@ impl McpClient {
 
         match &response.content[0].raw {
             rmcp::model::RawContent::Text(text_content) => {
-                parse_text_content(&text_content.text, return_type, resolve_struct)
+                parse_text_content(&text_content.text, return_type, runtime)
             }
             other => Ok(ExpressionValue::string(format!("{:?}", other))),
         }
@@ -459,8 +450,42 @@ pub fn create_client_info(name: &str, version: &str) -> rmcp::model::Implementat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::ExpressionValue;
+    use crate::runtime::{ExpressionValue, RuntimeService};
     use serde_json::json;
+
+    struct NoStructRuntime;
+
+    impl RuntimeService for NoStructRuntime {
+        fn get_native_function(
+            &self,
+            _: &str,
+        ) -> Option<std::sync::Arc<dyn crate::types::ExecutableFunction>> {
+            None
+        }
+        fn get_bytecode_ref(&self, _: &DefinitionPath) -> Option<structured_agent_il::BytecodeRef> {
+            None
+        }
+        fn engine(&self) -> &dyn crate::types::LanguageEngine {
+            unimplemented!()
+        }
+        fn type_to_arrow_datatype(&self, _: &Type) -> arrow::datatypes::DataType {
+            arrow::datatypes::DataType::Null
+        }
+        fn get_struct(&self, _: &DefinitionPath) -> Option<Vec<(String, Type)>> {
+            None
+        }
+        fn get_struct_with_args(
+            &self,
+            _: &DefinitionPath,
+            _: &[Type],
+        ) -> Option<Vec<(String, Type)>> {
+            None
+        }
+    }
+
+    fn no_struct() -> &'static NoStructRuntime {
+        &NoStructRuntime
+    }
 
     #[test]
     fn test_create_client_info() {
@@ -490,7 +515,7 @@ mod tests {
                 "test_tool",
                 &[("arg".to_string(), ExpressionValue::string("value"))],
                 &Type::string(),
-                &|_| None,
+                no_struct(),
             )
             .await;
         assert!(result.is_err());
@@ -545,50 +570,51 @@ mod tests {
 
     #[test]
     fn parse_text_content_string() {
-        let result = parse_text_content("hello", &Type::string(), &|_| None);
+        let result = parse_text_content("hello", &Type::string(), no_struct());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_string().unwrap(), "hello");
     }
 
     #[test]
     fn parse_text_content_integer() {
-        let result = parse_text_content("42", &Type::int(), &|_| None);
+        let result = parse_text_content("42", &Type::int(), no_struct());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_integer().unwrap(), 42);
     }
 
     #[test]
     fn parse_text_content_integer_invalid() {
-        let result = parse_text_content("abc", &Type::int(), &|_| None);
+        let result = parse_text_content("abc", &Type::int(), no_struct());
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_bool_true() {
-        let result = parse_text_content("true", &Type::boolean(), &|_| None);
+        let result = parse_text_content("true", &Type::boolean(), no_struct());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_boolean().unwrap(), true);
     }
 
     #[test]
     fn parse_text_content_bool_false() {
-        let result = parse_text_content("false", &Type::boolean(), &|_| None);
+        let result = parse_text_content("false", &Type::boolean(), no_struct());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().as_boolean().unwrap(), false);
     }
 
     #[test]
     fn parse_text_content_bool_invalid() {
-        let result = parse_text_content("yes", &Type::boolean(), &|_| None);
+        let result = parse_text_content("yes", &Type::boolean(), no_struct());
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_of_strings() {
-        let result =
-            parse_text_content("[\"a\",\"b\",\"c\"]", &Type::list(Type::string()), &|_| {
-                None
-            });
+        let result = parse_text_content(
+            "[\"a\",\"b\",\"c\"]",
+            &Type::list(Type::string()),
+            no_struct(),
+        );
         assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
         let value = result.unwrap();
         let list = value.as_list().unwrap();
@@ -597,7 +623,7 @@ mod tests {
 
     #[test]
     fn parse_text_content_empty_list() {
-        let result = parse_text_content("[]", &Type::list(Type::string()), &|_| None);
+        let result = parse_text_content("[]", &Type::list(Type::string()), no_struct());
         assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
         let value = result.unwrap();
         let list = value.as_list().unwrap();
@@ -606,14 +632,17 @@ mod tests {
 
     #[test]
     fn parse_text_content_list_invalid_json() {
-        let result = parse_text_content("not json", &Type::list(Type::string()), &|_| None);
+        let result = parse_text_content("not json", &Type::list(Type::string()), no_struct());
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_not_array() {
-        let result =
-            parse_text_content("{\"key\":\"val\"}", &Type::list(Type::string()), &|_| None);
+        let result = parse_text_content(
+            "{\"key\":\"val\"}",
+            &Type::list(Type::string()),
+            no_struct(),
+        );
         assert!(result.is_err());
     }
 
@@ -626,20 +655,20 @@ mod tests {
     #[test]
     fn json_to_expression_string() {
         let result =
-            json_to_expression(&serde_json::json!("hi"), &Type::string(), &|_| None).unwrap();
+            json_to_expression(&serde_json::json!("hi"), &Type::string(), no_struct()).unwrap();
         assert_eq!(result.as_string().unwrap(), "hi");
     }
 
     #[test]
     fn json_to_expression_int() {
-        let result = json_to_expression(&serde_json::json!(42), &Type::int(), &|_| None).unwrap();
+        let result = json_to_expression(&serde_json::json!(42), &Type::int(), no_struct()).unwrap();
         assert_eq!(result.as_integer().unwrap(), 42);
     }
 
     #[test]
     fn json_to_expression_bool() {
         let result =
-            json_to_expression(&serde_json::json!(true), &Type::boolean(), &|_| None).unwrap();
+            json_to_expression(&serde_json::json!(true), &Type::boolean(), no_struct()).unwrap();
         assert!(result.as_boolean().unwrap());
     }
 
@@ -648,7 +677,7 @@ mod tests {
         let result = json_to_expression(
             &serde_json::json!([1, 2, 3]),
             &Type::list(Type::int()),
-            &|_| None,
+            no_struct(),
         )
         .unwrap();
         let elements = result.as_list_elements().unwrap();
@@ -663,7 +692,7 @@ mod tests {
         let result = json_to_expression(
             &serde_json::json!([true, false]),
             &Type::list(Type::boolean()),
-            &|_| None,
+            no_struct(),
         )
         .unwrap();
         let elements = result.as_list_elements().unwrap();
@@ -677,7 +706,7 @@ mod tests {
         let result = json_to_expression(
             &serde_json::json!("x"),
             &Type::option(Type::string()),
-            &|_| None,
+            no_struct(),
         )
         .unwrap();
         let inner = result.as_option().unwrap().unwrap();
@@ -689,7 +718,7 @@ mod tests {
         let result = json_to_expression(
             &serde_json::Value::Null,
             &Type::option(Type::string()),
-            &|_| None,
+            no_struct(),
         )
         .unwrap();
         assert!(result.as_option().unwrap().is_none());
@@ -702,32 +731,62 @@ mod tests {
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "Person",
         ));
-        let result = json_to_expression(&serde_json::json!({"name": "alice"}), &ty, &|_| None);
+        let result = json_to_expression(&serde_json::json!({"name": "alice"}), &ty, no_struct());
         assert!(result.is_err());
     }
 
     #[test]
     fn json_to_expression_struct_with_resolver() {
         use nonempty::NonEmpty;
+
+        struct PersonRuntime;
+        impl RuntimeService for PersonRuntime {
+            fn get_native_function(
+                &self,
+                _: &str,
+            ) -> Option<std::sync::Arc<dyn crate::types::ExecutableFunction>> {
+                None
+            }
+            fn get_bytecode_ref(
+                &self,
+                _: &DefinitionPath,
+            ) -> Option<structured_agent_il::BytecodeRef> {
+                None
+            }
+            fn engine(&self) -> &dyn crate::types::LanguageEngine {
+                unimplemented!()
+            }
+            fn type_to_arrow_datatype(&self, _: &Type) -> arrow::datatypes::DataType {
+                arrow::datatypes::DataType::Null
+            }
+            fn get_struct(&self, p: &DefinitionPath) -> Option<Vec<(String, Type)>> {
+                if p.last_name() == "Person" {
+                    Some(vec![
+                        ("name".to_string(), Type::string()),
+                        ("age".to_string(), Type::int()),
+                    ])
+                } else {
+                    None
+                }
+            }
+            fn get_struct_with_args(
+                &self,
+                _: &DefinitionPath,
+                _: &[Type],
+            ) -> Option<Vec<(String, Type)>> {
+                None
+            }
+        }
+
         let path = DefinitionPath::for_type(
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "Person",
         );
         let ty = Type::Named(path.clone());
-        let resolver = |p: &DefinitionPath| -> Option<Vec<(String, Type)>> {
-            if p.last_name() == "Person" {
-                Some(vec![
-                    ("name".to_string(), Type::string()),
-                    ("age".to_string(), Type::int()),
-                ])
-            } else {
-                None
-            }
-        };
         let result = json_to_expression(
             &serde_json::json!({"name": "alice", "age": 30}),
             &ty,
-            &resolver,
+            &PersonRuntime,
         )
         .unwrap();
         assert_eq!(
@@ -755,13 +814,13 @@ mod tests {
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "UnknownType",
         ));
-        let result = json_to_expression(&serde_json::json!({"x": 1}), &ty, &|_| None);
+        let result = json_to_expression(&serde_json::json!({"x": 1}), &ty, no_struct());
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_text_content_list_of_int() {
-        let result = parse_text_content("[1,2,3]", &Type::list(Type::int()), &|_| None).unwrap();
+        let result = parse_text_content("[1,2,3]", &Type::list(Type::int()), no_struct()).unwrap();
         let elements = result.as_list_elements().unwrap();
         assert_eq!(elements.len(), 3);
         assert_eq!(elements[0].as_integer().unwrap(), 1);
@@ -807,7 +866,7 @@ mod tests {
     #[test]
     fn parse_text_content_option_some_string() {
         let result =
-            parse_text_content("\"hello\"", &Type::option(Type::string()), &|_| None).unwrap();
+            parse_text_content("\"hello\"", &Type::option(Type::string()), no_struct()).unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "hello");
     }
