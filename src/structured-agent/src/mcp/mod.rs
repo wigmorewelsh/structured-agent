@@ -324,7 +324,7 @@ impl McpClient {
             let msg = response
                 .content
                 .first()
-                .and_then(|block| match &**block {
+                .and_then(|block| match &block.raw {
                     rmcp::model::RawContent::Text(t) => Some(t.text.clone()),
                     _ => None,
                 })
@@ -339,7 +339,7 @@ impl McpClient {
         if response.content.len() > 1 {
             let mut elements = Vec::new();
             for block in &response.content {
-                match &**block {
+                match &block.raw {
                     rmcp::model::RawContent::Text(text_content) => {
                         elements.push(ExpressionValue::string(text_content.text.clone()));
                     }
@@ -353,7 +353,7 @@ impl McpClient {
             return ExpressionValue::from_elements(elements).map_err(McpError::ToolError);
         }
 
-        match &*response.content[0] {
+        match &response.content[0].raw {
             rmcp::model::RawContent::Text(text_content) => {
                 parse_text_content(&text_content.text, return_type, resolve_struct)
             }
