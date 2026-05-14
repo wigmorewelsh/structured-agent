@@ -3,8 +3,9 @@ use arrow::datatypes::{DataType, Field, Fields};
 use std::sync::Arc;
 
 use crate::runtime_value::{
-    BooleanValue, IntValue, ListIteratorValue, ListValue, MetadataValue, OptionValue, RuntimeValue,
-    StringValue, StructValue, UnitValue, arrow_col_to_expression,
+    AudioValue, BooleanValue, ImageValue, IntValue, LinkValue, ListIteratorValue, ListValue,
+    MetadataValue, OptionValue, RuntimeValue, StringValue, StructValue, UnitValue,
+    arrow_col_to_expression,
 };
 use crate::symbols::{DefinitionPath, MetaData, References, SymbolQuery, TypeDefinitionKind};
 use crate::types::Type;
@@ -115,6 +116,18 @@ impl ExpressionValue {
         self.downcast_clone::<ListIteratorValue>()
     }
 
+    pub fn as_image(&self) -> Result<ImageValue, String> {
+        self.downcast_clone::<ImageValue>()
+    }
+
+    pub fn as_audio(&self) -> Result<AudioValue, String> {
+        self.downcast_clone::<AudioValue>()
+    }
+
+    pub fn as_link(&self) -> Result<LinkValue, String> {
+        self.downcast_clone::<LinkValue>()
+    }
+
     pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
         Ok(Self::Dynamic(Arc::new(ListValue::from_elements(elements)?)))
     }
@@ -177,6 +190,27 @@ impl ExpressionValue {
         Self::Dynamic(Arc::new(MetadataValue {
             name: name.into(),
             documentation,
+        }))
+    }
+
+    pub fn image(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self::Dynamic(Arc::new(ImageValue {
+            mime_type: mime_type.into(),
+            data,
+        }))
+    }
+
+    pub fn audio(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self::Dynamic(Arc::new(AudioValue {
+            mime_type: mime_type.into(),
+            data,
+        }))
+    }
+
+    pub fn link(uri: impl Into<String>, name: Option<String>) -> Self {
+        Self::Dynamic(Arc::new(LinkValue {
+            uri: uri.into(),
+            name,
         }))
     }
 
@@ -434,7 +468,9 @@ mod tests {
     use arrow::array::{NullArray, UnionArray};
     use arrow::datatypes::{DataType, Field, Fields};
 
-    use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
+    use crate::runtime_value::{
+        AudioValue, ImageValue, LinkValue, RuntimeValue, RuntimeValueFactory, UnitValue,
+    };
     use crate::symbols::{
         DefinitionPath, FieldDefinition, GenericParameterDefinition, MetaData, NoAst,
         TypeDefinition, TypeDefinitionKind,
@@ -835,5 +871,71 @@ mod tests {
     fn list_iterator_wrong_type_returns_err() {
         let val = ExpressionValue::string("hello");
         assert!(val.as_list_iterator().is_err());
+    }
+
+    #[test]
+    fn expression_value_image_roundtrips_via_as_image() {
+        let val = ExpressionValue::image("image/png", vec![1, 2, 3]);
+        let img = val.as_image().unwrap();
+        assert_eq!(img.mime_type, "image/png");
+        assert_eq!(img.data, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn expression_value_audio_roundtrips_via_as_audio() {
+        let val = ExpressionValue::audio("audio/mp3", vec![4, 5, 6]);
+        let aud = val.as_audio().unwrap();
+        assert_eq!(aud.mime_type, "audio/mp3");
+        assert_eq!(aud.data, vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn expression_value_link_roundtrips_via_as_link() {
+        let val = ExpressionValue::link("https://example.com", Some("Example".to_string()));
+        let lnk = val.as_link().unwrap();
+        assert_eq!(lnk.uri, "https://example.com");
+        assert_eq!(lnk.name, Some("Example".to_string()));
+    }
+
+    #[test]
+    fn as_image_fails_for_string() {
+        let val = ExpressionValue::string("not an image");
+        assert!(val.as_image().is_err());
+    }
+
+    #[test]
+    fn as_audio_fails_for_string() {
+        let val = ExpressionValue::string("not audio");
+        assert!(val.as_audio().is_err());
+    }
+
+    #[test]
+    fn as_link_fails_for_string() {
+        let val = ExpressionValue::string("not a link");
+        assert!(val.as_link().is_err());
+    }
+
+    #[test]
+    fn image_type_name_is_image() {
+        assert_eq!(
+            ExpressionValue::image("image/png", vec![]).type_name(),
+            "Image"
+        );
+    }
+
+    #[test]
+    fn audio_type_name_is_audio() {
+        assert_eq!(
+            ExpressionValue::audio("audio/mp3", vec![]).type_name(),
+            "Audio"
+        );
+    }
+
+    #[test]
+    fn link_type_name_is_link() {
+        assert_eq!(
+            ExpressionValue::link("https://example.com", None).type_name(),
+            "Link"
+        );
     }
 }

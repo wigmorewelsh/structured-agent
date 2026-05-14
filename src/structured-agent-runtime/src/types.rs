@@ -146,6 +146,30 @@ impl Type {
         matches!(self, Type::Named(tn) if tn.last_name() == "Unit")
     }
 
+    pub fn image() -> Self {
+        Self::Named(Self::prelude("Image"))
+    }
+
+    pub fn is_image(&self) -> bool {
+        matches!(self, Type::Named(tn) if tn.last_name() == "Image")
+    }
+
+    pub fn audio() -> Self {
+        Self::Named(Self::prelude("Audio"))
+    }
+
+    pub fn is_audio(&self) -> bool {
+        matches!(self, Type::Named(tn) if tn.last_name() == "Audio")
+    }
+
+    pub fn link() -> Self {
+        Self::Named(Self::prelude("Link"))
+    }
+
+    pub fn is_link(&self) -> bool {
+        matches!(self, Type::Named(tn) if tn.last_name() == "Link")
+    }
+
     pub fn list(inner: Type) -> Self {
         Self::Parameterized(Self::prelude("List"), vec![inner])
     }
@@ -261,6 +285,41 @@ mod tests {
         let a = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
         let b = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::unit()) }));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn type_image_last_name_is_image() {
+        assert_eq!(Type::image().name(), "Image");
+    }
+
+    #[test]
+    fn type_audio_last_name_is_audio() {
+        assert_eq!(Type::audio().name(), "Audio");
+    }
+
+    #[test]
+    fn type_link_last_name_is_link() {
+        assert_eq!(Type::link().name(), "Link");
+    }
+
+    #[test]
+    fn is_image_true_for_image_type() {
+        assert!(Type::image().is_image());
+    }
+
+    #[test]
+    fn is_image_false_for_string_type() {
+        assert!(!Type::string().is_image());
+    }
+
+    #[test]
+    fn is_audio_true_for_audio_type() {
+        assert!(Type::audio().is_audio());
+    }
+
+    #[test]
+    fn is_link_true_for_link_type() {
+        assert!(Type::link().is_link());
     }
 
     #[tokio::test]
