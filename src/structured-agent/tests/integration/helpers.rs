@@ -63,9 +63,12 @@ pub fn parse_and_type_check(code: &str) -> typed_ast::Module {
         file_id: TEST_FILE_ID,
         is_inline: false,
     };
-    let typed_metadata = TypeChecker::new()
-        .check(&[parsed], &HashMap::new())
-        .unwrap();
+    let mut prelude = HashMap::new();
+    prelude.insert(
+        "prelude".to_string(),
+        Arc::new(PreludeModule) as Arc<dyn structured_agent_il::Module>,
+    );
+    let typed_metadata = TypeChecker::new().check(&[parsed], &prelude).unwrap();
 
     let definitions = typed_metadata
         .functions

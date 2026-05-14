@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use arrow::array::{Array, BooleanArray, Int64Array, NullArray, StringArray};
 
-use super::RuntimeValue;
+use super::{RuntimeValue, RuntimeValueFactory};
+use crate::expression::ExpressionValue;
 
 #[derive(Debug, Clone)]
 pub struct UnitValue;
@@ -193,5 +194,57 @@ impl RuntimeValue for BooleanValue {
 
     fn to_arrow(&self) -> Arc<dyn Array> {
         Arc::new(BooleanArray::from(vec![self.0]))
+    }
+}
+
+#[derive(Debug)]
+pub struct UnitValueFactory;
+
+impl RuntimeValueFactory for UnitValueFactory {
+    fn type_name(&self) -> &str {
+        "Unit"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(UnitValue)
+    }
+}
+
+#[derive(Debug)]
+pub struct BooleanValueFactory;
+
+impl RuntimeValueFactory for BooleanValueFactory {
+    fn type_name(&self) -> &str {
+        "Boolean"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(BooleanValue(false))
+    }
+}
+
+#[derive(Debug)]
+pub struct StringValueFactory;
+
+impl RuntimeValueFactory for StringValueFactory {
+    fn type_name(&self) -> &str {
+        "String"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(StringValue(std::string::String::new()))
+    }
+}
+
+#[derive(Debug)]
+pub struct IntValueFactory;
+
+impl RuntimeValueFactory for IntValueFactory {
+    fn type_name(&self) -> &str {
+        "Int"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(IntValue(0))
     }
 }

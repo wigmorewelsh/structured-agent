@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use arrow::array::{Array, ListArray};
 
 use crate::expression::ExpressionValue;
-use crate::runtime_value::{RuntimeValue, arrow_col_to_expression};
+use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, arrow_col_to_expression};
 
 struct ListIteratorState {
     list: Arc<ListArray>,
@@ -87,6 +87,23 @@ impl RuntimeValue for ListIteratorValue {
 
     fn to_arrow(&self) -> Arc<dyn Array> {
         Arc::new(arrow::array::NullArray::new(1))
+    }
+}
+
+#[derive(Debug)]
+pub struct ListIteratorValueFactory;
+
+impl RuntimeValueFactory for ListIteratorValueFactory {
+    fn type_name(&self) -> &str {
+        "ListIterator"
+    }
+
+    fn generic_params(&self) -> Vec<String> {
+        vec!["T".to_string()]
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        panic!("ListIteratorValue cannot be constructed via factory")
     }
 }
 

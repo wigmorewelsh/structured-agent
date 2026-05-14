@@ -65,6 +65,17 @@ fn create_generic_test_function(
     }
 }
 
+fn native_prelude_modules()
+-> std::collections::HashMap<String, std::sync::Arc<dyn structured_agent_il::Module>> {
+    let mut map = std::collections::HashMap::new();
+    map.insert(
+        "prelude".to_string(),
+        std::sync::Arc::new(structured_agent_stdlib::prelude::PreludeModule)
+            as std::sync::Arc<dyn structured_agent_il::Module>,
+    );
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,7 +91,7 @@ mod tests {
             is_inline: false,
         };
         TypeChecker::new()
-            .check(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &native_prelude_modules())
             .map(|_| ())
     }
 
@@ -1909,7 +1920,7 @@ mod tests {
             is_inline: false,
         };
         let metadata = TypeChecker::new()
-            .check(&[lib_module, app_module], &std::collections::HashMap::new())
+            .check(&[lib_module, app_module], &native_prelude_modules())
             .unwrap();
         let main_fn = metadata
             .functions
@@ -2014,7 +2025,7 @@ mod tests {
             },
         ];
         let metadata = TypeChecker::new()
-            .check(&modules, &std::collections::HashMap::new())
+            .check(&modules, &native_prelude_modules())
             .unwrap();
         let describe_fn = metadata
             .functions
@@ -2120,7 +2131,7 @@ mod tests {
             },
         ];
         let metadata = TypeChecker::new()
-            .check(&modules, &std::collections::HashMap::new())
+            .check(&modules, &native_prelude_modules())
             .unwrap();
         let describe_fn = metadata
             .functions
@@ -2218,7 +2229,7 @@ mod tests {
             is_inline: false,
         };
         let result = TypeChecker::new()
-            .check(&[io_module, app_module], &std::collections::HashMap::new())
+            .check(&[io_module, app_module], &native_prelude_modules())
             .map(|_| ());
         assert!(
             result.is_ok(),
@@ -2255,7 +2266,7 @@ mod tests {
             is_inline: false,
         };
         let result = TypeChecker::new()
-            .check(&[io_module, app_module], &std::collections::HashMap::new())
+            .check(&[io_module, app_module], &native_prelude_modules())
             .map(|_| ());
         assert!(
             result.is_ok(),
@@ -2284,7 +2295,7 @@ mod tests {
             is_inline: false,
         };
         let result = TypeChecker::new()
-            .check(&[app_module], &std::collections::HashMap::new())
+            .check(&[app_module], &native_prelude_modules())
             .map(|_| ());
         assert!(result.is_err(), "nonexistent module should fail to resolve");
     }
@@ -2297,7 +2308,7 @@ mod tests {
             file_id: 0,
             is_inline: false,
         };
-        let mut native = std::collections::HashMap::new();
+        let mut native = native_prelude_modules();
         native.insert(
             "iterator".to_string(),
             Arc::new(structured_agent_stdlib::iterator::IteratorModule)
@@ -2378,7 +2389,7 @@ mod typed_ast_tests {
             is_inline: false,
         };
         let typed_metadata = TypeChecker::new()
-            .check(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &native_prelude_modules())
             .unwrap();
         let definitions = typed_metadata
             .functions
@@ -2514,9 +2525,7 @@ mod typed_ast_tests {
             module,
         };
         let mut checker = super::TypeChecker::new();
-        let metadata = checker
-            .check(&[parsed], &std::collections::HashMap::new())
-            .unwrap();
+        let metadata = checker.check(&[parsed], &native_prelude_modules()).unwrap();
 
         let main_fn = metadata
             .functions
@@ -4059,10 +4068,7 @@ mod typed_ast_tests {
         };
         let mut checker = super::TypeChecker::new();
         let metadata = checker
-            .check(
-                &[counter_module, main_module],
-                &std::collections::HashMap::new(),
-            )
+            .check(&[counter_module, main_module], &native_prelude_modules())
             .expect("typecheck should succeed");
         let main_fn = metadata
             .functions
@@ -4117,7 +4123,7 @@ mod metadata_query_tests {
             is_inline: false,
         };
         let metadata = TypeChecker::new()
-            .check(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &native_prelude_modules())
             .unwrap();
         metadata
     }
@@ -4243,7 +4249,7 @@ mod metadata_query_tests {
             file_id: 0,
         };
         let metadata = TypeChecker::new()
-            .check(&[parsed], &std::collections::HashMap::new())
+            .check(&[parsed], &native_prelude_modules())
             .unwrap();
         let impl_def = metadata.impls.values().find(|v| {
             v.type_name.last_name() == "Foo"

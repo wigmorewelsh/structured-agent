@@ -16,10 +16,15 @@ mod primitives;
 mod struct_value;
 
 pub use list::{ListValue, ListValueFactory};
-pub use list_iterator::ListIteratorValue;
-pub use media::{AudioValue, ImageValue, LinkValue};
+pub use list_iterator::{ListIteratorValue, ListIteratorValueFactory};
+pub use media::{
+    AudioValue, AudioValueFactory, ImageValue, ImageValueFactory, LinkValue, LinkValueFactory,
+};
 pub use option::{OptionValue, OptionValueFactory};
-pub use primitives::{BooleanValue, IntValue, StringValue, UnitValue};
+pub use primitives::{
+    BooleanValue, BooleanValueFactory, IntValue, IntValueFactory, StringValue, StringValueFactory,
+    UnitValue, UnitValueFactory,
+};
 pub use struct_value::{MetadataValue, StructValue};
 
 pub trait RuntimeValue: std::fmt::Debug + Send + Sync {
@@ -33,6 +38,9 @@ pub trait RuntimeValue: std::fmt::Debug + Send + Sync {
 pub trait RuntimeValueFactory: std::fmt::Debug + Send + Sync {
     fn type_name(&self) -> &str;
     fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue>;
+    fn generic_params(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 pub fn is_metadata_struct_array(arr: &StructArray) -> bool {

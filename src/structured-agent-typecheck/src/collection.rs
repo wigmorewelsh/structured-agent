@@ -26,92 +26,9 @@ pub struct SymbolTableBuilder {
 
 impl SymbolTableBuilder {
     pub fn new() -> Self {
-        let mut builder = Self {
+        Self {
             metadata: MetaData::default(),
-        };
-        builder.seed_builtin_types();
-        builder
-    }
-
-    fn seed_builtin_types(&mut self) {
-        let primitives = [
-            ("Unit", "prelude"),
-            ("Boolean", "prelude"),
-            ("String", "prelude"),
-            ("Int", "prelude"),
-            ("Image", "prelude"),
-            ("Audio", "prelude"),
-            ("Link", "prelude"),
-        ];
-        for (name, module) in primitives {
-            let type_name = DefinitionPath::for_type(
-                DefinitionPath::for_module(NonEmpty::new(module.to_string())),
-                name,
-            );
-            let entry = TypeDefinition {
-                name: type_name.clone(),
-                kind: TypeDefinitionKind::Primitive,
-                source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Primitive,
-            };
-            self.metadata.register_type(type_name, Arc::new(entry));
         }
-
-        let t_param = GenericParameterDefinition {
-            name: "T".to_string(),
-            constraints: vec![],
-        };
-
-        let list_name = DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
-            "List",
-        );
-        self.metadata.register_type(
-            list_name.clone(),
-            Arc::new(TypeDefinition {
-                name: list_name,
-                kind: TypeDefinitionKind::Native {
-                    generic_parameters: vec![t_param.clone()],
-                    factory: Arc::new(structured_agent_runtime::runtime_value::ListValueFactory),
-                },
-                source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Primitive,
-            }),
-        );
-
-        let option_name = DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
-            "Option",
-        );
-        self.metadata.register_type(
-            option_name.clone(),
-            Arc::new(TypeDefinition {
-                name: option_name,
-                kind: TypeDefinitionKind::Native {
-                    generic_parameters: vec![t_param.clone()],
-                    factory: Arc::new(structured_agent_runtime::runtime_value::OptionValueFactory),
-                },
-                source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Primitive,
-            }),
-        );
-
-        let list_iterator_name = DefinitionPath::for_type(
-            DefinitionPath::for_module(NonEmpty::new("iterator".to_string())),
-            "ListIterator",
-        );
-        self.metadata.register_type(
-            list_iterator_name.clone(),
-            Arc::new(TypeDefinition {
-                name: list_iterator_name,
-                kind: TypeDefinitionKind::Struct {
-                    fields: vec![],
-                    generic_parameters: vec![t_param],
-                },
-                source_ref: SourceLocation(0, crate::types::Span::dummy()),
-                ast_ref: CheckerAstRef::Primitive,
-            }),
-        );
     }
 
     fn register_native_modules(
@@ -257,6 +174,32 @@ impl SymbolTableBuilder {
                     self.metadata
                         .register_type(fn_type_name, Arc::new(fn_type_def));
                 }
+            }
+
+            for factory in native_mod.native_types() {
+                let type_path = DefinitionPath::for_type(module_name.clone(), factory.type_name());
+                let kind = if factory.generic_params().is_empty() {
+                    TypeDefinitionKind::Primitive
+                } else {
+                    TypeDefinitionKind::Native {
+                        generic_parameters: factory
+                            .generic_params()
+                            .iter()
+                            .map(|p| GenericParameterDefinition {
+                                name: p.clone(),
+                                constraints: vec![],
+                            })
+                            .collect(),
+                        factory,
+                    }
+                };
+                let entry = TypeDefinition {
+                    name: type_path.clone(),
+                    kind,
+                    source_ref: SourceLocation(0, Span::dummy()),
+                    ast_ref: CheckerAstRef::Primitive,
+                };
+                self.metadata.register_type(type_path, Arc::new(entry));
             }
 
             let exports = self

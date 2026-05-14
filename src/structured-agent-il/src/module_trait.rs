@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::NativeFunctionDef;
-use structured_agent_runtime::{Parameter, Type};
+use structured_agent_runtime::{Parameter, Type, runtime_value::RuntimeValueFactory};
 
 pub struct NativeTraitFnDecl {
     pub name: String,
@@ -26,6 +28,9 @@ pub trait Module: Send + Sync {
         vec![]
     }
     fn native_impls(&self) -> Vec<NativeImplDecl> {
+        vec![]
+    }
+    fn native_types(&self) -> Vec<Arc<dyn RuntimeValueFactory>> {
         vec![]
     }
 }

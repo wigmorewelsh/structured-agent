@@ -5,7 +5,8 @@ use std::sync::Arc;
 use arrow::array::{Array, BinaryArray, StringArray, StructArray};
 use arrow::datatypes::{DataType, Field, Fields};
 
-use super::RuntimeValue;
+use super::{RuntimeValue, RuntimeValueFactory};
+use crate::expression::ExpressionValue;
 
 #[derive(Debug, Clone)]
 pub struct ImageValue {
@@ -132,6 +133,54 @@ impl RuntimeValue for LinkValue {
             vec![uri_array as Arc<dyn Array>, name_array as Arc<dyn Array>],
             None,
         ))
+    }
+}
+
+#[derive(Debug)]
+pub struct ImageValueFactory;
+
+impl RuntimeValueFactory for ImageValueFactory {
+    fn type_name(&self) -> &str {
+        "Image"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(ImageValue {
+            mime_type: String::new(),
+            data: vec![],
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct AudioValueFactory;
+
+impl RuntimeValueFactory for AudioValueFactory {
+    fn type_name(&self) -> &str {
+        "Audio"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(AudioValue {
+            mime_type: String::new(),
+            data: vec![],
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct LinkValueFactory;
+
+impl RuntimeValueFactory for LinkValueFactory {
+    fn type_name(&self) -> &str {
+        "Link"
+    }
+
+    fn construct(&self, _args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
+        Arc::new(LinkValue {
+            uri: String::new(),
+            name: None,
+        })
     }
 }
 

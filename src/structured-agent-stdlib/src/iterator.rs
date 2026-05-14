@@ -1,9 +1,11 @@
+use std::sync::Arc;
 use structured_agent_il::{
     Instruction, Module, NativeFunctionDef, NativeImplDecl, NativeTraitDecl, NativeTraitFnDecl,
     Slot,
 };
 use structured_agent_runtime::{
     DefinitionPath, ExpressionValue, ListValue, NativeFnPtr, Parameter, Type,
+    runtime_value::{ListIteratorValueFactory, RuntimeValueFactory},
 };
 
 pub struct IteratorModule;
@@ -15,6 +17,10 @@ fn module_path() -> DefinitionPath {
 impl Module for IteratorModule {
     fn name(&self) -> &str {
         "iterator"
+    }
+
+    fn native_types(&self) -> Vec<Arc<dyn RuntimeValueFactory>> {
+        vec![Arc::new(ListIteratorValueFactory)]
     }
 
     fn native_functions(&self) -> Vec<NativeFunctionDef> {

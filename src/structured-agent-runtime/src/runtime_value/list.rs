@@ -88,6 +88,10 @@ impl RuntimeValueFactory for ListValueFactory {
         "List"
     }
 
+    fn generic_params(&self) -> Vec<String> {
+        vec!["T".to_string()]
+    }
+
     fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
         Arc::new(ListValue::from_elements(args).expect("ListValueFactory::construct failed"))
     }

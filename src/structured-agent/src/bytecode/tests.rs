@@ -94,7 +94,10 @@ mod compilation_tests {
     use crate::types::Span;
     use nonempty::NonEmpty;
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use structured_agent_il::Module as RuntimeModule;
     use structured_agent_runtime::Type as RT;
+    use structured_agent_stdlib::prelude::PreludeModule;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -115,9 +118,12 @@ mod compilation_tests {
             file_id,
             is_inline: false,
         };
-        let typed_metadata = TypeChecker::new()
-            .check(&[parsed], &HashMap::new())
-            .unwrap();
+        let mut prelude = HashMap::new();
+        prelude.insert(
+            "prelude".to_string(),
+            Arc::new(PreludeModule) as Arc<dyn RuntimeModule>,
+        );
+        let typed_metadata = TypeChecker::new().check(&[parsed], &prelude).unwrap();
         let definitions = typed_metadata
             .functions
             .values()
@@ -134,7 +140,7 @@ mod compilation_tests {
             .collect();
         typed_ast::Module {
             definitions,
-            span: crate::types::Span::dummy(),
+            span: Span::dummy(),
             file_id,
         }
     }
@@ -896,7 +902,9 @@ mod vm_execution_tests {
     use nonempty::NonEmpty;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use structured_agent_il::Module as RuntimeModule;
     use structured_agent_runtime::DefinitionPath;
+    use structured_agent_stdlib::prelude::PreludeModule;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -917,9 +925,12 @@ mod vm_execution_tests {
             file_id,
             is_inline: false,
         };
-        let typed_metadata = TypeChecker::new()
-            .check(&[parsed], &HashMap::new())
-            .unwrap();
+        let mut prelude = HashMap::new();
+        prelude.insert(
+            "prelude".to_string(),
+            Arc::new(PreludeModule) as Arc<dyn RuntimeModule>,
+        );
+        let typed_metadata = TypeChecker::new().check(&[parsed], &prelude).unwrap();
         let definitions = typed_metadata
             .functions
             .values()
@@ -1548,6 +1559,9 @@ mod struct_bytecode_tests {
     use arrow::array::Array;
     use nonempty::NonEmpty;
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use structured_agent_il::Module as RuntimeModule;
+    use structured_agent_stdlib::prelude::PreludeModule;
 
     fn parse_code(code: &str) -> crate::ast::Module {
         let unit = CompilationUnit::from_string(code.to_string());
@@ -1568,9 +1582,12 @@ mod struct_bytecode_tests {
             file_id,
             is_inline: false,
         };
-        let typed_metadata = TypeChecker::new()
-            .check(&[parsed], &HashMap::new())
-            .unwrap();
+        let mut prelude = HashMap::new();
+        prelude.insert(
+            "prelude".to_string(),
+            Arc::new(PreludeModule) as Arc<dyn RuntimeModule>,
+        );
+        let typed_metadata = TypeChecker::new().check(&[parsed], &prelude).unwrap();
         let definitions = typed_metadata
             .functions
             .values()

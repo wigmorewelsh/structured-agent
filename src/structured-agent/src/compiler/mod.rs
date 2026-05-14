@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use structured_agent_il::{Module as RuntimeModule, SlotKind, SlotTable};
 use structured_agent_runtime::symbols::{DefinitionPath, FunctionDefinition, MetaData};
+use structured_agent_stdlib::prelude::PreludeModule;
 
 use tracing::{debug, error, warn};
 
@@ -130,6 +131,7 @@ impl Compiler {
         Self {
             modules: HashMap::new(),
         }
+        .with_module(Arc::new(PreludeModule))
     }
 
     pub fn with_module(mut self, module: Arc<dyn RuntimeModule>) -> Self {
@@ -606,6 +608,7 @@ fn main(): () {
                 .functions
                 .values()
                 .filter(|d| d.body_ref.is_some())
+                .filter(|d| !d.name.is_impl_fn())
                 .count(),
             4
         );

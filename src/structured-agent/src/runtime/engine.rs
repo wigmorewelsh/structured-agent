@@ -201,7 +201,9 @@ impl RuntimeBuilder {
         let function_registry = HashMap::new();
 
         let default_compiler = self.modules.iter().fold(
-            Compiler::new().with_module(Arc::new(ActorModule)),
+            Compiler::new()
+                .with_module(Arc::new(PreludeModule))
+                .with_module(Arc::new(ActorModule)),
             |c, m| c.with_module(Arc::clone(m)),
         );
 

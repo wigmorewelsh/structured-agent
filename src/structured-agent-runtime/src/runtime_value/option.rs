@@ -143,6 +143,10 @@ impl RuntimeValueFactory for OptionValueFactory {
         "Option"
     }
 
+    fn generic_params(&self) -> Vec<String> {
+        vec!["T".to_string()]
+    }
+
     fn construct(&self, args: Vec<ExpressionValue>) -> Arc<dyn RuntimeValue> {
         match args.into_iter().next() {
             Some(v) => Arc::new(OptionValue::some(v.to_arrow())),

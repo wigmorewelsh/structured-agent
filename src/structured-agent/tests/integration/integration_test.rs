@@ -119,6 +119,7 @@ fn main(): String {
             .functions
             .values()
             .filter(|d| d.body_ref.is_some())
+            .filter(|d| !d.name.is_impl_fn())
             .count(),
         2,
         "Expected 2 functions to be compiled"
