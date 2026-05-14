@@ -8,18 +8,6 @@ use super::db::{
 };
 use super::synthesize;
 use crate::FunctionSignature;
-
-fn apply_subst(ty: &RT, subst: &HashMap<String, RT>) -> RT {
-    match ty {
-        RT::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        RT::Parameterized(name, args) => RT::Parameterized(
-            name.clone(),
-            args.iter().map(|a| apply_subst(a, subst)).collect(),
-        ),
-        RT::Union(variants) => RT::union(variants.iter().map(|v| apply_subst(v, subst)).collect()),
-        other => other.clone(),
-    }
-}
 use structured_agent_ast::ast::{Expression, Function, Statement, StringPart, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
@@ -732,6 +720,18 @@ fn elaborate_arguments(
     }
     all_args.extend(user_args);
     Some(all_args)
+}
+
+fn apply_subst(ty: &RT, subst: &HashMap<String, RT>) -> RT {
+    match ty {
+        RT::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+        RT::Parameterized(name, args) => RT::Parameterized(
+            name.clone(),
+            args.iter().map(|a| apply_subst(a, subst)).collect(),
+        ),
+        RT::Union(variants) => RT::union(variants.iter().map(|v| apply_subst(v, subst)).collect()),
+        other => other.clone(),
+    }
 }
 
 fn build_typed_call(
