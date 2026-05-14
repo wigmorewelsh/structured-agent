@@ -1,0 +1,39 @@
+mod defense_in_depth
+
+## Returns the defense-in-depth validation technique as a string. Assign and inject with ! at the call site.
+pub fn defense_in_depth(): String {
+    return '''
+    # Defense-in-Depth Validation
+
+    Core principle: Validate at EVERY layer data passes through. Make the bug structurally impossible.
+    Single validation: we fixed the bug. Multiple layers: we made the bug impossible.
+
+    ## The Four Layers
+
+    Layer 1 — Entry point validation
+    Reject obviously invalid input at the API boundary.
+    Check: is the value present, non-empty, the right type, does the referenced resource exist?
+
+    Layer 2 — Business logic validation
+    Ensure data makes sense for this specific operation.
+    Check: does this value satisfy the preconditions this function requires?
+
+    Layer 3 — Environment guards
+    Prevent dangerous operations in specific contexts.
+    Example: in tests, refuse destructive operations outside the temp directory.
+
+    Layer 4 — Debug instrumentation
+    Log enough context to diagnose failures that bypass the other layers.
+    Include: input values, current directory, environment variables, stack trace.
+
+    ## Applying the Pattern
+
+    1. Trace the data flow — where does the bad value originate and where is it used?
+    2. Map all checkpoints — list every point the data passes through
+    3. Add validation at each layer
+    4. Test each layer independently — try to bypass layer 1, verify layer 2 catches it
+
+    All four layers are necessary. Different code paths, mocks, and platform differences
+    mean each layer will catch bugs the others miss.
+    '''
+}

@@ -230,6 +230,7 @@ fn elaborate_statement(
                 env,
             ))
         }
+        Statement::Match { .. } => None,
     }
 }
 
@@ -336,6 +337,7 @@ pub fn elaborate_expression(
                 span: *span,
             })
         }
+        Expression::Match { .. } => None,
     }
 }
 

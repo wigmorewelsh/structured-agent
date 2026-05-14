@@ -32,20 +32,16 @@ fn create_worktree(branch_name: String): String {
     return worktree_path
 }
 
-fn run_project_setup(): () {
-    let action = select {
-        execute_command(_)
-    }
-    action!
+fn run_project_setup(): String {
     "Run any project setup commands needed in this worktree (install dependencies, build, etc)."!
+    return execute_command(_)
 }
 
 fn is_baseline_clean(): Boolean {
-    let action = select {
-        execute_command(_)
-    }
-    action!
-    "Run the full test suite. Do all baseline tests pass with no failures?"!
+    "Run the full test suite to establish a clean baseline."!
+    let result = execute_command(_)
+    result!
+    "Do all baseline tests pass with no failures?"!
 }
 
 ## Use before starting any feature work to ensure development happens in an isolated git worktree.
@@ -65,7 +61,8 @@ pub fn setup_workspace(branch_name: String): String {
 
         if user_wants_worktree() {
             let worktree_path = create_worktree(branch_name)
-            run_project_setup()
+            let setup = run_project_setup()
+            setup!
 
             if is_baseline_clean() {
                 return "Isolated workspace ready at ${worktree_path} on branch ${branch_name}"

@@ -85,6 +85,14 @@ impl UnusedVariableAnalyzer {
                 self.analyze_expression(expr);
             }
             Statement::Yield { .. } => {}
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 
@@ -143,6 +151,14 @@ impl UnusedVariableAnalyzer {
             | Expression::ListLiteral { .. }
             | Expression::UnitLiteral { .. }
             | Expression::Placeholder { .. } => {}
+            Expression::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 

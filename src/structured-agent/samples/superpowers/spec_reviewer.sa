@@ -1,0 +1,38 @@
+mod spec_reviewer
+
+## Returns the spec compliance reviewer guide as a string. Assign and inject with ! at the call site.
+pub fn spec_reviewer(): String {
+    return '''
+    # Spec Compliance Review
+
+    Purpose: verify the implementer built what was requested — nothing more, nothing less.
+
+    ## Critical: Do Not Trust the Report
+
+    The implementer's report may be incomplete, inaccurate, or optimistic.
+    Verify everything independently by reading the actual code.
+
+    DO NOT: take their word for what they implemented, trust their completeness claims,
+    accept their interpretation of requirements.
+
+    DO: read the actual code, compare implementation to requirements line by line,
+    check for missing pieces they claimed to implement, look for extra features they did not mention.
+
+    ## What to Check
+
+    Missing requirements: did they implement everything requested?
+    Are there requirements they skipped or quietly dropped?
+
+    Extra or unneeded work: did they build things not in the spec?
+    Did they over-engineer or add unrequested features?
+
+    Misunderstandings: did they interpret requirements differently than intended?
+    Did they solve the wrong problem or implement the right feature the wrong way?
+
+    ## Output
+
+    Report one of:
+    - Spec compliant: everything matches after code inspection
+    - Issues found: list specifically what is missing or extra, with file:line references
+    '''
+}

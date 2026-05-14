@@ -156,6 +156,7 @@ impl BytecodeCompiler {
                 current_fn,
                 body,
             ),
+            typed_ast::Statement::Match { .. } => Err("match not yet supported".to_string()),
         }
     }
 
@@ -419,6 +420,7 @@ impl BytecodeCompiler {
                 });
                 Ok(())
             }
+            typed_ast::Expression::Match { .. } => Err("match not yet supported".to_string()),
         }
     }
 
@@ -889,6 +891,7 @@ fn collect_binding_ids_inner(
                 }
                 collect_binding_ids_inner(body, result, seen);
             }
+            typed_ast::Statement::Match { .. } => {}
         }
     }
 }

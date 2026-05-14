@@ -1,0 +1,36 @@
+mod root_cause_tracing
+
+## Returns the root cause tracing technique as a string. Assign and inject with ! at the call site.
+pub fn root_cause_tracing(): String {
+    return '''
+    # Root Cause Tracing
+
+    Core principle: Bugs manifest deep in the call stack but originate elsewhere.
+    Trace backward through the call chain until you find the original trigger, then fix at the source.
+    NEVER fix just where the error appears.
+
+    ## The Tracing Process
+
+    1. Observe the symptom — what error appears, where, under what conditions
+    2. Find immediate cause — what code directly produces this error
+    3. Ask: what called this? Trace one level up the call chain
+    4. Keep tracing — what value was passed? Where did it come from?
+    5. Find the original trigger — the point where invalid data was first introduced
+
+    ## When You Cannot Trace Manually
+
+    Add instrumentation before the failing operation:
+    - Log the input values, current working directory, environment variables
+    - Capture a stack trace at the point of failure
+    - Use stderr in tests — loggers may be suppressed
+    - Run tests and grep for the debug output
+
+    ## Key Principle
+
+    Every extra level you trace back reduces the chance of the bug recurring.
+    Fixing at the symptom lets the same bad data reach a different failure point later.
+    Fixing at the source makes the bug impossible.
+
+    After fixing at the source, apply defense-in-depth validation at each layer the data passes through.
+    '''
+}

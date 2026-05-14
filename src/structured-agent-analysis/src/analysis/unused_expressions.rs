@@ -40,6 +40,14 @@ impl UnusedExpressionAnalyzer {
                 | Expression::Placeholder { .. } => {
                     self.analyze_expression(expr);
                 }
+                Expression::Match {
+                    scrutinee, arms, ..
+                } => {
+                    self.analyze_expression(scrutinee);
+                    for arm in arms {
+                        self.analyze_expression(&arm.body);
+                    }
+                }
             },
             Statement::Injection(expr) => {
                 self.analyze_expression(expr);
@@ -84,6 +92,14 @@ impl UnusedExpressionAnalyzer {
                 self.analyze_expression(expr);
             }
             Statement::Yield { .. } => {}
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 
@@ -132,6 +148,14 @@ impl UnusedExpressionAnalyzer {
             | Expression::UnitLiteral { .. }
             | Expression::StringTemplate { .. }
             | Expression::Placeholder { .. } => {}
+            Expression::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 

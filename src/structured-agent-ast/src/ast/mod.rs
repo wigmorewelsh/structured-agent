@@ -316,6 +316,11 @@ pub enum Statement {
         body: Vec<Statement>,
         span: Span,
     },
+    Match {
+        scrutinee: Expression,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
     Return(Expression),
     Yield {
         span: Span,
@@ -334,6 +339,7 @@ impl Spanned for Statement {
             Statement::ForIn { span, .. } => *span,
             Statement::Return(expr) => expr.span(),
             Statement::Yield { span, .. } => *span,
+            Statement::Match { span, .. } => *span,
         }
     }
 }
@@ -347,6 +353,14 @@ pub struct SelectExpression {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub variant_name: String,
+    pub binding: String,
+    pub body: Expression,
     pub span: Span,
 }
 
@@ -422,6 +436,11 @@ pub enum Expression {
         key: Box<Expression>,
         span: Span,
     },
+    Match {
+        scrutinee: Box<Expression>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
 }
 
 impl Spanned for Expression {
@@ -442,6 +461,7 @@ impl Spanned for Expression {
             Expression::MethodCall { span, .. } => *span,
             Expression::Spawn { span, .. } => *span,
             Expression::StringTemplate { span, .. } => *span,
+            Expression::Match { span, .. } => *span,
         }
     }
 }
@@ -608,6 +628,19 @@ impl fmt::Display for Statement {
             }
             Statement::Return(expr) => write!(f, "return {}", expr),
             Statement::Yield { .. } => write!(f, "yield"),
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                writeln!(f, "match {} {{", scrutinee)?;
+                for arm in arms {
+                    writeln!(
+                        f,
+                        "    {}({}) => {},",
+                        arm.variant_name, arm.binding, arm.body
+                    )?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -856,6 +889,18 @@ impl fmt::Display for Expression {
                     }
                 }
                 write!(f, "\"")
+            }
+            Expression::Match {
+                scrutinee, arms, ..
+            } => {
+                write!(f, "match {} {{", scrutinee)?;
+                for (i, arm) in arms.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, " {}({}) => {}", arm.variant_name, arm.binding, arm.body)?;
+                }
+                write!(f, " }}")
             }
         }
     }

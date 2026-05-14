@@ -93,6 +93,14 @@ impl UnusedReturnValueAnalyzer {
                 self.analyze_expression(expr);
             }
             Statement::Yield { .. } => {}
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 
@@ -141,6 +149,14 @@ impl UnusedReturnValueAnalyzer {
             | Expression::UnitLiteral { .. }
             | Expression::StringTemplate { .. }
             | Expression::Placeholder { .. } => {}
+            Expression::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for arm in arms {
+                    self.analyze_expression(&arm.body);
+                }
+            }
         }
     }
 

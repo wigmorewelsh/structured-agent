@@ -91,6 +91,14 @@ impl OverwrittenValueAnalyzer {
                 Self::collect_reads_in_expression(expr, reads);
             }
             Statement::Yield { .. } => {}
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                Self::collect_reads_in_expression(scrutinee, reads);
+                for arm in arms {
+                    Self::collect_reads_in_expression(&arm.body, reads);
+                }
+            }
         }
     }
 
@@ -156,6 +164,14 @@ impl OverwrittenValueAnalyzer {
                     }
                 }
                 Statement::Yield { .. } => {}
+                Statement::Match {
+                    scrutinee, arms, ..
+                } => {
+                    Self::collect_reads_in_expression(scrutinee, reads);
+                    for arm in arms {
+                        Self::collect_reads_in_expression(&arm.body, reads);
+                    }
+                }
             }
         }
     }

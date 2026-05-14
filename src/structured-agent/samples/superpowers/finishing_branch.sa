@@ -4,11 +4,10 @@ use extern_fns::execute_command
 use supervisor::ask_for_supervisor_help
 
 fn is_all_tests_passing(): Boolean {
-    let action = select {
-        execute_command(_)
-    }
-    action!
-    "Run the full test suite. Are all tests passing with no failures?"!
+    "Run the full test suite."!
+    let result = execute_command(_)
+    result!
+    "Are all tests passing with no failures?"!
 }
 
 fn detect_environment(): String {
@@ -41,34 +40,28 @@ fn chose_discard(): Boolean {
 
 
 
-fn do_merge(base_branch: String): () {
-    let action = select {
-        execute_command(_)
-    }
-    action!
-    "Merge the current branch into ${base_branch}. Then remove the worktree if one exists and run git worktree prune."!
+fn do_merge(base_branch: String): String {
+    "Merge the current branch into ${base_branch}. Remove the worktree if one exists. Run git worktree prune."!
+    let result = execute_command(_)
+    result!
+    "Summarize the merge result."!
 }
 
-fn do_pr(base_branch: String): () {
-    let action = select {
-        execute_command(_)
-    }
-    action!
-    "Push the current branch to origin and provide a pull request description summarising the changes."!
+fn do_pr(base_branch: String): String {
+    "Push the current branch to origin. Draft a pull request description summarising the changes against ${base_branch}."!
+    let result = execute_command(_)
+    result!
+    "Summarize: branch pushed and PR description ready."!
 }
 
-fn do_discard(branch: String): () {
+fn do_discard(branch: String): String {
     let confirmation = ask_for_supervisor_help("Type 'discard' to permanently delete all changes on branch ${branch}:")
     confirmation!
     if confirmation.equal("discard") {
-        let action = select {
-            execute_command(_)
-        }
-        action!
         "Switch to the base branch, force-delete branch ${branch}, and run git worktree prune."!
+        return execute_command(_)
     } else {
-        let guidance = ask_for_supervisor_help("Discard cancelled. What would you like to do instead?")
-        guidance!
+        return ask_for_supervisor_help("Discard cancelled. What would you like to do instead?")
     }
 }
 
@@ -92,16 +85,13 @@ pub fn finish_branch(context: String): String {
         choice!
 
         if chose_merge() {
-            do_merge(base_branch)
-            return "Branch merged into ${base_branch} and workspace cleaned up."
+            return do_merge(base_branch)
         } else {
             if chose_pr() {
-                do_pr(base_branch)
-                return "Branch pushed and pull request prepared against ${base_branch}."
+                return do_pr(base_branch)
             } else {
                 if chose_discard() {
-                    do_discard(branch)
-                    return "Branch discarded."
+                    return do_discard(branch)
                 } else {
                     return "Branch kept as-is at ${branch}."
                 }

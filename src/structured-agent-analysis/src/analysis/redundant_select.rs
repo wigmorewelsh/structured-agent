@@ -78,6 +78,14 @@ impl RedundantSelectAnalyzer {
                 self.analyze_expression(expr, file_id, warnings);
             }
             Statement::Yield { .. } => {}
+            Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                self.analyze_expression(scrutinee, file_id, warnings);
+                for arm in arms {
+                    self.analyze_expression(&arm.body, file_id, warnings);
+                }
+            }
         }
     }
 }

@@ -1,0 +1,43 @@
+mod condition_based_waiting
+
+## Returns the condition-based waiting technique as a string. Assign and inject with ! at the call site.
+pub fn condition_based_waiting(): String {
+    return '''
+    # Condition-Based Waiting
+
+    Core principle: Wait for the actual condition you care about, not a guess about how long it takes.
+    Arbitrary delays create race conditions that pass on fast machines and fail under load or in CI.
+
+    ## The Pattern
+
+    Bad:  await sleep(50ms); assert result is defined
+    Good: await waitFor(() => result !== undefined); assert result is defined
+
+    Wait for the condition, then assert. Never guess at timing.
+
+    ## Common Scenarios
+
+    - Wait for an event: waitFor(() => events.find(e => e.type === 'DONE'))
+    - Wait for state: waitFor(() => machine.state === 'ready')
+    - Wait for a count: waitFor(() => items.length >= 5)
+    - Wait for a file: waitFor(() => fileExists(path))
+
+    ## Implementing waitFor
+
+    Poll every 10ms. Include a timeout with a clear error message.
+    Call the condition getter inside the loop to get fresh data on each check.
+    Return the value when truthy so the caller can use it directly.
+
+    ## When an Arbitrary Delay IS Correct
+
+    Only when testing actual timing behaviour (debounce intervals, throttle rates).
+    Requirements: first wait for the triggering condition, then wait the known interval.
+    Always add a comment explaining why the specific duration is justified.
+
+    ## Red Flags
+
+    - setTimeout or sleep in a test without a comment explaining why
+    - Test passes locally but fails in CI
+    - Test passes alone but fails in parallel runs
+    '''
+}

@@ -37,6 +37,7 @@ impl ReachabilityAnalyzer {
                 }
                 Statement::Return(expr) => expr.span(),
                 Statement::Yield { span, .. } => *span,
+                Statement::Match { span, .. } => *span,
             };
             self.all_statements.push(span);
         }
@@ -57,6 +58,7 @@ impl ReachabilityAnalyzer {
                     Statement::ForIn { span, .. } => *span,
                     Statement::Return(expr) => expr.span(),
                     Statement::Yield { span, .. } => *span,
+                    Statement::Match { span, .. } => *span,
                 };
                 self.reachable.insert(span);
             }

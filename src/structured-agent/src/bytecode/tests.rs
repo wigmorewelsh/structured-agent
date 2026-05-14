@@ -1116,6 +1116,7 @@ mod vm_execution_tests {
                 },
                 structured_agent_runtime::Type::unit(),
             ),
+            AE::Match { .. } => unimplemented!("Match not supported in test helper"),
         }
     }
 
@@ -1171,6 +1172,7 @@ mod vm_execution_tests {
             AS::Return(expr) => typed_ast::Statement::Return(ast_expr_to_typed(expr)),
             AS::Yield { span } => typed_ast::Statement::Yield { span: *span },
             AS::ForIn { .. } => todo!("ForIn not yet supported in VM test helper"),
+            AS::Match { .. } => unimplemented!("Match not supported in test helper"),
         }
     }
 

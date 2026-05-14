@@ -9,7 +9,7 @@ use combine::parser::token::satisfy;
 use combine::{attempt, between, not_followed_by, optional, position, sep_by1, Parser, Stream};
 use structured_agent_ast::ast::{
     AstPath, AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction,
-    Function, FunctionBody, Module, Parameter, PathArg, PathSegment, SelectClause,
+    Function, FunctionBody, MatchArm, Module, Parameter, PathArg, PathSegment, SelectClause,
     SelectExpression, SigFunction, Statement, StringPart, StructDefinition, StructField, Type,
     TypeParam, Use,
 };
@@ -863,6 +863,7 @@ combine::parser! {
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
+            attempt(parse_match_expression()),
             parse_select_expression(),
             parse_if_else_expression(),
             parse_simple_expression(),
@@ -1274,6 +1275,58 @@ where
         expression_to_run,
         span: Span::new(start, end),
     })
+}
+
+fn parse_match_arm<Input>() -> impl Parser<Input, Output = MatchArm>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        satisfy(|c: char| c.is_uppercase()),
+        many::<Vec<char>, _, _>(combine::parser::char::alpha_num()),
+        skip_spaces(),
+        between(lex_char('('), lex_char(')'), identifier()),
+        lex_string("=>"),
+        parse_expression(),
+        position(),
+    )
+        .map(|(start, first, rest, _, binding, _, body, end)| {
+            let variant_name: String = std::iter::once(first).chain(rest).collect();
+            MatchArm {
+                variant_name,
+                binding,
+                body,
+                span: Span::new(start, end),
+            }
+        })
+}
+
+combine::parser! {
+    fn parse_match_expression[Input]()(Input) -> Expression
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        (position(), attempt(lex_keyword("match"))).then(|(start, _)| {
+            (
+                parse_simple_expression(),
+                between(
+                    lex_char('{'),
+                    lex_char('}'),
+                    sep_by(
+                        parse_match_arm(),
+                        attempt(lex_char(',')).skip(skip_spaces_and_comments()),
+                    ),
+                ),
+                position(),
+            )
+            .map(move |(scrutinee, arms, end)| Expression::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+                span: Span::new(start, end),
+            })
+        })
+    }
 }
 
 fn parse_if_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -4250,5 +4303,72 @@ fn main(): String {
             span: Span::new(0, 0),
         };
         assert_eq!(def.to_string(), "type Media = Image | Audio");
+    }
+
+    #[test]
+    fn test_parse_match_expression_two_arms() {
+        let input = r#"match m { Image(img) => "a", Audio(audio) => "b" }"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_expression().parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (expr, _) = result.unwrap();
+        if let Expression::Match {
+            scrutinee, arms, ..
+        } = expr
+        {
+            assert_eq!(arms.len(), 2);
+            assert!(matches!(*scrutinee, Expression::Variable { ref name, .. } if name == "m"));
+        } else {
+            panic!("expected Match expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_match_expression_three_arms() {
+        let input = r#"match m { Image(img) => "a", Audio(audio) => "b", Video(vid) => "c" }"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_expression().parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (expr, _) = result.unwrap();
+        if let Expression::Match { arms, .. } = expr {
+            assert_eq!(arms.len(), 3);
+        } else {
+            panic!("expected Match expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_match_in_function_body() {
+        let input = r#"fn describe(m: Image): String { return match m { Image(img) => "image" } }"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            if let Statement::Return(expr) = &func.body.statements[0] {
+                assert!(matches!(expr, Expression::Match { .. }));
+            } else {
+                panic!("expected Return statement");
+            }
+        } else {
+            panic!("expected Function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_match_arm_binding_captured() {
+        let input = r#"match m { Image(img) => "a", Audio(audio) => "b" }"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_expression().parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (expr, _) = result.unwrap();
+        if let Expression::Match { arms, .. } = expr {
+            assert_eq!(arms[0].variant_name, "Image");
+            assert_eq!(arms[0].binding, "img");
+            assert_eq!(arms[1].variant_name, "Audio");
+            assert_eq!(arms[1].binding, "audio");
+        } else {
+            panic!("expected Match expression");
+        }
     }
 }

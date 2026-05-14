@@ -1,0 +1,47 @@
+mod testing_anti_patterns
+
+## Returns the testing anti-patterns reference as a string. Assign and inject with ! at the call site.
+pub fn anti_patterns(): String {
+    return '''
+    # Testing Anti-Patterns Reference
+
+    Core principle: Test what the code does, not what the mocks do.
+    Following strict TDD prevents all of these anti-patterns.
+
+    ## Iron Laws
+    1. NEVER test mock behaviour
+    2. NEVER add test-only methods to production classes
+    3. NEVER mock without understanding the dependency
+
+    ## Anti-Pattern 1: Testing Mock Behaviour
+    Asserting that a mock element exists proves only that the mock works.
+    Gate: Before asserting on any mock — ask "Am I testing real behaviour or just mock existence?"
+    If testing mock existence: delete the assertion or unmock the component.
+
+    ## Anti-Pattern 2: Test-Only Methods in Production
+    Methods only called by tests pollute production classes with dangerous cleanup code.
+    Gate: Before adding any method — ask "Is this only used by tests?"
+    If yes: put it in test utilities, not the production class.
+
+    ## Anti-Pattern 3: Mocking Without Understanding
+    Over-mocking breaks tests by removing side effects the test actually depends on.
+    Gate: Before mocking anything — list every side effect the real method has.
+    Ask: does this test depend on any of those? If unsure, run with real implementation first.
+
+    ## Anti-Pattern 4: Incomplete Mocks
+    Partial mocks hide structural assumptions. Downstream code silently depends on fields you omitted.
+    Rule: Mock the COMPLETE data structure as it exists in reality, not just the fields you currently know about.
+
+    ## Anti-Pattern 5: Tests as Afterthought
+    Testing is part of implementation. Claiming complete without tests is false.
+    TDD cycle: write failing test then implement to pass then refactor then claim complete.
+
+    ## Red Flags
+    - Assertion checks for *-mock test IDs
+    - Methods only called in test files
+    - Mock setup is more than 50% of the test
+    - Test fails when you remove the mock
+    - Mocking just to be safe
+    - Cannot explain why the mock is needed
+    '''
+}

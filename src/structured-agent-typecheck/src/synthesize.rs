@@ -653,6 +653,7 @@ fn check_statement(
             )?;
             Some(env)
         }
+        Statement::Match { .. } => Some(env),
     }
 }
 
@@ -955,6 +956,7 @@ pub fn synthesize_expression(
             }
             Some(RT::string())
         }
+        Expression::Match { .. } => None,
     }
 }
 

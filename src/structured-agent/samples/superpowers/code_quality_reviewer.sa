@@ -1,0 +1,24 @@
+mod code_quality_reviewer
+
+use code_reviewer_guide::load_code_reviewer_guide
+
+## Load code quality reviewer instructions into context. Call only after spec compliance review passes.
+pub fn load_code_quality_reviewer(): () {
+    load_code_reviewer_guide()
+    '''
+    # Additional Code Quality Checks
+
+    Only conduct this review after spec compliance has been confirmed.
+
+    In addition to the standard code review criteria, verify:
+
+    Single responsibility: does each file have one clear responsibility with a well-defined interface?
+
+    Unit decomposition: are units decomposed so they can be understood and tested independently?
+
+    File structure: is the implementation following the file structure from the plan?
+
+    File growth: did this change create new files that are already large, or significantly grow existing files?
+    Focus on what this change contributed — do not flag pre-existing file sizes.
+    '''!
+}

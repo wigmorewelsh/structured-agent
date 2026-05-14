@@ -4,7 +4,7 @@ use extern_fns::read_file
 use extern_fns::write_file
 use extern_fns::list_directory
 use extern_fns::grep
-use supervisor::ask_for_supervisor_help
+use plan_doc_reviewer::load_plan_doc_reviewer
 
 fn is_plan_ready(): Boolean {
     '''
@@ -50,6 +50,7 @@ fn explore_loop(): String {
 }
 
 fn self_review_plan(plan: String): String {
+    load_plan_doc_reviewer()
     plan!
     '''
     Review this plan for:

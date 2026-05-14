@@ -112,6 +112,11 @@ pub enum Statement {
     Yield {
         span: Span,
     },
+    Match {
+        scrutinee: Expression,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -123,6 +128,15 @@ pub struct SelectExpression {
 #[derive(Clone, Debug)]
 pub struct SelectClause {
     pub expression_to_run: Expression,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct MatchArm {
+    pub variant_name: String,
+    pub binding: String,
+    pub binding_id: BindingId,
+    pub body: Expression,
     pub span: Span,
 }
 
@@ -224,6 +238,12 @@ pub enum Expression {
         ty: Type,
         span: Span,
     },
+    Match {
+        scrutinee: Box<Expression>,
+        arms: Vec<MatchArm>,
+        ty: Type,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -245,6 +265,7 @@ impl Expression {
             Expression::IfElse { ty, .. } => ty,
             Expression::Spawn { ty, .. } => ty,
             Expression::StringTemplate { ty, .. } => ty,
+            Expression::Match { ty, .. } => ty,
         }
     }
 
@@ -266,6 +287,7 @@ impl Expression {
             Expression::IfElse { span, .. } => *span,
             Expression::Spawn { span, .. } => *span,
             Expression::StringTemplate { span, .. } => *span,
+            Expression::Match { span, .. } => *span,
         }
     }
 }
