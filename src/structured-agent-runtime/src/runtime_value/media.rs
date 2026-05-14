@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::array::{Array, BinaryArray, StringArray, StructArray};
@@ -46,7 +47,8 @@ impl RuntimeValue for ImageValue {
 
     fn to_arrow(&self) -> Arc<dyn Array> {
         let fields = Fields::from(vec![
-            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("mime_type", DataType::Utf8, false)
+                .with_metadata(HashMap::from([("kind".to_string(), "image".to_string())])),
             Field::new("data", DataType::Binary, false),
         ]);
         let mime_array = Arc::new(StringArray::from(vec![self.mime_type.clone()]));
@@ -81,7 +83,8 @@ impl RuntimeValue for AudioValue {
 
     fn to_arrow(&self) -> Arc<dyn Array> {
         let fields = Fields::from(vec![
-            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("mime_type", DataType::Utf8, false)
+                .with_metadata(HashMap::from([("kind".to_string(), "audio".to_string())])),
             Field::new("data", DataType::Binary, false),
         ]);
         let mime_array = Arc::new(StringArray::from(vec![self.mime_type.clone()]));
@@ -135,6 +138,78 @@ impl RuntimeValue for LinkValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_to_arrow_has_correct_schema() {
+        let v = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![1, 2, 3],
+        };
+        let arr = v.to_arrow();
+        let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+        let fields = struct_arr.fields();
+        assert_eq!(fields[0].name(), "mime_type");
+        assert_eq!(fields[0].data_type(), &DataType::Utf8);
+        assert_eq!(
+            fields[0].metadata().get("kind").map(|s| s.as_str()),
+            Some("image")
+        );
+        assert_eq!(fields[1].name(), "data");
+        assert_eq!(fields[1].data_type(), &DataType::Binary);
+    }
+
+    #[test]
+    fn audio_to_arrow_has_correct_schema() {
+        let v = AudioValue {
+            mime_type: "audio/mp3".to_string(),
+            data: vec![4, 5, 6],
+        };
+        let arr = v.to_arrow();
+        let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+        let fields = struct_arr.fields();
+        assert_eq!(fields[0].name(), "mime_type");
+        assert_eq!(fields[0].data_type(), &DataType::Utf8);
+        assert_eq!(
+            fields[0].metadata().get("kind").map(|s| s.as_str()),
+            Some("audio")
+        );
+        assert_eq!(fields[1].name(), "data");
+        assert_eq!(fields[1].data_type(), &DataType::Binary);
+    }
+
+    #[test]
+    fn link_to_arrow_has_correct_schema() {
+        let v = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: Some("Example".to_string()),
+        };
+        let arr = v.to_arrow();
+        let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+        let fields = struct_arr.fields();
+        assert_eq!(fields[0].name(), "uri");
+        assert_eq!(fields[0].data_type(), &DataType::Utf8);
+        assert!(!fields[0].is_nullable());
+        assert!(fields[0].metadata().get("kind").is_none());
+        assert_eq!(fields[1].name(), "name");
+        assert_eq!(fields[1].data_type(), &DataType::Utf8);
+        assert!(fields[1].is_nullable());
+    }
+
+    #[test]
+    fn link_to_arrow_with_none_name_is_null() {
+        let v = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        let arr = v.to_arrow();
+        let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+        let name_col = struct_arr
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert!(name_col.is_null(0));
+    }
 
     #[test]
     fn image_type_name() {

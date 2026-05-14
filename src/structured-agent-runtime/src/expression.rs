@@ -409,6 +409,18 @@ where
         "String" => DataType::Utf8,
         "Boolean" => DataType::Boolean,
         "Unit" => DataType::Null,
+        "Image" => DataType::Struct(Fields::from(vec![
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("data", DataType::Binary, false),
+        ])),
+        "Audio" => DataType::Struct(Fields::from(vec![
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("data", DataType::Binary, false),
+        ])),
+        "Link" => DataType::Struct(Fields::from(vec![
+            Field::new("uri", DataType::Utf8, false),
+            Field::new("name", DataType::Utf8, true),
+        ])),
         _ => match metadata.type_def(type_name) {
             Some(td) => match &td.kind {
                 TypeDefinitionKind::Struct { fields, .. } => {
@@ -936,6 +948,54 @@ mod tests {
         assert_eq!(
             ExpressionValue::link("https://example.com", None).type_name(),
             "Link"
+        );
+    }
+
+    #[test]
+    fn type_to_arrow_datatype_image() {
+        let metadata = MetaData::<TestRefs>::default();
+        let type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["media".to_string()]),
+            "Image",
+        );
+        assert_eq!(
+            super::type_to_arrow_datatype(&Type::Named(type_name), &metadata),
+            DataType::Struct(Fields::from(vec![
+                Field::new("mime_type", DataType::Utf8, false),
+                Field::new("data", DataType::Binary, false),
+            ]))
+        );
+    }
+
+    #[test]
+    fn type_to_arrow_datatype_audio() {
+        let metadata = MetaData::<TestRefs>::default();
+        let type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["media".to_string()]),
+            "Audio",
+        );
+        assert_eq!(
+            super::type_to_arrow_datatype(&Type::Named(type_name), &metadata),
+            DataType::Struct(Fields::from(vec![
+                Field::new("mime_type", DataType::Utf8, false),
+                Field::new("data", DataType::Binary, false),
+            ]))
+        );
+    }
+
+    #[test]
+    fn type_to_arrow_datatype_link() {
+        let metadata = MetaData::<TestRefs>::default();
+        let type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(nonempty::nonempty!["media".to_string()]),
+            "Link",
+        );
+        assert_eq!(
+            super::type_to_arrow_datatype(&Type::Named(type_name), &metadata),
+            DataType::Struct(Fields::from(vec![
+                Field::new("uri", DataType::Utf8, false),
+                Field::new("name", DataType::Utf8, true),
+            ]))
         );
     }
 }
