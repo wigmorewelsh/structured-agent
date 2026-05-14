@@ -4890,3 +4890,85 @@ mod constraint_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod elaborate_tracking_tests {
+    use super::*;
+    use nonempty::NonEmpty;
+    use std::sync::Arc;
+    use structured_agent_runtime::symbols::DefinitionPath;
+
+    fn setup(module: crate::ast::Module) -> crate::TypeChecker {
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("main".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let mut checker = crate::TypeChecker::new();
+        checker.check(&[parsed], &native_prelude_modules()).unwrap();
+        checker
+    }
+
+    #[test]
+    fn elaborate_function_def_returns_some_for_known_function() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "greet",
+                vec![],
+                crate::ast::Type::simple("Unit"),
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let fn_path = DefinitionPath::for_function(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "greet",
+        );
+        let checker = setup(module);
+        let result = checker.elaborate_fn_def(fn_path);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn elaborate_function_def_returns_none_for_unknown_name() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "greet",
+                vec![],
+                crate::ast::Type::simple("Unit"),
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let fn_path = DefinitionPath::for_function(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "nonexistent",
+        );
+        let checker = setup(module);
+        let result = checker.elaborate_fn_def(fn_path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn elaborate_function_def_is_memoised() {
+        let module =
+            create_test_module(vec![Definition::Function(Arc::new(create_test_function(
+                "greet",
+                vec![],
+                crate::ast::Type::simple("Unit"),
+                vec![Statement::Return(Expression::UnitLiteral {
+                    span: crate::types::Span::dummy(),
+                })],
+            )))]);
+        let fn_path = DefinitionPath::for_function(
+            DefinitionPath::for_module(NonEmpty::new("main".to_string())),
+            "greet",
+        );
+        let checker = setup(module);
+        let first = checker.elaborate_fn_def(fn_path.clone()).unwrap();
+        let second = checker.elaborate_fn_def(fn_path).unwrap();
+        assert!(first == second);
+    }
+}

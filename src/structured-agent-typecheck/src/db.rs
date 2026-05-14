@@ -818,6 +818,7 @@ fn convert_type_kind(
     }
 }
 
+#[salsa::tracked]
 pub fn elaborate_function_def<'db>(
     db: &'db dyn TypeCheckDatabase,
     name: InternedFunctionName<'db>,

@@ -32,6 +32,7 @@ use structured_agent_runtime::symbols::MetaData;
 
 pub struct TypeChecker {
     db: TypeCheckDb,
+    program_input: Option<ProgramInput>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +55,7 @@ impl TypeChecker {
     pub fn new() -> Self {
         Self {
             db: TypeCheckDb::default(),
+            program_input: None,
         }
     }
 
@@ -65,6 +67,7 @@ impl TypeChecker {
         self.populate_symbol_tables(modules, native_modules);
         let parsed_inputs = self.make_parsed_inputs(modules);
         let program_input = ProgramInput::new(&self.db, parsed_inputs);
+        self.program_input = Some(program_input);
 
         let check_errors = self.run_check_pass(program_input);
         if !check_errors.is_empty() {
@@ -181,6 +184,18 @@ impl TypeChecker {
         let parsed_inputs = self.make_parsed_inputs(modules);
         let program_input = ProgramInput::new(&self.db, parsed_inputs);
         solver::solve_constraints(&self.db, program_input)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn elaborate_fn_def(
+        &self,
+        name: structured_agent_runtime::symbols::DefinitionPath,
+    ) -> Option<db::ArcPtr<typed_ast::Function>> {
+        let program_input = self
+            .program_input
+            .expect("call check() before elaborate_fn_def");
+        let interned = db::InternedFunctionName::new(&self.db, name);
+        db::elaborate_function_def(&self.db, interned, program_input)
     }
 
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
