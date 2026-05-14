@@ -31,6 +31,11 @@ pub enum ConstraintKind {
         trait_name: String,
         param_name: String,
     },
+    Unify {
+        call_site: usize,
+        var: String,
+        ty: Type,
+    },
 }
 
 #[salsa::accumulator]
@@ -46,6 +51,7 @@ pub struct SolvedConstraints {
     pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
     pub inherent_impls: HashMap<DefinitionPath, DefinitionPath>,
+    pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
 }
 
 #[salsa::tracked]
@@ -53,6 +59,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
     let constraints = check_program::accumulated::<Constraint>(db, program);
     let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
     let mut impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath> = HashMap::new();
+    let mut generic_solutions: HashMap<(usize, usize), HashMap<String, Type>> = HashMap::new();
 
     for constraint in &constraints {
         match &constraint.kind {
@@ -64,6 +71,12 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
                 check_trait_impl(db, constraint, &mut impls);
             }
             ConstraintKind::TraitBound { .. } => {}
+            ConstraintKind::Unify { call_site, var, ty } => {
+                generic_solutions
+                    .entry((constraint.file_id, *call_site))
+                    .or_default()
+                    .insert(var.clone(), ty.clone());
+            }
         }
     }
 
@@ -132,6 +145,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         resolved,
         impls,
         inherent_impls,
+        generic_solutions,
     }
 }
 

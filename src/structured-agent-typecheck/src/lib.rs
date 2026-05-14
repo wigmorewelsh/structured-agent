@@ -144,6 +144,34 @@ impl TypeChecker {
             .collect()
     }
 
+    #[cfg(test)]
+    pub(crate) fn get_check_constraints(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> Vec<solver::Constraint> {
+        self.populate_symbol_tables(modules, native_modules);
+        let parsed_inputs = self.make_parsed_inputs(modules);
+        let program_input = ProgramInput::new(&self.db, parsed_inputs);
+        db::check_program(&self.db, program_input);
+        db::check_program::accumulated::<solver::Constraint>(&self.db, program_input)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_solved_constraints(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> solver::SolvedConstraints {
+        self.populate_symbol_tables(modules, native_modules);
+        let parsed_inputs = self.make_parsed_inputs(modules);
+        let program_input = ProgramInput::new(&self.db, parsed_inputs);
+        solver::solve_constraints(&self.db, program_input)
+    }
+
     pub fn function_kinds(&self) -> HashMap<String, FunctionKind> {
         self.db
             .symbol_tables()

@@ -4494,3 +4494,191 @@ mod metadata_query_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod constraint_tests {
+    use super::*;
+    use nonempty::NonEmpty;
+    use std::sync::Arc;
+    use structured_agent_runtime::Type as RT;
+
+    fn check_constraints(module: crate::ast::Module) -> Vec<crate::solver::Constraint> {
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let mut checker = crate::TypeChecker::new();
+        checker.get_check_constraints(&[parsed], &native_prelude_modules())
+    }
+
+    fn solve_parsed(code: &str) -> crate::solver::SolvedConstraints {
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let mut checker = crate::TypeChecker::new();
+        checker.get_solved_constraints(&[parsed], &native_prelude_modules())
+    }
+
+    #[test]
+    fn unify_constraint_emitted_for_single_type_param() {
+        let identity = create_generic_test_function(
+            "identity",
+            vec!["T".into()],
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("T"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::Call {
+                function: "identity".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(Arc::new(identity)),
+            Definition::Function(Arc::new(caller)),
+        ]);
+        let constraints = check_constraints(module);
+        let unify: Vec<_> = constraints
+            .iter()
+            .filter(|c| matches!(&c.kind, crate::solver::ConstraintKind::Unify { .. }))
+            .collect();
+        assert_eq!(unify.len(), 1);
+        match &unify[0].kind {
+            crate::solver::ConstraintKind::Unify { var, ty, .. } => {
+                assert_eq!(var, "T");
+                assert!(ty.is_string(), "expected String type, got {:?}", ty);
+            }
+            _ => panic!("expected Unify"),
+        }
+    }
+
+    #[test]
+    fn unify_constraint_not_emitted_for_monomorphic_call() {
+        let func = create_test_function(
+            "to_upper",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::Call {
+                function: "to_upper".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(Arc::new(func)),
+            Definition::Function(Arc::new(caller)),
+        ]);
+        let constraints = check_constraints(module);
+        let unify_count = constraints
+            .iter()
+            .filter(|c| matches!(&c.kind, crate::solver::ConstraintKind::Unify { .. }))
+            .count();
+        assert_eq!(unify_count, 0);
+    }
+
+    #[test]
+    fn solve_constraints_populates_generic_solutions() {
+        let code = "fn identity<T>(x: T): T { return x }\nfn main(s: String): String { return identity(s) }\n";
+        let solved = solve_parsed(code);
+        assert_eq!(solved.generic_solutions.len(), 1);
+        let entry = solved.generic_solutions.values().next().unwrap();
+        assert!(
+            entry.get("T").map(|t| t.is_string()).unwrap_or(false),
+            "expected T -> String, got {:?}",
+            entry
+        );
+    }
+
+    #[test]
+    fn solve_constraints_two_call_sites_have_separate_entries() {
+        let code = "fn identity<T>(x: T): T { return x }\nfn a(s: String): String { return identity(s) }\nfn b(n: Int): Int { return identity(n) }\n";
+        let solved = solve_parsed(code);
+        assert_eq!(solved.generic_solutions.len(), 2);
+        let types: Vec<&RT> = solved
+            .generic_solutions
+            .values()
+            .filter_map(|m| m.get("T"))
+            .collect();
+        assert!(
+            types.iter().any(|t: &&RT| t.is_string()),
+            "missing String entry"
+        );
+        assert!(types.iter().any(|t: &&RT| t.is_int()), "missing Int entry");
+    }
+
+    #[test]
+    fn type_mismatch_still_fires_after_unify_change() {
+        let func = create_test_function(
+            "expects_int",
+            vec![create_parameter("n", AstType::simple("Int"))],
+            AstType::simple("Int"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("Int"),
+            vec![Statement::Return(Expression::Call {
+                function: "expects_int".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(Arc::new(func)),
+            Definition::Function(Arc::new(caller)),
+        ]);
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let result = crate::TypeChecker::new()
+            .check(&[parsed], &native_prelude_modules())
+            .map(|_| ());
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, crate::TypeError::ArgumentTypeMismatch { .. }))
+        );
+    }
+}

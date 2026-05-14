@@ -1019,6 +1019,20 @@ fn synthesize_call(
             }
         }
     }
+    for tp in &sig.type_params {
+        if let Some(resolved_ty) = unifier.get(&tp.name) {
+            Constraint {
+                kind: ConstraintKind::Unify {
+                    call_site: span.start,
+                    var: tp.name.clone(),
+                    ty: resolved_ty.clone(),
+                },
+                span,
+                file_id: ctx.file_id,
+            }
+            .accumulate(db);
+        }
+    }
     Some(unifier.apply_subst(&sig.return_type))
 }
 
