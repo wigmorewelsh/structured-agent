@@ -267,6 +267,10 @@ impl Substitution {
         }
     }
 
+    pub fn from_map(map: HashMap<String, RT>) -> Self {
+        Self { subst: map }
+    }
+
     pub fn match_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
         match formal {
             RT::Generic(name) => {
@@ -327,19 +331,7 @@ impl Substitution {
     }
 }
 
-pub fn apply_subst(ty: &RT, map: &HashMap<String, RT>) -> RT {
-    match ty {
-        RT::Generic(name) => map.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        RT::Parameterized(name, args) => RT::Parameterized(
-            name.clone(),
-            args.iter().map(|a| apply_subst(a, map)).collect(),
-        ),
-        RT::Union(variants) => RT::union(variants.iter().map(|v| apply_subst(v, map)).collect()),
-        other => other.clone(),
-    }
-}
-
-pub(crate) fn extract_generic_bindings(formal: &RT, actual: &RT) -> Option<HashMap<String, RT>> {
+pub fn extract_generic_bindings(formal: &RT, actual: &RT) -> Option<HashMap<String, RT>> {
     match formal {
         RT::Generic(name) => {
             let mut m = HashMap::new();
@@ -859,7 +851,7 @@ fn check_block(
     Some(())
 }
 
-pub(crate) fn resolve_generic_method_sig(
+pub fn resolve_generic_method_sig(
     db: &dyn TypeCheckDatabase,
     param_name: &str,
     method: &str,
@@ -1117,7 +1109,7 @@ pub fn synthesize_expression(
                     });
                 }
             }
-            Some(apply_subst(&sig.return_type, &subst))
+            Some(Substitution::from_map(subst).apply_subst(&sig.return_type))
         }
         Expression::StringTemplate { parts, .. } => {
             for part in parts {
@@ -1368,7 +1360,7 @@ fn synthesize_call(
             }
         }
     }
-    Some(apply_subst(&sig.return_type, &subst))
+    Some(Substitution::from_map(subst).apply_subst(&sig.return_type))
 }
 
 fn synthesize_list_literal(

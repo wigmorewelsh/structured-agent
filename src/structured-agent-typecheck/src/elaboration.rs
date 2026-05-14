@@ -758,7 +758,8 @@ fn build_typed_call(
         env,
         ctx,
     )?;
-    let resolved_return = synthesize::apply_subst(&sig.return_type, &solutions);
+    let resolved_return =
+        synthesize::Substitution::from_map(solutions).apply_subst(&sig.return_type);
     Some(typed_ast::Expression::Call {
         function: function_name,
         binding: callee.binding.clone(),

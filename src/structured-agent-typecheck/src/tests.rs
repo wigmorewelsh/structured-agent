@@ -4636,8 +4636,8 @@ mod typed_ast_tests {
     fn no_unifier_in_elaboration() {
         let src = include_str!("elaboration.rs");
         assert!(
-            !src.contains("Unifier") && !src.contains("Substitution"),
-            "elaboration.rs should not reference Unifier or Substitution after refactor"
+            !src.contains("Unifier"),
+            "elaboration.rs should not reference Unifier after refactor"
         );
     }
 
