@@ -34,7 +34,7 @@ impl AcpSession {
     ) -> Result<Self, String> {
         debug!("Creating session for {}", session_id.0);
 
-        let mut acp_config = config.clone();
+        let acp_config = config.clone();
         let mut builder = Runtime::builder(program_source.clone());
         if let Some(ref dir) = working_dir {
             builder = builder.with_mcp_working_dir(dir.clone());
@@ -371,7 +371,7 @@ impl AcpSession {
             ))
         })?;
 
-        let mut acp_config = (**config).clone();
+        let acp_config = (**config).clone();
         let current_dir = std::env::current_dir()
             .ok()
             .map(|p| p.to_string_lossy().into_owned());

@@ -480,9 +480,7 @@ mod tests {
     use arrow::array::{NullArray, UnionArray};
     use arrow::datatypes::{DataType, Field, Fields};
 
-    use crate::runtime_value::{
-        AudioValue, ImageValue, LinkValue, RuntimeValue, RuntimeValueFactory, UnitValue,
-    };
+    use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
     use crate::symbols::{
         DefinitionPath, FieldDefinition, GenericParameterDefinition, MetaData, NoAst,
         TypeDefinition, TypeDefinitionKind,

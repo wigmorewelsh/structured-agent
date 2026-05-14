@@ -260,10 +260,10 @@ impl Config {
 
         if let Some(file) = config.file.as_ref() {
             let file_path = std::path::Path::new(file);
-            if file_path.is_relative() {
-                if let Ok(abs) = file_path.canonicalize() {
-                    config.file = Some(abs.to_string_lossy().into_owned());
-                }
+            if file_path.is_relative()
+                && let Ok(abs) = file_path.canonicalize()
+            {
+                config.file = Some(abs.to_string_lossy().into_owned());
             }
         }
 

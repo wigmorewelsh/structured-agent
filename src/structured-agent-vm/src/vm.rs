@@ -716,10 +716,10 @@ impl VM {
     }
 
     fn write_slot(state: &mut VMState, slot: Slot, value: ExpressionResult) {
-        if let Some(frame) = state.call_stack.last_mut() {
-            if let Some(entry) = frame.slots.get_mut(slot.0 as usize) {
-                *entry = Some(value);
-            }
+        if let Some(frame) = state.call_stack.last_mut()
+            && let Some(entry) = frame.slots.get_mut(slot.0 as usize)
+        {
+            *entry = Some(value);
         }
     }
 

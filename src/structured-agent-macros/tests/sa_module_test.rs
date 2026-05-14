@@ -72,7 +72,7 @@ async fn test_negate_via_module() {
         )
         .await
         .unwrap();
-    assert_eq!(result.as_boolean().unwrap(), false);
+    assert!(!result.as_boolean().unwrap());
 }
 
 #[test]

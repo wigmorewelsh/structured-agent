@@ -130,7 +130,7 @@ impl Context {
                 ContextEvent::Action(a) => Some(a.clone()),
                 ContextEvent::Thinking(_) => None,
             })
-            .last()
+            .next_back()
     }
 
     pub fn create_child(self) -> Self {

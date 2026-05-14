@@ -41,130 +41,28 @@ fn format_prompt(blocks: &[acp::ContentBlock]) -> String {
         .join("\n")
 }
 
-pub fn content_block_to_expression_value(block: &acp::ContentBlock) -> ExpressionValue {
+pub fn content_block_to_expression_value(
+    block: &acp::ContentBlock,
+) -> Result<ExpressionValue, String> {
     match block {
         acp::ContentBlock::Image(img) => {
-            let bytes = STANDARD.decode(&img.data).unwrap_or_default();
-            ExpressionValue::image(img.mime_type.clone(), bytes)
+            let bytes = STANDARD
+                .decode(&img.data)
+                .map_err(|e| format!("base64 decode error: {}", e))?;
+            Ok(ExpressionValue::image(img.mime_type.clone(), bytes))
         }
         acp::ContentBlock::Audio(aud) => {
-            let bytes = STANDARD.decode(&aud.data).unwrap_or_default();
-            ExpressionValue::audio(aud.mime_type.clone(), bytes)
+            let bytes = STANDARD
+                .decode(&aud.data)
+                .map_err(|e| format!("base64 decode error: {}", e))?;
+            Ok(ExpressionValue::audio(aud.mime_type.clone(), bytes))
         }
         acp::ContentBlock::ResourceLink(r) => {
-            ExpressionValue::link(r.uri.clone(), Some(r.name.clone()))
+            Ok(ExpressionValue::link(r.uri.clone(), Some(r.name.clone())))
         }
-        other => ExpressionValue::string(format_prompt(std::slice::from_ref(other))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_text_block() {
-        let blocks = vec![acp::ContentBlock::Text(acp::TextContent::new(
-            "hello world",
-        ))];
-        assert_eq!(format_prompt(&blocks), "hello world");
-    }
-
-    #[test]
-    fn test_resource_link_strips_file_scheme() {
-        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-            "agent.sa",
-            "file:///home/user/project/agent.sa",
-        ))];
-        assert_eq!(
-            format_prompt(&blocks),
-            "[file: /home/user/project/agent.sa]"
-        );
-    }
-
-    #[test]
-    fn test_resource_link_without_file_scheme_is_unchanged() {
-        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-            "notes.txt",
-            "notes.txt",
-        ))];
-        assert_eq!(format_prompt(&blocks), "[file: notes.txt]");
-    }
-
-    #[test]
-    fn test_embedded_text_resource_strips_file_scheme() {
-        let resource = acp::EmbeddedResourceResource::TextResourceContents(
-            acp::TextResourceContents::new("RASPBERRY", "file:///tmp/secret.txt"),
-        );
-        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
-            resource,
-        ))];
-        assert_eq!(format_prompt(&blocks), "[file: /tmp/secret.txt]\nRASPBERRY");
-    }
-
-    #[test]
-    fn test_embedded_blob_resource_strips_file_scheme() {
-        let resource = acp::EmbeddedResourceResource::BlobResourceContents(
-            acp::BlobResourceContents::new("abc123", "file:///tmp/image.png"),
-        );
-        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
-            resource,
-        ))];
-        assert_eq!(format_prompt(&blocks), "[file: /tmp/image.png]");
-    }
-
-    #[test]
-    fn test_mixed_blocks_joined_with_newline() {
-        let blocks = vec![
-            acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-                "foo.txt",
-                "file:///path/to/foo.txt",
-            )),
-            acp::ContentBlock::Text(acp::TextContent::new("Read the attached file.")),
-        ];
-        assert_eq!(
-            format_prompt(&blocks),
-            "[file: /path/to/foo.txt]\nRead the attached file."
-        );
-    }
-
-    #[test]
-    fn test_empty_prompt() {
-        assert_eq!(format_prompt(&[]), "");
-    }
-
-    #[test]
-    fn acp_image_block_converts_to_image_value() {
-        let raw_bytes = b"hello image";
-        let b64 = STANDARD.encode(raw_bytes);
-        let block = acp::ContentBlock::Image(acp::ImageContent::new(b64, "image/png"));
-        let value = content_block_to_expression_value(&block);
-        let img = value.as_image().unwrap();
-        assert_eq!(img.mime_type, "image/png");
-        assert_eq!(img.data, raw_bytes);
-    }
-
-    #[test]
-    fn acp_audio_block_converts_to_audio_value() {
-        let raw_bytes = b"hello audio";
-        let b64 = STANDARD.encode(raw_bytes);
-        let block = acp::ContentBlock::Audio(acp::AudioContent::new(b64, "audio/mp3"));
-        let value = content_block_to_expression_value(&block);
-        let aud = value.as_audio().unwrap();
-        assert_eq!(aud.mime_type, "audio/mp3");
-        assert_eq!(aud.data, raw_bytes);
-    }
-
-    #[test]
-    fn acp_resource_link_converts_to_link_value() {
-        let block = acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-            "logo.png",
-            "https://example.com/logo.png",
-        ));
-        let value = content_block_to_expression_value(&block);
-        let link = value.as_link().unwrap();
-        assert_eq!(link.uri, "https://example.com/logo.png");
-        assert_eq!(link.name, Some("logo.png".to_string()));
+        other => Ok(ExpressionValue::string(format_prompt(
+            std::slice::from_ref(other),
+        ))),
     }
 }
 
@@ -447,4 +345,128 @@ pub async fn run_acp_server(config: Config) -> Result<(), Box<dyn std::error::Er
 
     debug!("ACP server stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_block() {
+        let blocks = vec![acp::ContentBlock::Text(acp::TextContent::new(
+            "hello world",
+        ))];
+        assert_eq!(format_prompt(&blocks), "hello world");
+    }
+
+    #[test]
+    fn test_resource_link_strips_file_scheme() {
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "agent.sa",
+            "file:///home/user/project/agent.sa",
+        ))];
+        assert_eq!(
+            format_prompt(&blocks),
+            "[file: /home/user/project/agent.sa]"
+        );
+    }
+
+    #[test]
+    fn test_resource_link_without_file_scheme_is_unchanged() {
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "notes.txt",
+            "notes.txt",
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: notes.txt]");
+    }
+
+    #[test]
+    fn test_embedded_text_resource_strips_file_scheme() {
+        let resource = acp::EmbeddedResourceResource::TextResourceContents(
+            acp::TextResourceContents::new("RASPBERRY", "file:///tmp/secret.txt"),
+        );
+        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+            resource,
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: /tmp/secret.txt]\nRASPBERRY");
+    }
+
+    #[test]
+    fn test_embedded_blob_resource_strips_file_scheme() {
+        let resource = acp::EmbeddedResourceResource::BlobResourceContents(
+            acp::BlobResourceContents::new("abc123", "file:///tmp/image.png"),
+        );
+        let blocks = vec![acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+            resource,
+        ))];
+        assert_eq!(format_prompt(&blocks), "[file: /tmp/image.png]");
+    }
+
+    #[test]
+    fn test_mixed_blocks_joined_with_newline() {
+        let blocks = vec![
+            acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+                "foo.txt",
+                "file:///path/to/foo.txt",
+            )),
+            acp::ContentBlock::Text(acp::TextContent::new("Read the attached file.")),
+        ];
+        assert_eq!(
+            format_prompt(&blocks),
+            "[file: /path/to/foo.txt]\nRead the attached file."
+        );
+    }
+
+    #[test]
+    fn test_empty_prompt() {
+        assert_eq!(format_prompt(&[]), "");
+    }
+
+    #[test]
+    fn acp_image_block_converts_to_image_value() {
+        let raw_bytes = b"hello image";
+        let b64 = STANDARD.encode(raw_bytes);
+        let block = acp::ContentBlock::Image(acp::ImageContent::new(b64, "image/png"));
+        let value = content_block_to_expression_value(&block).unwrap();
+        let img = value.as_image().unwrap();
+        assert_eq!(img.mime_type, "image/png");
+        assert_eq!(img.data, raw_bytes);
+    }
+
+    #[test]
+    fn acp_audio_block_converts_to_audio_value() {
+        let raw_bytes = b"hello audio";
+        let b64 = STANDARD.encode(raw_bytes);
+        let block = acp::ContentBlock::Audio(acp::AudioContent::new(b64, "audio/mp3"));
+        let value = content_block_to_expression_value(&block).unwrap();
+        let aud = value.as_audio().unwrap();
+        assert_eq!(aud.mime_type, "audio/mp3");
+        assert_eq!(aud.data, raw_bytes);
+    }
+
+    #[test]
+    fn acp_image_block_corrupt_base64_returns_error() {
+        let block =
+            acp::ContentBlock::Image(acp::ImageContent::new("!!!notbase64!!!", "image/png"));
+        assert!(content_block_to_expression_value(&block).is_err());
+    }
+
+    #[test]
+    fn acp_audio_block_corrupt_base64_returns_error() {
+        let block =
+            acp::ContentBlock::Audio(acp::AudioContent::new("!!!notbase64!!!", "audio/mp3"));
+        assert!(content_block_to_expression_value(&block).is_err());
+    }
+
+    #[test]
+    fn acp_resource_link_converts_to_link_value() {
+        let block = acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "logo.png",
+            "https://example.com/logo.png",
+        ));
+        let value = content_block_to_expression_value(&block).unwrap();
+        let link = value.as_link().unwrap();
+        assert_eq!(link.uri, "https://example.com/logo.png");
+        assert_eq!(link.name, Some("logo.png".to_string()));
+    }
 }

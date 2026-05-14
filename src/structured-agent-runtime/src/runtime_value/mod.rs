@@ -189,9 +189,6 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::expression::ExpressionValue;
     use crate::runtime_value::{AudioValue, ImageValue, LinkValue, RuntimeValue};
 
     use super::arrow_col_to_expression;

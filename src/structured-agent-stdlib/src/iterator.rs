@@ -245,7 +245,7 @@ mod tests {
             .await
             .unwrap();
         let result = f.call(vec![iter], AgentHandle::detached()).await.unwrap();
-        assert_eq!(result.as_boolean().unwrap(), false);
+        assert!(!result.as_boolean().unwrap());
     }
 
     #[tokio::test]
@@ -278,7 +278,7 @@ mod tests {
             .await
             .unwrap();
         let result = f.call(vec![iter], AgentHandle::detached()).await.unwrap();
-        assert_eq!(result.as_boolean().unwrap(), true);
+        assert!(result.as_boolean().unwrap());
     }
 
     #[tokio::test]

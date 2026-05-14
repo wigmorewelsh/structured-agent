@@ -107,6 +107,13 @@ impl Function for ExternalFunctionExpr {
     }
 }
 
+#[async_trait]
+impl ExecutableFunction for ExternalFunctionExpr {
+    fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
+        Box::new(self.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,12 +146,5 @@ mod tests {
         };
 
         assert_eq!(expr_without_docs.documentation(), None);
-    }
-}
-
-#[async_trait]
-impl ExecutableFunction for ExternalFunctionExpr {
-    fn clone_executable(&self) -> Box<dyn ExecutableFunction> {
-        Box::new(self.clone())
     }
 }

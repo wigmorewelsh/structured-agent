@@ -248,9 +248,9 @@ async fn test_vm_boolean_list_literal() {
     let values = list.value(0);
     let bools = values.as_any().downcast_ref::<BooleanArray>().unwrap();
     assert_eq!(bools.len(), 3);
-    assert_eq!(bools.value(0), true);
-    assert_eq!(bools.value(1), false);
-    assert_eq!(bools.value(2), true);
+    assert!(bools.value(0));
+    assert!(!bools.value(1));
+    assert!(bools.value(2));
 }
 
 #[tokio::test]

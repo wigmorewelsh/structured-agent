@@ -4,7 +4,7 @@ use crate::runtime::{ExpressionValue, RuntimeError};
 use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
 };
-use arrow::array::Array;
+
 use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use structured_agent_runtime::symbols::DefinitionPath;
+
 use tokio::sync::RwLock;
 
 type RmcpClient = rmcp::service::RunningService<RoleClient, ()>;
@@ -100,7 +100,7 @@ fn json_schema_to_type(schema: &Value) -> Option<Type> {
         Some("array") => {
             let item_type = schema
                 .get("items")
-                .and_then(|items| json_schema_to_type(items))
+                .and_then(json_schema_to_type)
                 .unwrap_or_else(Type::string);
             Some(Type::list(item_type))
         }
@@ -211,7 +211,7 @@ fn handle_single_content_block(
         rmcp::model::RawContent::Text(text_content) => {
             parse_text_content(&text_content.text, return_type, runtime)
         }
-        other => Ok(raw_content_to_expression_value(other)),
+        other => raw_content_to_expression_value(other).map_err(McpError::ToolError),
     }
 }
 
@@ -345,7 +345,9 @@ impl McpClient {
         if response.content.len() > 1 {
             let mut elements = Vec::new();
             for block in &response.content {
-                elements.push(raw_content_to_expression_value(&block.raw));
+                elements.push(
+                    raw_content_to_expression_value(&block.raw).map_err(McpError::ToolError)?,
+                );
             }
             return ExpressionValue::from_elements(elements).map_err(McpError::ToolError);
         }
@@ -436,21 +438,27 @@ impl Clone for McpClient {
     }
 }
 
-pub fn raw_content_to_expression_value(raw: &rmcp::model::RawContent) -> ExpressionValue {
+pub fn raw_content_to_expression_value(
+    raw: &rmcp::model::RawContent,
+) -> Result<ExpressionValue, String> {
     match raw {
         rmcp::model::RawContent::Image(img) => {
-            let bytes = STANDARD.decode(&img.data).unwrap_or_default();
-            ExpressionValue::image(img.mime_type.clone(), bytes)
+            let bytes = STANDARD
+                .decode(&img.data)
+                .map_err(|e| format!("Invalid base64 image data: {}", e))?;
+            Ok(ExpressionValue::image(img.mime_type.clone(), bytes))
         }
         rmcp::model::RawContent::Audio(aud) => {
-            let bytes = STANDARD.decode(&aud.data).unwrap_or_default();
-            ExpressionValue::audio(aud.mime_type.clone(), bytes)
+            let bytes = STANDARD
+                .decode(&aud.data)
+                .map_err(|e| format!("Invalid base64 audio data: {}", e))?;
+            Ok(ExpressionValue::audio(aud.mime_type.clone(), bytes))
         }
         rmcp::model::RawContent::ResourceLink(r) => {
-            ExpressionValue::link(r.uri.clone(), Some(r.name.clone()))
+            Ok(ExpressionValue::link(r.uri.clone(), Some(r.name.clone())))
         }
-        rmcp::model::RawContent::Text(t) => ExpressionValue::string(t.text.clone()),
-        other => ExpressionValue::string(format!("{:?}", other)),
+        rmcp::model::RawContent::Text(t) => Ok(ExpressionValue::string(t.text.clone())),
+        other => Ok(ExpressionValue::string(format!("{:?}", other))),
     }
 }
 
@@ -496,6 +504,7 @@ mod tests {
     use super::*;
     use crate::runtime::{ExpressionValue, RuntimeService};
     use serde_json::json;
+    use structured_agent_runtime::symbols::DefinitionPath;
 
     struct NoStructRuntime;
 
@@ -636,14 +645,14 @@ mod tests {
     fn parse_text_content_bool_true() {
         let result = parse_text_content("true", &Type::boolean(), no_struct());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().as_boolean().unwrap(), true);
+        assert!(result.unwrap().as_boolean().unwrap());
     }
 
     #[test]
     fn parse_text_content_bool_false() {
         let result = parse_text_content("false", &Type::boolean(), no_struct());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().as_boolean().unwrap(), false);
+        assert!(!result.unwrap().as_boolean().unwrap());
     }
 
     #[test]
@@ -965,7 +974,7 @@ mod tests {
             mime_type: "image/png".to_string(),
             meta: None,
         });
-        let value = raw_content_to_expression_value(&raw);
+        let value = raw_content_to_expression_value(&raw).unwrap();
         let img = value.as_image().unwrap();
         assert_eq!(img.mime_type, "image/png");
         assert_eq!(img.data, raw_bytes);
@@ -979,7 +988,7 @@ mod tests {
             data: b64,
             mime_type: "audio/mp3".to_string(),
         });
-        let value = raw_content_to_expression_value(&raw);
+        let value = raw_content_to_expression_value(&raw).unwrap();
         let aud = value.as_audio().unwrap();
         assert_eq!(aud.mime_type, "audio/mp3");
         assert_eq!(aud.data, raw_bytes);
@@ -991,7 +1000,7 @@ mod tests {
             "https://example.com/logo.png",
             "logo.png",
         ));
-        let value = raw_content_to_expression_value(&raw);
+        let value = raw_content_to_expression_value(&raw).unwrap();
         let link = value.as_link().unwrap();
         assert_eq!(link.uri, "https://example.com/logo.png");
         assert_eq!(link.name, Some("logo.png".to_string()));

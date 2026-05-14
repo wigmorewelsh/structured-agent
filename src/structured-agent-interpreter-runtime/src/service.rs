@@ -3,9 +3,7 @@ use crate::traits::{ExecutableFunction, LanguageEngine};
 use arrow::datatypes::DataType;
 use std::sync::Arc;
 use structured_agent_il::BytecodeRef;
-use structured_agent_runtime::{
-    ActorMailboxReceiver, ActorRegistry, DefinitionPath, ExpressionValue, Type,
-};
+use structured_agent_runtime::{ActorMailboxReceiver, ActorRegistry, DefinitionPath, Type};
 
 pub trait RuntimeService: Send + Sync {
     fn get_native_function(&self, name: &str) -> Option<Arc<dyn ExecutableFunction>>;
