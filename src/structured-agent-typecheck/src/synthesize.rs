@@ -318,9 +318,10 @@ pub fn check_definition(
     db: &dyn TypeCheckDatabase,
     definition: &Definition,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<()> {
     match definition {
-        Definition::Function(func) => check_function(db, func, ctx),
+        Definition::Function(func) => check_function(db, func, ctx, constraints),
         Definition::ExternalFunction(f) => {
             let env = TypeEnvironment::with_type_params(&f.type_params);
             resolve(db, &f.return_type, &env, f.span, ctx)?;
@@ -364,7 +365,7 @@ pub fn check_definition(
                 )?;
             let impl_key = impl_entry.key.clone();
             for func in &t.functions {
-                check_impl_function(db, func, &impl_key, ctx)?;
+                check_impl_function(db, func, &impl_key, ctx, constraints)?;
             }
             if let Some(trait_name_str) = &t.trait_name {
                 let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
@@ -400,7 +401,7 @@ pub fn check_definition(
                                 file_id: ctx.file_id,
                             },
                         )?;
-                Constraint {
+                constraints.push(Constraint {
                     kind: ConstraintKind::TraitImpl {
                         type_path,
                         trait_path,
@@ -408,8 +409,7 @@ pub fn check_definition(
                     },
                     span: t.span,
                     file_id: ctx.file_id,
-                }
-                .accumulate(db);
+                });
             }
             Some(())
         }
@@ -424,6 +424,7 @@ fn check_impl_function(
     func: &Function,
     impl_key: &DefinitionPath,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<()> {
     let impl_fn_path = DefinitionPath::for_impl_fn(impl_key, func.name.clone());
     let sig = get_function_sig(db, InternedFunctionName::new(db, impl_fn_path), ctx.program)?
@@ -440,10 +441,16 @@ fn check_impl_function(
         &func.name,
         &sig.return_type,
         ctx,
+        constraints,
     )
 }
 
-fn check_function(db: &dyn TypeCheckDatabase, func: &Function, ctx: &CheckContext) -> Option<()> {
+fn check_function(
+    db: &dyn TypeCheckDatabase,
+    func: &Function,
+    ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
+) -> Option<()> {
     let fn_name = DefinitionPath::for_function(ctx.module_name.clone(), func.name.clone());
     let sig = get_function_sig(db, InternedFunctionName::new(db, fn_name), ctx.program)?
         .get()
@@ -459,6 +466,7 @@ fn check_function(db: &dyn TypeCheckDatabase, func: &Function, ctx: &CheckContex
         &func.name,
         &sig.return_type,
         ctx,
+        constraints,
     )
 }
 
@@ -469,11 +477,12 @@ fn check_statement(
     function_name: &str,
     return_type: &RT,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<TypeEnvironment> {
     match statement {
         Statement::Yield { .. } => Some(env),
         Statement::Injection(expr) => {
-            synthesize_expression(db, expr, &env, ctx)?;
+            synthesize_expression(db, expr, &env, ctx, constraints)?;
             Some(env)
         }
         Statement::Assignment {
@@ -481,7 +490,7 @@ fn check_statement(
             expression,
             span: _,
         } => {
-            let ty = synthesize_expression(db, expression, &env, ctx)?;
+            let ty = synthesize_expression(db, expression, &env, ctx, constraints)?;
             env.declare_variable(variable.clone(), ty, expression.span());
             Some(env)
         }
@@ -490,7 +499,7 @@ fn check_statement(
             expression,
             span,
         } => {
-            let ty = synthesize_expression(db, expression, &env, ctx)?;
+            let ty = synthesize_expression(db, expression, &env, ctx, constraints)?;
             let (existing_type, _, declaration_span) =
                 env.lookup_variable_with_span(variable).or_accumulate(
                     db,
@@ -515,7 +524,7 @@ fn check_statement(
             Some(env)
         }
         Statement::ExpressionStatement(expr) => {
-            synthesize_expression(db, expr, &env, ctx)?;
+            synthesize_expression(db, expr, &env, ctx, constraints)?;
             Some(env)
         }
         Statement::If {
@@ -524,7 +533,7 @@ fn check_statement(
             else_body,
             span: _,
         } => {
-            check_boolean_condition(db, condition, &env, ctx)?;
+            check_boolean_condition(db, condition, &env, ctx, constraints)?;
             check_block(
                 db,
                 body,
@@ -532,6 +541,7 @@ fn check_statement(
                 function_name,
                 return_type,
                 ctx,
+                constraints,
             )?;
             if let Some(else_stmts) = else_body {
                 check_block(
@@ -541,6 +551,7 @@ fn check_statement(
                     function_name,
                     return_type,
                     ctx,
+                    constraints,
                 )?;
             }
             Some(env)
@@ -550,7 +561,7 @@ fn check_statement(
             body,
             span: _,
         } => {
-            check_boolean_condition(db, condition, &env, ctx)?;
+            check_boolean_condition(db, condition, &env, ctx, constraints)?;
             check_block(
                 db,
                 body,
@@ -558,11 +569,12 @@ fn check_statement(
                 function_name,
                 return_type,
                 ctx,
+                constraints,
             )?;
             Some(env)
         }
         Statement::Return(expr) => {
-            let ty = synthesize_expression(db, expr, &env, ctx)?;
+            let ty = synthesize_expression(db, expr, &env, ctx, constraints)?;
             ensure_or_accumulate!(
                 ty == *return_type,
                 db,
@@ -582,7 +594,7 @@ fn check_statement(
             body,
             ..
         } => {
-            let iterable_ty = synthesize_expression(db, iterable, &env, ctx)?;
+            let iterable_ty = synthesize_expression(db, iterable, &env, ctx, constraints)?;
             let type_name_str = match &iterable_ty {
                 RT::Named(p) | RT::Parameterized(p, _) => p.last_name().to_string(),
                 _ => {
@@ -621,7 +633,15 @@ fn check_statement(
                 _ => RT::Generic("T".to_string()),
             };
             child_env.declare_variable(variable.clone(), element_type, iterable.span());
-            check_block(db, body, child_env, function_name, return_type, ctx)?;
+            check_block(
+                db,
+                body,
+                child_env,
+                function_name,
+                return_type,
+                ctx,
+                constraints,
+            )?;
             Some(env)
         }
     }
@@ -633,6 +653,7 @@ fn check_expression(
     expected: &RT,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<()> {
     match expression {
         Expression::IfElse {
@@ -641,12 +662,12 @@ fn check_expression(
             else_expr,
             ..
         } => {
-            check_boolean_condition(db, condition, env, ctx)?;
-            check_expression(db, then_expr, expected, env, ctx)?;
-            check_expression(db, else_expr, expected, env, ctx)
+            check_boolean_condition(db, condition, env, ctx, constraints)?;
+            check_expression(db, then_expr, expected, env, ctx, constraints)?;
+            check_expression(db, else_expr, expected, env, ctx, constraints)
         }
         _ => {
-            let got = synthesize_expression(db, expression, env, ctx)?;
+            let got = synthesize_expression(db, expression, env, ctx, constraints)?;
             ensure_or_accumulate!(
                 got == *expected,
                 db,
@@ -667,8 +688,9 @@ fn check_boolean_condition(
     condition: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<()> {
-    check_expression(db, condition, &RT::boolean(), env, ctx)
+    check_expression(db, condition, &RT::boolean(), env, ctx, constraints)
 }
 
 fn check_block(
@@ -678,9 +700,10 @@ fn check_block(
     function_name: &str,
     return_type: &RT,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<()> {
     for stmt in stmts {
-        env = check_statement(db, stmt, env, function_name, return_type, ctx)?;
+        env = check_statement(db, stmt, env, function_name, return_type, ctx, constraints)?;
     }
     Some(())
 }
@@ -809,6 +832,7 @@ pub fn synthesize_expression(
     expression: &Expression,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     match expression {
         Expression::Call {
@@ -816,7 +840,16 @@ pub fn synthesize_expression(
             type_args,
             arguments,
             span,
-        } => synthesize_call(db, function, type_args, arguments, *span, env, ctx),
+        } => synthesize_call(
+            db,
+            function,
+            type_args,
+            arguments,
+            *span,
+            env,
+            ctx,
+            constraints,
+        ),
         Expression::Variable { name, span } => {
             env.lookup_variable(name).map(|(ty, _)| ty).or_accumulate(
                 db,
@@ -842,24 +875,38 @@ pub fn synthesize_expression(
             None
         }
         Expression::ListLiteral { elements, span } => {
-            synthesize_list_literal(db, elements, *span, env, ctx)
+            synthesize_list_literal(db, elements, *span, env, ctx, constraints)
         }
-        Expression::Select(select_expr) => {
-            synthesize_select(db, &select_expr.clauses, select_expr.span, env, ctx)
-        }
+        Expression::Select(select_expr) => synthesize_select(
+            db,
+            &select_expr.clauses,
+            select_expr.span,
+            env,
+            ctx,
+            constraints,
+        ),
         Expression::IfElse {
             condition,
             then_expr,
             else_expr,
             span,
-        } => synthesize_if_else(db, condition, then_expr, else_expr, *span, env, ctx),
+        } => synthesize_if_else(
+            db,
+            condition,
+            then_expr,
+            else_expr,
+            *span,
+            env,
+            ctx,
+            constraints,
+        ),
         Expression::StructLiteral {
             struct_name,
             fields,
             span,
-        } => synthesize_struct_literal(db, struct_name, fields, *span, env, ctx),
+        } => synthesize_struct_literal(db, struct_name, fields, *span, env, ctx, constraints),
         Expression::FieldAccess { base, field, span } => {
-            synthesize_field_access(db, base, field, *span, env, ctx)
+            synthesize_field_access(db, base, field, *span, env, ctx, constraints)
         }
         Expression::Spawn { type_arg, span, .. } => {
             let module_type = resolve(db, type_arg, env, *span, ctx)?;
@@ -871,7 +918,7 @@ pub fn synthesize_expression(
             args,
             span,
         } => {
-            let receiver_type = synthesize_expression(db, receiver, env, ctx)?;
+            let receiver_type = synthesize_expression(db, receiver, env, ctx, constraints)?;
             let sig = resolve_method_sig(db, &receiver_type, method, env, *span, ctx)?;
             let mut unifier = Unifier::new();
             let param_offset = if receiver_type.is_actor_ref() {
@@ -886,7 +933,7 @@ pub fn synthesize_expression(
                 if matches!(arg, Expression::Placeholder { .. }) {
                     continue;
                 }
-                let arg_ty = synthesize_expression(db, arg, env, ctx)?;
+                let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
                 let _ = unifier.unify_type(&param.param_type, &arg_ty);
             }
             Some(unifier.apply_subst(&sig.return_type))
@@ -894,7 +941,7 @@ pub fn synthesize_expression(
         Expression::StringTemplate { parts, .. } => {
             for part in parts {
                 if let StringPart::Interpolated(expr) = part {
-                    synthesize_expression(db, expr, env, ctx);
+                    synthesize_expression(db, expr, env, ctx, constraints);
                 }
             }
             Some(RT::string())
@@ -910,6 +957,7 @@ fn synthesize_call(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     let interned_current = InternedModuleName::new(db, ctx.module_name.clone());
     let interned_fn = function.intern(db);
@@ -952,7 +1000,7 @@ fn synthesize_call(
         if matches!(arg, Expression::Placeholder { .. }) {
             continue;
         }
-        let arg_ty = synthesize_expression(db, arg, env, ctx)?;
+        let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
         ensure_or_accumulate!(
             unifier.unify_type(&param.param_type, &arg_ty).is_ok(),
             db,
@@ -990,7 +1038,7 @@ fn synthesize_call(
                     .unwrap_or(false);
                 if is_trait {
                     if let (Some(type_path), Some(trait_path)) = (type_path.clone(), bound_path) {
-                        Constraint {
+                        constraints.push(Constraint {
                             kind: ConstraintKind::TraitBound {
                                 type_path,
                                 trait_path,
@@ -1000,11 +1048,10 @@ fn synthesize_call(
                             },
                             span,
                             file_id: ctx.file_id,
-                        }
-                        .accumulate(db);
+                        });
                     }
                 } else if let Some(bound_type) = resolve(db, bound, env, span, ctx) {
-                    Constraint {
+                    constraints.push(Constraint {
                         kind: ConstraintKind::TypeBound {
                             caller: ctx.module_name.to_string(),
                             callee: function.to_string(),
@@ -1017,15 +1064,14 @@ fn synthesize_call(
                         },
                         span,
                         file_id: ctx.file_id,
-                    }
-                    .accumulate(db);
+                    });
                 }
             }
         }
     }
     for tp in &sig.type_params {
         if let Some(resolved_ty) = unifier.get(&tp.name) {
-            Constraint {
+            constraints.push(Constraint {
                 kind: ConstraintKind::Unify {
                     call_site: span.start,
                     var: tp.name.clone(),
@@ -1033,8 +1079,7 @@ fn synthesize_call(
                 },
                 span,
                 file_id: ctx.file_id,
-            }
-            .accumulate(db);
+            });
         }
     }
     Some(unifier.apply_subst(&sig.return_type))
@@ -1046,6 +1091,7 @@ fn synthesize_list_literal(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     ensure_or_accumulate!(
         !elements.is_empty(),
@@ -1057,9 +1103,9 @@ fn synthesize_list_literal(
             file_id: ctx.file_id,
         }
     );
-    let first_type = synthesize_expression(db, &elements[0], env, ctx)?;
+    let first_type = synthesize_expression(db, &elements[0], env, ctx, constraints)?;
     for elem in elements.iter().skip(1) {
-        check_expression(db, elem, &first_type, env, ctx)?;
+        check_expression(db, elem, &first_type, env, ctx, constraints)?;
     }
     Some(RT::list(first_type))
 }
@@ -1070,6 +1116,7 @@ fn synthesize_select(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     ensure_or_accumulate!(
         !clauses.is_empty(),
@@ -1082,14 +1129,22 @@ fn synthesize_select(
         }
     );
     let first = &clauses[0];
-    let first_type = synthesize_expression(db, &first.expression_to_run, env, ctx)?;
+    let first_type = synthesize_expression(db, &first.expression_to_run, env, ctx, constraints)?;
     for (i, clause) in clauses.iter().enumerate().skip(1) {
         ensure_or_accumulate!(
-            check_expression(db, &clause.expression_to_run, &first_type, env, ctx).is_some(),
+            check_expression(
+                db,
+                &clause.expression_to_run,
+                &first_type,
+                env,
+                ctx,
+                constraints
+            )
+            .is_some(),
             db,
             TypeError::SelectBranchTypeMismatch {
                 expected: first_type.name(),
-                found: synthesize_expression(db, &clause.expression_to_run, env, ctx)
+                found: synthesize_expression(db, &clause.expression_to_run, env, ctx, constraints)
                     .map(|t| t.name())
                     .unwrap_or_default(),
                 branch_index: i,
@@ -1110,11 +1165,12 @@ fn synthesize_if_else(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     let _ = span;
-    check_boolean_condition(db, condition, env, ctx)?;
-    let then_type = synthesize_expression(db, then_expr, env, ctx)?;
-    check_expression(db, else_expr, &then_type, env, ctx)?;
+    check_boolean_condition(db, condition, env, ctx, constraints)?;
+    let then_type = synthesize_expression(db, then_expr, env, ctx, constraints)?;
+    check_expression(db, else_expr, &then_type, env, ctx, constraints)?;
     Some(then_type)
 }
 
@@ -1125,6 +1181,7 @@ fn synthesize_struct_literal(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
     let (definition, type_params) = get_struct_fields(db, struct_name, ctx.module_name)
         .or_accumulate(
@@ -1163,7 +1220,7 @@ fn synthesize_struct_literal(
                 },
             )?;
         let declared_type = resolve(db, &declared_ast_type, &type_env, value_expr.span(), ctx)?;
-        let value_type = synthesize_expression(db, value_expr, env, ctx)?;
+        let value_type = synthesize_expression(db, value_expr, env, ctx, constraints)?;
         ensure_or_accumulate!(
             unifier.unify_type(&declared_type, &value_type).is_ok(),
             db,
@@ -1219,8 +1276,9 @@ fn synthesize_field_access(
     span: Span,
     env: &TypeEnvironment,
     ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
 ) -> Option<RT> {
-    let base_type = synthesize_expression(db, base, env, ctx)?;
+    let base_type = synthesize_expression(db, base, env, ctx, constraints)?;
     match base_type {
         RT::Named(type_name) => {
             let (definition, type_params) =

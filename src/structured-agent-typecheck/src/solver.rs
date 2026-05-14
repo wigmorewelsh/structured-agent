@@ -5,7 +5,7 @@ use structured_agent_ast::CheckerAstRef;
 use structured_agent_runtime::Type;
 use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
 
-use crate::db::{ProgramInput, TypeCheckDatabase, check_program};
+use crate::db::{ProgramInput, TypeCheckDatabase, check_module};
 use crate::{TypeError, TypeErrorAccumulator};
 use structured_agent_ast::types::Span;
 
@@ -38,12 +38,16 @@ pub enum ConstraintKind {
     },
 }
 
-#[salsa::accumulator]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Constraint {
     pub kind: ConstraintKind,
     pub span: Span,
     pub file_id: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckResult {
+    pub constraints: Vec<Constraint>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,7 +60,11 @@ pub struct SolvedConstraints {
 
 #[salsa::tracked]
 pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> SolvedConstraints {
-    let constraints = check_program::accumulated::<Constraint>(db, program);
+    let constraints: Vec<Constraint> = program
+        .modules(db)
+        .iter()
+        .flat_map(|parsed| check_module(db, *parsed, program).constraints)
+        .collect();
     let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
     let mut impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath> = HashMap::new();
     let mut generic_solutions: HashMap<(usize, usize), HashMap<String, Type>> = HashMap::new();

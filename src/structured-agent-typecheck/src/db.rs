@@ -3,6 +3,7 @@ use super::refs::{
 };
 use crate::TypeError;
 use crate::error::OrAccumulateError;
+use crate::solver::CheckResult;
 use structured_agent_ast::ast::{
     Definition, Module as AstModule, PathArg, PathSegment, Type as AstType, TypeParam, Use,
 };
@@ -417,7 +418,11 @@ pub fn check_program(db: &dyn TypeCheckDatabase, program: ProgramInput) {
 }
 
 #[salsa::tracked]
-pub fn check_module(db: &dyn TypeCheckDatabase, parsed: ParsedModuleInput, program: ProgramInput) {
+pub fn check_module(
+    db: &dyn TypeCheckDatabase,
+    parsed: ParsedModuleInput,
+    program: ProgramInput,
+) -> CheckResult {
     let module_name = DefinitionPath::for_module(parsed.name(db));
     let module = parsed.module(db);
     let ctx = super::CheckContext {
@@ -425,14 +430,18 @@ pub fn check_module(db: &dyn TypeCheckDatabase, parsed: ParsedModuleInput, progr
         module_name: &module_name,
         program,
     };
+    let mut result = CheckResult {
+        constraints: vec![],
+    };
     for def in module.definitions.iter().filter(|def| {
         !matches!(
             def,
             Definition::ModuleHeader { .. } | Definition::Signature(_)
         )
     }) {
-        super::synthesize::check_definition(db, def, &ctx);
+        super::synthesize::check_definition(db, def, &ctx, &mut result.constraints);
     }
+    result
 }
 
 #[salsa::tracked]

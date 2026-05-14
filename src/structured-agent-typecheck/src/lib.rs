@@ -152,12 +152,23 @@ impl TypeChecker {
     ) -> Vec<solver::Constraint> {
         self.populate_symbol_tables(modules, native_modules);
         let parsed_inputs = self.make_parsed_inputs(modules);
-        let program_input = ProgramInput::new(&self.db, parsed_inputs);
-        db::check_program(&self.db, program_input);
-        db::check_program::accumulated::<solver::Constraint>(&self.db, program_input)
-            .into_iter()
-            .cloned()
+        let program_input = ProgramInput::new(&self.db, parsed_inputs.clone());
+        parsed_inputs
+            .iter()
+            .flat_map(|&p| db::check_module(&self.db, p, program_input).constraints)
             .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_module_check_result(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> solver::CheckResult {
+        self.populate_symbol_tables(modules, native_modules);
+        let parsed_inputs = self.make_parsed_inputs(modules);
+        let program_input = ProgramInput::new(&self.db, parsed_inputs.clone());
+        db::check_module(&self.db, parsed_inputs[0], program_input)
     }
 
     #[cfg(test)]
