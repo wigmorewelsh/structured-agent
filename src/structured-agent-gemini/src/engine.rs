@@ -45,7 +45,7 @@ impl GeminiEngine {
         self
     }
 
-    pub(crate) fn expression_value_to_part(value: &ExpressionValue) -> Option<Part> {
+    pub fn expression_value_to_part(value: &ExpressionValue) -> Option<Part> {
         if let Ok(img) = value.as_image() {
             return Some(Part::inline_data(img.mime_type, STANDARD.encode(&img.data)));
         }

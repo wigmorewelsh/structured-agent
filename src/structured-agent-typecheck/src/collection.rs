@@ -39,6 +39,9 @@ impl SymbolTableBuilder {
             ("Boolean", "prelude"),
             ("String", "prelude"),
             ("Int", "prelude"),
+            ("Image", "prelude"),
+            ("Audio", "prelude"),
+            ("Link", "prelude"),
         ];
         for (name, module) in primitives {
             let type_name = DefinitionPath::for_type(

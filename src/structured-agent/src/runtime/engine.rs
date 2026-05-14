@@ -549,6 +549,9 @@ impl Runtime {
         let mut functions_to_register = Vec::new();
 
         for (name, definition) in extern_registry {
+            if self.function_registry.contains_key(name) {
+                continue;
+            }
             let matches = provider_functions.get(name).ok_or_else(|| {
                 RuntimeError::ExecutionError(format!(
                     "No provider found for extern function '{}'",
