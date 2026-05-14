@@ -3320,7 +3320,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::option(RT::string()));
+        assert_eq!(expr.ty(), &RT::union(vec![RT::string(), RT::unit()]));
     }
 
     #[test]
@@ -3368,7 +3368,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::option(RT::int()));
+        assert_eq!(expr.ty(), &RT::union(vec![RT::int(), RT::unit()]));
     }
 
     #[test]
@@ -4025,7 +4025,7 @@ mod typed_ast_tests {
             })
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
-        assert_eq!(expr.ty(), &RT::option(RT::string()));
+        assert_eq!(expr.ty(), &RT::union(vec![RT::string(), RT::unit()]));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 ## Returns the plan document reviewer guide as a string. Assign and inject with ! at the call site.
-pub fn plan_doc_reviewer(): String {
+pub fn plan_doc_review(): String {
     return '''
     # Plan Document Review
 

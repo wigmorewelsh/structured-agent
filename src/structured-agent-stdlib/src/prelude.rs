@@ -7,8 +7,8 @@ use structured_agent_runtime::{
     ExpressionValue, NativeFnPtr, Parameter, Type,
     runtime_value::{
         AudioValueFactory, BooleanValueFactory, ImageValueFactory, IntValue, IntValueFactory,
-        LinkValueFactory, ListValueFactory, OptionValueFactory, RuntimeValueFactory, StringValue,
-        StringValueFactory, UnitValueFactory,
+        LinkValueFactory, ListValueFactory, RuntimeValueFactory, StringValue, StringValueFactory,
+        UnitValueFactory,
     },
 };
 
@@ -61,7 +61,6 @@ impl Module for PreludeModule {
             Arc::new(AudioValueFactory),
             Arc::new(LinkValueFactory),
             Arc::new(ListValueFactory),
-            Arc::new(OptionValueFactory),
         ]
     }
 }

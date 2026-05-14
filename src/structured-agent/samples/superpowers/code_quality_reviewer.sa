@@ -1,6 +1,6 @@
-## Returns the code quality reviewer guide as a string. Assign and inject with ! at the call site.
+## Returns the code quality review guide as a string. Assign and inject with ! at the call site.
 ## Only use after spec compliance review passes.
-pub fn code_quality_reviewer(): String {
+pub fn quality_reviewer(): String {
     return '''
     # Code Quality Review
 

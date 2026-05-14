@@ -1,15 +1,14 @@
 use super::helpers::run_program_with_unstable;
+use arrow::array::{Array, StringArray};
 
 #[tokio::test]
 async fn test_head_via_use_without_extern_fn() {
     let source = r#"
 use unstable::head
-use unstable::some_value
 
-fn main(): String {
+fn main(): Option<String> {
     let list = ["first", "second", "third"]
-    let h = head(list)
-    return some_value(h)
+    return head(list)
 }
 "#;
     let result = run_program_with_unstable(source).await;
@@ -20,47 +19,44 @@ fn main(): String {
 async fn test_tail_via_use_without_extern_fn() {
     let source = r#"
 use unstable::tail
-use unstable::head
-use unstable::some_value
 
-fn main(): String {
+fn main(): Option<List<String>> {
     let list = ["first", "second", "third"]
-    let t = tail(list)
-    let inner = some_value(t)
-    let h = head(inner)
-    return some_value(h)
+    return tail(list)
 }
 "#;
     let result = run_program_with_unstable(source).await;
-    assert_eq!(result.as_string().unwrap(), "second");
+    let arr = result.as_list().unwrap();
+    assert_eq!(arr.len(), 1);
+    let values = arr.value(0);
+    let strings = values.as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(strings.len(), 2);
+    assert_eq!(strings.value(0), "second");
+    assert_eq!(strings.value(1), "third");
 }
 
 #[tokio::test]
 async fn test_is_some_via_use_without_extern_fn() {
     let source = r#"
 use unstable::head
-use unstable::is_some
 
-fn main(): Boolean {
+fn main(): Option<String> {
     let list = ["x"]
-    let h = head(list)
-    return is_some(h)
+    return head(list)
 }
 "#;
     let result = run_program_with_unstable(source).await;
-    assert!(result.as_boolean().unwrap());
+    assert_eq!(result.type_name(), "String");
 }
 
 #[tokio::test]
 async fn test_some_value_via_use_without_extern_fn() {
     let source = r#"
 use unstable::head
-use unstable::some_value
 
-fn main(): String {
+fn main(): Option<String> {
     let list = ["extracted"]
-    let h = head(list)
-    return some_value(h)
+    return head(list)
 }
 "#;
     let result = run_program_with_unstable(source).await;
@@ -71,14 +67,12 @@ fn main(): String {
 async fn test_explicit_type_arg_on_generic_call() {
     let source = r#"
 use unstable::head
-use unstable::some_value
 
-fn first_string(list: List<String>): String {
-    let h = head<String>(list)
-    return some_value<String>(h)
+fn first_string(list: List<String>): Option<String> {
+    return head<String>(list)
 }
 
-fn main(): String {
+fn main(): Option<String> {
     let list = ["hello", "world"]
     return first_string(list)
 }
@@ -91,16 +85,14 @@ fn main(): String {
 async fn test_type_param_passed_through_call_chain() {
     let source = r#"
 use unstable::head
-use unstable::some_value
 
 fn get_first<T>(list: List<T>): Option<T> {
     return head<T>(list)
 }
 
-fn main(): String {
+fn main(): Option<String> {
     let list = ["chained", "result"]
-    let h = get_first<String>(list)
-    return some_value<String>(h)
+    return get_first<String>(list)
 }
 "#;
     let result = run_program_with_unstable(source).await;

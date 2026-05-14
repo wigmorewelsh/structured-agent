@@ -3,7 +3,7 @@ use extern_fns::list_directory
 use extern_fns::grep
 use extern_fns::write_file
 use extern_fns::execute_command
-use code_reviewer_guide::code_reviewer_guide
+use code_reviewer_guide::reviewer_guide
 use supervisor::ask_for_supervisor_help
 
 fn get_base_sha(): String {
@@ -55,7 +55,7 @@ fn fix_issues_loop(): () {
 ## Use after completing a task or feature to review the diff for spec compliance then code quality.
 ## Dispatches a focused review against the plan and loops until no critical or important issues remain.
 pub fn request_code_review(description: String, plan_or_requirements: String): String {
-    let guide = code_reviewer_guide()
+    let guide = reviewer_guide()
     guide!
     let base_sha = get_base_sha()
     let head_sha = get_head_sha()
@@ -99,7 +99,7 @@ fn is_feedback_technically_correct(): Boolean {
 ## Use when receiving code review feedback before implementing any suggestions.
 ## Clarifies all feedback first, verifies it is technically correct for this codebase, then fixes issues.
 pub fn receive_code_review(feedback: String): String {
-    let guide = code_reviewer_guide()
+    let guide = reviewer_guide()
     guide!
     '''
     You are receiving code review feedback.

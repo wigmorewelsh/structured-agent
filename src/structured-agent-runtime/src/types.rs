@@ -175,16 +175,8 @@ impl Type {
         Self::Parameterized(Self::prelude("List"), vec![inner])
     }
 
-    pub fn option(inner: Type) -> Self {
-        Self::Parameterized(Self::prelude("Option"), vec![inner])
-    }
-
     pub fn is_list(&self) -> bool {
         matches!(self, Type::Parameterized(n, _) if n.last_name() == "List")
-    }
-
-    pub fn is_option(&self) -> bool {
-        matches!(self, Type::Parameterized(n, _) if n.last_name() == "Option")
     }
 
     pub fn actor_ref(inner: Type) -> Self {

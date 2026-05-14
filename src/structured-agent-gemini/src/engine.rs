@@ -66,9 +66,6 @@ impl GeminiEngine {
             Type::Parameterized(n, _) if n.last_name() == "List" => {
                 Ok(JsonSchemaBuilder::array(JsonSchemaBuilder::string()))
             }
-            Type::Parameterized(n, args) if n.last_name() == "Option" => {
-                Self::build_value_schema(&args[0], context)
-            }
             Type::Parameterized(n, args) => {
                 let fields = context
                     .runtime()
@@ -185,14 +182,16 @@ impl GeminiEngine {
                 builder.append(true);
                 Ok(ExpressionValue::list(std::sync::Arc::new(builder.finish())))
             }
-            Type::Parameterized(n, args) if n.last_name() == "Option" => {
+            Type::Union(variants) if variants.contains(&Type::unit()) => {
                 if json_value.is_null() {
-                    Ok(ExpressionValue::option_none_with_type(
-                        context.runtime().type_to_arrow_datatype(&args[0]),
-                    ))
+                    Ok(ExpressionValue::unit())
                 } else {
-                    let inner = Self::parse_json_value(json_value, &args[0], context)?;
-                    Ok(ExpressionValue::option_some(inner))
+                    let inner = variants
+                        .iter()
+                        .find(|v| !v.is_unit())
+                        .map(|v| v.clone())
+                        .unwrap_or_else(Type::string);
+                    Self::parse_json_value(json_value, &inner, context)
                 }
             }
             Type::Named(type_name) => {
@@ -299,7 +298,9 @@ impl LanguageEngine for GeminiEngine {
         }
 
         let value_schema = Self::build_value_schema(return_type, context)?;
-        let is_required = !return_type.is_option();
+        let is_required = !return_type
+            .union_variants()
+            .map_or(false, |vs| vs.contains(&Type::unit()));
         let temperature = if return_type.is_boolean() { 0.0 } else { 0.7 };
 
         let schema = JsonSchemaBuilder::with_property(

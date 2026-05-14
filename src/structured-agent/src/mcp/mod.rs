@@ -5,7 +5,6 @@ use crate::types::{
     ExecutableFunction, ExternalFunctionDefinition, FunctionProvider, Parameter, Type,
 };
 
-use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rmcp::model::{CallToolRequestParams, RawAudioContent, RawImageContent, RawResource, Tool};
@@ -72,12 +71,6 @@ fn expression_to_json(value: &ExpressionValue) -> Value {
         }
         return Value::Object(map);
     }
-    if value.is_option() {
-        return match value.as_option() {
-            Ok(Some(inner)) => expression_to_json(&inner),
-            _ => Value::Null,
-        };
-    }
     if let Ok(elements) = value.as_list_elements() {
         return Value::Array(elements.iter().map(expression_to_json).collect());
     }
@@ -105,24 +98,6 @@ fn json_schema_to_type(schema: &Value) -> Option<Type> {
             Some(Type::list(item_type))
         }
         _ => None,
-    }
-}
-
-fn ty_to_datatype(ty: &Type) -> DataType {
-    if ty.is_string() {
-        DataType::Utf8
-    } else if ty.is_int() {
-        DataType::Int64
-    } else if ty.is_boolean() {
-        DataType::Boolean
-    } else if ty.is_unit() {
-        DataType::Null
-    } else if let Type::Parameterized(_, args) = ty
-        && let Some(inner) = args.first()
-    {
-        DataType::List(Arc::new(Field::new("item", ty_to_datatype(inner), true)))
-    } else {
-        DataType::Null
     }
 }
 
@@ -166,16 +141,15 @@ fn json_to_expression(
             .collect();
         return ExpressionValue::from_elements(elements?).map_err(McpError::ToolError);
     }
-    if ty.is_option()
-        && let Type::Parameterized(_, args) = ty
-        && let Some(inner) = args.first()
+    if let Type::Union(variants) = ty
+        && variants.contains(&Type::unit())
     {
         if json.is_null() {
-            return Ok(ExpressionValue::option_none_with_type(ty_to_datatype(
-                inner,
-            )));
+            return Ok(ExpressionValue::unit());
         }
-        return json_to_expression(json, inner, runtime).map(ExpressionValue::option_some);
+        let fallback = Type::string();
+        let inner = variants.iter().find(|v| !v.is_unit()).unwrap_or(&fallback);
+        return json_to_expression(json, inner, runtime);
     }
     if let Type::Named(path) = ty
         && let Some(fields) = runtime.get_struct(path)
@@ -758,23 +732,22 @@ mod tests {
     fn json_to_expression_option_some() {
         let result = json_to_expression(
             &serde_json::json!("x"),
-            &Type::option(Type::string()),
+            &Type::union(vec![Type::string(), Type::unit()]),
             no_struct(),
         )
         .unwrap();
-        let inner = result.as_option().unwrap().unwrap();
-        assert_eq!(inner.as_string().unwrap(), "x");
+        assert_eq!(result.as_string().unwrap(), "x");
     }
 
     #[test]
     fn json_to_expression_option_none() {
         let result = json_to_expression(
             &serde_json::Value::Null,
-            &Type::option(Type::string()),
+            &Type::union(vec![Type::string(), Type::unit()]),
             no_struct(),
         )
         .unwrap();
-        assert!(result.as_option().unwrap().is_none());
+        assert_eq!(result.type_name(), "Unit");
     }
 
     #[test]
@@ -904,24 +877,27 @@ mod tests {
 
     #[test]
     fn serialise_args_option_some_string() {
-        let opt = ExpressionValue::option_some(ExpressionValue::string("x"));
+        let opt = ExpressionValue::string("x");
         let map = serialise_args(&[("val".to_string(), opt)]);
         assert_eq!(map["val"], serde_json::json!("x"));
     }
 
     #[test]
     fn serialise_args_option_none() {
-        let opt = ExpressionValue::option_none_utf8();
+        let opt = ExpressionValue::unit();
         let map = serialise_args(&[("val".to_string(), opt)]);
         assert_eq!(map["val"], serde_json::Value::Null);
     }
 
     #[test]
     fn parse_text_content_option_some_string() {
-        let result =
-            parse_text_content("\"hello\"", &Type::option(Type::string()), no_struct()).unwrap();
-        let inner = result.as_option().unwrap().unwrap();
-        assert_eq!(inner.as_string().unwrap(), "hello");
+        let result = parse_text_content(
+            "\"hello\"",
+            &Type::union(vec![Type::string(), Type::unit()]),
+            no_struct(),
+        )
+        .unwrap();
+        assert_eq!(result.as_string().unwrap(), "hello");
     }
 
     #[test]

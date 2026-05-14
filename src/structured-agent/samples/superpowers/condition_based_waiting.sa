@@ -1,5 +1,5 @@
-## Returns the condition-based waiting technique as a string. Assign and inject with ! at the call site.
-pub fn condition_based_waiting(): String {
+## Returns the condition waiting technique as a string. Assign and inject with ! at the call site.
+pub fn condition_waiting(): String {
     return '''
     # Condition-Based Waiting
 

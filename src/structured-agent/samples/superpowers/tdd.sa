@@ -4,7 +4,7 @@ use extern_fns::list_directory
 use extern_fns::grep
 use extern_fns::execute_command
 use testing_anti_patterns::anti_patterns
-use condition_based_waiting::condition_based_waiting
+use condition_based_waiting::condition_waiting
 use supervisor::ask_for_supervisor_help
 
 fn is_all_tests_passing(): Boolean {
@@ -81,7 +81,7 @@ fn refactor_loop(): () {
 }
 
 fn refactor(changes: String): () {
-    let cbw = condition_based_waiting()
+    let cbw = condition_waiting()
     cbw!
     changes!
     "Refactor the changed code. Remove duplication, improve names. Do not change behaviour. Run tests after each change."!

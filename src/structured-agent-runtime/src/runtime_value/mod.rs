@@ -11,7 +11,6 @@ use crate::expression::ExpressionValue;
 mod list;
 mod list_iterator;
 mod media;
-mod option;
 mod primitives;
 mod struct_value;
 
@@ -20,7 +19,6 @@ pub use list_iterator::{ListIteratorValue, ListIteratorValueFactory};
 pub use media::{
     AudioValue, AudioValueFactory, ImageValue, ImageValueFactory, LinkValue, LinkValueFactory,
 };
-pub use option::{OptionValue, OptionValueFactory};
 pub use primitives::{
     BooleanValue, BooleanValueFactory, IntValue, IntValueFactory, StringValue, StringValueFactory,
     UnitValue, UnitValueFactory,
@@ -188,8 +186,11 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
             }
         }
         DataType::Union(_, _) => {
-            let arr = col.as_any().downcast_ref::<UnionArray>().expect("union");
-            ExpressionValue::Dynamic(Arc::new(OptionValue::from_union(Arc::new(arr.clone()))))
+            let union = col
+                .as_any()
+                .downcast_ref::<UnionArray>()
+                .expect("union array");
+            arrow_col_to_expression(union.value(0))
         }
         _ => ExpressionValue::unit(),
     }

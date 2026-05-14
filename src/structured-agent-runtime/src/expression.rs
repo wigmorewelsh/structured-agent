@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use crate::runtime_value::{
     AudioValue, BooleanValue, ImageValue, IntValue, LinkValue, ListIteratorValue, ListValue,
-    MetadataValue, OptionValue, RuntimeValue, StringValue, StructValue, UnitValue,
-    arrow_col_to_expression,
+    MetadataValue, RuntimeValue, StringValue, StructValue, UnitValue, arrow_col_to_expression,
 };
 use crate::symbols::{DefinitionPath, MetaData, References, SymbolQuery, TypeDefinitionKind};
 use crate::types::Type;
@@ -162,30 +161,6 @@ impl ExpressionValue {
         }
     }
 
-    pub fn option_none() -> Self {
-        Self::Dynamic(Arc::new(OptionValue::none()))
-    }
-
-    pub fn option_none_utf8() -> Self {
-        Self::Dynamic(Arc::new(OptionValue::none_utf8()))
-    }
-
-    pub fn option_none_boolean() -> Self {
-        Self::Dynamic(Arc::new(OptionValue::none_boolean()))
-    }
-
-    pub fn option_none_int64() -> Self {
-        Self::Dynamic(Arc::new(OptionValue::none_int64()))
-    }
-
-    pub fn option_none_with_type(inner_type: DataType) -> Self {
-        Self::Dynamic(Arc::new(OptionValue::none_with_type(inner_type)))
-    }
-
-    pub fn option_some(inner: ExpressionValue) -> Self {
-        Self::Dynamic(Arc::new(OptionValue::some(inner.to_arrow())))
-    }
-
     pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
         Self::Dynamic(Arc::new(MetadataValue {
             name: name.into(),
@@ -274,26 +249,6 @@ impl ExpressionValue {
         Ok((0..values.len())
             .map(|i| arrow_col_to_expression(values.slice(i, 1)))
             .collect())
-    }
-
-    pub fn as_option(&self) -> Result<Option<ExpressionValue>, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => {
-                let opt = v
-                    .as_any()
-                    .downcast_ref::<OptionValue>()
-                    .ok_or_else(|| "Expected option (union) type".to_string())?;
-                Ok(opt.inner())
-            }
-            _ => Err("Expected option (union) type".to_string()),
-        }
-    }
-
-    pub fn is_option(&self) -> bool {
-        match self {
-            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<OptionValue>().is_some(),
-            _ => false,
-        }
     }
 
     pub fn as_module(&self) -> Result<&DefinitionPath, String> {
@@ -478,7 +433,7 @@ impl std::fmt::Display for ExpressionValue {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{NullArray, UnionArray};
+    use arrow::array::NullArray;
     use arrow::datatypes::{DataType, Field, Fields};
 
     use crate::runtime_value::{RuntimeValue, RuntimeValueFactory, UnitValue};
@@ -605,11 +560,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_as_option_is_err() {
-        assert!(ExpressionValue::unit().as_option().is_err());
-    }
-
-    #[test]
     fn unit_as_metadata_is_err() {
         assert!(ExpressionValue::unit().as_metadata().is_err());
     }
@@ -658,87 +608,6 @@ mod tests {
                 .downcast_ref::<arrow::array::ListArray>()
                 .is_some()
         );
-    }
-
-    #[test]
-    fn option_none_type_name() {
-        assert_eq!(ExpressionValue::option_none().type_name(), "Option");
-    }
-
-    #[test]
-    fn option_some_type_name() {
-        assert_eq!(
-            ExpressionValue::option_some(ExpressionValue::string("hi")).type_name(),
-            "Option"
-        );
-    }
-
-    #[test]
-    fn option_none_equals_option_none() {
-        assert_eq!(
-            ExpressionValue::option_none(),
-            ExpressionValue::option_none()
-        );
-    }
-
-    #[test]
-    fn option_some_equals_option_some() {
-        let a = ExpressionValue::option_some(ExpressionValue::string("hi"));
-        let b = ExpressionValue::option_some(ExpressionValue::string("hi"));
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn option_some_not_equal_option_none() {
-        let a = ExpressionValue::option_some(ExpressionValue::string("hi"));
-        let b = ExpressionValue::option_none();
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn is_option_true_for_dynamic_option() {
-        assert!(ExpressionValue::option_none().is_option());
-        assert!(ExpressionValue::option_some(ExpressionValue::boolean(true)).is_option());
-    }
-
-    #[test]
-    fn is_option_false_for_list() {
-        let list = ExpressionValue::from_elements(vec![ExpressionValue::string("a")]).unwrap();
-        assert!(!list.is_option());
-    }
-
-    #[test]
-    fn as_option_none_returns_none() {
-        let opt = ExpressionValue::option_none().as_option().unwrap();
-        assert!(opt.is_none());
-    }
-
-    #[test]
-    fn as_option_some_returns_some() {
-        let opt = ExpressionValue::option_some(ExpressionValue::string("hi"))
-            .as_option()
-            .unwrap();
-        assert!(opt.is_some());
-    }
-
-    #[test]
-    fn option_none_utf8_has_utf8_some_schema() {
-        let opt = ExpressionValue::option_none_utf8();
-        let data = opt.to_arrow();
-        let ua = data.as_any().downcast_ref::<UnionArray>().unwrap();
-        let (_, some_field): (i8, &arrow::datatypes::FieldRef) = ua.fields().iter().nth(1).unwrap();
-        assert_eq!(some_field.data_type(), &arrow::datatypes::DataType::Utf8);
-    }
-
-    #[test]
-    fn option_list_with_typed_none_uses_concat_path() {
-        let some = ExpressionValue::option_some(ExpressionValue::string("hello"));
-        let none = ExpressionValue::option_none_utf8();
-        let list = ExpressionValue::from_elements(vec![some, none]).unwrap();
-        assert_eq!(list.type_name(), "List");
-        let arr = list.as_list().unwrap();
-        let values = arr.value(0);
-        assert_eq!(values.len(), 2);
     }
 
     #[test]

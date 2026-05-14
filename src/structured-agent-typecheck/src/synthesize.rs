@@ -196,6 +196,11 @@ pub fn resolve(
         return Some(RT::Generic(name.to_string()));
     }
 
+    if name == "Option" && args.len() == 1 {
+        let inner = resolve(db, &args[0], env, span, ctx)?;
+        return Some(RT::union(vec![inner, RT::unit()]));
+    }
+
     let type_name = resolve_type_name(db, name.as_str(), span, ctx)?;
 
     let types_table = db.symbol_tables().types(db);
@@ -314,6 +319,9 @@ impl Unifier {
                 name.clone(),
                 args.iter().map(|a| self.apply_subst(a)).collect(),
             ),
+            RT::Union(variants) => {
+                RT::union(variants.iter().map(|v| self.apply_subst(v)).collect())
+            }
             other => other.clone(),
         }
     }

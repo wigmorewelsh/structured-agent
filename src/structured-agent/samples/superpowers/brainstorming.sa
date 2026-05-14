@@ -2,7 +2,7 @@ use extern_fns::read_file
 use extern_fns::write_file
 use extern_fns::list_directory
 use extern_fns::execute_command
-use spec_doc_reviewer::spec_doc_reviewer
+use spec_doc_reviewer::spec_doc_review
 use supervisor::ask_for_supervisor_help
 
 fn explore_project_context(): String {
@@ -101,7 +101,7 @@ fn is_spec_clean(): Boolean {
 }
 
 fn spec_review_loop(spec_path: String): () {
-    let sdr = spec_doc_reviewer()
+    let sdr = spec_doc_review()
     sdr!
     let content = read_file(spec_path)
     content!

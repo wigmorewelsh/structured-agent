@@ -30,22 +30,6 @@ async fn documented() -> StringValue {
     StringValue("result".to_string())
 }
 
-#[sa_fn]
-async fn option_param(value: Option<StringValue>) -> StringValue {
-    value
-        .map(|v| StringValue(v.0))
-        .unwrap_or_else(|| StringValue("none".to_string()))
-}
-
-#[sa_fn]
-async fn option_return(flag: BooleanValue) -> Option<StringValue> {
-    if flag.0 {
-        Some(StringValue("yes".to_string()))
-    } else {
-        None
-    }
-}
-
 fn call_native_fn(
     def: &structured_agent_il::NativeFunctionDef,
 ) -> structured_agent_runtime::NativeFnPtr {
@@ -157,61 +141,4 @@ async fn test_documented_function() {
             .unwrap()
             .contains("Documented function")
     );
-}
-
-#[tokio::test]
-async fn test_option_param_some() {
-    let def = option_param_native_def();
-    let f = call_native_fn(&def);
-    let result = f
-        .call(
-            vec![ExpressionValue::option_some(ExpressionValue::string("hi"))],
-            AgentHandle::detached(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(result.as_string().unwrap(), "hi");
-}
-
-#[tokio::test]
-async fn test_option_param_none() {
-    let def = option_param_native_def();
-    let f = call_native_fn(&def);
-    let result = f
-        .call(
-            vec![ExpressionValue::option_none()],
-            AgentHandle::detached(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(result.as_string().unwrap(), "none");
-}
-
-#[tokio::test]
-async fn test_option_return_some() {
-    let def = option_return_native_def();
-    let f = call_native_fn(&def);
-    let result = f
-        .call(
-            vec![ExpressionValue::boolean(true)],
-            AgentHandle::detached(),
-        )
-        .await
-        .unwrap();
-    let inner = result.as_option().unwrap().unwrap();
-    assert_eq!(inner.as_string().unwrap(), "yes");
-}
-
-#[tokio::test]
-async fn test_option_return_none() {
-    let def = option_return_native_def();
-    let f = call_native_fn(&def);
-    let result = f
-        .call(
-            vec![ExpressionValue::boolean(false)],
-            AgentHandle::detached(),
-        )
-        .await
-        .unwrap();
-    assert!(result.as_option().unwrap().is_none());
 }

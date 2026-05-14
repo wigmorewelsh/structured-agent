@@ -1,5 +1,5 @@
-## Returns the defense-in-depth validation technique as a string. Assign and inject with ! at the call site.
-pub fn defense_in_depth(): String {
+## Returns the defense layers validation technique as a string. Assign and inject with ! at the call site.
+pub fn defense_layers(): String {
     return '''
     # Defense-in-Depth Validation
 

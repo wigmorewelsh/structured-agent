@@ -1,5 +1,5 @@
-## Returns the code reviewer guide as a string. Assign and inject with ! at the call site.
-pub fn code_reviewer_guide(): String {
+## Returns the reviewer guide as a string. Assign and inject with ! at the call site.
+pub fn reviewer_guide(): String {
     return '''
     # Code Review Guide
 

@@ -1,5 +1,5 @@
-## Returns the root cause tracing technique as a string. Assign and inject with ! at the call site.
-pub fn root_cause_tracing(): String {
+## Returns the root cause trace technique as a string. Assign and inject with ! at the call site.
+pub fn root_cause_trace(): String {
     return '''
     # Root Cause Tracing
 

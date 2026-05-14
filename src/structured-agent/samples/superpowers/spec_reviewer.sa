@@ -1,5 +1,5 @@
-## Returns the spec compliance reviewer guide as a string. Assign and inject with ! at the call site.
-pub fn spec_reviewer(): String {
+## Returns the spec compliance review guide as a string. Assign and inject with ! at the call site.
+pub fn spec_review(): String {
     return '''
     # Spec Compliance Review
 

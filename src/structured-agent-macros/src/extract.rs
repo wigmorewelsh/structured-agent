@@ -33,32 +33,6 @@ pub fn extract_value(
                 "Vec<T> where T is not a type param is not supported as an argument type",
             ))
         }
-        "Option" => {
-            let inner = generic_arg(ty)?;
-            if let Ok(inner_ident) = path_ident(inner)
-                && type_params.contains(&inner_ident.to_string())
-            {
-                return Ok(quote! { #val.as_option().map_err(|e| e.to_string())? });
-            }
-            extract_option(val, ty, type_params)
-        }
         _ => Ok(quote! { #val.downcast_clone::<#ident>().map_err(|e| e.to_string())? }),
     }
-}
-
-fn extract_option(
-    val: &TokenStream2,
-    ty: &SynType,
-    type_params: &[String],
-) -> syn::Result<TokenStream2> {
-    let inner_extract = extract_value(&quote! { __iv }, generic_arg(ty)?, type_params)?;
-    Ok(quote! {
-        {
-            let __opt = #val.as_option().map_err(|e| e.to_string())?;
-            match __opt {
-                None => None,
-                Some(__iv) => Some(#inner_extract),
-            }
-        }
-    })
 }

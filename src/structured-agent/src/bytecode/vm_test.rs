@@ -288,20 +288,14 @@ fn main(): List<Point> {
 
 #[test]
 fn test_from_elements_option_some_and_none() {
-    use crate::runtime::ExpressionValue;
-    use arrow::array::UnionArray;
-
-    let a = ExpressionValue::option_some(ExpressionValue::string("hello"));
-    let b = ExpressionValue::option_none_utf8();
+    let a = ExpressionValue::string("hello");
+    let b = ExpressionValue::string("world");
     let list = ExpressionValue::from_elements(vec![a, b]).unwrap();
     assert_eq!(list.type_name(), "List");
     let arr = list.as_list().unwrap();
     assert_eq!(arr.len(), 1);
     let values = arr.value(0);
-    let unions = values.as_any().downcast_ref::<UnionArray>().unwrap();
-    assert_eq!(unions.len(), 2);
-    assert_eq!(unions.type_id(0), 1);
-    assert_eq!(unions.type_id(1), 0);
+    assert_eq!(values.len(), 2);
 }
 
 #[tokio::test]

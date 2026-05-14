@@ -173,21 +173,7 @@ impl LanguageEngine for PrintEngine {
         if return_type.is_int() {
             return Ok((ExpressionValue::integer(0), None));
         }
-        match return_type {
-            Type::Parameterized(n, args) => {
-                if n.last_name() == "Option" {
-                    Ok((
-                        ExpressionValue::option_none_with_type(
-                            context.runtime().type_to_arrow_datatype(&args[0]),
-                        ),
-                        None,
-                    ))
-                } else {
-                    Ok((ExpressionValue::unit(), None))
-                }
-            }
-            _ => Ok((ExpressionValue::unit(), None)),
-        }
+        Ok((ExpressionValue::unit(), None))
     }
 }
 

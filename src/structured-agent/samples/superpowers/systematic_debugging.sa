@@ -3,8 +3,8 @@ use extern_fns::list_directory
 use extern_fns::grep
 use extern_fns::write_file
 use extern_fns::execute_command
-use root_cause_tracing::root_cause_tracing
-use defense_in_depth::defense_in_depth
+use root_cause_tracing::root_cause_trace
+use defense_in_depth::defense_layers
 use supervisor::ask_for_supervisor_help
 
 fn is_root_cause_found(): Boolean {
@@ -24,7 +24,7 @@ fn is_fix_stuck(): Boolean {
 }
 
 fn phase1_investigate_loop(): String {
-    let rct = root_cause_tracing()
+    let rct = root_cause_trace()
     rct!
     let action = select {
         read_file(_),
@@ -65,7 +65,7 @@ fn phase3_form_hypothesis(root_cause: String, pattern: String): String {
 }
 
 fn phase4_fix_loop(hypothesis: String): () {
-    let did = defense_in_depth()
+    let did = defense_layers()
     did!
     hypothesis!
     let action = select {
