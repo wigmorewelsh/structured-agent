@@ -1,9 +1,11 @@
 use crate::error::GeminiResult;
 use crate::types::GenerationConfig;
 use crate::types::JsonSchemaBuilder;
+use crate::types::Part;
 use crate::types::ThinkingConfig;
 use crate::{ChatMessage, GeminiClient, GeminiConfig, ModelName};
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use schemars::schema::SchemaObject;
 use std::time::Instant;
 
@@ -41,6 +43,20 @@ impl GeminiEngine {
     pub fn with_model(mut self, model: ModelName) -> Self {
         self.model = model;
         self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn expression_value_to_part(value: &ExpressionValue) -> Option<Part> {
+        if let Ok(img) = value.as_image() {
+            return Some(Part::inline_data(img.mime_type, STANDARD.encode(&img.data)));
+        }
+        if let Ok(aud) = value.as_audio() {
+            return Some(Part::inline_data(aud.mime_type, STANDARD.encode(&aud.data)));
+        }
+        if let Ok(lnk) = value.as_link() {
+            return Some(Part::file_data(lnk.uri, None));
+        }
+        None
     }
 
     fn build_value_schema(value_type: &Type, context: &Context) -> Result<SchemaObject, String> {
@@ -539,5 +555,38 @@ mod tests {
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             7
         );
+    }
+
+    #[test]
+    fn image_expression_value_maps_to_gemini_inline_data_part() {
+        let value = ExpressionValue::image("image/png", vec![1u8, 2, 3]);
+        let part = GeminiEngine::expression_value_to_part(&value).unwrap();
+        let inline = part.inline_data.as_ref().unwrap();
+        assert_eq!(inline.mime_type, "image/png");
+        assert_eq!(inline.data, STANDARD.encode([1u8, 2, 3]));
+        assert!(part.text.is_none());
+        assert!(part.file_data.is_none());
+    }
+
+    #[test]
+    fn audio_expression_value_maps_to_gemini_inline_data_part() {
+        let value = ExpressionValue::audio("audio/mp3", vec![4u8, 5, 6]);
+        let part = GeminiEngine::expression_value_to_part(&value).unwrap();
+        let inline = part.inline_data.as_ref().unwrap();
+        assert_eq!(inline.mime_type, "audio/mp3");
+        assert_eq!(inline.data, STANDARD.encode([4u8, 5, 6]));
+        assert!(part.text.is_none());
+        assert!(part.file_data.is_none());
+    }
+
+    #[test]
+    fn link_expression_value_maps_to_gemini_file_data_part() {
+        let value = ExpressionValue::link("https://example.com/file.pdf", None);
+        let part = GeminiEngine::expression_value_to_part(&value).unwrap();
+        let fd = part.file_data.as_ref().unwrap();
+        assert_eq!(fd.file_uri, "https://example.com/file.pdf");
+        assert!(fd.mime_type.is_none());
+        assert!(part.text.is_none());
+        assert!(part.inline_data.is_none());
     }
 }

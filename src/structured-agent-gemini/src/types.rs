@@ -54,6 +54,8 @@ pub struct ChatMessage {
     pub metadata: Option<HashMap<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought_signature: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extra_parts: Vec<Part>,
 }
 
 impl ChatMessage {
@@ -63,6 +65,7 @@ impl ChatMessage {
             content: content.into(),
             metadata: None,
             thought_signature: None,
+            extra_parts: vec![],
         }
     }
 
@@ -72,6 +75,7 @@ impl ChatMessage {
             content: content.into(),
             metadata: None,
             thought_signature: None,
+            extra_parts: vec![],
         }
     }
 
@@ -81,6 +85,7 @@ impl ChatMessage {
             content: content.into(),
             metadata: None,
             thought_signature: None,
+            extra_parts: vec![],
         }
     }
 
@@ -95,7 +100,13 @@ impl ChatMessage {
             content: content.into(),
             metadata: None,
             thought_signature,
+            extra_parts: vec![],
         }
+    }
+
+    pub fn with_extra_part(mut self, part: Part) -> Self {
+        self.extra_parts.push(part);
+        self
     }
 }
 
@@ -395,6 +406,21 @@ pub struct StreamingResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InlineData {
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileData {
+    #[serde(rename = "fileUri")]
+    pub file_uri: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "mimeType")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Part {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -402,6 +428,10 @@ pub struct Part {
     pub thought: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "thoughtSignature")]
     pub thought_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "inlineData")]
+    pub inline_data: Option<InlineData>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "fileData")]
+    pub file_data: Option<FileData>,
 }
 
 impl Part {
@@ -410,6 +440,8 @@ impl Part {
             text: Some(content.into()),
             thought: None,
             thought_signature: None,
+            inline_data: None,
+            file_data: None,
         }
     }
 
@@ -418,6 +450,34 @@ impl Part {
             text: None,
             thought: Some(true),
             thought_signature: Some(signature.into()),
+            inline_data: None,
+            file_data: None,
+        }
+    }
+
+    pub fn inline_data(mime_type: impl Into<String>, data: impl Into<String>) -> Self {
+        Self {
+            text: None,
+            thought: None,
+            thought_signature: None,
+            inline_data: Some(InlineData {
+                mime_type: mime_type.into(),
+                data: data.into(),
+            }),
+            file_data: None,
+        }
+    }
+
+    pub fn file_data(file_uri: impl Into<String>, mime_type: Option<String>) -> Self {
+        Self {
+            text: None,
+            thought: None,
+            thought_signature: None,
+            inline_data: None,
+            file_data: Some(FileData {
+                file_uri: file_uri.into(),
+                mime_type,
+            }),
         }
     }
 }
@@ -536,7 +596,7 @@ impl From<&ChatRequest> for GeminiApiRequest {
                     Role::System => "user",
                 };
 
-                let parts = if matches!(msg.role, Role::Model) {
+                let mut parts = if matches!(msg.role, Role::Model) {
                     if let Some(sig) = &msg.thought_signature {
                         vec![Part::thought_signature(sig.clone())]
                     } else {
@@ -545,6 +605,7 @@ impl From<&ChatRequest> for GeminiApiRequest {
                 } else {
                     vec![Part::text(msg.content.clone())]
                 };
+                parts.extend(msg.extra_parts.iter().cloned());
 
                 Content {
                     role: role.to_string(),

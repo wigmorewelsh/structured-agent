@@ -3438,6 +3438,7 @@ version = "0.1.0"
 dependencies = [
  "arrow",
  "async-trait",
+ "base64 0.22.1",
  "metrics",
  "nonempty",
  "reqwest 0.11.27",
