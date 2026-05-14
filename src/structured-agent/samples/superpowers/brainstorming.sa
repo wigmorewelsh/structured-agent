@@ -1,0 +1,149 @@
+mod brainstorming
+
+use extern_fns::read_file
+use extern_fns::write_file
+use extern_fns::list_directory
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn explore_project_context(): String {
+    let readme = read_file("README.md")
+    let claude_md = read_file("CLAUDE.md")
+    let copilot = read_file(".github/copilot-instructions.md")
+    readme!
+    claude_md!
+    copilot!
+    "Summarize the project: what it does, its tech stack, and its major components."!
+}
+
+fn is_design_understood(): Boolean {
+    "Do you have enough information to propose 2-3 concrete implementation approaches with trade-offs?"!
+}
+
+fn ask_clarifying_question(context: String): String {
+    context!
+    '''
+    Ask one clarifying question about the idea to better understand requirements.
+    Prefer multiple-choice when possible. Ask only one question at a time.
+    '''!
+}
+
+fn propose_approaches(context: String): String {
+    context!
+    '''
+    Propose 2-3 distinct approaches for implementing this feature.
+    For each: describe the approach, its trade-offs, and your recommendation.
+    '''!
+}
+
+fn clarify_loop(context: String): String {
+    if is_design_understood() {
+        return propose_approaches(context)
+    } else {
+        let question = ask_clarifying_question(context)
+        let answer = ask_for_supervisor_help(question)
+        answer!
+        return clarify_loop(answer)
+    }
+}
+
+fn present_design_section(section_topic: String): String {
+    section_topic!
+    "Present this section of the design clearly. Be specific about behaviour, interfaces, and constraints."!
+}
+
+fn is_section_approved(): Boolean {
+    "Did the user approve this design section without requesting changes?"!
+}
+
+fn revise_design_section(section: String, feedback: String): String {
+    section!
+    feedback!
+    "Revise the design section based on the feedback."!
+}
+
+fn design_section_loop(section_topic: String): String {
+    let section = present_design_section(section_topic)
+    let approved = is_section_approved()
+    if approved {
+        return section
+    } else {
+        let feedback = ask_for_supervisor_help("What changes would you like to this section?")
+        let revised = revise_design_section(section, feedback)
+        revised!
+        return design_section_loop(section_topic)
+    }
+}
+
+fn generate_design_sections(context: String): List<String> {
+    context!
+    "Break this design into logical sections for incremental review. Return one section topic per line."!
+}
+
+fn merge_sections(accumulated: String, section: String): String {
+    accumulated!
+    section!
+    "Combine the accumulated design with the new section into a coherent document."!
+}
+
+fn write_design_doc(design: String, topic: String): String {
+    let path = "docs/superpowers/specs/${topic}-design.md"
+    write_file(path, design)
+    execute_command("git add -A")
+    execute_command("git commit -m \"docs: add design spec for ${topic}\"")
+    return path
+}
+
+fn is_spec_clean(): Boolean {
+    '''
+    Review the current spec for: placeholders (TBD/TODO), contradictions, ambiguities, and scope creep.
+    Is the spec free of all these issues?
+    '''!
+}
+
+fn spec_review_loop(spec_path: String): () {
+    let content = read_file(spec_path)
+    content!
+    if is_spec_clean() {
+        return ()
+    } else {
+        "Fix the issues found in the spec inline."!
+        let updated = read_file(spec_path)
+        write_file(spec_path, updated)
+        return spec_review_loop(spec_path)
+    }
+}
+
+## Use before any feature work. Explores the idea through clarifying questions, proposes approaches,
+## presents design sections for approval, writes and self-reviews the spec, then hands off to write_plans.
+pub fn brainstorm(idea: String): String {
+    '''
+    You are running the brainstorming skill.
+    Do NOT write any code or take any implementation action until the user approves the design.
+    Every project needs a design, no matter how simple.
+    '''!
+    idea!
+
+    let project_summary = explore_project_context()
+    project_summary!
+
+    let approaches = clarify_loop(idea)
+    let choice = ask_for_supervisor_help(approaches)
+    choice!
+
+    let sections = generate_design_sections(choice)
+    let full_design = ""
+
+    for section in sections.iter() {
+        let approved_section = design_section_loop(section)
+        full_design = merge_sections(full_design, approved_section)
+    }
+
+    let spec_path = write_design_doc(full_design, idea)
+    spec_review_loop(spec_path)
+
+    let user_review = ask_for_supervisor_help("Spec written and committed to ${spec_path}. Please review it and let me know if you want any changes before we write the implementation plan.")
+    user_review!
+
+    return spec_path
+}

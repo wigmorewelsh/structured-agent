@@ -808,6 +808,7 @@ fn convert_type_kind(
             witness_ref: WitnessTable::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+        TypeDefinitionKind::Alias { .. } => TypeDefinitionKind::Primitive,
         TypeDefinitionKind::Native {
             generic_parameters,
             factory,

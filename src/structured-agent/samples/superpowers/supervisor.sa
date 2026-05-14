@@ -1,0 +1,11 @@
+mod supervisor
+
+use ::io::print
+use ::messaging::receive
+
+## Use when blocked, uncertain, or needing human input to proceed. Prints the context and waits for a response.
+pub fn ask_for_supervisor_help(context: String): String {
+    print(context)
+    let response = receive()
+    return response
+}

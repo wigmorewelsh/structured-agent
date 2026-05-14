@@ -1,0 +1,34 @@
+mod verification
+
+use extern_fns::execute_command
+
+fn identify_verification_command(claim: String): String {
+    claim!
+    "What is the exact command that proves or disproves this claim? Return only the command."!
+}
+
+fn is_claim_verified(claim: String, output: String): Boolean {
+    claim!
+    output!
+    "Does this output confirm the claim? Check exit codes, failure counts, and error messages."!
+}
+
+## Use before claiming any work is complete, fixed, or passing. Runs a fresh verification command and returns evidence.
+## Never rely on a previous run. No completion claims without proof.
+pub fn verify(claim: String): String {
+    '''
+    The iron law: NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION.
+    Run the verification command now. Do not rely on previous runs.
+    '''!
+    claim!
+
+    let command = identify_verification_command(claim)
+    let output = execute_command(command)
+    output!
+
+    if is_claim_verified(claim, output) {
+        return "Verified: ${claim}"
+    } else {
+        return "Not verified: ${claim}. Evidence: ${output}"
+    }
+}

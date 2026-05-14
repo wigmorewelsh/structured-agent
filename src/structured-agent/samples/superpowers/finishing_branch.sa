@@ -1,0 +1,115 @@
+mod finishing_branch
+
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn is_all_tests_passing(): Boolean {
+    let action = select {
+        execute_command(_)
+    }
+    action!
+    "Run the full test suite. Are all tests passing with no failures?"!
+}
+
+fn detect_environment(): String {
+    let git_dir = execute_command("git rev-parse --git-dir")
+    let git_common = execute_command("git rev-parse --git-common-dir")
+    let branch = execute_command("git branch --show-current")
+    git_dir!
+    git_common!
+    branch!
+    "Describe the workspace: normal repo, linked worktree on named branch, or linked worktree in detached HEAD?"!
+}
+
+fn determine_base_branch(): String {
+    let branches = execute_command("git branch -a")
+    branches!
+    "Identify the appropriate base branch to merge or PR into (main, master, develop, etc)."!
+}
+
+fn chose_merge(): Boolean {
+    "Did the user choose to merge locally into the base branch?"!
+}
+
+fn chose_pr(): Boolean {
+    "Did the user choose to create a pull request?"!
+}
+
+fn chose_discard(): Boolean {
+    "Did the user choose to discard all changes on this branch?"!
+}
+
+fn user_confirmed_discard(): Boolean {
+    "Did the user type the word 'discard' to confirm they want to permanently delete this work?"!
+}
+
+fn do_merge(base_branch: String): () {
+    let action = select {
+        execute_command(_)
+    }
+    action!
+    "Merge the current branch into ${base_branch}. Then remove the worktree if one exists and run git worktree prune."!
+}
+
+fn do_pr(base_branch: String): () {
+    let action = select {
+        execute_command(_)
+    }
+    action!
+    "Push the current branch to origin and provide a pull request description summarising the changes."!
+}
+
+fn do_discard(branch: String): () {
+    let confirmation = ask_for_supervisor_help("Type 'discard' to permanently delete all changes on branch ${branch}:")
+    confirmation!
+    if user_confirmed_discard() {
+        let action = select {
+            execute_command(_)
+        }
+        action!
+        "Switch to the base branch, force-delete branch ${branch}, and run git worktree prune."!
+    } else {
+        let guidance = ask_for_supervisor_help("Discard cancelled. What would you like to do instead?")
+        guidance!
+    }
+}
+
+## Use when implementation is complete and all tests pass, to integrate the work.
+## Verifies tests, detects workspace state, then presents options: merge, PR, keep, or discard.
+pub fn finish_branch(context: String): String {
+    '''
+    You are finishing a development branch.
+    Core principle: verify tests first, detect environment, then present options.
+    Never merge or delete without verification.
+    '''!
+    context!
+
+    if is_all_tests_passing() {
+        let env = detect_environment()
+        env!
+        let base_branch = determine_base_branch()
+        let branch = execute_command("git branch --show-current")
+
+        let choice = ask_for_supervisor_help("All tests passing. Choose how to complete this branch:\n\n1. Merge locally into ${base_branch}\n2. Create a pull request\n3. Keep branch as-is for later\n4. Discard all changes (requires typing 'discard')")
+        choice!
+
+        if chose_merge() {
+            do_merge(base_branch)
+            return "Branch merged into ${base_branch} and workspace cleaned up."
+        } else {
+            if chose_pr() {
+                do_pr(base_branch)
+                return "Branch pushed and pull request prepared against ${base_branch}."
+            } else {
+                if chose_discard() {
+                    do_discard(branch)
+                    return "Branch discarded."
+                } else {
+                    return "Branch kept as-is at ${branch}."
+                }
+            }
+        }
+    } else {
+        return ask_for_supervisor_help("Tests are failing. Fix them before completing the branch:")
+    }
+}

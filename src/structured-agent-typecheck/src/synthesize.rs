@@ -216,6 +216,7 @@ pub fn resolve(
         {
             Some(RT::Named(type_name))
         }
+        TypeDefinitionKind::Alias { ty } => resolve(db, ty, env, span, ctx),
         TypeDefinitionKind::Native { .. } => {
             let inner_rt = resolve(db, &args[0], env, span, ctx)?;
             Some(RT::Parameterized(type_name, vec![inner_rt]))
@@ -345,7 +346,7 @@ pub fn check_definition(
             }
             Some(())
         }
-        Definition::Use(_) | Definition::Trait(_) => Some(()),
+        Definition::Use(_) | Definition::Trait(_) | Definition::TypeAlias { .. } => Some(()),
         Definition::TraitImpl(t) => {
             let impls = db.symbol_tables().impls(db);
             let impl_entry = impls

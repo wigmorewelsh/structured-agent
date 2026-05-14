@@ -37,6 +37,7 @@ impl UnusedReturnValueAnalyzer {
                 | Definition::Signature(_)
                 | Definition::Trait(_)
                 | Definition::TraitImpl(_)
+                | Definition::TypeAlias { .. }
                 | Definition::InlineModule { .. } => {}
             }
         }

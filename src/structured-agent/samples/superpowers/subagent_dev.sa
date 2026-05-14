@@ -1,0 +1,121 @@
+mod subagent_dev
+
+use extern_fns::read_file
+use extern_fns::write_file
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn extract_tasks(plan: String): List<String> {
+    plan!
+    "Extract the ordered list of tasks from this plan. Return one task description per line."!
+}
+
+fn prepare_task_context(task: String, plan: String, scene: String): String {
+    scene!
+    plan!
+    task!
+    '''
+    Summarize the complete, self-contained context a subagent needs to implement this task.
+    Include: what to build, relevant file paths, types and function signatures, what tests to write.
+    The subagent will not read the plan file - provide everything it needs here.
+    '''!
+}
+
+fn is_task_blocked(): Boolean {
+    "Is this task blocked by something that cannot be resolved without supervisor input?"!
+}
+
+fn is_spec_compliant(task: String): Boolean {
+    task!
+    "Does the implementation fully satisfy every requirement in the task specification?"!
+}
+
+fn is_code_quality_acceptable(): Boolean {
+    '''
+    Is the code well-structured, free of duplication, following project conventions,
+    and with no obvious smells?
+    '''!
+}
+
+fn run_task_subagent(context: String): String {
+    context!
+    '''
+    You are a subagent implementing one task using strict TDD.
+    Work only on what is described. Do not modify unrelated code.
+    Use red-green-refactor. Commit when all tests pass.
+    Self-review your work before reporting completion.
+    '''!
+    let action = select {
+        read_file(_),
+        write_file(_, _),
+        execute_command(_)
+    }
+    action!
+    return "Task implementation complete"
+}
+
+fn spec_review_loop(task: String): () {
+    if is_spec_compliant(task) {
+        return ()
+    } else {
+        task!
+        "Fix the spec compliance issues before proceeding."!
+        return spec_review_loop(task)
+    }
+}
+
+fn quality_review_loop(): () {
+    if is_code_quality_acceptable() {
+        return ()
+    } else {
+        "Fix the code quality issues identified."!
+        return quality_review_loop()
+    }
+}
+
+fn execute_task(task: String, plan: String, scene: String): String {
+    let context = prepare_task_context(task, plan, scene)
+    let result = run_task_subagent(context)
+    result!
+
+    if is_task_blocked() {
+        let guidance = ask_for_supervisor_help("Task is blocked. Supervisor input needed:")
+        guidance!
+    }
+
+    spec_review_loop(task)
+    quality_review_loop()
+
+    return result
+}
+
+fn update_progress(progress: String, task_result: String): String {
+    progress!
+    task_result!
+    "Update the progress summary with the completed task result. Keep it concise."!
+}
+
+## Use to execute an implementation plan in this session with one subagent per task.
+## Each task gets a spec compliance review then a code quality review before moving on. Does not pause between tasks.
+pub fn subagent_driven_dev(plan_path: String): String {
+    '''
+    You are orchestrating subagent-driven development.
+    Dispatch one subagent per task. Do not pause between tasks to check in.
+    Each task gets: spec compliance review first, then code quality review.
+    Only stop for: a blocked task you cannot resolve, or all tasks complete.
+    '''!
+
+    let plan = read_file(plan_path)
+    plan!
+
+    let scene = "Implementing plan from ${plan_path}"
+    let tasks = extract_tasks(plan)
+    let progress = ""
+
+    for task in tasks.iter() {
+        let result = execute_task(task, plan, scene)
+        progress = update_progress(progress, result)
+    }
+
+    return progress
+}

@@ -1,0 +1,79 @@
+mod git_worktrees
+
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn is_already_isolated(): Boolean {
+    let git_dir = execute_command("git rev-parse --git-dir")
+    let git_common = execute_command("git rev-parse --git-common-dir")
+    let superproject = execute_command("git rev-parse --show-superproject-working-tree")
+    git_dir!
+    git_common!
+    superproject!
+    "Are we already in a linked git worktree (not a submodule and not the main repo checkout)?"!
+}
+
+fn user_wants_worktree(): Boolean {
+    "Did the user confirm they want to create an isolated worktree?"!
+}
+
+fn get_worktree_base_dir(): String {
+    let local_hidden = execute_command("ls -d .worktrees")
+    let local_plain = execute_command("ls -d worktrees")
+    local_hidden!
+    local_plain!
+    "Which worktree base directory should be used? Prefer .worktrees, then worktrees, then create .worktrees."!
+}
+
+fn create_worktree(branch_name: String): String {
+    let base_dir = get_worktree_base_dir()
+    let worktree_path = "${base_dir}/${branch_name}"
+    execute_command("git worktree add ${worktree_path} -b ${branch_name}")
+    return worktree_path
+}
+
+fn run_project_setup(): () {
+    let action = select {
+        execute_command(_)
+    }
+    action!
+    "Run any project setup commands needed in this worktree (install dependencies, build, etc)."!
+}
+
+fn is_baseline_clean(): Boolean {
+    let action = select {
+        execute_command(_)
+    }
+    action!
+    "Run the full test suite. Do all baseline tests pass with no failures?"!
+}
+
+## Use before starting any feature work to ensure development happens in an isolated git worktree.
+## Detects existing isolation first, asks for consent, then creates a worktree and verifies the test baseline.
+pub fn setup_workspace(branch_name: String): String {
+    '''
+    You are setting up an isolated workspace for development.
+    Core principle: detect first, create only if needed. Never fight the harness.
+    '''!
+
+    if is_already_isolated() {
+        let branch = execute_command("git branch --show-current")
+        return "Already in isolated workspace on branch ${branch}"
+    } else {
+        let consent = ask_for_supervisor_help("Would you like me to set up an isolated worktree for this work? It keeps your current branch clean. (yes/no)")
+        consent!
+
+        if user_wants_worktree() {
+            let worktree_path = create_worktree(branch_name)
+            run_project_setup()
+
+            if is_baseline_clean() {
+                return "Isolated workspace ready at ${worktree_path} on branch ${branch_name}"
+            } else {
+                return ask_for_supervisor_help("Test baseline is failing in the new worktree. Please investigate before proceeding:")
+            }
+        } else {
+            return "Working in place on current branch. No worktree created."
+        }
+    }
+}

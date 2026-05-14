@@ -2384,6 +2384,47 @@ mod tests {
             result.err()
         );
     }
+
+    #[test]
+    fn test_type_alias_resolves_in_typecheck() {
+        let input = "type Media = Image | Audio\nfn f(x: Media): String { return \"ok\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "type alias should type-check: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_overlapping_aliases_normalise() {
+        let input = concat!(
+            "type Media = Image | Audio\n",
+            "type AV = Audio | Link\n",
+            "type Mixed = Media | AV\n",
+            "fn f(x: Mixed): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "overlapping aliases should type-check: {:?}",
+            result.err()
+        );
+    }
 }
 
 #[cfg(test)]

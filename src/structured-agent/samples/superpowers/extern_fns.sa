@@ -1,0 +1,8 @@
+mod extern_fns
+
+pub extern fn read_file(path: String): String
+pub extern fn write_file(path: String, content: String): String
+pub extern fn list_directory(path: String): String
+pub extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
+pub extern fn execute_command(command: String): String
+pub extern fn copy_path(source_path: String, destination_path: String): String

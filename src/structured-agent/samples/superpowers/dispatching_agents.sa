@@ -1,0 +1,91 @@
+mod dispatching_agents
+
+use extern_fns::read_file
+use extern_fns::list_directory
+use extern_fns::grep
+use extern_fns::write_file
+use extern_fns::execute_command
+
+fn identify_independent_domains(problem_description: String): List<String> {
+    problem_description!
+    '''
+    Identify the independent problem domains in this problem.
+    Each domain must be resolvable without context from the others.
+    Group related failures together. Return one domain description per line.
+    '''!
+}
+
+fn prepare_agent_context(domain: String, problem_description: String): String {
+    problem_description!
+    domain!
+    '''
+    Write the complete, self-contained context for an agent working only on this domain.
+    Include: what is broken, relevant file paths, what success looks like.
+    The agent will have no other context - everything it needs must be here.
+    '''!
+}
+
+fn is_domain_resolved(): Boolean {
+    "Is the problem domain fully investigated, fixed, and verified with passing tests?"!
+}
+
+fn run_agent_loop(): () {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        write_file(_, _),
+        execute_command(_)
+    }
+    action!
+
+    if is_domain_resolved() {
+        return ()
+    } else {
+        return run_agent_loop()
+    }
+}
+
+fn run_agent(context: String): String {
+    context!
+    '''
+    You are a focused agent working on one independent problem domain.
+    Use systematic debugging: find root cause before fixing.
+    Verify your fix with a failing-then-passing test before completing.
+    '''!
+    run_agent_loop()
+    return "Summarize what was found and fixed in this domain."!
+}
+
+fn update_results(results: String, domain_result: String): String {
+    results!
+    domain_result!
+    "Append the domain result to the running results summary."!
+}
+
+fn synthesize_results(results: String): String {
+    results!
+    "Synthesize all domain results into a cohesive summary. Note any inter-domain effects discovered."!
+}
+
+## Use when facing multiple independent failures or problem domains that can be investigated without shared context.
+## Splits the problem into isolated domains and runs a focused agent on each in turn.
+pub fn dispatch_agents(problem_description: String): String {
+    '''
+    You are dispatching focused agents to independent problem domains.
+    Each agent gets isolated context. Never mix context between domains.
+    Domains are executed sequentially - each agent works on one domain completely before the next begins.
+    '''!
+    problem_description!
+
+    let domains = identify_independent_domains(problem_description)
+    let results = ""
+
+    for domain in domains.iter() {
+        let context = prepare_agent_context(domain, problem_description)
+        let result = run_agent(context)
+        results = update_results(results, result)
+    }
+
+    return synthesize_results(results)
+}

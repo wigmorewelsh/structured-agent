@@ -1,0 +1,86 @@
+mod executing_plans
+
+use extern_fns::read_file
+use extern_fns::write_file
+use extern_fns::list_directory
+use extern_fns::grep
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn is_plan_valid(): Boolean {
+    "Is the plan clear, complete, and executable without unresolved blockers or ambiguities?"!
+}
+
+fn is_task_complete(): Boolean {
+    "Is the current task fully implemented with all specified verifications passing?"!
+}
+
+fn is_execution_blocked(): Boolean {
+    "Is execution blocked by a missing dependency, unclear instruction, or repeated verification failure?"!
+}
+
+fn extract_tasks(plan: String): List<String> {
+    plan!
+    "Extract the ordered list of tasks from this plan. Return one task description per line."!
+}
+
+fn execute_task_loop(task: String): String {
+    task!
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        write_file(_, _),
+        execute_command(_)
+    }
+    action!
+
+    if is_execution_blocked() {
+        return ask_for_supervisor_help("Execution blocked on task. Please help resolve:")
+    }
+
+    if is_task_complete() {
+        return "Task complete: ${task}"
+    } else {
+        return execute_task_loop(task)
+    }
+}
+
+fn update_progress(progress: String, task_result: String): String {
+    progress!
+    task_result!
+    "Update the progress summary with the completed task."!
+}
+
+fn summarize_execution(progress: String): String {
+    progress!
+    "Summarize all completed tasks, files changed, and final test status."!
+}
+
+## Use to execute an implementation plan inline in the current session with human checkpoints.
+## Alternative to subagent_driven_dev when subagents are not available or the plan is tightly sequential.
+pub fn execute_plans(plan_path: String): String {
+    '''
+    You are executing an implementation plan. Follow each task exactly as written.
+    Do not skip verifications. Stop and ask the supervisor if blocked.
+    '''!
+
+    let plan = read_file(plan_path)
+    plan!
+
+    if is_plan_valid() {
+        let tasks = extract_tasks(plan)
+        let progress = ""
+
+        for task in tasks.iter() {
+            let result = execute_task_loop(task)
+            progress = update_progress(progress, result)
+        }
+
+        return summarize_execution(progress)
+    } else {
+        let guidance = ask_for_supervisor_help("Plan has issues that need resolving before execution can begin:")
+        guidance!
+        return execute_plans(plan_path)
+    }
+}

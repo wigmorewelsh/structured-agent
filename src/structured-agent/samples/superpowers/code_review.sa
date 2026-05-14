@@ -1,0 +1,121 @@
+mod code_review
+
+use extern_fns::read_file
+use extern_fns::list_directory
+use extern_fns::grep
+use extern_fns::write_file
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn get_base_sha(): String {
+    return execute_command("git rev-parse HEAD~1")
+}
+
+fn get_head_sha(): String {
+    return execute_command("git rev-parse HEAD")
+}
+
+fn is_review_approved(): Boolean {
+    "Does the current review show no critical or important issues?"!
+}
+
+fn has_issues_to_fix(): Boolean {
+    "Are there critical or important issues in the review that must be fixed before proceeding?"!
+}
+
+fn review_loop(): String {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _)
+    }
+    action!
+
+    if is_review_approved() {
+        return "Summarize the review outcome and any minor issues noted for later."!
+    } else {
+        return review_loop()
+    }
+}
+
+fn fix_issues_loop(): () {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        write_file(_, _),
+        execute_command(_)
+    }
+    action!
+
+    if is_review_approved() {
+        return ()
+    } else {
+        return fix_issues_loop()
+    }
+}
+
+## Use after completing a task or feature to review the diff for spec compliance then code quality.
+## Dispatches a focused review against the plan and loops until no critical or important issues remain.
+pub fn request_code_review(description: String, plan_or_requirements: String): String {
+    let base_sha = get_base_sha()
+    let head_sha = get_head_sha()
+    let diff = execute_command("git diff ${base_sha} ${head_sha}")
+
+    '''
+    You are a code reviewer. Review the following diff against the plan.
+    First check spec compliance: does the implementation match every requirement?
+    Then check code quality: is the code well-structured, free of duplication, following project conventions?
+    Report issues by severity: Critical (blocks progress), Important (fix before merging), Minor (note for later).
+    '''!
+    description!
+    plan_or_requirements!
+    diff!
+
+    return review_loop()
+}
+
+fn is_feedback_understood(): Boolean {
+    "Do you fully understand every item in the feedback before implementing any changes?"!
+}
+
+fn clarify_feedback_loop(feedback: String): () {
+    feedback!
+    if is_feedback_understood() {
+        return ()
+    } else {
+        let clarification = ask_for_supervisor_help("Some review feedback is unclear. Please clarify before I proceed:")
+        clarification!
+        return clarify_feedback_loop(feedback)
+    }
+}
+
+fn is_feedback_technically_correct(): Boolean {
+    '''
+    Is this feedback technically correct for this specific codebase?
+    Verify against the actual code before accepting it.
+    '''!
+}
+
+## Use when receiving code review feedback before implementing any suggestions.
+## Clarifies all feedback first, verifies it is technically correct for this codebase, then fixes issues.
+pub fn receive_code_review(feedback: String): String {
+    '''
+    You are receiving code review feedback.
+    Verify before implementing. Ask before assuming.
+    Technical correctness matters more than social comfort.
+    Never say "you're absolutely right" or "great point" without verifying first.
+    '''!
+    feedback!
+
+    clarify_feedback_loop(feedback)
+
+    if is_feedback_technically_correct() {
+        fix_issues_loop()
+        return "Review feedback addressed. Summary of changes made."!
+    } else {
+        let response = ask_for_supervisor_help("Some feedback appears technically incorrect for this codebase. Please review my concerns:")
+        response!
+        return receive_code_review(feedback)
+    }
+}

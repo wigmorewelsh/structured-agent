@@ -1,0 +1,79 @@
+use ::messaging::receive
+use ::io::print
+
+use extern_fns::read_file
+use extern_fns::write_file
+use brainstorming::brainstorm
+use writing_plans::write_plans
+use tdd::tdd_impl
+use systematic_debugging::debug
+use verification::verify
+use code_review::request_code_review
+use code_review::receive_code_review
+use subagent_dev::subagent_driven_dev
+use executing_plans::execute_plans
+use git_worktrees::setup_workspace
+use finishing_branch::finish_branch
+use dispatching_agents::dispatch_agents
+
+
+
+fn update_history(history: String, task_summary: String): String {
+    history!
+    task_summary!
+    '''
+    Merge the completed task into the history record.
+    Keep it concise: what was done, any decisions made, lessons to carry forward.
+    '''!
+}
+
+fn respond_to_user(task_summary: String): String {
+    task_summary!
+    '''
+    Give the user a clear update on what was accomplished.
+    Note any issues, open questions, or decisions that need their attention.
+    '''!
+}
+
+fn main(): () {
+    '''
+    You are a structured agent running the Superpowers skills framework.
+    Before any feature work: brainstorm.
+    Before any code: write_plans.
+    For all implementation: tdd_impl.
+    Verify before claiming completion.
+    Always check which skill fits before starting a task.
+    '''!
+
+    print("Superpowers agent ready.")
+
+    let history = read_file("history.md")
+    history!
+
+    while true {
+        let task = receive()
+        task!
+
+        let result = select {
+            brainstorm(_),
+            write_plans(_),
+            tdd_impl(_),
+            debug(_),
+            verify(_),
+            request_code_review(_, _),
+            receive_code_review(_),
+            subagent_driven_dev(_),
+            execute_plans(_),
+            setup_workspace(_),
+            finish_branch(_),
+            dispatch_agents(_)
+        }
+        result!
+
+        let response = respond_to_user(result)
+        print(response)
+
+        history = update_history(history, result)
+        write_file("history.md", history)
+    }
+}

@@ -1,0 +1,94 @@
+mod writing_plans
+
+use extern_fns::read_file
+use extern_fns::write_file
+use extern_fns::list_directory
+use extern_fns::grep
+use supervisor::ask_for_supervisor_help
+
+fn is_plan_ready(): Boolean {
+    '''
+    Is the plan complete with: ordered tasks, exact file paths, complete code for each step,
+    exact test names, and verification commands? No TBD, no placeholders, no "similar to task N".
+    '''!
+}
+
+fn is_plan_blocked(): Boolean {
+    "Is there an ambiguity or blocker that cannot be resolved by reading the codebase?"!
+}
+
+fn summarize_plan(): String {
+    '''
+    Produce the final implementation plan as an ordered list of tasks.
+    Each task must include:
+    - Exact file paths
+    - Complete code (no placeholders)
+    - Exact test names
+    - Verification command with expected output
+    Tasks should be 2-5 minutes each for an engineer to complete.
+    '''!
+}
+
+fn explore_loop(): String {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _)
+    }
+    action!
+
+    if is_plan_blocked() {
+        let guidance = ask_for_supervisor_help("Planning is blocked. Supervisor input needed:")
+        guidance!
+    }
+
+    if is_plan_ready() {
+        return summarize_plan()
+    } else {
+        return explore_loop()
+    }
+}
+
+fn self_review_plan(plan: String): String {
+    plan!
+    '''
+    Review this plan for:
+    1. Spec coverage - every requirement maps to a task
+    2. Placeholders - any TBD, TODO, "similar to task N", or missing code
+    3. Type consistency - function and type names match across all tasks
+    Fix any issues found. Return the corrected plan.
+    '''!
+}
+
+fn save_plan(plan: String, filename: String): String {
+    let path = "docs/superpowers/plans/${filename}.md"
+    write_file(path, plan)
+    return path
+}
+
+fn choose_execution_approach(plan_path: String): String {
+    let choice = ask_for_supervisor_help("Plan saved to ${plan_path}.\n\n1. Subagent-Driven (recommended) - fresh subagent per task with two-stage review\n2. Inline Execution - execute tasks in this session with checkpoints\n\nWhich approach?")
+    return choice
+}
+
+## Use after brainstorming to turn an approved spec into a bite-sized implementation plan.
+## Explores the codebase, produces tasks with exact file paths and complete code, self-reviews, then offers execution choice.
+pub fn write_plans(spec_path: String): String {
+    '''
+    You are writing an implementation plan. Do NOT implement anything.
+    Explore the codebase to understand it, then produce bite-sized tasks.
+    Every task needs exact file paths, complete code, and verification steps.
+    '''!
+
+    let spec = read_file(spec_path)
+    spec!
+
+    let plan = explore_loop()
+    let reviewed_plan = self_review_plan(plan)
+    let plan_path = save_plan(reviewed_plan, "implementation-plan")
+
+    let approach = choose_execution_approach(plan_path)
+    approach!
+
+    return plan_path
+}

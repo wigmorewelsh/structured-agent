@@ -374,6 +374,9 @@ pub enum TypeDefinitionKind<R: References> {
         generic_parameters: Vec<GenericParameterDefinition<R>>,
         factory: Arc<dyn RuntimeValueFactory>,
     },
+    Alias {
+        ty: R::TypeAnnotation,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -438,6 +441,7 @@ where
             witness_ref: R2::Witness::default(),
         },
         TypeDefinitionKind::Primitive => TypeDefinitionKind::Primitive,
+        TypeDefinitionKind::Alias { ty } => TypeDefinitionKind::Alias { ty: ty.clone() },
         TypeDefinitionKind::Native {
             generic_parameters,
             factory,

@@ -337,9 +337,30 @@ impl SymbolTableBuilder {
                 Definition::Struct(struct_def) => {
                     self.register_struct(struct_def, file_id, module_name);
                 }
+                Definition::TypeAlias { name, ty, span } => {
+                    self.register_type_alias(name, ty, file_id, *span, module_name);
+                }
                 _ => {}
             }
         }
+    }
+
+    fn register_type_alias(
+        &mut self,
+        name: &str,
+        ast_ty: &AstType,
+        file_id: FileId,
+        span: Span,
+        module_name: &DefinitionPath,
+    ) {
+        let type_name = DefinitionPath::for_type(module_name.clone(), name);
+        let entry = TypeDefinition {
+            name: type_name.clone(),
+            kind: TypeDefinitionKind::Alias { ty: ast_ty.clone() },
+            source_ref: SourceLocation(file_id, span),
+            ast_ref: CheckerAstRef::Primitive,
+        };
+        self.metadata.register_type(type_name, Arc::new(entry));
     }
 
     fn register_function_defs(
@@ -462,6 +483,7 @@ impl SymbolTableBuilder {
                 | Definition::Use(_)
                 | Definition::ModuleHeader { .. }
                 | Definition::Signature(_)
+                | Definition::TypeAlias { .. }
                 | Definition::InlineModule { .. } => {}
                 Definition::Trait(s) => {
                     self.register_trait(s, file_id, module_name);
@@ -760,6 +782,7 @@ impl SymbolTableBuilder {
                 TypeDefinitionKind::Struct { .. } => Some(ExportedName::Type(t.name.clone())),
                 TypeDefinitionKind::Trait { .. } => Some(ExportedName::Trait(t.name.clone())),
                 TypeDefinitionKind::Signature { .. } => Some(ExportedName::Type(t.name.clone())),
+                TypeDefinitionKind::Alias { .. } => Some(ExportedName::Type(t.name.clone())),
                 _ => None,
             })
             .collect();

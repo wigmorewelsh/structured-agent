@@ -1,0 +1,102 @@
+mod systematic_debugging
+
+use extern_fns::read_file
+use extern_fns::list_directory
+use extern_fns::grep
+use extern_fns::write_file
+use extern_fns::execute_command
+use supervisor::ask_for_supervisor_help
+
+fn is_root_cause_found(): Boolean {
+    "Have you identified the specific line, condition, or state that triggers this bug - the actual root cause, not a symptom?"!
+}
+
+fn is_fix_complete(): Boolean {
+    "Is the fix implemented, tested with a failing-then-passing test, and all tests now passing?"!
+}
+
+fn is_investigation_blocked(): Boolean {
+    "Is investigation blocked by something only the supervisor can resolve?"!
+}
+
+fn is_fix_stuck(): Boolean {
+    "Have you attempted 3 or more fixes without resolving the issue?"!
+}
+
+fn phase1_investigate_loop(): String {
+    let action = select {
+        read_file(_),
+        list_directory(_),
+        grep(_, _, _, _, _),
+        execute_command(_)
+    }
+    action!
+
+    if is_investigation_blocked() {
+        let guidance = ask_for_supervisor_help("Investigation is blocked. Supervisor input needed:")
+        guidance!
+    }
+
+    if is_root_cause_found() {
+        return "State the root cause: what is broken, why it is broken, and the exact location in code."!
+    } else {
+        return phase1_investigate_loop()
+    }
+}
+
+fn phase2_find_pattern(root_cause: String): String {
+    root_cause!
+    '''
+    Find a working example of the correct pattern in this codebase.
+    Compare it to the broken code. Identify the exact difference.
+    What is the correct pattern and how does the broken code differ from it?
+    '''!
+}
+
+fn phase3_form_hypothesis(root_cause: String, pattern: String): String {
+    root_cause!
+    pattern!
+    '''
+    Form a single hypothesis: given the root cause and the correct pattern,
+    what is the minimal change that will fix the bug?
+    '''!
+}
+
+fn phase4_fix_loop(hypothesis: String): () {
+    hypothesis!
+    let action = select {
+        read_file(_),
+        write_file(_, _),
+        execute_command(_)
+    }
+    action!
+
+    if is_fix_stuck() {
+        let guidance = ask_for_supervisor_help("3 or more fix attempts have failed. This may be an architectural problem. Supervisor input needed:")
+        guidance!
+    }
+
+    if is_fix_complete() {
+        return ()
+    } else {
+        return phase4_fix_loop(hypothesis)
+    }
+}
+
+## Use when encountering any bug, test failure, or unexpected behaviour. Investigates root cause before attempting any fix.
+## Runs four phases: investigate, find pattern, form hypothesis, fix. Never guesses.
+pub fn debug(symptom: String): String {
+    '''
+    You are using systematic debugging. The iron law: NO FIXES WITHOUT ROOT CAUSE FIRST.
+    Complete each phase before moving to the next.
+    If you find yourself guessing, stop and return to Phase 1.
+    '''!
+    symptom!
+
+    let root_cause = phase1_investigate_loop()
+    let pattern = phase2_find_pattern(root_cause)
+    let hypothesis = phase3_form_hypothesis(root_cause, pattern)
+    phase4_fix_loop(hypothesis)
+
+    return "Summarize: root cause found, fix applied, and tests that verify the fix."!
+}

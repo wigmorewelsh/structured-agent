@@ -167,6 +167,7 @@ where
         skip_spaces_and_comments().with(many(
             choice((
                 parse_inline_module(),
+                parse_type_alias(),
                 parse_use(),
                 parse_sig_definition(),
                 parse_trait_impl(),
@@ -215,6 +216,7 @@ where
             many(
                 choice((
                     parse_use(),
+                    parse_type_alias(),
                     parse_sig_definition(),
                     parse_trait_impl(),
                     parse_trait(),
@@ -629,6 +631,26 @@ combine::parser! {
                 else { Type::Union(types) }
             })
     }
+}
+
+fn parse_type_alias<Input>() -> impl Parser<Input, Output = Definition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        position(),
+        attempt(lex_keyword("type")),
+        identifier(),
+        lex_char('='),
+        parse_type(),
+        position(),
+    )
+        .map(|(start, _, name, _, ty, end)| Definition::TypeAlias {
+            name,
+            ty,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_struct_definition<Input>() -> impl Parser<Input, Output = StructDefinition>
@@ -4170,5 +4192,63 @@ fn main(): String {
         } else {
             panic!("expected function definition");
         }
+    }
+
+    #[test]
+    fn test_parse_type_alias_simple() {
+        let input = "type Media = Image | Audio\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        if let Definition::TypeAlias { name, ty, .. } = &module.definitions[0] {
+            assert_eq!(name, "Media");
+            if let Type::Union(members) = ty {
+                assert_eq!(members.len(), 2);
+                assert!(
+                    matches!(&members[0], Type::Named { path, .. } if path.first().name == "Image")
+                );
+                assert!(
+                    matches!(&members[1], Type::Named { path, .. } if path.first().name == "Audio")
+                );
+            } else {
+                panic!("expected Type::Union, got {:?}", ty);
+            }
+        } else {
+            panic!(
+                "expected TypeAlias definition, got {:?}",
+                module.definitions[0]
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_type_alias_single() {
+        let input = "type Img = Image\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::TypeAlias { name, ty, .. } = &module.definitions[0] {
+            assert_eq!(name, "Img");
+            assert!(matches!(ty, Type::Named { path, .. } if path.first().name == "Image"));
+        } else {
+            panic!("expected TypeAlias definition");
+        }
+    }
+
+    #[test]
+    fn test_type_alias_display() {
+        let ty = Type::Union(vec![
+            Type::simple("Image".to_string()),
+            Type::simple("Audio".to_string()),
+        ]);
+        let def = Definition::TypeAlias {
+            name: "Media".to_string(),
+            ty,
+            span: Span::new(0, 0),
+        };
+        assert_eq!(def.to_string(), "type Media = Image | Audio");
     }
 }

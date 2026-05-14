@@ -169,6 +169,11 @@ pub enum Definition {
         definitions: Vec<Definition>,
         span: Span,
     },
+    TypeAlias {
+        name: String,
+        ty: Type,
+        span: Span,
+    },
 }
 
 impl Spanned for Definition {
@@ -183,6 +188,7 @@ impl Spanned for Definition {
             Definition::Trait(s) => s.span,
             Definition::TraitImpl(t) => t.span,
             Definition::InlineModule { span, .. } => *span,
+            Definition::TypeAlias { span, .. } => *span,
         }
     }
 }
@@ -720,6 +726,7 @@ impl fmt::Display for Definition {
                 }
                 write!(f, "}}")
             }
+            Definition::TypeAlias { name, ty, .. } => write!(f, "type {} = {}", name, ty),
         }
     }
 }
