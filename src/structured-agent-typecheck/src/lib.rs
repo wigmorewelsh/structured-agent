@@ -32,7 +32,6 @@ use structured_agent_runtime::symbols::MetaData;
 
 pub struct TypeChecker {
     db: TypeCheckDb,
-    program_input: Option<ProgramInput>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +54,6 @@ impl TypeChecker {
     pub fn new() -> Self {
         Self {
             db: TypeCheckDb::default(),
-            program_input: None,
         }
     }
 
@@ -64,27 +62,35 @@ impl TypeChecker {
         modules: &[ParsedModule],
         native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
     ) -> Result<MetaData<TypedRefs>, Vec<TypeError>> {
+        let (result, _) = self.check_impl(modules, native_modules);
+        result
+    }
+
+    fn check_impl(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> (Result<MetaData<TypedRefs>, Vec<TypeError>>, ProgramInput) {
         self.populate_symbol_tables(modules, native_modules);
         let parsed_inputs = self.make_parsed_inputs(modules);
         let program_input = ProgramInput::new(&self.db, parsed_inputs);
-        self.program_input = Some(program_input);
 
         let check_errors = self.run_check_pass(program_input);
         if !check_errors.is_empty() {
-            return Err(check_errors);
+            return (Err(check_errors), program_input);
         }
 
         let solver_errors = self.run_solve_pass(program_input);
         if !solver_errors.is_empty() {
-            return Err(solver_errors);
+            return (Err(solver_errors), program_input);
         }
 
         let (meta_data, elaborate_errors) = self.run_elaborate_pass(program_input);
         if !elaborate_errors.is_empty() {
-            return Err(elaborate_errors);
+            return (Err(elaborate_errors), program_input);
         }
 
-        Ok(meta_data)
+        (Ok(meta_data), program_input)
     }
 
     fn run_elaborate_pass(
@@ -187,13 +193,20 @@ impl TypeChecker {
     }
 
     #[cfg(test)]
+    pub(crate) fn check_with_program_input(
+        &mut self,
+        modules: &[ParsedModule],
+        native_modules: &HashMap<String, Arc<dyn RuntimeModule>>,
+    ) -> (Result<MetaData<TypedRefs>, Vec<TypeError>>, ProgramInput) {
+        self.check_impl(modules, native_modules)
+    }
+
+    #[cfg(test)]
     pub(crate) fn elaborate_fn_def(
         &self,
+        program_input: ProgramInput,
         name: structured_agent_runtime::symbols::DefinitionPath,
     ) -> Option<db::ArcPtr<typed_ast::Function>> {
-        let program_input = self
-            .program_input
-            .expect("call check() before elaborate_fn_def");
         let interned = db::InternedFunctionName::new(&self.db, name);
         db::elaborate_function_def(&self.db, interned, program_input)
     }

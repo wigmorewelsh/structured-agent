@@ -4898,7 +4898,7 @@ mod elaborate_tracking_tests {
     use std::sync::Arc;
     use structured_agent_runtime::symbols::DefinitionPath;
 
-    fn setup(module: crate::ast::Module) -> crate::TypeChecker {
+    fn setup(module: crate::ast::Module) -> (crate::TypeChecker, crate::db::ProgramInput) {
         let parsed = crate::ast::ParsedModule {
             name: NonEmpty::new("main".to_string()),
             module,
@@ -4907,8 +4907,10 @@ mod elaborate_tracking_tests {
             is_inline: false,
         };
         let mut checker = crate::TypeChecker::new();
-        checker.check(&[parsed], &native_prelude_modules()).unwrap();
-        checker
+        let (result, program_input) =
+            checker.check_with_program_input(&[parsed], &native_prelude_modules());
+        result.unwrap();
+        (checker, program_input)
     }
 
     #[test]
@@ -4926,8 +4928,8 @@ mod elaborate_tracking_tests {
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "greet",
         );
-        let checker = setup(module);
-        let result = checker.elaborate_fn_def(fn_path);
+        let (checker, program_input) = setup(module);
+        let result = checker.elaborate_fn_def(program_input, fn_path);
         assert!(result.is_some());
     }
 
@@ -4946,8 +4948,8 @@ mod elaborate_tracking_tests {
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "nonexistent",
         );
-        let checker = setup(module);
-        let result = checker.elaborate_fn_def(fn_path);
+        let (checker, program_input) = setup(module);
+        let result = checker.elaborate_fn_def(program_input, fn_path);
         assert!(result.is_none());
     }
 
@@ -4966,9 +4968,11 @@ mod elaborate_tracking_tests {
             DefinitionPath::for_module(NonEmpty::new("main".to_string())),
             "greet",
         );
-        let checker = setup(module);
-        let first = checker.elaborate_fn_def(fn_path.clone()).unwrap();
-        let second = checker.elaborate_fn_def(fn_path).unwrap();
+        let (checker, program_input) = setup(module);
+        let first = checker
+            .elaborate_fn_def(program_input, fn_path.clone())
+            .unwrap();
+        let second = checker.elaborate_fn_def(program_input, fn_path).unwrap();
         assert!(first == second);
     }
 }
