@@ -85,6 +85,19 @@ impl GeminiClient {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_unchecked() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            api_key: None,
+            base_url: String::new(),
+            config: GeminiConfig::new(String::new(), String::new()),
+            cached_token: Arc::new(RwLock::new(None)),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            max_retries: MAX_RETRIES,
+        }
+    }
+
     pub async fn from_env() -> GeminiResult<Self> {
         let config =
             GeminiConfig::from_env().map_err(|e| GeminiError::Configuration(e.to_string()))?;

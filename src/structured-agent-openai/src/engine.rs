@@ -125,13 +125,28 @@ impl OpenAIEngine {
         all_events
             .iter()
             .filter_map(|event| match event {
-                ContextEvent::Action(a) => Some(
-                    ChatCompletionRequestSystemMessageArgs::default()
-                        .content(a.format())
-                        .build()
-                        .unwrap()
-                        .into(),
-                ),
+                ContextEvent::Action(a) => {
+                    if let Some(media_part) = Self::expression_value_to_content_part(&a.content) {
+                        let text_part = ChatCompletionRequestUserMessageContentPart::Text(
+                            ChatCompletionRequestMessageContentPartText { text: a.format() },
+                        );
+                        Some(
+                            ChatCompletionRequestUserMessageArgs::default()
+                                .content(vec![text_part, media_part])
+                                .build()
+                                .unwrap()
+                                .into(),
+                        )
+                    } else {
+                        Some(
+                            ChatCompletionRequestSystemMessageArgs::default()
+                                .content(a.format())
+                                .build()
+                                .unwrap()
+                                .into(),
+                        )
+                    }
+                }
                 ContextEvent::Thinking(_) => None,
             })
             .collect()
@@ -288,7 +303,6 @@ impl OpenAIEngine {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn expression_value_to_content_part(
         value: &ExpressionValue,
     ) -> Option<ChatCompletionRequestUserMessageContentPart> {
@@ -413,6 +427,7 @@ mod tests {
     use super::*;
     use arrow::datatypes::DataType;
     use async_openai::types::chat::{
+        ChatCompletionRequestMessage, ChatCompletionRequestUserMessageContent,
         ChatCompletionRequestUserMessageContentPart, InputAudioFormat,
     };
     use base64::engine::general_purpose::STANDARD;
@@ -592,6 +607,41 @@ mod tests {
         };
         assert_eq!(audio_part.input_audio.data, STANDARD.encode([4u8, 5, 6]));
         assert_eq!(audio_part.input_audio.format, InputAudioFormat::Mp3);
+    }
+
+    #[test]
+    fn build_context_messages_with_image_adds_image_content_part() {
+        let mut context = empty_context();
+        context.add_event(
+            ExpressionValue::image("image/png", vec![1u8, 2, 3]),
+            None,
+            None,
+        );
+        let messages = OpenAIEngine::build_context_messages(&context);
+        assert_eq!(messages.len(), 1);
+        let ChatCompletionRequestMessage::User(user_msg) = &messages[0] else {
+            panic!("Expected user message");
+        };
+        let ChatCompletionRequestUserMessageContent::Array(parts) = &user_msg.content else {
+            panic!("Expected array content");
+        };
+        assert!(
+            parts
+                .iter()
+                .any(|p| matches!(p, ChatCompletionRequestUserMessageContentPart::ImageUrl(_)))
+        );
+    }
+
+    #[test]
+    fn build_context_messages_with_string_has_single_text_part() {
+        let mut context = empty_context();
+        context.add_event(ExpressionValue::string("hello".to_string()), None, None);
+        let messages = OpenAIEngine::build_context_messages(&context);
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            &messages[0],
+            ChatCompletionRequestMessage::System(_)
+        ));
     }
 
     #[test]

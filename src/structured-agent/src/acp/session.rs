@@ -271,9 +271,9 @@ impl AcpSession {
         session_id: &acp::SessionId,
         update_tx: &mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
     ) -> Result<(), ()> {
-        let content = vec![acp::ToolCallContent::from(acp::ContentBlock::Text(
-            acp::TextContent::new(result.value_string()),
-        ))];
+        let content = vec![acp::ToolCallContent::from(
+            expression_value_to_content_block(&result),
+        )];
         Self::send_notification(
             acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
                 call_id,
@@ -422,6 +422,75 @@ pub fn expression_value_to_content_block(value: &ExpressionValue) -> acp::Conten
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn handle_tool_call_finished_with_image_produces_image_block() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let session_id = acp::SessionId::new("test-session");
+        let value = ExpressionValue::image("image/png", b"abc".to_vec());
+        let (result, notification) = tokio::join!(
+            AcpSession::handle_tool_call_finished(
+                "tool".to_string(),
+                "call-1".to_string(),
+                value,
+                &session_id,
+                &tx,
+            ),
+            async {
+                let (n, ack) = rx.recv().await.unwrap();
+                let _ = ack.send(());
+                n
+            }
+        );
+        result.unwrap();
+        let acp::SessionUpdate::ToolCallUpdate(update) = notification.update else {
+            panic!("Expected ToolCallUpdate");
+        };
+        let content = update.fields.content.unwrap();
+        let acp::ToolCallContent::Content(inner) = &content[0] else {
+            panic!("Expected Content variant");
+        };
+        let acp::ContentBlock::Image(img) = &inner.content else {
+            panic!("Expected Image block");
+        };
+        assert_eq!(img.mime_type, "image/png");
+        let decoded = STANDARD.decode(&img.data).unwrap();
+        assert_eq!(decoded, b"abc");
+    }
+
+    #[tokio::test]
+    async fn handle_tool_call_finished_with_string_produces_text_block() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let session_id = acp::SessionId::new("test-session");
+        let value = ExpressionValue::string("hello");
+        let (result, notification) = tokio::join!(
+            AcpSession::handle_tool_call_finished(
+                "tool".to_string(),
+                "call-2".to_string(),
+                value,
+                &session_id,
+                &tx,
+            ),
+            async {
+                let (n, ack) = rx.recv().await.unwrap();
+                let _ = ack.send(());
+                n
+            }
+        );
+        result.unwrap();
+        let acp::SessionUpdate::ToolCallUpdate(update) = notification.update else {
+            panic!("Expected ToolCallUpdate");
+        };
+        let content = update.fields.content.unwrap();
+        let acp::ToolCallContent::Content(inner) = &content[0] else {
+            panic!("Expected Content variant");
+        };
+        let acp::ContentBlock::Text(text) = &inner.content else {
+            panic!("Expected Text block");
+        };
+        assert_eq!(text.text, "hello");
+    }
 
     #[test]
     fn image_value_converts_to_acp_image_block() {

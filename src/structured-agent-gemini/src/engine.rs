@@ -45,7 +45,6 @@ impl GeminiEngine {
         self
     }
 
-    #[allow(dead_code)]
     pub(crate) fn expression_value_to_part(value: &ExpressionValue) -> Option<Part> {
         if let Ok(img) = value.as_image() {
             return Some(Part::inline_data(img.mime_type, STANDARD.encode(&img.data)));
@@ -116,7 +115,13 @@ impl GeminiEngine {
         all_events
             .iter()
             .map(|event| match event {
-                ContextEvent::Action(a) => ChatMessage::system(a.format()),
+                ContextEvent::Action(a) => {
+                    let msg = ChatMessage::system(a.format());
+                    match Self::expression_value_to_part(&a.content) {
+                        Some(part) => msg.with_extra_part(part),
+                        None => msg,
+                    }
+                }
                 ContextEvent::Thinking(t) => {
                     ChatMessage::thinking_model(t.content.clone(), t.thought_signature.clone())
                 }
@@ -555,6 +560,38 @@ mod tests {
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             7
         );
+    }
+
+    #[test]
+    fn build_context_messages_with_image_adds_extra_part() {
+        let engine = GeminiEngine {
+            client: GeminiClient::new_unchecked(),
+            model: ModelName::default(),
+        };
+        let mut context = empty_context();
+        context.add_event(
+            ExpressionValue::image("image/png", vec![1u8, 2, 3]),
+            None,
+            None,
+        );
+        let messages = engine.build_context_messages(&context);
+        assert_eq!(messages.len(), 1);
+        assert!(!messages[0].extra_parts.is_empty());
+        let part = &messages[0].extra_parts[0];
+        assert_eq!(part.inline_data.as_ref().unwrap().mime_type, "image/png");
+    }
+
+    #[test]
+    fn build_context_messages_with_string_has_no_extra_parts() {
+        let engine = GeminiEngine {
+            client: GeminiClient::new_unchecked(),
+            model: ModelName::default(),
+        };
+        let mut context = empty_context();
+        context.add_event(ExpressionValue::string("hello"), None, None);
+        let messages = engine.build_context_messages(&context);
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].extra_parts.is_empty());
     }
 
     #[test]

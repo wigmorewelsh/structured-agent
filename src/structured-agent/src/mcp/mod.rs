@@ -202,6 +202,19 @@ fn json_to_expression(
     )))
 }
 
+fn handle_single_content_block(
+    raw: &rmcp::model::RawContent,
+    return_type: &Type,
+    runtime: &dyn RuntimeService,
+) -> Result<ExpressionValue, McpError> {
+    match raw {
+        rmcp::model::RawContent::Text(text_content) => {
+            parse_text_content(&text_content.text, return_type, runtime)
+        }
+        other => Ok(raw_content_to_expression_value(other)),
+    }
+}
+
 fn parse_text_content(
     text: &str,
     return_type: &Type,
@@ -332,26 +345,12 @@ impl McpClient {
         if response.content.len() > 1 {
             let mut elements = Vec::new();
             for block in &response.content {
-                match &block.raw {
-                    rmcp::model::RawContent::Text(text_content) => {
-                        elements.push(ExpressionValue::string(text_content.text.clone()));
-                    }
-                    _ => {
-                        return Err(McpError::ToolError(
-                            "Multi-block response contained non-text content".to_string(),
-                        ));
-                    }
-                }
+                elements.push(raw_content_to_expression_value(&block.raw));
             }
             return ExpressionValue::from_elements(elements).map_err(McpError::ToolError);
         }
 
-        match &response.content[0].raw {
-            rmcp::model::RawContent::Text(text_content) => {
-                parse_text_content(&text_content.text, return_type, runtime)
-            }
-            other => Ok(ExpressionValue::string(format!("{:?}", other))),
-        }
+        handle_single_content_block(&response.content[0].raw, return_type, runtime)
     }
 
     pub async fn shutdown(&self) -> std::result::Result<(), McpError> {
@@ -914,6 +913,47 @@ mod tests {
             parse_text_content("\"hello\"", &Type::option(Type::string()), no_struct()).unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "hello");
+    }
+
+    #[test]
+    fn call_tool_single_image_block_returns_image_value() {
+        let raw_bytes = b"pixels";
+        let b64 = STANDARD.encode(raw_bytes);
+        let raw = rmcp::model::RawContent::Image(RawImageContent {
+            data: b64,
+            mime_type: "image/png".to_string(),
+            meta: None,
+        });
+        let result = handle_single_content_block(&raw, &Type::string(), no_struct());
+        let img = result.unwrap().as_image().unwrap();
+        assert_eq!(img.mime_type, "image/png");
+        assert_eq!(img.data, raw_bytes);
+    }
+
+    #[test]
+    fn call_tool_single_audio_block_returns_audio_value() {
+        let raw_bytes = b"sounddata";
+        let b64 = STANDARD.encode(raw_bytes);
+        let raw = rmcp::model::RawContent::Audio(RawAudioContent {
+            data: b64,
+            mime_type: "audio/mp3".to_string(),
+        });
+        let result = handle_single_content_block(&raw, &Type::string(), no_struct());
+        let aud = result.unwrap().as_audio().unwrap();
+        assert_eq!(aud.mime_type, "audio/mp3");
+        assert_eq!(aud.data, raw_bytes);
+    }
+
+    #[test]
+    fn call_tool_single_resource_link_returns_link_value() {
+        let raw = rmcp::model::RawContent::ResourceLink(RawResource::new(
+            "https://example.com/doc",
+            "doc",
+        ));
+        let result = handle_single_content_block(&raw, &Type::string(), no_struct());
+        let link = result.unwrap().as_link().unwrap();
+        assert_eq!(link.uri, "https://example.com/doc");
+        assert_eq!(link.name, Some("doc".to_string()));
     }
 
     #[test]
