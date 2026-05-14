@@ -8,8 +8,8 @@ use crate::ensure_or_accumulate;
 use crate::error::{TypeError, TypeErrorAccumulator};
 use crate::solver::{Constraint, ConstraintKind};
 use structured_agent_ast::ast::{
-    Definition, Expression, Function, SelectClause, Statement, StringPart, Type as AstType,
-    TypeParam,
+    Definition, Expression, Function, MatchArm, SelectClause, Statement, StringPart,
+    Type as AstType, TypeParam,
 };
 use structured_agent_ast::types::{FileId, Span, Spanned};
 use structured_agent_typed_ast::BindingId;
@@ -532,6 +532,14 @@ fn check_statement(
             );
             Some(env)
         }
+        Statement::ExpressionStatement(Expression::Match {
+            scrutinee,
+            arms,
+            span,
+        }) => {
+            check_match_statement_logic(db, scrutinee, arms, *span, &env, ctx, constraints)?;
+            Some(env)
+        }
         Statement::ExpressionStatement(expr) => {
             synthesize_expression(db, expr, &env, ctx, constraints)?;
             Some(env)
@@ -653,8 +661,90 @@ fn check_statement(
             )?;
             Some(env)
         }
-        Statement::Match { .. } => Some(env),
+        Statement::Match {
+            scrutinee,
+            arms,
+            span,
+        } => {
+            check_match_statement_logic(db, scrutinee, arms, *span, &env, ctx, constraints)?;
+            Some(env)
+        }
     }
+}
+
+fn check_match_statement_logic(
+    db: &dyn TypeCheckDatabase,
+    scrutinee: &Expression,
+    arms: &[MatchArm],
+    span: Span,
+    env: &TypeEnvironment,
+    ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
+) -> Option<()> {
+    let scrutinee_type = synthesize_expression(db, scrutinee, env, ctx, constraints)?;
+    let variants = match scrutinee_type.union_variants() {
+        Some(vs) => vs.to_vec(),
+        None => {
+            TypeErrorAccumulator(TypeError::MatchOnNonUnion {
+                found: scrutinee_type.name(),
+                span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            return None;
+        }
+    };
+    let required_variants: Vec<String> = variants.iter().map(|v| v.name()).collect();
+    let mut seen: Vec<String> = Vec::new();
+    let mut had_error = false;
+    for arm in arms {
+        if !required_variants.contains(&arm.variant_name) {
+            TypeErrorAccumulator(TypeError::UnreachableArm {
+                variant: arm.variant_name.clone(),
+                span: arm.span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            had_error = true;
+            continue;
+        }
+        if seen.contains(&arm.variant_name) {
+            TypeErrorAccumulator(TypeError::DuplicateArm {
+                variant: arm.variant_name.clone(),
+                span: arm.span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            had_error = true;
+            continue;
+        }
+        seen.push(arm.variant_name.clone());
+        let variant_type = variants
+            .iter()
+            .find(|v| v.name() == arm.variant_name)
+            .unwrap()
+            .clone();
+        let mut child_env = env.create_child();
+        child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
+        synthesize_expression(db, &arm.body, &child_env, ctx, constraints)?;
+    }
+    let missing: Vec<String> = required_variants
+        .into_iter()
+        .filter(|v| !seen.contains(v))
+        .collect();
+    if !missing.is_empty() {
+        TypeErrorAccumulator(TypeError::IncompleteMatch {
+            missing,
+            span,
+            file_id: ctx.file_id,
+        })
+        .accumulate(db);
+        return None;
+    }
+    if had_error {
+        return None;
+    }
+    Some(())
 }
 
 fn check_expression(
@@ -956,7 +1046,92 @@ pub fn synthesize_expression(
             }
             Some(RT::string())
         }
-        Expression::Match { .. } => None,
+        Expression::Match {
+            scrutinee,
+            arms,
+            span,
+        } => {
+            let scrutinee_type = synthesize_expression(db, scrutinee, env, ctx, constraints)?;
+            let variants = match scrutinee_type.union_variants() {
+                Some(vs) => vs.to_vec(),
+                None => {
+                    TypeErrorAccumulator(TypeError::MatchOnNonUnion {
+                        found: scrutinee_type.name(),
+                        span: *span,
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                    return None;
+                }
+            };
+            let required_variants: Vec<String> = variants.iter().map(|v| v.name()).collect();
+            let mut seen: Vec<String> = Vec::new();
+            let mut had_error = false;
+            let mut first_arm_type: Option<RT> = None;
+            for arm in arms {
+                if !required_variants.contains(&arm.variant_name) {
+                    TypeErrorAccumulator(TypeError::UnreachableArm {
+                        variant: arm.variant_name.clone(),
+                        span: arm.span,
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                    had_error = true;
+                    continue;
+                }
+                if seen.contains(&arm.variant_name) {
+                    TypeErrorAccumulator(TypeError::DuplicateArm {
+                        variant: arm.variant_name.clone(),
+                        span: arm.span,
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                    had_error = true;
+                    continue;
+                }
+                seen.push(arm.variant_name.clone());
+                let variant_type = variants
+                    .iter()
+                    .find(|v| v.name() == arm.variant_name)
+                    .unwrap()
+                    .clone();
+                let mut child_env = env.create_child();
+                child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
+                let arm_ty = synthesize_expression(db, &arm.body, &child_env, ctx, constraints)?;
+                match &first_arm_type {
+                    None => first_arm_type = Some(arm_ty),
+                    Some(expected) => {
+                        if arm_ty != *expected {
+                            TypeErrorAccumulator(TypeError::TypeMismatch {
+                                expected: expected.name(),
+                                found: arm_ty.name(),
+                                span: arm.span,
+                                file_id: ctx.file_id,
+                            })
+                            .accumulate(db);
+                            had_error = true;
+                        }
+                    }
+                }
+            }
+            let missing: Vec<String> = required_variants
+                .into_iter()
+                .filter(|v| !seen.contains(v))
+                .collect();
+            if !missing.is_empty() {
+                TypeErrorAccumulator(TypeError::IncompleteMatch {
+                    missing,
+                    span: *span,
+                    file_id: ctx.file_id,
+                })
+                .accumulate(db);
+                return None;
+            }
+            if had_error {
+                return None;
+            }
+            first_arm_type
+        }
     }
 }
 

@@ -1,24 +1,36 @@
 mod code_quality_reviewer
 
-use code_reviewer_guide::load_code_reviewer_guide
-
-## Load code quality reviewer instructions into context. Call only after spec compliance review passes.
-pub fn load_code_quality_reviewer(): () {
-    load_code_reviewer_guide()
-    '''
-    # Additional Code Quality Checks
+## Returns the code quality reviewer guide as a string. Assign and inject with ! at the call site.
+## Only use after spec compliance review passes.
+pub fn code_quality_reviewer(): String {
+    return '''
+    # Code Quality Review
 
     Only conduct this review after spec compliance has been confirmed.
 
-    In addition to the standard code review criteria, verify:
+    You are a senior code reviewer. Review the diff and identify issues before they cascade.
+
+    ## What to Check
+
+    Plan alignment: does the implementation match the requirements?
+    Code quality: clean separation of concerns, proper error handling, type safety, DRY, edge cases handled.
+    Architecture: sound design decisions, reasonable scalability, integrates cleanly with surrounding code.
+    Testing: tests verify real behaviour not mocks, edge cases covered, all tests passing.
+    Production readiness: migrations if schema changed, backward compatibility, no obvious bugs.
+
+    ## Additional Quality Checks
 
     Single responsibility: does each file have one clear responsibility with a well-defined interface?
-
     Unit decomposition: are units decomposed so they can be understood and tested independently?
-
     File structure: is the implementation following the file structure from the plan?
-
-    File growth: did this change create new files that are already large, or significantly grow existing files?
+    File growth: did this change significantly grow existing files or create large new ones?
     Focus on what this change contributed — do not flag pre-existing file sizes.
-    '''!
+
+    ## Output Format
+
+    Strengths — what is well done, with file:line references.
+    Issues: Critical (must fix) / Important (should fix) / Minor (nice to have).
+    For each issue: file:line reference, what is wrong, why it matters, how to fix.
+    Assessment: Ready to merge? Yes / No / With fixes — one or two sentence verdict.
+    '''
 }

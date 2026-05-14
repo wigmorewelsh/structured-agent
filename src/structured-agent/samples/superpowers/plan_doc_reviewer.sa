@@ -1,8 +1,8 @@
 mod plan_doc_reviewer
 
-## Load plan document reviewer instructions into context. Call before reviewing a written implementation plan.
-pub fn load_plan_doc_reviewer(): () {
-    '''
+## Returns the plan document reviewer guide as a string. Assign and inject with ! at the call site.
+pub fn plan_doc_reviewer(): String {
+    return '''
     # Plan Document Review
 
     Purpose: verify the plan is complete, matches the spec, and has proper task decomposition.
@@ -10,12 +10,9 @@ pub fn load_plan_doc_reviewer(): () {
     ## What to Check
 
     Completeness: TODOs, placeholders, incomplete tasks, missing steps.
-
     Spec alignment: plan covers all spec requirements, no major scope creep.
-
     Task decomposition: tasks have clear boundaries, steps are actionable,
-    each task has exact file paths and complete code — no "similar to task N" references.
-
+    each task has exact file paths and complete code — no similar to task N references.
     Buildability: could an engineer follow this plan without getting stuck?
     Every step must show how, not just what.
 
@@ -32,5 +29,5 @@ pub fn load_plan_doc_reviewer(): () {
     Status: Approved or Issues Found.
     Issues (if any): task and step reference, specific issue, why it matters for implementation.
     Recommendations (advisory, do not block approval).
-    '''!
+    '''
 }

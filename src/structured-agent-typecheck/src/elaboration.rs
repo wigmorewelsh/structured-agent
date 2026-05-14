@@ -230,7 +230,42 @@ fn elaborate_statement(
                 env,
             ))
         }
-        Statement::Match { .. } => None,
+        Statement::Match {
+            scrutinee,
+            arms,
+            span,
+        } => {
+            let typed_scrutinee = elaborate_expression(db, scrutinee, &env, ctx)?;
+            let variants = typed_scrutinee.ty().union_variants()?.to_vec();
+            let typed_arms = arms
+                .iter()
+                .map(|arm| {
+                    let variant_type = variants
+                        .iter()
+                        .find(|v| v.name() == arm.variant_name)?
+                        .clone();
+                    let mut child_env = env.create_child();
+                    let binding_id =
+                        child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
+                    let body = elaborate_expression(db, &arm.body, &child_env, ctx)?;
+                    Some(typed_ast::MatchArm {
+                        variant_name: arm.variant_name.clone(),
+                        binding: arm.binding.clone(),
+                        binding_id,
+                        body,
+                        span: arm.span,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((
+                typed_ast::Statement::Match {
+                    scrutinee: typed_scrutinee,
+                    arms: typed_arms,
+                    span: *span,
+                },
+                env,
+            ))
+        }
     }
 }
 
@@ -337,7 +372,41 @@ pub fn elaborate_expression(
                 span: *span,
             })
         }
-        Expression::Match { .. } => None,
+        Expression::Match {
+            scrutinee,
+            arms,
+            span,
+        } => {
+            let typed_scrutinee = elaborate_expression(db, scrutinee, env, ctx)?;
+            let variants = typed_scrutinee.ty().union_variants()?.to_vec();
+            let typed_arms = arms
+                .iter()
+                .map(|arm| {
+                    let variant_type = variants
+                        .iter()
+                        .find(|v| v.name() == arm.variant_name)?
+                        .clone();
+                    let mut child_env = env.create_child();
+                    let binding_id =
+                        child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
+                    let body = elaborate_expression(db, &arm.body, &child_env, ctx)?;
+                    Some(typed_ast::MatchArm {
+                        variant_name: arm.variant_name.clone(),
+                        binding: arm.binding.clone(),
+                        binding_id,
+                        body,
+                        span: arm.span,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let ty = typed_arms.first()?.body.ty().clone();
+            Some(typed_ast::Expression::Match {
+                scrutinee: Box::new(typed_scrutinee),
+                arms: typed_arms,
+                ty,
+                span: *span,
+            })
+        }
     }
 }
 

@@ -2536,6 +2536,164 @@ mod tests {
         let result = check(module);
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
     }
+
+    #[test]
+    fn match_expression_typechecks() {
+        let input = "fn f(m: Image | Audio): String { return match m { Image(img) => \"image\", Audio(a) => \"audio\" } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn match_binding_has_narrowed_type() {
+        let input = concat!(
+            "fn take_image(img: Image): String { return \"ok\" }\n",
+            "fn f(m: Image | Audio): String { return match m { Image(img) => take_image(img), Audio(a) => \"audio\" } }\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn match_missing_arm_is_error() {
+        let input =
+            "fn f(m: Image | Audio): String { return match m { Image(img) => \"image\" } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::IncompleteMatch { .. }))
+        );
+    }
+
+    #[test]
+    fn match_extra_arm_is_error() {
+        let input = "fn f(m: Image | Audio): String { return match m { Image(img) => \"image\", Audio(a) => \"audio\", Link(l) => \"link\" } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::UnreachableArm { .. }))
+        );
+    }
+
+    #[test]
+    fn match_duplicate_arm_is_error() {
+        let input = "fn f(m: Image | Audio): String { return match m { Image(img) => \"image\", Image(img2) => \"image2\", Audio(a) => \"audio\" } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::DuplicateArm { .. }))
+        );
+    }
+
+    #[test]
+    fn match_on_non_union_is_error() {
+        let input = "fn f(x: String): String { return match x { } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::MatchOnNonUnion { .. }))
+        );
+    }
+
+    #[test]
+    fn match_statement_form_typechecks() {
+        let input = "fn f(m: Image | Audio): String { match m { Image(img) => img, Audio(a) => a } return \"done\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn match_expression_arm_type_mismatch() {
+        let input = "fn f(m: Image | Audio): String { return match m { Image(img) => \"text\", Audio(a) => 1 } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::TypeMismatch { .. }))
+        );
+    }
+
+    #[test]
+    fn match_via_alias_typechecks() {
+        let input = concat!(
+            "type Media = Image | Audio\n",
+            "fn f(m: Media): String { return match m { Image(i) => \"i\", Audio(a) => \"a\" } }\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
 }
 
 #[cfg(test)]

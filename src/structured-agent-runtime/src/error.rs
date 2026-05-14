@@ -122,6 +122,26 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    MatchOnNonUnion {
+        found: String,
+        span: Span,
+        file_id: FileId,
+    },
+    IncompleteMatch {
+        missing: Vec<String>,
+        span: Span,
+        file_id: FileId,
+    },
+    UnreachableArm {
+        variant: String,
+        span: Span,
+        file_id: FileId,
+    },
+    DuplicateArm {
+        variant: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -146,6 +166,10 @@ impl TypeError {
             TypeError::UnknownTrait { span, .. } => *span,
             TypeError::TraitBoundNotSatisfied { span, .. } => *span,
             TypeError::TraitImplMissingFunction { span, .. } => *span,
+            TypeError::MatchOnNonUnion { span, .. } => *span,
+            TypeError::IncompleteMatch { span, .. } => *span,
+            TypeError::UnreachableArm { span, .. } => *span,
+            TypeError::DuplicateArm { span, .. } => *span,
         }
     }
 
@@ -170,47 +194,118 @@ impl TypeError {
             TypeError::UnknownTrait { file_id, .. } => *file_id,
             TypeError::TraitBoundNotSatisfied { file_id, .. } => *file_id,
             TypeError::TraitImplMissingFunction { file_id, .. } => *file_id,
+            TypeError::MatchOnNonUnion { file_id, .. } => *file_id,
+            TypeError::IncompleteMatch { file_id, .. } => *file_id,
+            TypeError::UnreachableArm { file_id, .. } => *file_id,
+            TypeError::DuplicateArm { file_id, .. } => *file_id,
         }
     }
 
     pub fn to_diagnostic(&self) -> codespan_reporting::diagnostic::Diagnostic<FileId> {
         use codespan_reporting::diagnostic::{Diagnostic, Label};
         match self {
-            TypeError::UnknownVariable { name, span, file_id } => Diagnostic::error()
+            TypeError::UnknownVariable {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("unknown variable `{}`", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("not found in this scope")]),
-            TypeError::UnknownFunction { name, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("not found in this scope"),
+                ]),
+            TypeError::UnknownFunction {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("unknown function `{}`", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("function not declared")]),
-            TypeError::TypeMismatch { expected, found, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("function not declared"),
+                ]),
+            TypeError::TypeMismatch {
+                expected,
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message("type mismatch")
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("expected `{}`, found `{}`", expected, found))]),
-            TypeError::VariableTypeMismatch { variable, expected, found, span, declaration_span, file_id } => Diagnostic::error()
-                .with_message(format!("cannot assign `{}` to variable `{}`", found, variable))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ]),
+            TypeError::VariableTypeMismatch {
+                variable,
+                expected,
+                found,
+                span,
+                declaration_span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "cannot assign `{}` to variable `{}`",
+                    found, variable
+                ))
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("expected `{}`, found `{}`", expected, found)),
                     Label::secondary(*file_id, declaration_span.to_byte_range())
                         .with_message(format!("variable declared here with type `{}`", expected)),
                 ]),
-            TypeError::ArgumentCountMismatch { expected, found, span, file_id, .. } => Diagnostic::error()
-                .with_message(format!("this function takes {} arguments but {} were supplied", expected, found))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("expected {} arguments", expected))]),
-            TypeError::ArgumentTypeMismatch { function, parameter, expected, found, span, file_id } => Diagnostic::error()
+            TypeError::ArgumentCountMismatch {
+                expected,
+                found,
+                span,
+                file_id,
+                ..
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "this function takes {} arguments but {} were supplied",
+                    expected, found
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected {} arguments", expected)),
+                ]),
+            TypeError::ArgumentTypeMismatch {
+                function,
+                parameter,
+                expected,
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message("mismatched argument type")
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("expected `{}`, found `{}`", expected, found))])
-                .with_notes(vec![format!("in function `{}`, parameter `{}`", function, parameter)]),
-            TypeError::ReturnTypeMismatch { function, expected, found, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ])
+                .with_notes(vec![format!(
+                    "in function `{}`, parameter `{}`",
+                    function, parameter
+                )]),
+            TypeError::ReturnTypeMismatch {
+                function,
+                expected,
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message("mismatched return type")
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("expected `{}`, found `{}`", expected, found))])
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ])
                 .with_notes(vec![format!("in function `{}`", function)]),
-            TypeError::SelectBranchTypeMismatch { expected, found, branch_index, span, first_branch_span, file_id } => Diagnostic::error()
+            TypeError::SelectBranchTypeMismatch {
+                expected,
+                found,
+                branch_index,
+                span,
+                first_branch_span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message("select branches have incompatible types")
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
@@ -219,50 +314,183 @@ impl TypeError {
                         .with_message(format!("first branch has type `{}`", expected)),
                 ])
                 .with_notes(vec![format!("in select branch {}", branch_index)]),
-            TypeError::UnsupportedType { type_name, span, file_id } => Diagnostic::error()
+            TypeError::UnsupportedType {
+                type_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("unsupported type `{}`", type_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("type not supported")]),
-            TypeError::UnboundTypeParameter { name, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("type not supported"),
+                ]),
+            TypeError::UnboundTypeParameter {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("unbound type parameter `{}`", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("not declared in this function's type parameters")]),
-            TypeError::UndefinedType { name, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("not declared in this function's type parameters"),
+                ]),
+            TypeError::UndefinedType {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("undefined type `{}`", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("type not found in this scope")]),
-            TypeError::UnknownField { struct_name, field_name, span, file_id } => Diagnostic::error()
-                .with_message(format!("no field `{}` on struct `{}`", field_name, struct_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("unknown field")]),
-            TypeError::MissingField { struct_name, field_name, span, file_id } => Diagnostic::error()
-                .with_message(format!("missing field `{}` in struct `{}`", field_name, struct_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("field `{}` not provided", field_name))]),
-            TypeError::StructFieldTypeMismatch { struct_name, field_name, expected, found, span, file_id } => Diagnostic::error()
-                .with_message(format!("type mismatch for field `{}` of struct `{}`", field_name, struct_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("expected `{}`, found `{}`", expected, found))]),
-            TypeError::DuplicateField { struct_name, field_name, span, file_id } => Diagnostic::error()
-                .with_message(format!("duplicate field `{}` in struct `{}`", field_name, struct_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message(format!("field `{}` provided more than once", field_name))]),
-            TypeError::PrivateFunction { name, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("type not found in this scope"),
+                ]),
+            TypeError::UnknownField {
+                struct_name,
+                field_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "no field `{}` on struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range()).with_message("unknown field"),
+                ]),
+            TypeError::MissingField {
+                struct_name,
+                field_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "missing field `{}` in struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("field `{}` not provided", field_name)),
+                ]),
+            TypeError::StructFieldTypeMismatch {
+                struct_name,
+                field_name,
+                expected,
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "type mismatch for field `{}` of struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected `{}`, found `{}`", expected, found)),
+                ]),
+            TypeError::DuplicateField {
+                struct_name,
+                field_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "duplicate field `{}` in struct `{}`",
+                    field_name, struct_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("field `{}` provided more than once", field_name)),
+                ]),
+            TypeError::PrivateFunction {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("function `{}` is private", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("this function is not public")]),
-            TypeError::UnknownTrait { name, span, file_id } => Diagnostic::error()
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("this function is not public"),
+                ]),
+            TypeError::UnknownTrait {
+                name,
+                span,
+                file_id,
+            } => Diagnostic::error()
                 .with_message(format!("unknown trait `{}`", name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("trait not declared")]),
-            TypeError::TraitBoundNotSatisfied { type_name, trait_name, span, file_id, .. } => Diagnostic::error()
-                .with_message(format!("type `{}` does not implement trait `{}`", type_name, trait_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("trait bound not satisfied")]),
-            TypeError::TraitImplMissingFunction { type_name, trait_name, function_name, span, file_id } => Diagnostic::error()
-                .with_message(format!("impl `{}`: `{}` missing function `{}`", type_name, trait_name, function_name))
-                .with_labels(vec![Label::primary(*file_id, span.to_byte_range())
-                    .with_message("function not provided")]),
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("trait not declared"),
+                ]),
+            TypeError::TraitBoundNotSatisfied {
+                type_name,
+                trait_name,
+                span,
+                file_id,
+                ..
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "type `{}` does not implement trait `{}`",
+                    type_name, trait_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("trait bound not satisfied"),
+                ]),
+            TypeError::TraitImplMissingFunction {
+                type_name,
+                trait_name,
+                function_name,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "impl `{}`: `{}` missing function `{}`",
+                    type_name, trait_name, function_name
+                ))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message("function not provided"),
+                ]),
+            TypeError::MatchOnNonUnion {
+                found,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message("cannot match on non-union type")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("expected a union type, found `{}`", found)),
+                ]),
+            TypeError::IncompleteMatch {
+                missing,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message("non-exhaustive match")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("missing variants: {}", missing.join(", "))),
+                ]),
+            TypeError::UnreachableArm {
+                variant,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message("unreachable match arm")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("variant `{}` is not part of the union", variant)),
+                ]),
+            TypeError::DuplicateArm {
+                variant,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message("duplicate match arm")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("variant `{}` appears more than once", variant)),
+                ]),
         }
     }
 }
@@ -272,23 +500,134 @@ impl fmt::Display for TypeError {
         match self {
             TypeError::UnknownVariable { name, .. } => write!(f, "Unknown variable: {}", name),
             TypeError::UnknownFunction { name, .. } => write!(f, "Unknown function: {}", name),
-            TypeError::TypeMismatch { expected, found, .. } => write!(f, "Type mismatch: expected {}, found {}", expected, found),
-            TypeError::VariableTypeMismatch { variable, expected, found, .. } => write!(f, "Variable {} type mismatch: expected {}, found {}", variable, expected, found),
-            TypeError::ArgumentCountMismatch { function, expected, found, .. } => write!(f, "Function {} expects {} arguments, found {}", function, expected, found),
-            TypeError::ArgumentTypeMismatch { function, parameter, expected, found, .. } => write!(f, "Function {}, parameter {}: expected {}, found {}", function, parameter, expected, found),
-            TypeError::ReturnTypeMismatch { function, expected, found, .. } => write!(f, "Function {} return type mismatch: expected {}, found {}", function, expected, found),
-            TypeError::SelectBranchTypeMismatch { expected, found, branch_index, .. } => write!(f, "Select branch {} type mismatch: expected {}, found {}", branch_index, expected, found),
-            TypeError::UnsupportedType { type_name, .. } => write!(f, "Unsupported type: {}", type_name),
-            TypeError::UnboundTypeParameter { name, .. } => write!(f, "Unbound type parameter: {}", name),
+            TypeError::TypeMismatch {
+                expected, found, ..
+            } => write!(f, "Type mismatch: expected {}, found {}", expected, found),
+            TypeError::VariableTypeMismatch {
+                variable,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "Variable {} type mismatch: expected {}, found {}",
+                variable, expected, found
+            ),
+            TypeError::ArgumentCountMismatch {
+                function,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "Function {} expects {} arguments, found {}",
+                function, expected, found
+            ),
+            TypeError::ArgumentTypeMismatch {
+                function,
+                parameter,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "Function {}, parameter {}: expected {}, found {}",
+                function, parameter, expected, found
+            ),
+            TypeError::ReturnTypeMismatch {
+                function,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "Function {} return type mismatch: expected {}, found {}",
+                function, expected, found
+            ),
+            TypeError::SelectBranchTypeMismatch {
+                expected,
+                found,
+                branch_index,
+                ..
+            } => write!(
+                f,
+                "Select branch {} type mismatch: expected {}, found {}",
+                branch_index, expected, found
+            ),
+            TypeError::UnsupportedType { type_name, .. } => {
+                write!(f, "Unsupported type: {}", type_name)
+            }
+            TypeError::UnboundTypeParameter { name, .. } => {
+                write!(f, "Unbound type parameter: {}", name)
+            }
             TypeError::UndefinedType { name, .. } => write!(f, "Undefined type: {}", name),
-            TypeError::UnknownField { struct_name, field_name, .. } => write!(f, "No field `{}` on struct `{}`", field_name, struct_name),
-            TypeError::MissingField { struct_name, field_name, .. } => write!(f, "Missing field `{}` in struct `{}`", field_name, struct_name),
-            TypeError::StructFieldTypeMismatch { struct_name, field_name, expected, found, .. } => write!(f, "Struct `{}` field `{}`: expected {}, found {}", struct_name, field_name, expected, found),
-            TypeError::DuplicateField { struct_name, field_name, .. } => write!(f, "Duplicate field `{}` in struct `{}`", field_name, struct_name),
+            TypeError::UnknownField {
+                struct_name,
+                field_name,
+                ..
+            } => write!(f, "No field `{}` on struct `{}`", field_name, struct_name),
+            TypeError::MissingField {
+                struct_name,
+                field_name,
+                ..
+            } => write!(
+                f,
+                "Missing field `{}` in struct `{}`",
+                field_name, struct_name
+            ),
+            TypeError::StructFieldTypeMismatch {
+                struct_name,
+                field_name,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "Struct `{}` field `{}`: expected {}, found {}",
+                struct_name, field_name, expected, found
+            ),
+            TypeError::DuplicateField {
+                struct_name,
+                field_name,
+                ..
+            } => write!(
+                f,
+                "Duplicate field `{}` in struct `{}`",
+                field_name, struct_name
+            ),
             TypeError::PrivateFunction { name, .. } => write!(f, "Function `{}` is private", name),
             TypeError::UnknownTrait { name, .. } => write!(f, "Unknown trait: {}", name),
-            TypeError::TraitBoundNotSatisfied { type_name, trait_name, .. } => write!(f, "Type `{}` does not implement `{}`", type_name, trait_name),
-            TypeError::TraitImplMissingFunction { type_name, trait_name, function_name, .. } => write!(f, "Impl `{}`: `{}` missing `{}`", type_name, trait_name, function_name),
+            TypeError::TraitBoundNotSatisfied {
+                type_name,
+                trait_name,
+                ..
+            } => write!(
+                f,
+                "Type `{}` does not implement `{}`",
+                type_name, trait_name
+            ),
+            TypeError::TraitImplMissingFunction {
+                type_name,
+                trait_name,
+                function_name,
+                ..
+            } => write!(
+                f,
+                "Impl `{}`: `{}` missing `{}`",
+                type_name, trait_name, function_name
+            ),
+            TypeError::MatchOnNonUnion { found, .. } => {
+                write!(f, "Cannot match on non-union type: {}", found)
+            }
+            TypeError::IncompleteMatch { missing, .. } => {
+                write!(f, "Non-exhaustive match, missing: {}", missing.join(", "))
+            }
+            TypeError::UnreachableArm { variant, .. } => {
+                write!(f, "Unreachable arm: {}", variant)
+            }
+            TypeError::DuplicateArm { variant, .. } => {
+                write!(f, "Duplicate arm: {}", variant)
+            }
         }
     }
 }
