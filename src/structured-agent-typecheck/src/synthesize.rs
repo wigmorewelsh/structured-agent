@@ -256,18 +256,18 @@ pub fn resolve(
     }
 }
 
-pub struct Unifier {
+pub struct Substitution {
     subst: HashMap<String, RT>,
 }
 
-impl Unifier {
+impl Substitution {
     pub fn new() -> Self {
         Self {
             subst: HashMap::new(),
         }
     }
 
-    pub fn unify_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
+    pub fn match_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
         match formal {
             RT::Generic(name) => {
                 if let Some(bound) = self.subst.get(name) {
@@ -288,7 +288,7 @@ impl Unifier {
                         && args_formal
                             .iter()
                             .zip(args_actual.iter())
-                            .all(|(f, a)| self.unify_type(f, a).is_ok())
+                            .all(|(f, a)| self.match_type(f, a).is_ok())
                     {
                         Ok(())
                     } else {
@@ -1479,7 +1479,7 @@ fn synthesize_struct_literal(
             },
         )?;
     let mut seen = std::collections::HashSet::new();
-    let mut unifier = Unifier::new();
+    let mut subst = Substitution::new();
     let type_env = TypeEnvironment::with_type_params(&type_params);
     for (field_name, value_expr) in fields {
         ensure_or_accumulate!(
@@ -1508,7 +1508,7 @@ fn synthesize_struct_literal(
         let declared_type = resolve(db, &declared_ast_type, &type_env, value_expr.span(), ctx)?;
         let value_type = synthesize_expression(db, value_expr, env, ctx, constraints)?;
         ensure_or_accumulate!(
-            unifier.unify_type(&declared_type, &value_type).is_ok(),
+            subst.match_type(&declared_type, &value_type).is_ok(),
             db,
             TypeError::StructFieldTypeMismatch {
                 struct_name: struct_name.to_string(),
@@ -1545,7 +1545,7 @@ fn synthesize_struct_literal(
         let args: Vec<RT> = type_params
             .iter()
             .map(|tp| {
-                unifier
+                subst
                     .get(&tp.name)
                     .cloned()
                     .unwrap_or_else(|| RT::Generic(tp.name.clone()))
