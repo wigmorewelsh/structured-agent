@@ -253,6 +253,10 @@ impl Unifier {
         }
     }
 
+    pub fn from_map(map: HashMap<String, RT>) -> Self {
+        Self { subst: map }
+    }
+
     pub fn unify_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
         match formal {
             RT::Generic(name) => {

@@ -668,23 +668,19 @@ fn build_typed_call(
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
     let sig = &callee.sig;
-    let mut unifier = synthesize::Unifier::new();
-    for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
-        if let Some(resolved) = synthesize::resolve(db, ty_arg, env, span, ctx) {
-            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
-        }
-    }
+    let solved = crate::solver::solve_constraints(db, ctx.program);
+    let solutions = solved
+        .generic_solutions
+        .get(&(ctx.file_id, span.start))
+        .cloned()
+        .unwrap_or_default();
+    let mut unifier = synthesize::Unifier::from_map(solutions);
     let (elaborated_receiver, target) = if callee.receiver_is_target {
         let t = receiver.map(Box::new);
         (None, t)
     } else {
         (receiver, None)
     };
-    if let Some(r) = &elaborated_receiver
-        && let Some(param) = sig.parameters.first()
-    {
-        let _ = unifier.unify_type(&param.param_type, r.ty());
-    }
     let all_args = elaborate_arguments(
         db,
         sig,
@@ -822,7 +818,7 @@ fn elaborate_struct_literal(
     let (definition, type_params) = get_struct_fields(db, struct_name, ctx.module_name)?;
     let type_env = synthesize::TypeEnvironment::with_type_params(&type_params);
     let mut typed_fields = Vec::new();
-    let mut unifier = synthesize::Unifier::new();
+    let mut unifier = synthesize::Unifier::from_map(Default::default());
     for (field_name, value_expr) in fields {
         let declared_ast_type = definition
             .iter()

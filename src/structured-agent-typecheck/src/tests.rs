@@ -4103,6 +4103,99 @@ mod typed_ast_tests {
             other => panic!("expected Call expression, got {:?}", other),
         }
     }
+
+    #[test]
+    fn elaborated_generic_call_return_type_is_concrete() {
+        let identity = create_generic_test_function(
+            "identity",
+            vec!["T".into()],
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("T"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::Call {
+                function: "identity".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(identity)),
+            Definition::Function(Arc::new(caller)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(
+            expr.ty(),
+            &RT::string(),
+            "generic call return type should resolve to concrete String, got {:?}",
+            expr.ty()
+        );
+    }
+
+    #[test]
+    fn elaborated_non_generic_call_return_type_unchanged() {
+        let to_upper = create_test_function(
+            "to_upper",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::Call {
+                function: "to_upper".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(to_upper)),
+            Definition::Function(Arc::new(caller)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(
+            expr.ty(),
+            &RT::string(),
+            "monomorphic call return type should be String, got {:?}",
+            expr.ty()
+        );
+    }
 }
 mod metadata_query_tests {
     use super::*;
