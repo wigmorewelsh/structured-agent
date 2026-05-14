@@ -1,6 +1,7 @@
 use agent_client_protocol as acp;
 use agent_client_protocol::Client as _;
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -10,6 +11,7 @@ use uuid::Uuid;
 
 use super::session::AcpSession;
 use crate::cli::config::Config;
+use crate::runtime::ExpressionValue;
 
 const ACP_INTERNAL_ERROR: i32 = -32603;
 
@@ -37,6 +39,23 @@ fn format_prompt(blocks: &[acp::ContentBlock]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub fn content_block_to_expression_value(block: &acp::ContentBlock) -> ExpressionValue {
+    match block {
+        acp::ContentBlock::Image(img) => {
+            let bytes = STANDARD.decode(&img.data).unwrap_or_default();
+            ExpressionValue::image(img.mime_type.clone(), bytes)
+        }
+        acp::ContentBlock::Audio(aud) => {
+            let bytes = STANDARD.decode(&aud.data).unwrap_or_default();
+            ExpressionValue::audio(aud.mime_type.clone(), bytes)
+        }
+        acp::ContentBlock::ResourceLink(r) => {
+            ExpressionValue::link(r.uri.clone(), Some(r.name.clone()))
+        }
+        other => ExpressionValue::string(format_prompt(std::slice::from_ref(other))),
+    }
 }
 
 #[cfg(test)]
@@ -112,6 +131,40 @@ mod tests {
     #[test]
     fn test_empty_prompt() {
         assert_eq!(format_prompt(&[]), "");
+    }
+
+    #[test]
+    fn acp_image_block_converts_to_image_value() {
+        let raw_bytes = b"hello image";
+        let b64 = STANDARD.encode(raw_bytes);
+        let block = acp::ContentBlock::Image(acp::ImageContent::new(b64, "image/png"));
+        let value = content_block_to_expression_value(&block);
+        let img = value.as_image().unwrap();
+        assert_eq!(img.mime_type, "image/png");
+        assert_eq!(img.data, raw_bytes);
+    }
+
+    #[test]
+    fn acp_audio_block_converts_to_audio_value() {
+        let raw_bytes = b"hello audio";
+        let b64 = STANDARD.encode(raw_bytes);
+        let block = acp::ContentBlock::Audio(acp::AudioContent::new(b64, "audio/mp3"));
+        let value = content_block_to_expression_value(&block);
+        let aud = value.as_audio().unwrap();
+        assert_eq!(aud.mime_type, "audio/mp3");
+        assert_eq!(aud.data, raw_bytes);
+    }
+
+    #[test]
+    fn acp_resource_link_converts_to_link_value() {
+        let block = acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "logo.png",
+            "https://example.com/logo.png",
+        ));
+        let value = content_block_to_expression_value(&block);
+        let link = value.as_link().unwrap();
+        assert_eq!(link.uri, "https://example.com/logo.png");
+        assert_eq!(link.name, Some("logo.png".to_string()));
     }
 }
 

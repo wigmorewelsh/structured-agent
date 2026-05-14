@@ -7,7 +7,8 @@ use crate::types::{
 use arrow::array::Array;
 use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
-use rmcp::model::{CallToolRequestParams, Tool};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use rmcp::model::{CallToolRequestParams, RawAudioContent, RawImageContent, RawResource, Tool};
 use rmcp::{RoleClient, ServiceError, ServiceExt};
 use serde_json::Value;
 use std::error::Error;
@@ -434,6 +435,50 @@ impl Clone for McpClient {
             working_dir: self.working_dir.clone(),
         }
     }
+}
+
+pub fn raw_content_to_expression_value(raw: &rmcp::model::RawContent) -> ExpressionValue {
+    match raw {
+        rmcp::model::RawContent::Image(img) => {
+            let bytes = STANDARD.decode(&img.data).unwrap_or_default();
+            ExpressionValue::image(img.mime_type.clone(), bytes)
+        }
+        rmcp::model::RawContent::Audio(aud) => {
+            let bytes = STANDARD.decode(&aud.data).unwrap_or_default();
+            ExpressionValue::audio(aud.mime_type.clone(), bytes)
+        }
+        rmcp::model::RawContent::ResourceLink(r) => {
+            ExpressionValue::link(r.uri.clone(), Some(r.name.clone()))
+        }
+        rmcp::model::RawContent::Text(t) => ExpressionValue::string(t.text.clone()),
+        other => ExpressionValue::string(format!("{:?}", other)),
+    }
+}
+
+pub fn expression_value_to_raw_content(value: &ExpressionValue) -> rmcp::model::RawContent {
+    if let Ok(img) = value.as_image() {
+        let b64 = STANDARD.encode(&img.data);
+        return rmcp::model::RawContent::Image(RawImageContent {
+            data: b64,
+            mime_type: img.mime_type.clone(),
+            meta: None,
+        });
+    }
+    if let Ok(aud) = value.as_audio() {
+        let b64 = STANDARD.encode(&aud.data);
+        return rmcp::model::RawContent::Audio(RawAudioContent {
+            data: b64,
+            mime_type: aud.mime_type.clone(),
+        });
+    }
+    if let Ok(link) = value.as_link() {
+        let display_name = link.name.as_deref().unwrap_or(&link.uri).to_string();
+        return rmcp::model::RawContent::ResourceLink(RawResource::new(
+            link.uri.clone(),
+            display_name,
+        ));
+    }
+    rmcp::model::RawContent::text(value.value_string())
 }
 
 pub fn create_client_info(name: &str, version: &str) -> rmcp::model::Implementation {
@@ -869,5 +914,82 @@ mod tests {
             parse_text_content("\"hello\"", &Type::option(Type::string()), no_struct()).unwrap();
         let inner = result.as_option().unwrap().unwrap();
         assert_eq!(inner.as_string().unwrap(), "hello");
+    }
+
+    #[test]
+    fn mcp_image_content_converts_to_image_value() {
+        let raw_bytes = b"hello image";
+        let b64 = STANDARD.encode(raw_bytes);
+        let raw = rmcp::model::RawContent::Image(RawImageContent {
+            data: b64,
+            mime_type: "image/png".to_string(),
+            meta: None,
+        });
+        let value = raw_content_to_expression_value(&raw);
+        let img = value.as_image().unwrap();
+        assert_eq!(img.mime_type, "image/png");
+        assert_eq!(img.data, raw_bytes);
+    }
+
+    #[test]
+    fn mcp_audio_content_converts_to_audio_value() {
+        let raw_bytes = b"hello audio";
+        let b64 = STANDARD.encode(raw_bytes);
+        let raw = rmcp::model::RawContent::Audio(RawAudioContent {
+            data: b64,
+            mime_type: "audio/mp3".to_string(),
+        });
+        let value = raw_content_to_expression_value(&raw);
+        let aud = value.as_audio().unwrap();
+        assert_eq!(aud.mime_type, "audio/mp3");
+        assert_eq!(aud.data, raw_bytes);
+    }
+
+    #[test]
+    fn mcp_resource_link_converts_to_link_value() {
+        let raw = rmcp::model::RawContent::ResourceLink(RawResource::new(
+            "https://example.com/logo.png",
+            "logo.png",
+        ));
+        let value = raw_content_to_expression_value(&raw);
+        let link = value.as_link().unwrap();
+        assert_eq!(link.uri, "https://example.com/logo.png");
+        assert_eq!(link.name, Some("logo.png".to_string()));
+    }
+
+    #[test]
+    fn image_value_converts_to_mcp_image_content() {
+        let value = ExpressionValue::image("image/png", b"abc".to_vec());
+        let raw = expression_value_to_raw_content(&value);
+        let rmcp::model::RawContent::Image(img) = raw else {
+            panic!("Expected Image content");
+        };
+        assert_eq!(img.mime_type, "image/png");
+        let decoded = STANDARD.decode(&img.data).unwrap();
+        assert_eq!(decoded, b"abc");
+    }
+
+    #[test]
+    fn audio_value_converts_to_mcp_audio_content() {
+        let value = ExpressionValue::audio("audio/wav", b"xyz".to_vec());
+        let raw = expression_value_to_raw_content(&value);
+        let rmcp::model::RawContent::Audio(aud) = raw else {
+            panic!("Expected Audio content");
+        };
+        assert_eq!(aud.mime_type, "audio/wav");
+        let decoded = STANDARD.decode(&aud.data).unwrap();
+        assert_eq!(decoded, b"xyz");
+    }
+
+    #[test]
+    fn link_value_converts_to_mcp_resource_link() {
+        let value =
+            ExpressionValue::link("https://example.com/logo.png", Some("logo.png".to_string()));
+        let raw = expression_value_to_raw_content(&value);
+        let rmcp::model::RawContent::ResourceLink(r) = raw else {
+            panic!("Expected ResourceLink content");
+        };
+        assert_eq!(r.uri, "https://example.com/logo.png");
+        assert_eq!(r.name, "logo.png");
     }
 }

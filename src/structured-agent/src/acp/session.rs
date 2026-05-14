@@ -4,6 +4,7 @@ use crate::runtime::{
     RuntimeError,
 };
 use agent_client_protocol as acp;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -396,5 +397,65 @@ impl AcpSession {
         self.start()?;
 
         Ok(())
+    }
+}
+
+pub fn expression_value_to_content_block(value: &ExpressionValue) -> acp::ContentBlock {
+    if let Ok(img) = value.as_image() {
+        let b64 = STANDARD.encode(&img.data);
+        return acp::ContentBlock::Image(acp::ImageContent::new(b64, img.mime_type.clone()));
+    }
+    if let Ok(aud) = value.as_audio() {
+        let b64 = STANDARD.encode(&aud.data);
+        return acp::ContentBlock::Audio(acp::AudioContent::new(b64, aud.mime_type.clone()));
+    }
+    if let Ok(link) = value.as_link() {
+        let display_name = link.name.as_deref().unwrap_or(&link.uri).to_string();
+        return acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            display_name,
+            link.uri.clone(),
+        ));
+    }
+    acp::ContentBlock::Text(acp::TextContent::new(value.value_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_value_converts_to_acp_image_block() {
+        let value = ExpressionValue::image("image/png", b"abc".to_vec());
+        let block = expression_value_to_content_block(&value);
+        let acp::ContentBlock::Image(img) = block else {
+            panic!("Expected Image block");
+        };
+        assert_eq!(img.mime_type, "image/png");
+        let decoded = STANDARD.decode(&img.data).unwrap();
+        assert_eq!(decoded, b"abc");
+    }
+
+    #[test]
+    fn audio_value_converts_to_acp_audio_block() {
+        let value = ExpressionValue::audio("audio/wav", b"xyz".to_vec());
+        let block = expression_value_to_content_block(&value);
+        let acp::ContentBlock::Audio(aud) = block else {
+            panic!("Expected Audio block");
+        };
+        assert_eq!(aud.mime_type, "audio/wav");
+        let decoded = STANDARD.decode(&aud.data).unwrap();
+        assert_eq!(decoded, b"xyz");
+    }
+
+    #[test]
+    fn link_value_converts_to_acp_resource_link() {
+        let value =
+            ExpressionValue::link("https://example.com/logo.png", Some("logo.png".to_string()));
+        let block = expression_value_to_content_block(&value);
+        let acp::ContentBlock::ResourceLink(link) = block else {
+            panic!("Expected ResourceLink block");
+        };
+        assert_eq!(link.uri, "https://example.com/logo.png");
+        assert_eq!(link.name, "logo.png");
     }
 }
