@@ -271,6 +271,14 @@ impl Substitution {
         Self { subst: map }
     }
 
+    pub fn bind(&mut self, name: String, ty: RT) {
+        self.subst.insert(name, ty);
+    }
+
+    pub fn extend(&mut self, bindings: HashMap<String, RT>) {
+        self.subst.extend(bindings);
+    }
+
     pub fn match_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
         match formal {
             RT::Generic(name) => {
@@ -1063,7 +1071,7 @@ pub fn synthesize_expression(
         } => {
             let receiver_type = synthesize_expression(db, receiver, env, ctx, constraints)?;
             let sig = resolve_method_sig(db, &receiver_type, method, env, *span, ctx)?;
-            let mut subst: HashMap<String, RT> = HashMap::new();
+            let mut subst = Substitution::new();
             let mut param_names: HashMap<String, String> = HashMap::new();
             let param_offset = if receiver_type.is_actor_ref() {
                 0
@@ -1072,12 +1080,12 @@ pub fn synthesize_expression(
                     if let Some(bindings) =
                         extract_generic_bindings(&first_param.param_type, &receiver_type)
                     {
-                        for (name, ty) in bindings {
-                            if !param_names.contains_key(&name) {
-                                param_names.insert(name.clone(), first_param.name.clone());
-                            }
-                            subst.insert(name, ty);
+                        for name in bindings.keys() {
+                            param_names
+                                .entry(name.clone())
+                                .or_insert(first_param.name.clone());
                         }
+                        subst.extend(bindings);
                     }
                 }
                 1
@@ -1088,10 +1096,12 @@ pub fn synthesize_expression(
                 }
                 let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
                 if let Some(bindings) = extract_generic_bindings(&param.param_type, &arg_ty) {
-                    for (name, ty) in bindings {
-                        param_names.insert(name.clone(), param.name.clone());
-                        subst.insert(name, ty);
+                    for name in bindings.keys() {
+                        param_names
+                            .entry(name.clone())
+                            .or_insert(param.name.clone());
                     }
+                    subst.extend(bindings);
                 }
             }
             for tp in &sig.type_params {
@@ -1109,7 +1119,7 @@ pub fn synthesize_expression(
                     });
                 }
             }
-            Some(Substitution::from_map(subst).apply_subst(&sig.return_type))
+            Some(subst.apply_subst(&sig.return_type))
         }
         Expression::StringTemplate { parts, .. } => {
             for part in parts {
@@ -1249,11 +1259,11 @@ fn synthesize_call(
         }
     );
 
-    let mut subst: HashMap<String, RT> = HashMap::new();
+    let mut subst = Substitution::new();
 
     for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
         if let Some(resolved) = resolve(db, ty_arg, env, span, ctx) {
-            subst.insert(tp.name.clone(), resolved.clone());
+            subst.bind(tp.name.clone(), resolved.clone());
             constraints.push(Constraint {
                 kind: ConstraintKind::Unify {
                     call_site: span.start,
@@ -1360,7 +1370,7 @@ fn synthesize_call(
             }
         }
     }
-    Some(Substitution::from_map(subst).apply_subst(&sig.return_type))
+    Some(subst.apply_subst(&sig.return_type))
 }
 
 fn synthesize_list_literal(
