@@ -1,5 +1,3 @@
-mod supervisor
-
 use ::io::print
 use ::messaging::receive
 

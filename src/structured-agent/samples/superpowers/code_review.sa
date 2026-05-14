@@ -1,5 +1,3 @@
-mod code_review
-
 use extern_fns::read_file
 use extern_fns::list_directory
 use extern_fns::grep
@@ -31,7 +29,7 @@ fn review_loop(): String {
     action!
 
     if is_review_approved() {
-        return "Summarize the review outcome and any minor issues noted for later."!
+        return "Summarize the review outcome and any minor issues noted for later."
     } else {
         return review_loop()
     }
@@ -107,7 +105,7 @@ pub fn receive_code_review(feedback: String): String {
     You are receiving code review feedback.
     Verify before implementing. Ask before assuming.
     Technical correctness matters more than social comfort.
-    Never say "you're absolutely right" or "great point" without verifying first.
+    Never say you are absolutely right or great point without verifying first.
     '''!
     feedback!
 
@@ -115,7 +113,7 @@ pub fn receive_code_review(feedback: String): String {
 
     if is_feedback_technically_correct() {
         fix_issues_loop()
-        return "Review feedback addressed. Summary of changes made."!
+        return "Review feedback addressed. Summary of changes made."
     } else {
         let response = ask_for_supervisor_help("Some feedback appears technically incorrect for this codebase. Please review my concerns:")
         response!

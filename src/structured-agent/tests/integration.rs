@@ -9,4 +9,5 @@ mod integration {
     mod native_trait_test;
     mod return_statement_test;
     mod simple_test;
+    mod union_test;
 }

@@ -1,5 +1,3 @@
-mod systematic_debugging
-
 use extern_fns::read_file
 use extern_fns::list_directory
 use extern_fns::grep
@@ -42,7 +40,7 @@ fn phase1_investigate_loop(): String {
     }
 
     if is_root_cause_found() {
-        return "State the root cause: what is broken, why it is broken, and the exact location in code."!
+        return "State the root cause: what is broken, why it is broken, and the exact location in code."
     } else {
         return phase1_investigate_loop()
     }
@@ -104,5 +102,5 @@ pub fn debug(symptom: String): String {
     let hypothesis = phase3_form_hypothesis(root_cause, pattern)
     phase4_fix_loop(hypothesis)
 
-    return "Summarize: root cause found, fix applied, and tests that verify the fix."!
+    return "Summarize: root cause found, fix applied, and tests that verify the fix."
 }

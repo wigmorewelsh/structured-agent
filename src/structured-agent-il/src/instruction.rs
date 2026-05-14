@@ -133,6 +133,12 @@ pub enum Instruction {
         params: Vec<Slot>,
         dest: Slot,
     },
+
+    MatchType {
+        src: Slot,
+        dest: Slot,
+        variant: String,
+    },
 }
 
 impl fmt::Display for Instruction {
@@ -313,6 +319,9 @@ impl fmt::Display for Instruction {
             }
             Instruction::StructGet { dest, src, field } => {
                 write!(f, "struct.get {}, {}, {}", dest, src, field)
+            }
+            Instruction::MatchType { src, dest, variant } => {
+                write!(f, "match.type {}, {}, \"{}\"", dest, src, variant)
             }
             Instruction::CallNative { params, dest, .. } => {
                 write!(f, "call.native [")?;

@@ -220,6 +220,9 @@ impl VM {
                 Instruction::CallNative { f, params, dest } => {
                     self.execute_native_call(state, &f, &params, dest).await?
                 }
+                Instruction::MatchType { src, dest, variant } => {
+                    self.execute_match_type(state, src, dest, &variant)?
+                }
                 Instruction::CallVirtual {
                     module_slot,
                     method,
@@ -807,6 +810,23 @@ impl VM {
         Ok(Self::advance_pc(state))
     }
 
+    fn execute_match_type(
+        &self,
+        mut state: VMState,
+        src: Slot,
+        dest: Slot,
+        variant: &str,
+    ) -> Result<VMState, String> {
+        let value = Self::read_slot(&state, src)?;
+        let matched = value.value.type_name() == variant;
+        Self::write_slot(
+            &mut state,
+            dest,
+            ExpressionResult::new(ExpressionValue::boolean(matched)),
+        );
+        Ok(Self::advance_pc(state))
+    }
+
     async fn execute_spawn(
         &self,
         mut state: VMState,
@@ -866,7 +886,7 @@ mod tests {
     use structured_agent_il::slot::{Slot, SlotKind, SlotTable};
     use structured_agent_il::{BytecodeRef, Instruction};
     use structured_agent_interpreter_runtime::{
-        Context, ExecutableFunction, ExpressionValue, RuntimeService,
+        Context, ExecutableFunction, ExpressionResult, ExpressionValue, RuntimeService,
     };
     use structured_agent_runtime::{DefinitionPath, NativeFnPtr, Parameter, Type};
 
@@ -995,6 +1015,59 @@ mod tests {
         let context = make_context();
         let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
         assert_eq!(result.value, ExpressionValue::string("ok"));
+    }
+
+    #[tokio::test]
+    async fn execute_match_type_matching_writes_true() {
+        let instructions = vec![
+            Instruction::Mov {
+                dest: Slot(1),
+                src: Slot(1),
+            },
+            Instruction::MatchType {
+                src: Slot(1),
+                dest: Slot(0),
+                variant: "Image".to_string(),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let frame = vec![
+            None,
+            Some(ExpressionResult::new(ExpressionValue::image(
+                "image/png",
+                vec![],
+            ))),
+        ];
+        let context = make_context();
+        let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
+        assert_eq!(result.value, ExpressionValue::boolean(true));
+    }
+
+    #[tokio::test]
+    async fn execute_match_type_non_matching_writes_false() {
+        let instructions = vec![
+            Instruction::Mov {
+                dest: Slot(1),
+                src: Slot(1),
+            },
+            Instruction::MatchType {
+                src: Slot(1),
+                dest: Slot(0),
+                variant: "Image".to_string(),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+        let vm = VM::new(Arc::new(NoopRuntime));
+        let frame = vec![
+            None,
+            Some(ExpressionResult::new(ExpressionValue::string(
+                "not an image",
+            ))),
+        ];
+        let context = make_context();
+        let (_, result) = vm.execute(&instructions, context, frame).await.unwrap();
+        assert_eq!(result.value, ExpressionValue::boolean(false));
     }
 
     #[tokio::test]

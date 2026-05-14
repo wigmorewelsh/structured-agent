@@ -1,5 +1,3 @@
-mod condition_based_waiting
-
 ## Returns the condition-based waiting technique as a string. Assign and inject with ! at the call site.
 pub fn condition_based_waiting(): String {
     return '''
@@ -17,8 +15,8 @@ pub fn condition_based_waiting(): String {
 
     ## Common Scenarios
 
-    - Wait for an event: waitFor(() => events.find(e => e.type === 'DONE'))
-    - Wait for state: waitFor(() => machine.state === 'ready')
+    - Wait for an event: waitFor(() => events.find(e => e.type === DONE))
+    - Wait for state: waitFor(() => machine.state === ready)
     - Wait for a count: waitFor(() => items.length >= 5)
     - Wait for a file: waitFor(() => fileExists(path))
 

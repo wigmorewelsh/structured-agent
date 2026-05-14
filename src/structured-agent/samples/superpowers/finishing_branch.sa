@@ -1,5 +1,3 @@
-mod finishing_branch
-
 use extern_fns::execute_command
 use supervisor::ask_for_supervisor_help
 

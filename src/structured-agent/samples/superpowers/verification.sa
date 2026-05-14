@@ -1,5 +1,3 @@
-mod verification
-
 use extern_fns::execute_command
 
 fn identify_verification_command(claim: String): String {

@@ -156,7 +156,9 @@ impl BytecodeCompiler {
                 current_fn,
                 body,
             ),
-            typed_ast::Statement::Match { .. } => Err("match not yet supported".to_string()),
+            typed_ast::Statement::Match {
+                scrutinee, arms, ..
+            } => self.compile_match_statement(ctx, scrutinee, arms),
         }
     }
 
@@ -420,7 +422,9 @@ impl BytecodeCompiler {
                 });
                 Ok(())
             }
-            typed_ast::Expression::Match { .. } => Err("match not yet supported".to_string()),
+            typed_ast::Expression::Match {
+                scrutinee, arms, ..
+            } => self.compile_match_expression(ctx, scrutinee, arms, dest_var),
         }
     }
 
@@ -763,6 +767,88 @@ impl BytecodeCompiler {
         });
         Ok(())
     }
+
+    fn compile_match_expression(
+        &self,
+        ctx: &mut CompilerCtx,
+        scrutinee: &typed_ast::Expression,
+        arms: &[typed_ast::MatchArm],
+        dest_var: Slot,
+    ) -> Result<(), String> {
+        let scrutinee_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, scrutinee, scrutinee_slot)?;
+        let check_slot = ctx.builder.next_temp_slot();
+        let id = ctx.builder.next_label_id();
+        let end_label = format!("match_end_{}", id);
+        let last = arms.len().saturating_sub(1);
+        for (i, arm) in arms.iter().enumerate() {
+            if i > 0 {
+                let arm_label = format!("match_arm_{}_{}", id, i);
+                ctx.builder.emit_label(&arm_label);
+                ctx.builder.emit(Instruction::Nop);
+            }
+            ctx.builder.emit(Instruction::MatchType {
+                src: scrutinee_slot,
+                dest: check_slot,
+                variant: arm.variant_name.clone(),
+            });
+            if i < last {
+                ctx.builder
+                    .emit_brfalse(check_slot, &format!("match_arm_{}_{}", id, i + 1));
+            }
+            let binding_slot = ctx.binding_id_to_slot[&arm.binding_id];
+            ctx.builder.emit(Instruction::Mov {
+                dest: binding_slot,
+                src: scrutinee_slot,
+            });
+            self.compile_expression(ctx, &arm.body, dest_var)?;
+            ctx.builder.emit_br(&end_label);
+        }
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_match_statement(
+        &self,
+        ctx: &mut CompilerCtx,
+        scrutinee: &typed_ast::Expression,
+        arms: &[typed_ast::MatchArm],
+    ) -> Result<(), String> {
+        let scrutinee_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, scrutinee, scrutinee_slot)?;
+        let check_slot = ctx.builder.next_temp_slot();
+        let id = ctx.builder.next_label_id();
+        let end_label = format!("match_end_{}", id);
+        let last = arms.len().saturating_sub(1);
+        for (i, arm) in arms.iter().enumerate() {
+            if i > 0 {
+                let arm_label = format!("match_arm_{}_{}", id, i);
+                ctx.builder.emit_label(&arm_label);
+                ctx.builder.emit(Instruction::Nop);
+            }
+            ctx.builder.emit(Instruction::MatchType {
+                src: scrutinee_slot,
+                dest: check_slot,
+                variant: arm.variant_name.clone(),
+            });
+            if i < last {
+                ctx.builder
+                    .emit_brfalse(check_slot, &format!("match_arm_{}_{}", id, i + 1));
+            }
+            let binding_slot = ctx.binding_id_to_slot[&arm.binding_id];
+            ctx.builder.emit(Instruction::Mov {
+                dest: binding_slot,
+                src: scrutinee_slot,
+            });
+            let temp = ctx.builder.next_temp_slot();
+            self.compile_expression(ctx, &arm.body, temp)?;
+            ctx.builder.emit_br(&end_label);
+        }
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
+        Ok(())
+    }
 }
 
 impl Default for BytecodeCompiler {
@@ -809,6 +895,17 @@ fn collect_from_expr(
         }
         typed_ast::Expression::FieldAccess { base, .. } => {
             collect_from_expr(base, _result, _seen);
+        }
+        typed_ast::Expression::Match {
+            scrutinee, arms, ..
+        } => {
+            collect_from_expr(scrutinee, _result, _seen);
+            for arm in arms {
+                if _seen.insert(arm.binding_id) {
+                    _result.push((arm.binding_id, arm.binding.clone()));
+                }
+                collect_from_expr(&arm.body, _result, _seen);
+            }
         }
         _ => {}
     }
@@ -891,7 +988,17 @@ fn collect_binding_ids_inner(
                 }
                 collect_binding_ids_inner(body, result, seen);
             }
-            typed_ast::Statement::Match { .. } => {}
+            typed_ast::Statement::Match {
+                scrutinee, arms, ..
+            } => {
+                collect_from_expr(scrutinee, result, seen);
+                for arm in arms {
+                    if seen.insert(arm.binding_id) {
+                        result.push((arm.binding_id, arm.binding.clone()));
+                    }
+                    collect_from_expr(&arm.body, result, seen);
+                }
+            }
         }
     }
 }
