@@ -4,6 +4,7 @@ mod empty_blocks;
 mod empty_functions;
 mod infinite_loops;
 mod missing_return_or_injection;
+mod orphaned_injection;
 mod overwritten_values;
 mod placeholder_overuse;
 mod redundant_select;
@@ -53,6 +54,9 @@ mod unused_return_values_test;
 mod missing_return_or_injection_test;
 
 #[cfg(test)]
+mod orphaned_injection_test;
+
+#[cfg(test)]
 mod unused_variables_test;
 
 pub use constant_conditions::ConstantConditionAnalyzer;
@@ -61,6 +65,7 @@ pub use empty_blocks::EmptyBlockAnalyzer;
 pub use empty_functions::EmptyFunctionAnalyzer;
 pub use infinite_loops::InfiniteLoopAnalyzer;
 pub use missing_return_or_injection::MissingReturnOrInjectionAnalyzer;
+pub use orphaned_injection::OrphanedInjectionAnalyzer;
 pub use overwritten_values::OverwrittenValueAnalyzer;
 pub use placeholder_overuse::PlaceholderOveruseAnalyzer;
 pub use redundant_select::RedundantSelectAnalyzer;
@@ -155,6 +160,10 @@ pub enum Warning {
     },
     MissingReturnOrInjection {
         name: String,
+        span: Span,
+        file_id: FileId,
+    },
+    OrphanedInjection {
         span: Span,
         file_id: FileId,
     },
@@ -300,6 +309,13 @@ impl Warning {
                 .with_labels(vec![
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message("function has no return or injection"),
+                ]),
+            Warning::OrphanedInjection { span, file_id } => Diagnostic::warning()
+                .with_message("orphaned injection")
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range()).with_message(
+                        "injection at end of block has no effect; nothing in this scope will consume it",
+                    ),
                 ]),
         }
     }

@@ -8,6 +8,7 @@ pub use analysis::EmptyBlockAnalyzer;
 pub use analysis::EmptyFunctionAnalyzer;
 pub use analysis::InfiniteLoopAnalyzer;
 pub use analysis::MissingReturnOrInjectionAnalyzer;
+pub use analysis::OrphanedInjectionAnalyzer;
 pub use analysis::OverwrittenValueAnalyzer;
 pub use analysis::PlaceholderOveruseAnalyzer;
 pub use analysis::ReachabilityAnalyzer;
