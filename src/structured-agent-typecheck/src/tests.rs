@@ -4480,6 +4480,168 @@ mod typed_ast_tests {
     }
 
     #[test]
+    fn elaborated_generic_call_return_type_correct() {
+        let wrap = create_generic_test_function(
+            "wrap",
+            vec!["T".into()],
+            vec![create_parameter(
+                "list",
+                AstType::parameterized("List", vec![AstType::simple("T")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("T")]),
+            vec![],
+        );
+        let caller = create_test_function(
+            "f",
+            vec![create_parameter(
+                "xs",
+                AstType::parameterized("List", vec![AstType::simple("Int")]),
+            )],
+            AstType::parameterized("Option", vec![AstType::simple("Int")]),
+            vec![Statement::Return(Expression::Call {
+                function: "wrap".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "xs".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(wrap)),
+            Definition::Function(Arc::new(caller)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(
+            expr.ty(),
+            &RT::union(vec![RT::int(), RT::unit()]),
+            "build_typed_call should apply substitution to return type"
+        );
+    }
+
+    #[test]
+    fn elaborated_generic_method_call_return_type_correct() {
+        let input = concat!(
+            "struct Container {}\n",
+            "impl Container {\n",
+            "    pub fn map<T>(self: Self, x: T): T {\n",
+            "        return x\n",
+            "    }\n",
+            "}\n",
+            "fn main(): String {\n",
+            "    let c = Container {}\n",
+            "    return c.map(\"hello\")\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let main_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "main" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("main should be elaborated");
+        let return_expr = main_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        assert_eq!(
+            return_expr.ty(),
+            &RT::string(),
+            "generic method call return type should resolve to String"
+        );
+    }
+
+    #[test]
+    fn elaborated_struct_literal_infers_type_params_from_fields() {
+        let input = concat!(
+            "struct Pair<T> {\n",
+            "    value: T,\n",
+            "}\n",
+            "fn make(): Pair<String> {\n",
+            "    return Pair { value: \"hello\" }\n",
+            "}\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let make_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "make" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("make should be elaborated");
+        let expr = make_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        let mn = DefinitionPath::for_module(NonEmpty::new("main".to_string()));
+        assert_eq!(
+            expr.ty(),
+            &RT::Parameterized(DefinitionPath::for_type(mn, "Pair"), vec![RT::string()]),
+            "struct literal with String field should infer Pair<String>"
+        );
+    }
+
+    #[test]
+    fn no_unifier_in_elaboration() {
+        let src = include_str!("elaboration.rs");
+        assert!(
+            !src.contains("Unifier"),
+            "elaboration.rs should not reference Unifier after refactor"
+        );
+    }
+
+    #[test]
     fn elaborated_non_generic_call_return_type_unchanged() {
         let to_upper = create_test_function(
             "to_upper",

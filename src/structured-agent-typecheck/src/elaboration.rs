@@ -1,4 +1,5 @@
 use crate::db::build_module_instantiation;
+use std::collections::HashMap;
 
 use super::db::{
     Intern, InternedFunctionName, InternedModuleName, InternedTypeName, TypeCheckDatabase,
@@ -570,7 +571,6 @@ fn resolve_callee_for_generic_method(
 fn elaborate_user_args(
     db: &dyn TypeCheckDatabase,
     sig: &FunctionSignature,
-    unifier: &mut synthesize::Unifier,
     param_offset: usize,
     pending_args: &[Expression],
     function_name: &str,
@@ -592,7 +592,6 @@ fn elaborate_user_args(
             continue;
         }
         let user_arg = elaborate_expression(db, arg, env, ctx)?;
-        let _ = unifier.unify_type(&param.param_type, user_arg.ty());
         user_args.push(user_arg);
     }
     Some(user_args)
@@ -601,7 +600,7 @@ fn elaborate_user_args(
 fn elaborate_type_args(
     db: &dyn TypeCheckDatabase,
     sig: &FunctionSignature,
-    unifier: &synthesize::Unifier,
+    subst: &HashMap<String, RT>,
     type_args: &[AstType],
     span: Span,
     env: &synthesize::TypeEnvironment,
@@ -618,7 +617,7 @@ fn elaborate_type_args(
         {
             synthesize::resolve(db, explicit, env, span, ctx)
         } else {
-            unifier
+            subst
                 .get(&tp.name)
                 .cloned()
                 .or_else(|| Some(RT::Generic(tp.name.clone())))
@@ -647,7 +646,7 @@ fn elaborate_type_args(
 fn elaborate_implicit_trait_args(
     db: &dyn TypeCheckDatabase,
     sig: &FunctionSignature,
-    unifier: &synthesize::Unifier,
+    subst: &HashMap<String, RT>,
     span: Span,
     ctx: &synthesize::CheckContext,
 ) -> Vec<typed_ast::Expression> {
@@ -658,7 +657,7 @@ fn elaborate_implicit_trait_args(
         if tp.bounds.is_empty() {
             continue;
         }
-        let Some(actual) = unifier.get(&tp.name) else {
+        let Some(actual) = subst.get(&tp.name) else {
             continue;
         };
         if matches!(actual, RT::Generic(_)) {
@@ -700,7 +699,7 @@ fn elaborate_implicit_trait_args(
 fn elaborate_arguments(
     db: &dyn TypeCheckDatabase,
     sig: &FunctionSignature,
-    unifier: &mut synthesize::Unifier,
+    subst: &HashMap<String, RT>,
     type_args: &[AstType],
     pending_args: &[Expression],
     elaborated_receiver: Option<typed_ast::Expression>,
@@ -710,18 +709,10 @@ fn elaborate_arguments(
     ctx: &synthesize::CheckContext,
 ) -> Option<Vec<typed_ast::Expression>> {
     let param_offset = usize::from(elaborated_receiver.is_some());
-    let user_args = elaborate_user_args(
-        db,
-        sig,
-        unifier,
-        param_offset,
-        pending_args,
-        function_name,
-        env,
-        ctx,
-    )?;
-    let type_exprs = elaborate_type_args(db, sig, unifier, type_args, span, env, ctx);
-    let trait_exprs = elaborate_implicit_trait_args(db, sig, unifier, span, ctx);
+    let user_args =
+        elaborate_user_args(db, sig, param_offset, pending_args, function_name, env, ctx)?;
+    let type_exprs = elaborate_type_args(db, sig, subst, type_args, span, env, ctx);
+    let trait_exprs = elaborate_implicit_trait_args(db, sig, subst, span, ctx);
     let mut all_args = type_exprs;
     all_args.extend(trait_exprs);
     if let Some(receiver) = elaborated_receiver {
@@ -749,7 +740,6 @@ fn build_typed_call(
         .get(&(ctx.file_id, span.start))
         .cloned()
         .unwrap_or_default();
-    let mut unifier = synthesize::Unifier::from_map(solutions);
     let (elaborated_receiver, target) = if callee.receiver_is_target {
         let t = receiver.map(Box::new);
         (None, t)
@@ -759,7 +749,7 @@ fn build_typed_call(
     let all_args = elaborate_arguments(
         db,
         sig,
-        &mut unifier,
+        &solutions,
         type_args,
         pending_args,
         elaborated_receiver,
@@ -768,7 +758,7 @@ fn build_typed_call(
         env,
         ctx,
     )?;
-    let resolved_return = unifier.apply_subst(&sig.return_type);
+    let resolved_return = synthesize::apply_subst(&sig.return_type, &solutions);
     Some(typed_ast::Expression::Call {
         function: function_name,
         binding: callee.binding.clone(),
@@ -893,7 +883,7 @@ fn elaborate_struct_literal(
     let (definition, type_params) = get_struct_fields(db, struct_name, ctx.module_name)?;
     let type_env = synthesize::TypeEnvironment::with_type_params(&type_params);
     let mut typed_fields = Vec::new();
-    let mut unifier = synthesize::Unifier::from_map(Default::default());
+    let mut subst: HashMap<String, RT> = HashMap::new();
     for (field_name, value_expr) in fields {
         let declared_ast_type = definition
             .iter()
@@ -902,7 +892,11 @@ fn elaborate_struct_literal(
         let declared_type =
             synthesize::resolve(db, &declared_ast_type, &type_env, value_expr.span(), ctx)?;
         let typed_value = elaborate_expression(db, value_expr, env, ctx)?;
-        let _ = unifier.unify_type(&declared_type, typed_value.ty());
+        if let Some(bindings) =
+            synthesize::extract_generic_bindings(&declared_type, typed_value.ty())
+        {
+            subst.extend(bindings);
+        }
         typed_fields.push((field_name.clone(), typed_value));
     }
     let resolved_type_name = {
@@ -918,7 +912,7 @@ fn elaborate_struct_literal(
         let args: Vec<RT> = type_params
             .iter()
             .map(|tp| {
-                unifier
+                subst
                     .get(&tp.name)
                     .cloned()
                     .unwrap_or_else(|| RT::Generic(tp.name.clone()))

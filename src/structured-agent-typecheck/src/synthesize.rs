@@ -267,10 +267,6 @@ impl Unifier {
         }
     }
 
-    pub fn from_map(map: HashMap<String, RT>) -> Self {
-        Self { subst: map }
-    }
-
     pub fn unify_type(&mut self, formal: &RT, actual: &RT) -> Result<(), RT> {
         match formal {
             RT::Generic(name) => {
@@ -343,7 +339,7 @@ pub fn apply_subst(ty: &RT, map: &HashMap<String, RT>) -> RT {
     }
 }
 
-fn extract_generic_bindings(formal: &RT, actual: &RT) -> Option<HashMap<String, RT>> {
+pub(crate) fn extract_generic_bindings(formal: &RT, actual: &RT) -> Option<HashMap<String, RT>> {
     match formal {
         RT::Generic(name) => {
             let mut m = HashMap::new();
