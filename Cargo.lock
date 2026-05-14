@@ -3502,6 +3502,7 @@ dependencies = [
  "arrow",
  "async-openai",
  "async-trait",
+ "base64 0.22.1",
  "nonempty",
  "serde",
  "serde_json",

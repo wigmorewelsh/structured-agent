@@ -2,12 +2,15 @@ use async_openai::{
     Client,
     config::OpenAIConfig,
     types::chat::{
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs, ReasoningEffort,
-        ResponseFormat, ResponseFormatJsonSchema,
+        ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartAudio,
+        ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+        ChatCompletionRequestUserMessageContentPart, CreateChatCompletionRequestArgs, ImageUrl,
+        InputAudio, InputAudioFormat, ReasoningEffort, ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use structured_agent_interpreter_runtime::{
     Context, ContextEvent, Event, ExpressionValue, LanguageEngine, ThinkingEvent, Type,
 };
@@ -284,6 +287,44 @@ impl OpenAIEngine {
             },
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn expression_value_to_content_part(
+        value: &ExpressionValue,
+    ) -> Option<ChatCompletionRequestUserMessageContentPart> {
+        if let Ok(img) = value.as_image() {
+            let url = format!(
+                "data:{};base64,{}",
+                img.mime_type,
+                STANDARD.encode(&img.data)
+            );
+            return Some(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                ChatCompletionRequestMessageContentPartImage {
+                    image_url: ImageUrl { url, detail: None },
+                },
+            ));
+        }
+        if let Ok(aud) = value.as_audio() {
+            let format = match aud.mime_type.split('/').nth(1).unwrap_or("") {
+                "wav" => InputAudioFormat::Wav,
+                _ => InputAudioFormat::Mp3,
+            };
+            return Some(ChatCompletionRequestUserMessageContentPart::InputAudio(
+                ChatCompletionRequestMessageContentPartAudio {
+                    input_audio: InputAudio {
+                        data: STANDARD.encode(&aud.data),
+                        format,
+                    },
+                },
+            ));
+        }
+        if let Ok(lnk) = value.as_link() {
+            return Some(ChatCompletionRequestUserMessageContentPart::Text(
+                ChatCompletionRequestMessageContentPartText { text: lnk.uri },
+            ));
+        }
+        None
+    }
 }
 
 #[async_trait]
@@ -371,6 +412,10 @@ impl LanguageEngine for OpenAIEngine {
 mod tests {
     use super::*;
     use arrow::datatypes::DataType;
+    use async_openai::types::chat::{
+        ChatCompletionRequestUserMessageContentPart, InputAudioFormat,
+    };
+    use base64::engine::general_purpose::STANDARD;
     use nonempty::NonEmpty;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -525,5 +570,37 @@ mod tests {
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             7
         );
+    }
+
+    #[test]
+    fn image_expression_value_maps_to_openai_image_part() {
+        let value = ExpressionValue::image("image/png", vec![1u8, 2, 3]);
+        let part = OpenAIEngine::expression_value_to_content_part(&value).unwrap();
+        let ChatCompletionRequestUserMessageContentPart::ImageUrl(image_part) = part else {
+            panic!("Expected ImageUrl variant");
+        };
+        assert_eq!(image_part.image_url.url, "data:image/png;base64,AQID");
+        assert!(image_part.image_url.detail.is_none());
+    }
+
+    #[test]
+    fn audio_expression_value_maps_to_openai_audio_part() {
+        let value = ExpressionValue::audio("audio/mp3", vec![4u8, 5, 6]);
+        let part = OpenAIEngine::expression_value_to_content_part(&value).unwrap();
+        let ChatCompletionRequestUserMessageContentPart::InputAudio(audio_part) = part else {
+            panic!("Expected InputAudio variant");
+        };
+        assert_eq!(audio_part.input_audio.data, STANDARD.encode([4u8, 5, 6]));
+        assert_eq!(audio_part.input_audio.format, InputAudioFormat::Mp3);
+    }
+
+    #[test]
+    fn link_expression_value_maps_to_openai_text_part() {
+        let value = ExpressionValue::link("https://example.com", None);
+        let part = OpenAIEngine::expression_value_to_content_part(&value).unwrap();
+        let ChatCompletionRequestUserMessageContentPart::Text(text_part) = part else {
+            panic!("Expected Text variant");
+        };
+        assert_eq!(text_part.text, "https://example.com");
     }
 }
