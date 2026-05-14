@@ -10,12 +10,14 @@ use crate::expression::ExpressionValue;
 
 mod list;
 mod list_iterator;
+mod media;
 mod option;
 mod primitives;
 mod struct_value;
 
 pub use list::{ListValue, ListValueFactory};
 pub use list_iterator::ListIteratorValue;
+pub use media::{AudioValue, ImageValue, LinkValue};
 pub use option::{OptionValue, OptionValueFactory};
 pub use primitives::{BooleanValue, IntValue, StringValue, UnitValue};
 pub use struct_value::{MetadataValue, StructValue};

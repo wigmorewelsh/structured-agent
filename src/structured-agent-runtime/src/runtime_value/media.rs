@@ -1,0 +1,279 @@
+use std::any::Any;
+use std::sync::Arc;
+
+use arrow::array::{Array, BinaryArray, StringArray, StructArray};
+use arrow::datatypes::{DataType, Field, Fields};
+
+use super::RuntimeValue;
+
+#[derive(Debug, Clone)]
+pub struct ImageValue {
+    pub mime_type: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AudioValue {
+    pub mime_type: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkValue {
+    pub uri: String,
+    pub name: Option<String>,
+}
+
+impl RuntimeValue for ImageValue {
+    fn type_name(&self) -> &str {
+        "Image"
+    }
+
+    fn format_for_llm(&self) -> String {
+        format!("[Image: {}]", self.mime_type)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq(&self, other: &dyn Any) -> bool {
+        other
+            .downcast_ref::<ImageValue>()
+            .map(|v| v.mime_type == self.mime_type && v.data == self.data)
+            .unwrap_or(false)
+    }
+
+    fn to_arrow(&self) -> Arc<dyn Array> {
+        let fields = Fields::from(vec![
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("data", DataType::Binary, false),
+        ]);
+        let mime_array = Arc::new(StringArray::from(vec![self.mime_type.clone()]));
+        let data_array = Arc::new(BinaryArray::from(vec![self.data.as_slice()]));
+        Arc::new(StructArray::new(
+            fields,
+            vec![mime_array as Arc<dyn Array>, data_array as Arc<dyn Array>],
+            None,
+        ))
+    }
+}
+
+impl RuntimeValue for AudioValue {
+    fn type_name(&self) -> &str {
+        "Audio"
+    }
+
+    fn format_for_llm(&self) -> String {
+        format!("[Audio: {}]", self.mime_type)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq(&self, other: &dyn Any) -> bool {
+        other
+            .downcast_ref::<AudioValue>()
+            .map(|v| v.mime_type == self.mime_type && v.data == self.data)
+            .unwrap_or(false)
+    }
+
+    fn to_arrow(&self) -> Arc<dyn Array> {
+        let fields = Fields::from(vec![
+            Field::new("mime_type", DataType::Utf8, false),
+            Field::new("data", DataType::Binary, false),
+        ]);
+        let mime_array = Arc::new(StringArray::from(vec![self.mime_type.clone()]));
+        let data_array = Arc::new(BinaryArray::from(vec![self.data.as_slice()]));
+        Arc::new(StructArray::new(
+            fields,
+            vec![mime_array as Arc<dyn Array>, data_array as Arc<dyn Array>],
+            None,
+        ))
+    }
+}
+
+impl RuntimeValue for LinkValue {
+    fn type_name(&self) -> &str {
+        "Link"
+    }
+
+    fn format_for_llm(&self) -> String {
+        match &self.name {
+            None => self.uri.clone(),
+            Some(name) => format!("{} ({})", name, self.uri),
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq(&self, other: &dyn Any) -> bool {
+        other
+            .downcast_ref::<LinkValue>()
+            .map(|v| v.uri == self.uri && v.name == self.name)
+            .unwrap_or(false)
+    }
+
+    fn to_arrow(&self) -> Arc<dyn Array> {
+        let fields = Fields::from(vec![
+            Field::new("uri", DataType::Utf8, false),
+            Field::new("name", DataType::Utf8, true),
+        ]);
+        let uri_array = Arc::new(StringArray::from(vec![self.uri.clone()]));
+        let name_array = Arc::new(StringArray::from(vec![self.name.clone()]));
+        Arc::new(StructArray::new(
+            fields,
+            vec![uri_array as Arc<dyn Array>, name_array as Arc<dyn Array>],
+            None,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_type_name() {
+        let v = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![],
+        };
+        assert_eq!(v.type_name(), "Image");
+    }
+
+    #[test]
+    fn audio_type_name() {
+        let v = AudioValue {
+            mime_type: "audio/mp3".to_string(),
+            data: vec![],
+        };
+        assert_eq!(v.type_name(), "Audio");
+    }
+
+    #[test]
+    fn link_type_name() {
+        let v = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        assert_eq!(v.type_name(), "Link");
+    }
+
+    #[test]
+    fn image_eq_same_value() {
+        let a = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![1, 2, 3],
+        };
+        let b = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![1, 2, 3],
+        };
+        assert!(RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn image_not_eq_different_mime() {
+        let a = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![1, 2, 3],
+        };
+        let b = ImageValue {
+            mime_type: "image/jpeg".to_string(),
+            data: vec![1, 2, 3],
+        };
+        assert!(!RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn image_not_eq_different_data() {
+        let a = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![1, 2, 3],
+        };
+        let b = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![4, 5, 6],
+        };
+        assert!(!RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn audio_eq_same_value() {
+        let a = AudioValue {
+            mime_type: "audio/mp3".to_string(),
+            data: vec![10, 20],
+        };
+        let b = AudioValue {
+            mime_type: "audio/mp3".to_string(),
+            data: vec![10, 20],
+        };
+        assert!(RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn link_eq_same_uri() {
+        let a = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        let b = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        assert!(RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn link_not_eq_different_uri() {
+        let a = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        let b = LinkValue {
+            uri: "https://other.com".to_string(),
+            name: None,
+        };
+        assert!(!RuntimeValue::eq(&a, b.as_any()));
+    }
+
+    #[test]
+    fn image_format_for_llm_includes_mime_type() {
+        let v = ImageValue {
+            mime_type: "image/png".to_string(),
+            data: vec![],
+        };
+        assert_eq!(v.format_for_llm(), "[Image: image/png]");
+    }
+
+    #[test]
+    fn audio_format_for_llm_includes_mime_type() {
+        let v = AudioValue {
+            mime_type: "audio/mp3".to_string(),
+            data: vec![],
+        };
+        assert_eq!(v.format_for_llm(), "[Audio: audio/mp3]");
+    }
+
+    #[test]
+    fn link_format_for_llm_is_uri() {
+        let v = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: None,
+        };
+        assert_eq!(v.format_for_llm(), "https://example.com");
+    }
+
+    #[test]
+    fn link_name_is_optional() {
+        let v = LinkValue {
+            uri: "https://example.com".to_string(),
+            name: Some("Example".to_string()),
+        };
+        assert_eq!(v.format_for_llm(), "Example (https://example.com)");
+    }
+}
