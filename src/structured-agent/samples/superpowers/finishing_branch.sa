@@ -39,9 +39,7 @@ fn chose_discard(): Boolean {
     "Did the user choose to discard all changes on this branch?"!
 }
 
-fn user_confirmed_discard(): Boolean {
-    "Did the user type the word 'discard' to confirm they want to permanently delete this work?"!
-}
+
 
 fn do_merge(base_branch: String): () {
     let action = select {
@@ -62,7 +60,7 @@ fn do_pr(base_branch: String): () {
 fn do_discard(branch: String): () {
     let confirmation = ask_for_supervisor_help("Type 'discard' to permanently delete all changes on branch ${branch}:")
     confirmation!
-    if user_confirmed_discard() {
+    if confirmation.equal("discard") {
         let action = select {
             execute_command(_)
         }

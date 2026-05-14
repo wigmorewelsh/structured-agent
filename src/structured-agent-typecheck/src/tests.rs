@@ -2425,6 +2425,117 @@ mod tests {
             result.err()
         );
     }
+
+    #[test]
+    fn assignable_concrete_to_union() {
+        let input = concat!(
+            "fn caller(img: Image): String { return f(img) }\n",
+            "fn f(x: Image | Audio): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn assignable_audio_to_media_alias() {
+        let input = concat!(
+            "type Media = Image | Audio\n",
+            "fn caller(x: Audio): String { return f(x) }\n",
+            "fn f(m: Media): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn not_assignable_union_to_concrete() {
+        let input = concat!(
+            "fn caller(x: Image | Audio): String { return f(x) }\n",
+            "fn f(img: Image): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(
+            e,
+            TypeError::TypeMismatch { .. } | TypeError::ArgumentTypeMismatch { .. }
+        )));
+    }
+
+    #[test]
+    fn not_assignable_wrong_type_to_union() {
+        let input = concat!(
+            "fn caller(x: String): String { return f(x) }\n",
+            "fn f(m: Image | Audio): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(
+            e,
+            TypeError::TypeMismatch { .. } | TypeError::ArgumentTypeMismatch { .. }
+        )));
+    }
+
+    #[test]
+    fn assignable_same_union() {
+        let input = concat!(
+            "fn caller(x: Image | Audio): String { return f(x) }\n",
+            "fn f(m: Image | Audio): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn assignable_subset_union() {
+        let input = concat!(
+            "fn caller(x: Image | Audio): String { return f(x) }\n",
+            "fn f(m: Image | Audio | Link): String { return \"ok\" }\n"
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
 }
 
 #[cfg(test)]

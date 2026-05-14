@@ -235,7 +235,7 @@ fn check_type_bound(
     else {
         return;
     };
-    if actual_type != bound_type {
+    if !actual_type.is_assignable_to(bound_type) {
         TypeErrorAccumulator(TypeError::TypeMismatch {
             expected: bound_type.to_string(),
             found: actual_type.to_string(),

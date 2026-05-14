@@ -298,7 +298,7 @@ impl Unifier {
                 }
             }
             _ => {
-                if formal == actual {
+                if actual.is_assignable_to(formal) {
                     Ok(())
                 } else {
                     Err(formal.clone())

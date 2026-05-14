@@ -19,9 +19,7 @@ fn is_review_approved(): Boolean {
     "Does the current review show no critical or important issues?"!
 }
 
-fn has_issues_to_fix(): Boolean {
-    "Are there critical or important issues in the review that must be fixed before proceeding?"!
-}
+
 
 fn review_loop(): String {
     let action = select {

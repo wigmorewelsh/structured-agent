@@ -212,6 +212,17 @@ impl Type {
         Type::Union(normalise(variants))
     }
 
+    pub fn is_assignable_to(&self, other: &Type) -> bool {
+        match other {
+            Type::Union(to_variants) => match self {
+                Type::Union(from_variants) => from_variants.iter().all(|v| to_variants.contains(v)),
+                Type::Named(_) => to_variants.contains(self),
+                _ => self == other,
+            },
+            _ => self == other,
+        }
+    }
+
     pub fn is_union(&self) -> bool {
         matches!(self, Type::Union(_))
     }
@@ -403,6 +414,45 @@ mod tests {
         assert_eq!(variants.len(), 2);
         assert_eq!(variants[0], Type::image());
         assert_eq!(variants[1], Type::audio());
+    }
+
+    #[test]
+    fn is_assignable_named_to_named_same() {
+        assert!(Type::image().is_assignable_to(&Type::image()));
+    }
+
+    #[test]
+    fn is_assignable_named_to_named_different() {
+        assert!(!Type::image().is_assignable_to(&Type::string()));
+    }
+
+    #[test]
+    fn is_assignable_named_to_union_member() {
+        assert!(Type::image().is_assignable_to(&Type::union(vec![Type::image(), Type::audio()])));
+    }
+
+    #[test]
+    fn is_assignable_named_not_in_union() {
+        assert!(!Type::string().is_assignable_to(&Type::union(vec![Type::image(), Type::audio()])));
+    }
+
+    #[test]
+    fn is_assignable_union_subset() {
+        assert!(
+            Type::union(vec![Type::image(), Type::audio()]).is_assignable_to(&Type::union(vec![
+                Type::image(),
+                Type::audio(),
+                Type::link()
+            ]))
+        );
+    }
+
+    #[test]
+    fn is_assignable_union_superset_fails() {
+        assert!(
+            !Type::union(vec![Type::image(), Type::audio(), Type::link()])
+                .is_assignable_to(&Type::union(vec![Type::image(), Type::audio()]))
+        );
     }
 
     #[test]
