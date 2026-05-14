@@ -1044,6 +1044,19 @@ pub fn synthesize_expression(
                 let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
                 let _ = unifier.unify_type(&param.param_type, &arg_ty);
             }
+            for tp in &sig.type_params {
+                if let Some(resolved_ty) = unifier.get(&tp.name) {
+                    constraints.push(Constraint {
+                        kind: ConstraintKind::Unify {
+                            call_site: span.start,
+                            var: tp.name.clone(),
+                            ty: resolved_ty.clone(),
+                        },
+                        span: *span,
+                        file_id: ctx.file_id,
+                    });
+                }
+            }
             Some(unifier.apply_subst(&sig.return_type))
         }
         Expression::StringTemplate { parts, .. } => {

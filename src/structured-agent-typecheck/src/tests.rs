@@ -4935,6 +4935,23 @@ mod constraint_tests {
         checker.get_check_constraints(&[parsed], &native_prelude_modules())
     }
 
+    fn check_constraints_from_code(code: &str) -> Vec<crate::solver::Constraint> {
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let mut checker = crate::TypeChecker::new();
+        checker.get_check_constraints(&[parsed], &native_prelude_modules())
+    }
+
     fn solve_parsed(code: &str) -> crate::solver::SolvedConstraints {
         let stream = combine::stream::position::Stream::with_positioner(
             code,
@@ -5216,6 +5233,75 @@ mod constraint_tests {
                 .iter()
                 .any(|e| matches!(e, crate::TypeError::ArgumentTypeMismatch { .. }))
         );
+    }
+
+    #[test]
+    fn method_call_unify_constraint_emitted_for_generic_return() {
+        let code = concat!(
+            "struct Wrapper {}\n",
+            "impl Wrapper {\n",
+            "    pub fn wrap<T>(self: Wrapper, x: T): T { return x }\n",
+            "}\n",
+            "fn main(): Int {\n",
+            "    let w = Wrapper {}\n",
+            "    return w.wrap(42)\n",
+            "}\n",
+        );
+        let constraints = check_constraints_from_code(code);
+        let unify: Vec<_> = constraints
+            .iter()
+            .filter(|c| matches!(&c.kind, crate::solver::ConstraintKind::Unify { .. }))
+            .collect();
+        assert_eq!(unify.len(), 1);
+        match &unify[0].kind {
+            crate::solver::ConstraintKind::Unify { var, ty, .. } => {
+                assert_eq!(var, "T");
+                assert!(ty.is_int(), "expected Int type, got {:?}", ty);
+            }
+            _ => panic!("expected Unify"),
+        }
+    }
+
+    #[test]
+    fn solver_stores_generic_solutions_for_method_call_site() {
+        let code = concat!(
+            "struct Wrapper {}\n",
+            "impl Wrapper {\n",
+            "    pub fn wrap<T>(self: Wrapper, x: T): T { return x }\n",
+            "}\n",
+            "fn main(): Int {\n",
+            "    let w = Wrapper {}\n",
+            "    return w.wrap(42)\n",
+            "}\n",
+        );
+        let solved = solve_parsed(code);
+        assert_eq!(solved.generic_solutions.len(), 1);
+        let entry = solved.generic_solutions.values().next().unwrap();
+        assert!(
+            entry.get("T").map(|t| t.is_int()).unwrap_or(false),
+            "expected T -> Int, got {:?}",
+            entry
+        );
+    }
+
+    #[test]
+    fn method_call_two_sites_produce_separate_generic_solutions() {
+        let code = concat!(
+            "struct Wrapper {}\n",
+            "impl Wrapper {\n",
+            "    pub fn wrap<T>(self: Wrapper, x: T): T { return x }\n",
+            "}\n",
+            "fn a(): Int {\n",
+            "    let w = Wrapper {}\n",
+            "    return w.wrap(42)\n",
+            "}\n",
+            "fn b(): String {\n",
+            "    let w = Wrapper {}\n",
+            "    return w.wrap(\"hello\")\n",
+            "}\n",
+        );
+        let solved = solve_parsed(code);
+        assert_eq!(solved.generic_solutions.len(), 2);
     }
 }
 
