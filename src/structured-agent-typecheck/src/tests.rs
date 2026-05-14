@@ -5303,6 +5303,178 @@ mod constraint_tests {
         let solved = solve_parsed(code);
         assert_eq!(solved.generic_solutions.len(), 2);
     }
+
+    #[test]
+    fn unify_constraint_carries_fn_name_and_param_name() {
+        let identity = create_generic_test_function(
+            "identity",
+            vec!["T".into()],
+            vec![create_parameter("x", AstType::simple("T"))],
+            AstType::simple("T"),
+            vec![],
+        );
+        let caller = create_test_function(
+            "main",
+            vec![create_parameter("s", AstType::simple("String"))],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::Call {
+                function: "identity".to_string(),
+                type_args: vec![],
+                arguments: vec![Expression::Variable {
+                    name: "s".to_string(),
+                    span: crate::types::Span::dummy(),
+                }],
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let module = create_test_module(vec![
+            Definition::Function(Arc::new(identity)),
+            Definition::Function(Arc::new(caller)),
+        ]);
+        let constraints = check_constraints(module);
+        let unify: Vec<_> = constraints
+            .iter()
+            .filter(|c| matches!(&c.kind, crate::solver::ConstraintKind::Unify { .. }))
+            .collect();
+        assert_eq!(unify.len(), 1);
+        match &unify[0].kind {
+            crate::solver::ConstraintKind::Unify {
+                fn_name,
+                param_name,
+                ..
+            } => {
+                assert_eq!(fn_name, "identity");
+                assert_eq!(param_name, "x");
+            }
+            _ => panic!("expected Unify"),
+        }
+    }
+
+    #[test]
+    fn solver_emits_argument_type_mismatch_for_conflicting_unify() {
+        let code = concat!(
+            "fn same<T>(a: T, b: T): T { return a }\n",
+            "fn main(): String {\n",
+            "    return same(42, \"hello\")\n",
+            "}\n",
+        );
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let result = crate::TypeChecker::new()
+            .check(&[parsed], &native_prelude_modules())
+            .map(|_| ());
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                crate::TypeError::ArgumentTypeMismatch { function, .. }
+                if function == "same"
+            )),
+            "expected ArgumentTypeMismatch for 'same', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn solver_no_error_for_consistent_unify() {
+        let code = concat!(
+            "fn same<T>(a: T, b: T): T { return a }\n",
+            "fn main(): String {\n",
+            "    return same(\"hello\", \"world\")\n",
+            "}\n",
+        );
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let result = crate::TypeChecker::new().check(&[parsed], &native_prelude_modules());
+        assert!(result.is_ok(), "expected no error");
+    }
+
+    #[test]
+    fn synthesize_call_type_mismatch_still_reported() {
+        let code = concat!(
+            "fn process<T>(value: T, count: Int): T { return value }\n",
+            "fn main(): String {\n",
+            "    return process(\"hello\", \"not_an_int\")\n",
+            "}\n",
+        );
+        let stream = combine::stream::position::Stream::with_positioner(
+            code,
+            combine::stream::position::IndexPositioner::default(),
+        );
+        let (module, _) = parse_program(0).parse(stream).unwrap();
+        let parsed = crate::ast::ParsedModule {
+            name: NonEmpty::new("test".to_string()),
+            module,
+            is_entry: true,
+            file_id: 0,
+            is_inline: false,
+        };
+        let result = crate::TypeChecker::new()
+            .check(&[parsed], &native_prelude_modules())
+            .map(|_| ());
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                crate::TypeError::ArgumentTypeMismatch { function, parameter, .. }
+                if function == "process" && parameter == "count"
+            )),
+            "expected ArgumentTypeMismatch for 'process'/'count', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn method_call_unify_carries_fn_name() {
+        let code = concat!(
+            "struct Wrapper {}\n",
+            "impl Wrapper {\n",
+            "    pub fn wrap<T>(self: Wrapper, x: T): T { return x }\n",
+            "}\n",
+            "fn main(): Int {\n",
+            "    let w = Wrapper {}\n",
+            "    return w.wrap(42)\n",
+            "}\n",
+        );
+        let constraints = check_constraints_from_code(code);
+        let unify: Vec<_> = constraints
+            .iter()
+            .filter(|c| matches!(&c.kind, crate::solver::ConstraintKind::Unify { .. }))
+            .collect();
+        assert_eq!(unify.len(), 1);
+        match &unify[0].kind {
+            crate::solver::ConstraintKind::Unify { fn_name, .. } => {
+                assert!(
+                    fn_name.contains("wrap"),
+                    "expected fn_name to contain 'wrap', got {:?}",
+                    fn_name
+                );
+            }
+            _ => panic!("expected Unify"),
+        }
+    }
 }
 
 #[cfg(test)]

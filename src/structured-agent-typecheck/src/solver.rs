@@ -35,6 +35,8 @@ pub enum ConstraintKind {
         call_site: usize,
         var: String,
         ty: Type,
+        fn_name: String,
+        param_name: String,
     },
 }
 
@@ -79,11 +81,32 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
                 check_trait_impl(db, constraint, &mut impls);
             }
             ConstraintKind::TraitBound { .. } => {}
-            ConstraintKind::Unify { call_site, var, ty } => {
-                generic_solutions
+            ConstraintKind::Unify {
+                call_site,
+                var,
+                ty,
+                fn_name,
+                param_name,
+            } => {
+                let slot = generic_solutions
                     .entry((constraint.file_id, *call_site))
-                    .or_default()
-                    .insert(var.clone(), ty.clone());
+                    .or_default();
+                match slot.get(var) {
+                    Some(existing) if existing != ty => {
+                        TypeErrorAccumulator(TypeError::ArgumentTypeMismatch {
+                            function: fn_name.clone(),
+                            parameter: param_name.clone(),
+                            expected: existing.to_string(),
+                            found: ty.to_string(),
+                            span: constraint.span,
+                            file_id: constraint.file_id,
+                        })
+                        .accumulate(db);
+                    }
+                    _ => {
+                        slot.insert(var.clone(), ty.clone());
+                    }
+                }
             }
         }
     }

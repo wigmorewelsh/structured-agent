@@ -331,6 +331,53 @@ impl Unifier {
     }
 }
 
+pub fn apply_subst(ty: &RT, map: &HashMap<String, RT>) -> RT {
+    match ty {
+        RT::Generic(name) => map.get(name).cloned().unwrap_or_else(|| ty.clone()),
+        RT::Parameterized(name, args) => RT::Parameterized(
+            name.clone(),
+            args.iter().map(|a| apply_subst(a, map)).collect(),
+        ),
+        RT::Union(variants) => RT::union(variants.iter().map(|v| apply_subst(v, map)).collect()),
+        other => other.clone(),
+    }
+}
+
+fn extract_generic_bindings(formal: &RT, actual: &RT) -> Option<HashMap<String, RT>> {
+    match formal {
+        RT::Generic(name) => {
+            let mut m = HashMap::new();
+            m.insert(name.clone(), actual.clone());
+            Some(m)
+        }
+        RT::Parameterized(name_f, args_f) => {
+            if let RT::Parameterized(name_a, args_a) = actual {
+                if name_f == name_a && args_f.len() == args_a.len() {
+                    let mut result = HashMap::new();
+                    for (f, a) in args_f.iter().zip(args_a.iter()) {
+                        match extract_generic_bindings(f, a) {
+                            Some(inner) => result.extend(inner),
+                            None => return None,
+                        }
+                    }
+                    Some(result)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        _ => {
+            if actual.is_assignable_to(formal) {
+                Some(HashMap::new())
+            } else {
+                None
+            }
+        }
+    }
+}
+
 pub fn check_definition(
     db: &dyn TypeCheckDatabase,
     definition: &Definition,
@@ -1028,12 +1075,22 @@ pub fn synthesize_expression(
         } => {
             let receiver_type = synthesize_expression(db, receiver, env, ctx, constraints)?;
             let sig = resolve_method_sig(db, &receiver_type, method, env, *span, ctx)?;
-            let mut unifier = Unifier::new();
+            let mut subst: HashMap<String, RT> = HashMap::new();
+            let mut param_names: HashMap<String, String> = HashMap::new();
             let param_offset = if receiver_type.is_actor_ref() {
                 0
             } else {
                 if let Some(first_param) = sig.parameters.first() {
-                    let _ = unifier.unify_type(&first_param.param_type, &receiver_type);
+                    if let Some(bindings) =
+                        extract_generic_bindings(&first_param.param_type, &receiver_type)
+                    {
+                        for (name, ty) in bindings {
+                            if !param_names.contains_key(&name) {
+                                param_names.insert(name.clone(), first_param.name.clone());
+                            }
+                            subst.insert(name, ty);
+                        }
+                    }
                 }
                 1
             };
@@ -1042,22 +1099,29 @@ pub fn synthesize_expression(
                     continue;
                 }
                 let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
-                let _ = unifier.unify_type(&param.param_type, &arg_ty);
+                if let Some(bindings) = extract_generic_bindings(&param.param_type, &arg_ty) {
+                    for (name, ty) in bindings {
+                        param_names.insert(name.clone(), param.name.clone());
+                        subst.insert(name, ty);
+                    }
+                }
             }
             for tp in &sig.type_params {
-                if let Some(resolved_ty) = unifier.get(&tp.name) {
+                if let Some(resolved_ty) = subst.get(&tp.name) {
                     constraints.push(Constraint {
                         kind: ConstraintKind::Unify {
                             call_site: span.start,
                             var: tp.name.clone(),
                             ty: resolved_ty.clone(),
+                            fn_name: method.clone(),
+                            param_name: param_names.get(&tp.name).cloned().unwrap_or_default(),
                         },
                         span: *span,
                         file_id: ctx.file_id,
                     });
                 }
             }
-            Some(unifier.apply_subst(&sig.return_type))
+            Some(apply_subst(&sig.return_type, &subst))
         }
         Expression::StringTemplate { parts, .. } => {
             for part in parts {
@@ -1197,19 +1261,33 @@ fn synthesize_call(
         }
     );
 
-    let mut unifier = Unifier::new();
+    let mut subst: HashMap<String, RT> = HashMap::new();
+
     for (tp, ty_arg) in sig.type_params.iter().zip(type_args) {
         if let Some(resolved) = resolve(db, ty_arg, env, span, ctx) {
-            let _ = unifier.unify_type(&RT::Generic(tp.name.clone()), &resolved);
+            subst.insert(tp.name.clone(), resolved.clone());
+            constraints.push(Constraint {
+                kind: ConstraintKind::Unify {
+                    call_site: span.start,
+                    var: tp.name.clone(),
+                    ty: resolved,
+                    fn_name: function.to_string(),
+                    param_name: String::new(),
+                },
+                span,
+                file_id: ctx.file_id,
+            });
         }
     }
+
     for (arg, param) in arguments.iter().zip(&sig.parameters) {
         if matches!(arg, Expression::Placeholder { .. }) {
             continue;
         }
         let arg_ty = synthesize_expression(db, arg, env, ctx, constraints)?;
+        let new_bindings = extract_generic_bindings(&param.param_type, &arg_ty);
         ensure_or_accumulate!(
-            unifier.unify_type(&param.param_type, &arg_ty).is_ok(),
+            new_bindings.is_some(),
             db,
             TypeError::ArgumentTypeMismatch {
                 function: function.to_string(),
@@ -1220,12 +1298,29 @@ fn synthesize_call(
                 file_id: ctx.file_id,
             }
         );
+        let new_bindings = new_bindings.unwrap();
+        for (name, ty) in &new_bindings {
+            if sig.type_params.iter().any(|tp| &tp.name == name) {
+                constraints.push(Constraint {
+                    kind: ConstraintKind::Unify {
+                        call_site: span.start,
+                        var: name.clone(),
+                        ty: ty.clone(),
+                        fn_name: function.to_string(),
+                        param_name: param.name.clone(),
+                    },
+                    span,
+                    file_id: ctx.file_id,
+                });
+            }
+        }
+        subst.extend(new_bindings);
     }
     for tp in &sig.type_params {
         if tp.bounds.is_empty() {
             continue;
         }
-        if let Some(actual) = unifier.get(&tp.name) {
+        if let Some(actual) = subst.get(&tp.name) {
             let interned_mod = InternedModuleName::new(db, ctx.module_name.clone());
             let type_path = match actual {
                 RT::Named(path) => Some(path.clone()),
@@ -1277,20 +1372,7 @@ fn synthesize_call(
             }
         }
     }
-    for tp in &sig.type_params {
-        if let Some(resolved_ty) = unifier.get(&tp.name) {
-            constraints.push(Constraint {
-                kind: ConstraintKind::Unify {
-                    call_site: span.start,
-                    var: tp.name.clone(),
-                    ty: resolved_ty.clone(),
-                },
-                span,
-                file_id: ctx.file_id,
-            });
-        }
-    }
-    Some(unifier.apply_subst(&sig.return_type))
+    Some(apply_subst(&sig.return_type, &subst))
 }
 
 fn synthesize_list_literal(
