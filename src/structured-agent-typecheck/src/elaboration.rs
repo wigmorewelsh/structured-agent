@@ -8,6 +8,18 @@ use super::db::{
 };
 use super::synthesize;
 use crate::FunctionSignature;
+
+fn apply_subst(ty: &RT, subst: &HashMap<String, RT>) -> RT {
+    match ty {
+        RT::Generic(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+        RT::Parameterized(name, args) => RT::Parameterized(
+            name.clone(),
+            args.iter().map(|a| apply_subst(a, subst)).collect(),
+        ),
+        RT::Union(variants) => RT::union(variants.iter().map(|v| apply_subst(v, subst)).collect()),
+        other => other.clone(),
+    }
+}
 use structured_agent_ast::ast::{Expression, Function, Statement, StringPart, Type as AstType};
 use structured_agent_ast::types::{Span, Spanned};
 use structured_agent_runtime::Type as RT;
@@ -758,8 +770,7 @@ fn build_typed_call(
         env,
         ctx,
     )?;
-    let resolved_return =
-        synthesize::Substitution::from_map(solutions).apply_subst(&sig.return_type);
+    let resolved_return = apply_subst(&sig.return_type, &solutions);
     Some(typed_ast::Expression::Call {
         function: function_name,
         binding: callee.binding.clone(),
