@@ -232,25 +232,32 @@ pub struct ExternalFunction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Type {
-    pub path: AstPath,
-    pub args: Vec<Type>,
+pub enum Type {
+    Named { path: AstPath, args: Vec<Type> },
+    Union(Vec<Type>),
 }
 
 impl Type {
     pub fn simple(name: impl Into<std::string::String>) -> Self {
-        Self {
+        Self::Named {
             path: NonEmpty::new(PathSegment::simple(name)),
             args: vec![],
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.path.first().name
+    pub fn name(&self) -> String {
+        match self {
+            Type::Named { path, .. } => path.first().name.clone(),
+            Type::Union(types) => types
+                .iter()
+                .map(|t| t.name())
+                .collect::<Vec<_>>()
+                .join(" | "),
+        }
     }
 
     pub fn parameterized(name: impl Into<std::string::String>, args: Vec<Type>) -> Self {
-        Self {
+        Self::Named {
             path: NonEmpty::new(PathSegment::simple(name)),
             args,
         }
@@ -259,7 +266,10 @@ impl Type {
 
 impl Spanned for Type {
     fn span(&self) -> Span {
-        Span::dummy()
+        match self {
+            Type::Named { path, .. } => path.last().span,
+            Type::Union(types) => types.first().map(|t| t.span()).unwrap_or(Span::dummy()),
+        }
     }
 }
 
@@ -476,20 +486,34 @@ impl fmt::Display for PathArg {
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let path_str: Vec<String> = self.path.iter().map(|seg| seg.to_string()).collect();
-        if self.args.is_empty() {
-            write!(f, "{}", path_str.join("::"))
-        } else {
-            write!(
-                f,
-                "{}<{}>",
-                path_str.join("::"),
-                self.args
-                    .iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+        match self {
+            Type::Named { path, args } => {
+                let path_str: Vec<String> = path.iter().map(|seg| seg.to_string()).collect();
+                if args.is_empty() {
+                    write!(f, "{}", path_str.join("::"))
+                } else {
+                    write!(
+                        f,
+                        "{}<{}>",
+                        path_str.join("::"),
+                        args.iter()
+                            .map(|a| a.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
+            }
+            Type::Union(types) => {
+                write!(
+                    f,
+                    "{}",
+                    types
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                )
+            }
         }
     }
 }

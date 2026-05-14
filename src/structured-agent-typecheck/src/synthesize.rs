@@ -175,8 +175,18 @@ pub fn resolve(
     span: Span,
     ctx: &CheckContext,
 ) -> Option<RT> {
-    let name = t.name().to_string();
-    let args = &t.args;
+    let (name, args) = match t {
+        AstType::Named { path, args } => (path.first().name.as_str().to_string(), args),
+        AstType::Union(_) => {
+            TypeErrorAccumulator(TypeError::UndefinedType {
+                name: t.to_string(),
+                span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            return None;
+        }
+    };
 
     if name == "Self"
         && let Some(ref self_type) = env.self_type

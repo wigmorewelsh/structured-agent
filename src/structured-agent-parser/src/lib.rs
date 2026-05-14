@@ -596,7 +596,7 @@ where
 }
 
 combine::parser! {
-    fn parse_type[Input]()(Input) -> Type
+    fn parse_named_type[Input]()(Input) -> Type
     where [Input: Stream<Token = char, Position = usize>]
     {
         choice((
@@ -613,9 +613,21 @@ combine::parser! {
                 .skip(skip_spaces())
                 .map(|(first, rest, args): (char, Vec<char>, Option<Vec<Type>>)| {
                     let name: String = std::iter::once(first).chain(rest).collect();
-                    Type { path: NonEmpty::new(PathSegment::simple(name)), args: args.unwrap_or_default() }
+                    Type::Named { path: NonEmpty::new(PathSegment::simple(name)), args: args.unwrap_or_default() }
                 }),
         ))
+    }
+}
+
+combine::parser! {
+    fn parse_type[Input]()(Input) -> Type
+    where [Input: Stream<Token = char, Position = usize>]
+    {
+        sep_by1(parse_named_type(), attempt(lex_char('|')))
+            .map(|mut types: Vec<Type>| {
+                if types.len() == 1 { types.remove(0) }
+                else { Type::Union(types) }
+            })
     }
 }
 
@@ -2525,9 +2537,17 @@ fn test_if_else_stmt(): () {
             assert_eq!(func.parameters.len(), 1);
             let param_type = &func.parameters[0].param_type;
             assert_eq!(param_type.name(), "List");
-            assert_eq!(param_type.args[0], Type::simple("String"));
+            if let Type::Named { args, .. } = param_type {
+                assert_eq!(args[0], Type::simple("String"));
+            } else {
+                panic!("expected Named type");
+            }
             assert_eq!(func.return_type.name(), "Option");
-            assert_eq!(func.return_type.args[0], Type::simple("String"));
+            if let Type::Named { args, .. } = &func.return_type {
+                assert_eq!(args[0], Type::simple("String"));
+            } else {
+                panic!("expected Named type");
+            }
         } else {
             panic!("Expected external function definition");
         }
@@ -2859,7 +2879,11 @@ extern fn add(n: Int): Int
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert_eq!(s.fields[0].field_type.name(), "List");
-            assert_eq!(s.fields[0].field_type.args[0], Type::simple("String"));
+            if let Type::Named { args, .. } = &s.fields[0].field_type {
+                assert_eq!(args[0], Type::simple("String"));
+            } else {
+                panic!("expected Named type");
+            }
         } else {
             panic!("Expected struct definition");
         }
@@ -3240,7 +3264,11 @@ fn main(): String {
         let (module, _) = result.unwrap();
         if let Definition::Struct(s) = &module.definitions[0] {
             assert_eq!(s.fields[0].field_type.name(), "Option");
-            assert_eq!(s.fields[0].field_type.args[0], Type::simple("Int"));
+            if let Type::Named { args, .. } = &s.fields[0].field_type {
+                assert_eq!(args[0], Type::simple("Int"));
+            } else {
+                panic!("expected Named type");
+            }
         } else {
             panic!("Expected struct definition");
         }
@@ -3637,7 +3665,7 @@ fn main(): String {
         if let Definition::TraitImpl(t) = &module.definitions[1] {
             let self_param = &t.functions[0].parameters[0];
             assert_eq!(self_param.name, "self");
-            assert_eq!(self_param.param_type.path[0].name, "Self");
+            assert_eq!(self_param.param_type.name(), "Self");
         } else {
             panic!("expected trait impl");
         }
@@ -4008,6 +4036,139 @@ fn main(): String {
                 );
             }
             _ => panic!("Expected StringTemplate"),
+        }
+    }
+
+    #[test]
+    fn test_union_type_display() {
+        let t = Type::Union(vec![Type::simple("A"), Type::simple("B")]);
+        assert_eq!(t.to_string(), "A | B");
+    }
+
+    #[test]
+    fn test_parse_union_type_parameter() {
+        let input = "fn f(x: Image | Audio): String {}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            let param_type = &func.parameters[0].param_type;
+            if let Type::Union(members) = param_type {
+                assert_eq!(members.len(), 2);
+                assert!(
+                    matches!(&members[0], Type::Named { path, .. } if path.first().name == "Image")
+                );
+                assert!(
+                    matches!(&members[1], Type::Named { path, .. } if path.first().name == "Audio")
+                );
+            } else {
+                panic!("expected Type::Union, got {:?}", param_type);
+            }
+        } else {
+            panic!("expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_union_return_type() {
+        let input = "fn f(): Image | Audio {}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            let return_type = &func.return_type;
+            if let Type::Union(members) = return_type {
+                assert_eq!(members.len(), 2);
+                assert!(
+                    matches!(&members[0], Type::Named { path, .. } if path.first().name == "Image")
+                );
+                assert!(
+                    matches!(&members[1], Type::Named { path, .. } if path.first().name == "Audio")
+                );
+            } else {
+                panic!("expected Type::Union, got {:?}", return_type);
+            }
+        } else {
+            panic!("expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_union_struct_field() {
+        let input = "struct S { attachment: Image | Audio, }";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Struct(s) = &module.definitions[0] {
+            let field_type = &s.fields[0].field_type;
+            if let Type::Union(members) = field_type {
+                assert_eq!(members.len(), 2);
+                assert!(
+                    matches!(&members[0], Type::Named { path, .. } if path.first().name == "Image")
+                );
+                assert!(
+                    matches!(&members[1], Type::Named { path, .. } if path.first().name == "Audio")
+                );
+            } else {
+                panic!("expected Type::Union, got {:?}", field_type);
+            }
+        } else {
+            panic!("expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_union_as_type_arg() {
+        let input = "fn f(): List<Image | Audio> {}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            let return_type = &func.return_type;
+            if let Type::Named { path, args } = return_type {
+                assert_eq!(path.first().name, "List");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(&args[0], Type::Union(members) if members.len() == 2));
+            } else {
+                panic!("expected Type::Named(List, ...), got {:?}", return_type);
+            }
+        } else {
+            panic!("expected function definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_three_member_union() {
+        let input = "fn f(): String | Image | Audio | Link {}";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        if let Definition::Function(func) = &module.definitions[0] {
+            let return_type = &func.return_type;
+            if let Type::Union(members) = return_type {
+                assert_eq!(members.len(), 4);
+                assert!(
+                    matches!(&members[0], Type::Named { path, .. } if path.first().name == "String")
+                );
+                assert!(
+                    matches!(&members[1], Type::Named { path, .. } if path.first().name == "Image")
+                );
+                assert!(
+                    matches!(&members[2], Type::Named { path, .. } if path.first().name == "Audio")
+                );
+                assert!(
+                    matches!(&members[3], Type::Named { path, .. } if path.first().name == "Link")
+                );
+            } else {
+                panic!("expected Type::Union, got {:?}", return_type);
+            }
+        } else {
+            panic!("expected function definition");
         }
     }
 }

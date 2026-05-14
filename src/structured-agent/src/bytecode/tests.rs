@@ -978,32 +978,35 @@ mod vm_execution_tests {
     }
 
     fn ast_type_to_rt(t: &crate::ast::Type) -> structured_agent_runtime::Type {
+        use crate::ast::Type as AstType;
         use nonempty::NonEmpty;
         use structured_agent_runtime::DefinitionPath;
         use structured_agent_runtime::Type as RT;
-        if t.args.is_empty() {
-            match t.name() {
+        match t {
+            AstType::Union(_) => RT::unit(),
+            AstType::Named { args, .. } if args.is_empty() => match t.name().as_str() {
                 "Boolean" => RT::boolean(),
                 "String" => RT::string(),
                 "Int" => RT::int(),
                 "Unit" => RT::unit(),
                 _ => RT::Named(DefinitionPath::for_type(
                     DefinitionPath::for_module(NonEmpty::new("main".to_string())),
-                    t.name().to_string(),
+                    t.name(),
                 )),
+            },
+            AstType::Named { args, .. } => {
+                let module_str = match t.name().as_str() {
+                    "List" | "Option" => "prelude",
+                    _ => "main",
+                };
+                RT::Parameterized(
+                    DefinitionPath::for_type(
+                        DefinitionPath::for_module(NonEmpty::new(module_str.to_string())),
+                        t.name(),
+                    ),
+                    args.iter().map(ast_type_to_rt).collect(),
+                )
             }
-        } else {
-            let module_str = match t.name() {
-                "List" | "Option" => "prelude",
-                _ => "main",
-            };
-            RT::Parameterized(
-                DefinitionPath::for_type(
-                    DefinitionPath::for_module(NonEmpty::new(module_str.to_string())),
-                    t.name().to_string(),
-                ),
-                t.args.iter().map(ast_type_to_rt).collect(),
-            )
         }
     }
 

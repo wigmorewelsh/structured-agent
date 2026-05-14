@@ -251,7 +251,7 @@ impl SymbolTableBuilder {
     fn runtime_type_to_ast(ty: &structured_agent_runtime::types::Type) -> AstType {
         use structured_agent_runtime::types::Type as RT;
         match ty {
-            RT::Parameterized(type_name, args) => AstType {
+            RT::Parameterized(type_name, args) => AstType::Named {
                 path: NonEmpty::new(PathSegment::simple(type_name.last_name())),
                 args: args.iter().map(Self::runtime_type_to_ast).collect(),
             },

@@ -60,7 +60,7 @@ pub fn elaborate_function(
             if !matches!(type_def.get().kind, TypeDefinitionKind::Trait { .. }) {
                 continue;
             }
-            let param_name = implicit_param_name(&tp.name, bound.name());
+            let param_name = implicit_param_name(&tp.name, &bound.name());
             let rt_type = RT::Named(trait_path.clone());
             let binding_id = env.declare_variable(param_name.clone(), rt_type.clone(), func.span);
             typed_parameters.push(typed_ast::Parameter {
@@ -392,8 +392,12 @@ fn elaborate_spawn(
     env: &synthesize::TypeEnvironment,
     ctx: &synthesize::CheckContext,
 ) -> Option<typed_ast::Expression> {
+    let path = match type_arg {
+        AstType::Named { path, .. } => path,
+        AstType::Union(_) => return None,
+    };
     let current_module = InternedModuleName::new(db, ctx.module_name.clone());
-    let module_path = build_module_instantiation(db, current_module, &type_arg.path)?;
+    let module_path = build_module_instantiation(db, current_module, path)?;
     let typed_key = elaborate_expression(db, key, env, ctx)?;
     let actor_ref_type = RT::actor_ref(RT::Named(module_path));
     Some(typed_ast::Expression::Spawn {

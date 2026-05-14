@@ -339,31 +339,27 @@ pub fn compile_external_function(
 }
 
 fn ast_type_to_type(ast_type: &crate::ast::Type, module: &DefinitionPath) -> Type {
-    if ast_type.args.is_empty() {
-        match ast_type.name() {
+    use crate::ast::Type as AstType;
+    match ast_type {
+        AstType::Union(_) => Type::unit(),
+        AstType::Named { args, .. } if args.is_empty() => match ast_type.name().as_str() {
             "Boolean" => Type::boolean(),
             "String" => Type::string(),
             "Int" => Type::int(),
             "Unit" => Type::unit(),
-            _ => Type::Named(DefinitionPath::for_type(
-                module.clone(),
-                ast_type.name().to_string(),
-            )),
-        }
-    } else {
-        let inner_args: Vec<Type> = ast_type
-            .args
-            .iter()
-            .map(|a| ast_type_to_type(a, module))
-            .collect();
-        match (ast_type.name(), inner_args.as_slice()) {
-            ("List", [inner]) => Type::list(inner.clone()),
-            ("Option", [inner]) => Type::option(inner.clone()),
-            ("ActorRef", [inner]) => Type::actor_ref(inner.clone()),
-            _ => Type::Parameterized(
-                DefinitionPath::for_type(module.clone(), ast_type.name().to_string()),
-                inner_args,
-            ),
+            _ => Type::Named(DefinitionPath::for_type(module.clone(), ast_type.name())),
+        },
+        AstType::Named { args, .. } => {
+            let inner_args: Vec<Type> = args.iter().map(|a| ast_type_to_type(a, module)).collect();
+            match (ast_type.name().as_str(), inner_args.as_slice()) {
+                ("List", [inner]) => Type::list(inner.clone()),
+                ("Option", [inner]) => Type::option(inner.clone()),
+                ("ActorRef", [inner]) => Type::actor_ref(inner.clone()),
+                _ => Type::Parameterized(
+                    DefinitionPath::for_type(module.clone(), ast_type.name()),
+                    inner_args,
+                ),
+            }
         }
     }
 }
