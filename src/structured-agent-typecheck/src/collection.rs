@@ -257,6 +257,9 @@ impl SymbolTableBuilder {
             },
             RT::Named(tn) => AstType::simple(tn.last_name().to_string()),
             RT::Generic(name) => AstType::simple(name.clone()),
+            RT::Union(variants) => {
+                AstType::Union(variants.iter().map(Self::runtime_type_to_ast).collect())
+            }
         }
     }
 

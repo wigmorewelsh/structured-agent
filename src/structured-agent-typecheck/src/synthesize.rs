@@ -177,14 +177,12 @@ pub fn resolve(
 ) -> Option<RT> {
     let (name, args) = match t {
         AstType::Named { path, args } => (path.first().name.as_str().to_string(), args),
-        AstType::Union(_) => {
-            TypeErrorAccumulator(TypeError::UndefinedType {
-                name: t.to_string(),
-                span,
-                file_id: ctx.file_id,
-            })
-            .accumulate(db);
-            return None;
+        AstType::Union(members) => {
+            let resolved: Option<Vec<RT>> = members
+                .iter()
+                .map(|m| resolve(db, m, env, span, ctx))
+                .collect();
+            return resolved.map(RT::union);
         }
     };
 
@@ -1034,6 +1032,7 @@ fn synthesize_call(
                 RT::Named(path) => Some(path.clone()),
                 RT::Parameterized(path, _) => Some(path.clone()),
                 RT::Generic(_) => None,
+                RT::Union(_) => None,
             };
             for bound in &tp.bounds {
                 let bound_name = bound.name().to_string();

@@ -88,6 +88,7 @@ pub enum Type {
     Named(DefinitionPath),
     Parameterized(DefinitionPath, Vec<Type>),
     Generic(std::string::String),
+    Union(Vec<Type>),
 }
 
 pub type StructFields = Vec<(String, Type)>;
@@ -207,6 +208,22 @@ impl Type {
         Self::Generic(name.into())
     }
 
+    pub fn union(variants: Vec<Type>) -> Type {
+        Type::Union(normalise(variants))
+    }
+
+    pub fn is_union(&self) -> bool {
+        matches!(self, Type::Union(_))
+    }
+
+    pub fn union_variants(&self) -> Option<&[Type]> {
+        if let Type::Union(vs) = self {
+            Some(vs.as_slice())
+        } else {
+            None
+        }
+    }
+
     pub fn name(&self) -> String {
         match self {
             Type::Named(tn) => tn.last_name().to_string(),
@@ -215,8 +232,34 @@ impl Type {
                 format!("{}<{}>", type_name.last_name(), arg_names.join(", "))
             }
             Type::Generic(name) => name.clone(),
+            Type::Union(variants) => variants
+                .iter()
+                .map(|v| v.name())
+                .collect::<Vec<_>>()
+                .join(" | "),
         }
     }
+}
+
+fn normalise(variants: Vec<Type>) -> Vec<Type> {
+    let mut acc: Vec<Type> = Vec::new();
+    for v in variants {
+        match v {
+            Type::Union(inner) => {
+                for item in normalise(inner) {
+                    if !acc.contains(&item) {
+                        acc.push(item);
+                    }
+                }
+            }
+            other => {
+                if !acc.contains(&other) {
+                    acc.push(other);
+                }
+            }
+        }
+    }
+    acc
 }
 
 impl std::fmt::Display for Type {
@@ -228,6 +271,10 @@ impl std::fmt::Display for Type {
                 write!(f, "{}<{}>", type_name.last_name(), arg_strs.join(", "))
             }
             Type::Generic(name) => write!(f, "{}", name),
+            Type::Union(variants) => {
+                let parts: Vec<String> = variants.iter().map(|v| v.to_string()).collect();
+                write!(f, "{}", parts.join(" | "))
+            }
         }
     }
 }
@@ -320,6 +367,53 @@ mod tests {
     #[test]
     fn is_link_true_for_link_type() {
         assert!(Type::link().is_link());
+    }
+
+    #[test]
+    fn type_union_is_union() {
+        assert!(Type::union(vec![Type::image(), Type::audio()]).is_union());
+        assert!(!Type::image().is_union());
+    }
+
+    #[test]
+    fn type_union_variants() {
+        let u = Type::union(vec![Type::image(), Type::audio()]);
+        let variants = u.union_variants().unwrap();
+        assert_eq!(variants.len(), 2);
+        assert_eq!(variants[0], Type::image());
+        assert_eq!(variants[1], Type::audio());
+    }
+
+    #[test]
+    fn type_union_display() {
+        let u = Type::union(vec![Type::image(), Type::audio()]);
+        assert_eq!(u.to_string(), "Image | Audio");
+    }
+
+    #[test]
+    fn type_union_name() {
+        let u = Type::union(vec![Type::image(), Type::audio()]);
+        assert_eq!(u.name(), "Image | Audio");
+    }
+
+    #[test]
+    fn normalise_deduplicates() {
+        let u = Type::union(vec![Type::image(), Type::audio(), Type::image()]);
+        let variants = u.union_variants().unwrap();
+        assert_eq!(variants.len(), 2);
+        assert_eq!(variants[0], Type::image());
+        assert_eq!(variants[1], Type::audio());
+    }
+
+    #[test]
+    fn normalise_flattens_nested() {
+        let inner = Type::union(vec![Type::image(), Type::audio()]);
+        let outer = Type::union(vec![inner, Type::link()]);
+        let variants = outer.union_variants().unwrap();
+        assert_eq!(variants.len(), 3);
+        assert_eq!(variants[0], Type::image());
+        assert_eq!(variants[1], Type::audio());
+        assert_eq!(variants[2], Type::link());
     }
 
     #[tokio::test]

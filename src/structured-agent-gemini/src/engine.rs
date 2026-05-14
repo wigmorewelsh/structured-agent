@@ -90,6 +90,14 @@ impl GeminiEngine {
                 Err("Unit type cannot be used in schema".to_string())
             }
             Type::Generic(name) => Err(format!("Generic type {} cannot be used in schema", name)),
+            Type::Union(variants) => Err(format!(
+                "Union type {} cannot be used in schema",
+                variants
+                    .iter()
+                    .map(|v| v.name())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            )),
             Type::Named(type_name) => {
                 let fields = context
                     .runtime()
@@ -269,6 +277,7 @@ impl GeminiEngine {
                     Type::Generic(_) => {
                         Err("Generic type cannot be used as return type".to_string())
                     }
+                    Type::Union(_) => Err("Union type cannot be used as return type".to_string()),
                     _ => unreachable!(),
                 }
             }

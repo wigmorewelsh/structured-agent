@@ -2366,6 +2366,24 @@ mod tests {
         let result = check_with_iterator(module);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn resolve_union_type_in_typecheck() {
+        let input = "fn f(x: Image | Audio): String { return \"ok\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "union type should type-check: {:?}",
+            result.err()
+        );
+    }
 }
 
 #[cfg(test)]

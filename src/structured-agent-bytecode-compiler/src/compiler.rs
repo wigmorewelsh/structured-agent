@@ -525,6 +525,9 @@ impl BytecodeCompiler {
             structured_agent_runtime::Type::Generic(_) => {
                 ctx.builder.emit(Instruction::LdcUnit { dest: dest_var });
             }
+            structured_agent_runtime::Type::Union(_) => {
+                ctx.builder.emit(Instruction::LdcUnit { dest: dest_var });
+            }
         }
     }
 

@@ -390,6 +390,7 @@ where
             type_name_to_arrow_datatype(type_name, &subst, metadata)
         }
         Type::Generic(_) => DataType::Null,
+        Type::Union(_) => DataType::Null,
     }
 }
 
