@@ -211,9 +211,9 @@ impl VM {
                 }
                 Instruction::StructNew {
                     dest,
-                    struct_name: _,
+                    struct_name,
                     fields,
-                } => self.execute_struct_new(state, dest, &fields)?,
+                } => self.execute_struct_new(state, dest, &struct_name, &fields)?,
                 Instruction::StructGet { dest, src, field } => {
                     self.execute_struct_get(state, dest, src, &field)?
                 }
@@ -772,9 +772,7 @@ impl VM {
         dest: Slot,
     ) -> Result<VMState, String> {
         let module_val = Self::read_slot(&state, module_slot)?;
-        let ExpressionValue::Module { path: impl_key } = &module_val.value else {
-            return Err("CallVirtual: expected Module value".to_string());
-        };
+        let impl_key = module_val.value.as_module()?;
         let function_name = DefinitionPath::for_function(impl_key.clone(), method);
         self.execute_call(state, function_name, params, dest).await
     }
@@ -783,6 +781,7 @@ impl VM {
         &self,
         mut state: VMState,
         dest: Slot,
+        struct_name: &DefinitionPath,
         fields: &[(String, Slot)],
     ) -> Result<VMState, String> {
         let field_values: Vec<(&str, ExpressionValue)> = fields
@@ -792,7 +791,7 @@ impl VM {
                 Ok((name.as_str(), val.value.clone()))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let struct_value = ExpressionValue::struct_value(field_values);
+        let struct_value = ExpressionValue::named_struct_value(struct_name.clone(), field_values);
         Self::write_slot(&mut state, dest, ExpressionResult::new(struct_value));
         Ok(Self::advance_pc(state))
     }
@@ -815,10 +814,10 @@ impl VM {
         mut state: VMState,
         src: Slot,
         dest: Slot,
-        variant: &str,
+        variant: &DefinitionPath,
     ) -> Result<VMState, String> {
         let value = Self::read_slot(&state, src)?;
-        let matched = value.value.type_name() == variant;
+        let matched = value.value.type_path == *variant;
         Self::write_slot(
             &mut state,
             dest,
@@ -848,7 +847,11 @@ impl VM {
                         Context::with_runtime_and_handle(self.runtime.clone(), actor_handle);
                     self.runtime.spawn_actor(rx, actor_ctx);
                 });
-        let actor_ref_result = ExpressionResult::new(ExpressionValue::Dynamic(Arc::new(actor_ref)));
+        let type_path = DefinitionPath::for_type(actor_ref.module_path.clone(), "ActorRef");
+        let actor_ref_result = ExpressionResult::new(ExpressionValue::from_runtime_value(
+            type_path,
+            Arc::new(actor_ref),
+        ));
         state = Self::advance_pc(state);
         Self::write_slot(&mut state, dest, actor_ref_result);
         Ok(state)
@@ -1027,7 +1030,9 @@ mod tests {
             Instruction::MatchType {
                 src: Slot(1),
                 dest: Slot(0),
-                variant: "Image".to_string(),
+                variant: DefinitionPath::root()
+                    .with_module("prelude".to_string())
+                    .with_type("Image".to_string()),
             },
             Instruction::Ret { var: Slot(0) },
         ];
@@ -1054,7 +1059,9 @@ mod tests {
             Instruction::MatchType {
                 src: Slot(1),
                 dest: Slot(0),
-                variant: "Image".to_string(),
+                variant: DefinitionPath::root()
+                    .with_module("prelude".to_string())
+                    .with_type("Image".to_string()),
             },
             Instruction::Ret { var: Slot(0) },
         ];

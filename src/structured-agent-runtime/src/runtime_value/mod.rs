@@ -91,19 +91,19 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
         DataType::Null => ExpressionValue::unit(),
         DataType::Utf8 => {
             let arr = col.as_any().downcast_ref::<StringArray>().expect("utf8");
-            ExpressionValue::Dynamic(Arc::new(StringValue(arr.value(0).to_string())))
+            ExpressionValue::string(arr.value(0).to_string())
         }
         DataType::Boolean => {
             let arr = col.as_any().downcast_ref::<BooleanArray>().expect("bool");
-            ExpressionValue::Dynamic(Arc::new(BooleanValue(arr.value(0))))
+            ExpressionValue::boolean(arr.value(0))
         }
         DataType::Int64 => {
             let arr = col.as_any().downcast_ref::<Int64Array>().expect("int64");
-            ExpressionValue::Dynamic(Arc::new(IntValue(arr.value(0))))
+            ExpressionValue::integer(arr.value(0))
         }
         DataType::List(_) => {
             let arr = col.as_any().downcast_ref::<ListArray>().expect("list");
-            ExpressionValue::Dynamic(Arc::new(ListValue::new(Arc::new(arr.clone()))))
+            ExpressionValue::list(Arc::new(arr.clone()))
         }
         DataType::Struct(_) => {
             let arr = col.as_any().downcast_ref::<StructArray>().expect("struct");
@@ -124,10 +124,7 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
                 } else {
                     Some(doc_arr.value(0).to_string())
                 };
-                ExpressionValue::Dynamic(Arc::new(MetadataValue {
-                    name,
-                    documentation,
-                }))
+                ExpressionValue::metadata(name, documentation)
             } else if is_image_struct_array(arr) {
                 let mime_type = arr
                     .column(0)
@@ -143,7 +140,7 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
                     .expect("data")
                     .value(0)
                     .to_vec();
-                ExpressionValue::Dynamic(Arc::new(ImageValue { mime_type, data }))
+                ExpressionValue::image(mime_type, data)
             } else if is_audio_struct_array(arr) {
                 let mime_type = arr
                     .column(0)
@@ -159,7 +156,7 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
                     .expect("data")
                     .value(0)
                     .to_vec();
-                ExpressionValue::Dynamic(Arc::new(AudioValue { mime_type, data }))
+                ExpressionValue::audio(mime_type, data)
             } else if is_link_struct_array(arr) {
                 let uri = arr
                     .column(0)
@@ -178,11 +175,9 @@ pub fn arrow_col_to_expression(col: Arc<dyn Array>) -> ExpressionValue {
                 } else {
                     Some(name_col.value(0).to_string())
                 };
-                ExpressionValue::Dynamic(Arc::new(LinkValue { uri, name }))
+                ExpressionValue::link(uri, name)
             } else {
-                ExpressionValue::Dynamic(Arc::new(StructValue {
-                    struct_array: Arc::new(arr.clone()),
-                }))
+                ExpressionValue::struct_from_array(Arc::new(arr.clone()))
             }
         }
         DataType::Union(_, _) => {

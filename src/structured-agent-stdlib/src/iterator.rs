@@ -4,7 +4,7 @@ use structured_agent_il::{
     Slot,
 };
 use structured_agent_runtime::{
-    DefinitionPath, ExpressionValue, ListValue, NativeFnPtr, Parameter, Type,
+    DefinitionPath, ExpressionValue, NativeFnPtr, Parameter, Type,
     runtime_value::{ListIteratorValueFactory, RuntimeValueFactory},
 };
 
@@ -64,14 +64,11 @@ impl Module for IteratorModule {
                 Instruction::CallNative {
                     f: NativeFnPtr::new(|args, _agent| {
                         Box::pin(async move {
-                            let list_val = match &args[0] {
-                                ExpressionValue::Dynamic(v) => {
-                                    v.as_any().downcast_ref::<ListValue>()
-                                }
-                                _ => None,
-                            }
-                            .ok_or_else(|| "expected List".to_string())?;
-                            let arc = list_val.list_arc();
+                            let arc = {
+                                let arr =
+                                    args[0].as_list().map_err(|_| "expected List".to_string())?;
+                                Arc::new(arr.clone())
+                            };
                             Ok(ExpressionValue::list_iterator(arc))
                         })
                     }),

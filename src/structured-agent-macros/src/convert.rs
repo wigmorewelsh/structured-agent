@@ -22,6 +22,21 @@ pub fn to_expr_value(
 
     match ident_str.as_str() {
         "UnitValue" => Ok(quote! { ::structured_agent_runtime::ExpressionValue::unit() }),
+        "StringValue" => Ok(quote! {
+            ::structured_agent_runtime::ExpressionValue::string(
+                ::std::string::String::from(#val)
+            )
+        }),
+        "IntValue" => Ok(quote! {
+            ::structured_agent_runtime::ExpressionValue::integer(
+                i64::from(#val)
+            )
+        }),
+        "BooleanValue" => Ok(quote! {
+            ::structured_agent_runtime::ExpressionValue::boolean(
+                bool::from(#val)
+            )
+        }),
         "Vec" => {
             let inner = generic_arg(ty)?;
             if let Ok(inner_ident) = path_ident(inner)
@@ -36,8 +51,13 @@ pub fn to_expr_value(
                 "Vec<T> where T is not a type param is not supported as a return type",
             ))
         }
-        _ => Ok(
-            quote! { ::structured_agent_runtime::ExpressionValue::Dynamic(::std::sync::Arc::new(#val)) },
-        ),
+        _ => Ok(quote! {
+            ::structured_agent_runtime::ExpressionValue::from_runtime_value(
+                ::structured_agent_runtime::symbols::DefinitionPath::root()
+                    .with_module("anonymous".to_string())
+                    .with_type(stringify!(#ident)),
+                ::std::sync::Arc::new(#val),
+            )
+        }),
     }
 }

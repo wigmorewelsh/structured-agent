@@ -108,7 +108,7 @@ pub struct ExternalFunctionDefinition {
 }
 
 impl Type {
-    fn prelude(name: &str) -> DefinitionPath {
+    pub(crate) fn prelude(name: &str) -> DefinitionPath {
         DefinitionPath::for_type(
             DefinitionPath::for_module(NonEmpty::new("prelude".to_string())),
             name,
@@ -224,6 +224,14 @@ impl Type {
             Some(vs.as_slice())
         } else {
             None
+        }
+    }
+
+    pub fn definition_path(&self) -> Option<&DefinitionPath> {
+        match self {
+            Type::Named(dp) => Some(dp),
+            Type::Parameterized(dp, _) => Some(dp),
+            _ => None,
         }
     }
 

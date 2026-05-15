@@ -63,12 +63,18 @@ mod instruction_display_tests {
     #[test]
     fn test_struct_new_display() {
         use structured_agent_il::Slot;
+        use structured_agent_runtime::symbols::DefinitionPath;
         let instr = Instruction::StructNew {
             dest: Slot(0),
-            struct_name: "Point".to_string(),
+            struct_name: DefinitionPath::root()
+                .with_module("test".to_string())
+                .with_type("Point".to_string()),
             fields: vec![("x".to_string(), Slot(1)), ("y".to_string(), Slot(2))],
         };
-        assert_eq!(format!("{}", instr), "struct.new s0, Point, {x: s1, y: s2}");
+        assert_eq!(
+            format!("{}", instr),
+            "struct.new s0, test::Point, {x: s1, y: s2}"
+        );
     }
 
     #[test]
@@ -97,6 +103,7 @@ mod compilation_tests {
     use std::sync::Arc;
     use structured_agent_il::Module as RuntimeModule;
     use structured_agent_runtime::Type as RT;
+    use structured_agent_runtime::symbols::DefinitionPath;
     use structured_agent_stdlib::prelude::PreludeModule;
 
     fn parse_code(code: &str) -> crate::ast::Module {
@@ -186,14 +193,14 @@ fn main(): String {
     s5  temp   $t1
     s6  temp   $t2
       0: mov s5 ($t1), s1 (m)
-      1: match.type s6 ($t2), s5 ($t1), "Image"
+      1: match.type s6 ($t2), s5 ($t1), prelude::Image
       2: brfalse s6 ($t2), 6
       3: mov s2 (img), s5 ($t1)
       4: ldc.str s4 ($t0), "image"
       5: br 11
   match_arm_0_1:
       6: nop
-      7: match.type s6 ($t2), s5 ($t1), "Audio"
+      7: match.type s6 ($t2), s5 ($t1), prelude::Audio
       8: mov s3 (audio), s5 ($t1)
       9: ldc.str s4 ($t0), "audio"
      10: br 11
@@ -716,7 +723,7 @@ fn test(): Point {
     s3  temp   $t2
       0: ldc.int s2 ($t1), 1
       1: ldc.int s3 ($t2), 2
-      2: struct.new s1 ($t0), Point, {x: s2 ($t1), y: s3 ($t2)}
+      2: struct.new s1 ($t0), test::Point, {x: s2 ($t1), y: s3 ($t2)}
       3: ret s1 ($t0)
 }
 "#;
@@ -1111,7 +1118,10 @@ mod vm_execution_tests {
                 fields,
                 span,
             } => typed_ast::Expression::StructLiteral {
-                struct_name: struct_name.clone(),
+                struct_name: DefinitionPath::for_type(
+                    DefinitionPath::for_module(NonEmpty::new("test".to_string())),
+                    struct_name.clone(),
+                ),
                 fields: fields
                     .iter()
                     .map(|(n, e)| (n.clone(), ast_expr_to_typed(e)))
@@ -1738,7 +1748,7 @@ fn make(): Point {
         let has_struct_new = compiled
             .instructions
             .iter()
-            .any(|i| matches!(i, crate::bytecode::Instruction::StructNew { struct_name, .. } if struct_name == "Point"));
+            .any(|i| matches!(i, crate::bytecode::Instruction::StructNew { struct_name, .. } if struct_name.last_name() == "Point"));
         assert!(has_struct_new, "Expected StructNew instruction for Point");
     }
 

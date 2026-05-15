@@ -6,8 +6,8 @@ use structured_agent_il::{
 use structured_agent_runtime::{
     ExpressionValue, NativeFnPtr, Parameter, Type,
     runtime_value::{
-        AudioValueFactory, BooleanValueFactory, ImageValueFactory, IntValue, IntValueFactory,
-        LinkValueFactory, ListValueFactory, RuntimeValueFactory, StringValue, StringValueFactory,
+        AudioValueFactory, BooleanValueFactory, ImageValueFactory, IntValueFactory,
+        LinkValueFactory, ListValueFactory, RuntimeValueFactory, StringValueFactory,
         UnitValueFactory,
     },
 };
@@ -76,14 +76,10 @@ fn int_to_string_def() -> NativeFunctionDef {
             Instruction::CallNative {
                 f: NativeFnPtr::new(|args, _agent| {
                     Box::pin(async move {
-                        let v = match &args[0] {
-                            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<IntValue>(),
-                            _ => None,
-                        }
-                        .ok_or_else(|| "expected Int".to_string())?;
-                        Ok(ExpressionValue::Dynamic(Arc::new(StringValue(
-                            v.0.to_string(),
-                        ))))
+                        let v = args[0]
+                            .as_integer()
+                            .map_err(|_| "expected Int".to_string())?;
+                        Ok(ExpressionValue::string(v.to_string()))
                     })
                 }),
                 params: vec![Slot(1)],
@@ -105,12 +101,10 @@ fn string_to_string_def() -> NativeFunctionDef {
             Instruction::CallNative {
                 f: NativeFnPtr::new(|args, _agent| {
                     Box::pin(async move {
-                        let v = match &args[0] {
-                            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<StringValue>(),
-                            _ => None,
-                        }
-                        .ok_or_else(|| "expected String".to_string())?;
-                        Ok(ExpressionValue::Dynamic(Arc::new(v.clone())))
+                        let s = args[0]
+                            .as_string()
+                            .map_err(|_| "expected String".to_string())?;
+                        Ok(ExpressionValue::string(s))
                     })
                 }),
                 params: vec![Slot(1)],

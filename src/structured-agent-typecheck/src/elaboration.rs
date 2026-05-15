@@ -245,12 +245,13 @@ fn elaborate_statement(
                         .iter()
                         .find(|v| v.name() == arm.variant_name)?
                         .clone();
+                    let variant_path = variant_type.definition_path()?.clone();
                     let mut child_env = env.create_child();
                     let binding_id =
                         child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
                     let body = elaborate_expression(db, &arm.body, &child_env, ctx)?;
                     Some(typed_ast::MatchArm {
-                        variant_name: arm.variant_name.clone(),
+                        variant_name: variant_path,
                         binding: arm.binding.clone(),
                         binding_id,
                         body,
@@ -387,12 +388,13 @@ pub fn elaborate_expression(
                         .iter()
                         .find(|v| v.name() == arm.variant_name)?
                         .clone();
+                    let variant_path = variant_type.definition_path()?.clone();
                     let mut child_env = env.create_child();
                     let binding_id =
                         child_env.declare_variable(arm.binding.clone(), variant_type, arm.span);
                     let body = elaborate_expression(db, &arm.body, &child_env, ctx)?;
                     Some(typed_ast::MatchArm {
-                        variant_name: arm.variant_name.clone(),
+                        variant_name: variant_path,
                         binding: arm.binding.clone(),
                         binding_id,
                         body,
@@ -918,6 +920,7 @@ fn elaborate_struct_literal(
             .map(|r| r.ty)
             .unwrap_or_else(|| DefinitionPath::for_type(ctx.module_name.clone(), struct_name))
     };
+    let struct_type_path = resolved_type_name.clone();
     let ty = if type_params.is_empty() {
         RT::Named(resolved_type_name)
     } else {
@@ -933,7 +936,7 @@ fn elaborate_struct_literal(
         RT::Parameterized(resolved_type_name, args)
     };
     Some(typed_ast::Expression::StructLiteral {
-        struct_name: struct_name.to_string(),
+        struct_name: struct_type_path,
         fields: typed_fields,
         ty,
         span,

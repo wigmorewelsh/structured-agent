@@ -119,7 +119,7 @@ pub enum Instruction {
 
     StructNew {
         dest: Slot,
-        struct_name: String,
+        struct_name: DefinitionPath,
         fields: Vec<(String, Slot)>,
     },
     StructGet {
@@ -137,7 +137,7 @@ pub enum Instruction {
     MatchType {
         src: Slot,
         dest: Slot,
-        variant: String,
+        variant: DefinitionPath,
     },
 }
 
@@ -321,7 +321,7 @@ impl fmt::Display for Instruction {
                 write!(f, "struct.get {}, {}, {}", dest, src, field)
             }
             Instruction::MatchType { src, dest, variant } => {
-                write!(f, "match.type {}, {}, \"{}\"", dest, src, variant)
+                write!(f, "match.type {}, {}, {}", dest, src, variant)
             }
             Instruction::CallNative { params, dest, .. } => {
                 write!(f, "call.native [")?;

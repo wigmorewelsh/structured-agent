@@ -1,4 +1,4 @@
-use arrow::array::{Array, ListArray};
+use arrow::array::{Array, ListArray, StructArray};
 use arrow::datatypes::{DataType, Field, Fields};
 use std::sync::Arc;
 
@@ -29,17 +29,138 @@ impl ExpressionParameter {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExpressionValue {
-    Module { path: DefinitionPath },
-    Dynamic(Arc<dyn RuntimeValue>),
+pub struct ExpressionValue {
+    pub type_path: DefinitionPath,
+    inner: ExpressionValueInner,
+}
+
+#[derive(Debug, Clone)]
+enum ExpressionValueInner {
+    Value(Arc<dyn RuntimeValue>),
+    Module,
 }
 
 impl PartialEq for ExpressionValue {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ExpressionValue::Module { path: a }, ExpressionValue::Module { path: b }) => a == b,
-            (ExpressionValue::Dynamic(a), ExpressionValue::Dynamic(b)) => a.eq(b.as_any()),
+        if self.type_path != other.type_path {
+            return false;
+        }
+        match (&self.inner, &other.inner) {
+            (ExpressionValueInner::Module, ExpressionValueInner::Module) => true,
+            (ExpressionValueInner::Value(a), ExpressionValueInner::Value(b)) => a.eq(b.as_any()),
             _ => false,
+        }
+    }
+}
+
+impl ExpressionValue {
+    pub fn unit() -> Self {
+        Self {
+            type_path: Type::unit().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(UnitValue)),
+        }
+    }
+
+    pub fn string(s: impl Into<String>) -> Self {
+        Self {
+            type_path: Type::string().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(StringValue(s.into()))),
+        }
+    }
+
+    pub fn boolean(b: bool) -> Self {
+        Self {
+            type_path: Type::boolean().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(BooleanValue(b))),
+        }
+    }
+
+    pub fn integer(n: i64) -> Self {
+        Self {
+            type_path: Type::int().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(IntValue(n))),
+        }
+    }
+
+    pub fn list(arr: Arc<ListArray>) -> Self {
+        Self {
+            type_path: Type::prelude("List"),
+            inner: ExpressionValueInner::Value(Arc::new(ListValue::new(arr))),
+        }
+    }
+
+    pub fn module(path: DefinitionPath) -> Self {
+        Self {
+            type_path: path,
+            inner: ExpressionValueInner::Module,
+        }
+    }
+
+    pub fn list_iterator(arr: Arc<ListArray>) -> Self {
+        Self {
+            type_path: Type::prelude("ListIterator"),
+            inner: ExpressionValueInner::Value(Arc::new(ListIteratorValue::new(arr))),
+        }
+    }
+
+    pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
+        Self {
+            type_path: Type::prelude("Metadata"),
+            inner: ExpressionValueInner::Value(Arc::new(MetadataValue {
+                name: name.into(),
+                documentation,
+            })),
+        }
+    }
+
+    pub fn image(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self {
+            type_path: Type::image().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(ImageValue {
+                mime_type: mime_type.into(),
+                data,
+            })),
+        }
+    }
+
+    pub fn audio(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self {
+            type_path: Type::audio().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(AudioValue {
+                mime_type: mime_type.into(),
+                data,
+            })),
+        }
+    }
+
+    pub fn link(uri: impl Into<String>, name: Option<String>) -> Self {
+        Self {
+            type_path: Type::link().definition_path().cloned().unwrap(),
+            inner: ExpressionValueInner::Value(Arc::new(LinkValue {
+                uri: uri.into(),
+                name,
+            })),
+        }
+    }
+
+    pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
+        Ok(Self {
+            type_path: Type::prelude("List"),
+            inner: ExpressionValueInner::Value(Arc::new(ListValue::from_elements(elements)?)),
+        })
+    }
+
+    pub fn struct_value(fields: Vec<(&str, ExpressionValue)>) -> Self {
+        Self {
+            type_path: Type::prelude("Struct"),
+            inner: ExpressionValueInner::Value(Arc::new(StructValue::from_fields(fields))),
+        }
+    }
+
+    pub fn struct_from_array(arr: Arc<StructArray>) -> Self {
+        Self {
+            type_path: Type::prelude("Struct"),
+            inner: ExpressionValueInner::Value(Arc::new(StructValue { struct_array: arr })),
         }
     }
 }
@@ -83,32 +204,28 @@ impl ExpressionResult {
 }
 
 impl ExpressionValue {
-    pub fn unit() -> Self {
-        Self::Dynamic(Arc::new(UnitValue))
+    pub fn named_struct_value(
+        type_path: DefinitionPath,
+        fields: Vec<(&str, ExpressionValue)>,
+    ) -> Self {
+        Self {
+            type_path,
+            inner: ExpressionValueInner::Value(Arc::new(StructValue::from_fields(fields))),
+        }
     }
 
-    pub fn string(s: impl Into<String>) -> Self {
-        Self::Dynamic(Arc::new(StringValue(s.into())))
+    pub fn from_runtime_value(type_path: DefinitionPath, v: Arc<dyn RuntimeValue>) -> Self {
+        Self {
+            type_path,
+            inner: ExpressionValueInner::Value(v),
+        }
     }
 
-    pub fn boolean(b: bool) -> Self {
-        Self::Dynamic(Arc::new(BooleanValue(b)))
-    }
-
-    pub fn integer(n: i64) -> Self {
-        Self::Dynamic(Arc::new(IntValue(n)))
-    }
-
-    pub fn list(arr: Arc<ListArray>) -> Self {
-        Self::Dynamic(Arc::new(ListValue::new(arr)))
-    }
-
-    pub fn module(path: DefinitionPath) -> Self {
-        Self::Module { path }
-    }
-
-    pub fn list_iterator(arr: Arc<ListArray>) -> Self {
-        Self::Dynamic(Arc::new(ListIteratorValue::new(arr)))
+    fn inner_value(&self) -> Option<&Arc<dyn RuntimeValue>> {
+        match &self.inner {
+            ExpressionValueInner::Value(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_list_iterator(&self) -> Result<ListIteratorValue, String> {
@@ -127,78 +244,38 @@ impl ExpressionValue {
         self.downcast_clone::<LinkValue>()
     }
 
-    pub fn from_elements(elements: Vec<ExpressionValue>) -> Result<Self, String> {
-        Ok(Self::Dynamic(Arc::new(ListValue::from_elements(elements)?)))
-    }
-
-    pub fn struct_value(fields: Vec<(&str, ExpressionValue)>) -> Self {
-        Self::Dynamic(Arc::new(StructValue::from_fields(fields)))
-    }
-
     pub fn get_struct_field(&self, field: &str) -> Result<ExpressionValue, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => {
-                let sv = v
-                    .as_any()
-                    .downcast_ref::<StructValue>()
-                    .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
-                sv.get_field(field)
-            }
-            _ => Err(format!("Expected struct value, got {}", self.type_name())),
-        }
+        let v = self
+            .inner_value()
+            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+        let sv = v
+            .as_any()
+            .downcast_ref::<StructValue>()
+            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+        sv.get_field(field)
     }
 
     pub fn as_struct_fields(&self) -> Result<Vec<(String, ExpressionValue)>, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => {
-                let sv = v
-                    .as_any()
-                    .downcast_ref::<StructValue>()
-                    .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
-                sv.all_fields()
-            }
-            _ => Err(format!("Expected struct value, got {}", self.type_name())),
-        }
-    }
-
-    pub fn metadata(name: impl Into<String>, documentation: Option<String>) -> Self {
-        Self::Dynamic(Arc::new(MetadataValue {
-            name: name.into(),
-            documentation,
-        }))
-    }
-
-    pub fn image(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
-        Self::Dynamic(Arc::new(ImageValue {
-            mime_type: mime_type.into(),
-            data,
-        }))
-    }
-
-    pub fn audio(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
-        Self::Dynamic(Arc::new(AudioValue {
-            mime_type: mime_type.into(),
-            data,
-        }))
-    }
-
-    pub fn link(uri: impl Into<String>, name: Option<String>) -> Self {
-        Self::Dynamic(Arc::new(LinkValue {
-            uri: uri.into(),
-            name,
-        }))
+        let v = self
+            .inner_value()
+            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+        let sv = v
+            .as_any()
+            .downcast_ref::<StructValue>()
+            .ok_or_else(|| format!("Expected struct value, got {}", self.type_name()))?;
+        sv.all_fields()
     }
 
     pub fn to_arrow(&self) -> Arc<dyn Array> {
-        match self {
-            ExpressionValue::Module { .. } => panic!("expected value, got Module"),
-            ExpressionValue::Dynamic(v) => v.to_arrow(),
+        match &self.inner {
+            ExpressionValueInner::Module => panic!("expected value, got Module"),
+            ExpressionValueInner::Value(v) => v.to_arrow(),
         }
     }
 
     pub fn as_string(&self) -> Result<String, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => v
+        match &self.inner {
+            ExpressionValueInner::Value(v) => v
                 .as_any()
                 .downcast_ref::<StringValue>()
                 .map(|sv| sv.0.clone())
@@ -208,8 +285,8 @@ impl ExpressionValue {
     }
 
     pub fn as_boolean(&self) -> Result<bool, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => v
+        match &self.inner {
+            ExpressionValueInner::Value(v) => v
                 .as_any()
                 .downcast_ref::<BooleanValue>()
                 .map(|bv| bv.0)
@@ -219,8 +296,8 @@ impl ExpressionValue {
     }
 
     pub fn as_integer(&self) -> Result<i64, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => v
+        match &self.inner {
+            ExpressionValueInner::Value(v) => v
                 .as_any()
                 .downcast_ref::<IntValue>()
                 .map(|iv| iv.0)
@@ -230,8 +307,8 @@ impl ExpressionValue {
     }
 
     pub fn as_list(&self) -> Result<&ListArray, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => v
+        match &self.inner {
+            ExpressionValueInner::Value(v) => v
                 .as_any()
                 .downcast_ref::<ListValue>()
                 .map(|lv| lv.list_array())
@@ -252,22 +329,22 @@ impl ExpressionValue {
     }
 
     pub fn as_module(&self) -> Result<&DefinitionPath, String> {
-        match self {
-            ExpressionValue::Module { path, .. } => Ok(path),
+        match &self.inner {
+            ExpressionValueInner::Module => Ok(&self.type_path),
             _ => Err(format!("expected Module, got {}", self.type_name())),
         }
     }
 
     pub fn type_name(&self) -> &str {
-        match self {
-            ExpressionValue::Module { .. } => "Module",
-            ExpressionValue::Dynamic(v) => v.type_name(),
+        match &self.inner {
+            ExpressionValueInner::Module => "Module",
+            ExpressionValueInner::Value(v) => v.type_name(),
         }
     }
 
     pub fn as_metadata(&self) -> Result<(String, Option<String>), String> {
-        match self {
-            ExpressionValue::Dynamic(v) => {
+        match &self.inner {
+            ExpressionValueInner::Value(v) => {
                 let mv = v
                     .as_any()
                     .downcast_ref::<MetadataValue>()
@@ -282,22 +359,22 @@ impl ExpressionValue {
     }
 
     pub fn value_string(&self) -> String {
-        match self {
-            ExpressionValue::Module { path, .. } => format!("Module({})", path),
-            ExpressionValue::Dynamic(v) => v.format_for_llm(),
+        match &self.inner {
+            ExpressionValueInner::Module => format!("Module({})", self.type_path),
+            ExpressionValueInner::Value(v) => v.format_for_llm(),
         }
     }
 
     pub fn format_for_llm(&self) -> String {
-        match self {
-            ExpressionValue::Module { path, .. } => format!("Module({})", path),
-            ExpressionValue::Dynamic(v) => v.format_for_llm(),
+        match &self.inner {
+            ExpressionValueInner::Module => format!("Module({})", self.type_path),
+            ExpressionValueInner::Value(v) => v.format_for_llm(),
         }
     }
 
     pub fn downcast_clone<T: Clone + RuntimeValue + 'static>(&self) -> Result<T, String> {
-        match self {
-            ExpressionValue::Dynamic(v) => v.as_any().downcast_ref::<T>().cloned(),
+        match &self.inner {
+            ExpressionValueInner::Value(v) => v.as_any().downcast_ref::<T>().cloned(),
             _ => None,
         }
         .ok_or_else(|| {

@@ -133,7 +133,7 @@ pub struct SelectClause {
 
 #[derive(Clone, Debug)]
 pub struct MatchArm {
-    pub variant_name: String,
+    pub variant_name: DefinitionPath,
     pub binding: String,
     pub binding_id: BindingId,
     pub body: Expression,
@@ -170,7 +170,7 @@ pub enum Expression {
         span: Span,
     },
     StructLiteral {
-        struct_name: String,
+        struct_name: DefinitionPath,
         fields: Vec<(String, Expression)>,
         ty: Type,
         span: Span,

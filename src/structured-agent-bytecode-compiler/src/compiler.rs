@@ -733,7 +733,7 @@ impl BytecodeCompiler {
     fn compile_struct_literal(
         &self,
         ctx: &mut CompilerCtx,
-        struct_name: &str,
+        struct_name: &DefinitionPath,
         fields: &[(String, typed_ast::Expression)],
         dest_var: Slot,
     ) -> Result<(), String> {
@@ -745,7 +745,7 @@ impl BytecodeCompiler {
         }
         ctx.builder.emit(Instruction::StructNew {
             dest: dest_var,
-            struct_name: struct_name.to_string(),
+            struct_name: struct_name.clone(),
             fields: field_slots,
         });
         Ok(())
