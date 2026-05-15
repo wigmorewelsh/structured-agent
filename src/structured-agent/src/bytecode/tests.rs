@@ -168,6 +168,17 @@ fn main(): String {
     }
 
     #[test]
+    fn test_compile_match_expression() {
+        let code = r#"
+            fn test(m: Image | Audio): String {
+                return match m { Image(img) => "image", Audio(audio) => "audio" }
+            }
+        "#;
+        let expected = "fn test(\n    m: Image | Audio\n): String {\n  .slots:\n    s0  ret    $ret\n    s1  param  m\n    s2  local  img\n    s3  local  audio\n    s4  temp   $t0\n    s5  temp   $t1\n    s6  temp   $t2\n      0: mov s5 ($t1), s1 (m)\n      1: match.type s6 ($t2), s5 ($t1), \"Image\"\n      2: brfalse s6 ($t2), 6\n      3: mov s2 (img), s5 ($t1)\n      4: ldc.str s4 ($t0), \"image\"\n      5: br 11\n  match_arm_0_1:\n      6: nop\n      7: match.type s6 ($t2), s5 ($t1), \"Audio\"\n      8: mov s3 (audio), s5 ($t1)\n      9: ldc.str s4 ($t0), \"audio\"\n     10: br 11\n  match_end_0:\n     11: nop\n     12: ret s4 ($t0)\n}\n";
+        compile_and_check(code, expected);
+    }
+
+    #[test]
     fn test_display_select_bytecode() {
         let code = r#"
 fn add(a: String, b: String): String {
@@ -1548,6 +1559,64 @@ mod vm_execution_tests {
             .await
             .unwrap();
         assert_eq!(result.1.value.as_string().unwrap(), "test_value");
+    }
+
+    #[tokio::test]
+    async fn test_vm_match_expression_image_arm() {
+        let code = r#"
+            fn test(m: Image | Audio): String {
+                return match m { Image(img) => "image", Audio(audio) => "audio" }
+            }
+        "#;
+
+        let module = parse_and_typecheck(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
+
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let context = Context::with_runtime(runtime.clone());
+
+        let mut frame = vec![None; compiled.slot_table.len()];
+        frame[1] = Some(crate::runtime::ExpressionResult::new(
+            ExpressionValue::image("image/png", vec![]),
+        ));
+
+        let vm = VM::new(runtime);
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
+        assert_eq!(result.value.as_string().unwrap(), "image");
+    }
+
+    #[tokio::test]
+    async fn test_vm_match_expression_audio_arm() {
+        let code = r#"
+            fn test(m: Image | Audio): String {
+                return match m { Image(img) => "image", Audio(audio) => "audio" }
+            }
+        "#;
+
+        let module = parse_and_typecheck(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
+
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let context = Context::with_runtime(runtime.clone());
+
+        let mut frame = vec![None; compiled.slot_table.len()];
+        frame[1] = Some(crate::runtime::ExpressionResult::new(
+            ExpressionValue::audio("audio/mp3", vec![]),
+        ));
+
+        let vm = VM::new(runtime);
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
+        assert_eq!(result.value.as_string().unwrap(), "audio");
     }
 }
 
