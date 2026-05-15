@@ -174,7 +174,34 @@ fn main(): String {
                 return match m { Image(img) => "image", Audio(audio) => "audio" }
             }
         "#;
-        let expected = "fn test(\n    m: Image | Audio\n): String {\n  .slots:\n    s0  ret    $ret\n    s1  param  m\n    s2  local  img\n    s3  local  audio\n    s4  temp   $t0\n    s5  temp   $t1\n    s6  temp   $t2\n      0: mov s5 ($t1), s1 (m)\n      1: match.type s6 ($t2), s5 ($t1), \"Image\"\n      2: brfalse s6 ($t2), 6\n      3: mov s2 (img), s5 ($t1)\n      4: ldc.str s4 ($t0), \"image\"\n      5: br 11\n  match_arm_0_1:\n      6: nop\n      7: match.type s6 ($t2), s5 ($t1), \"Audio\"\n      8: mov s3 (audio), s5 ($t1)\n      9: ldc.str s4 ($t0), \"audio\"\n     10: br 11\n  match_end_0:\n     11: nop\n     12: ret s4 ($t0)\n}\n";
+        let expected = r#"fn test(
+    m: Image | Audio
+): String {
+  .slots:
+    s0  ret    $ret
+    s1  param  m
+    s2  local  img
+    s3  local  audio
+    s4  temp   $t0
+    s5  temp   $t1
+    s6  temp   $t2
+      0: mov s5 ($t1), s1 (m)
+      1: match.type s6 ($t2), s5 ($t1), "Image"
+      2: brfalse s6 ($t2), 6
+      3: mov s2 (img), s5 ($t1)
+      4: ldc.str s4 ($t0), "image"
+      5: br 11
+  match_arm_0_1:
+      6: nop
+      7: match.type s6 ($t2), s5 ($t1), "Audio"
+      8: mov s3 (audio), s5 ($t1)
+      9: ldc.str s4 ($t0), "audio"
+     10: br 11
+  match_end_0:
+     11: nop
+     12: ret s4 ($t0)
+}
+"#;
         compile_and_check(code, expected);
     }
 
