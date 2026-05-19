@@ -73,6 +73,7 @@ pub enum SolveResult {
 
 pub struct SolverState {
     pub inert: Vec<Constraint>,
+    pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
 }
 
 pub trait SolveRule {
@@ -95,10 +96,13 @@ pub struct Solver {
 impl Solver {
     pub fn new() -> Self {
         Self {
-            state: SolverState { inert: vec![] },
+            state: SolverState {
+                inert: vec![],
+                generic_solutions: HashMap::new(),
+            },
             errors: Vec::new(),
             worklist: VecDeque::new(),
-            rules: Vec::new(),
+            rules: vec![Box::new(rules::unify::UnifyRule)],
         }
     }
 
@@ -140,7 +144,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         .collect();
     let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
     let mut impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath> = HashMap::new();
-    let mut generic_solutions: HashMap<(usize, usize), HashMap<String, Type>> = HashMap::new();
+    let mut solver = Solver::new();
 
     for constraint in &constraints {
         match &constraint.kind {
@@ -152,32 +156,8 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
                 check_trait_impl(db, constraint, &mut impls);
             }
             ConstraintKind::TraitBound { .. } => {}
-            ConstraintKind::Unify {
-                call_site,
-                var,
-                ty,
-                fn_name,
-                param_name,
-            } => {
-                let slot = generic_solutions
-                    .entry((constraint.file_id, *call_site))
-                    .or_default();
-                match slot.get(var) {
-                    Some(existing) if existing != ty => {
-                        TypeErrorAccumulator(TypeError::ArgumentTypeMismatch {
-                            function: fn_name.clone(),
-                            parameter: param_name.clone(),
-                            expected: existing.to_string(),
-                            found: ty.to_string(),
-                            span: constraint.span,
-                            file_id: constraint.file_id,
-                        })
-                        .accumulate(db);
-                    }
-                    _ => {
-                        slot.insert(var.clone(), ty.clone());
-                    }
-                }
+            ConstraintKind::Unify { .. } => {
+                solver.worklist.push_back(constraint.clone());
             }
         }
     }
@@ -225,6 +205,11 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         }
     }
 
+    solver.solve(db);
+    for e in solver.errors {
+        TypeErrorAccumulator(e).accumulate(db);
+    }
+
     let mut inherent_impls: HashMap<DefinitionPath, DefinitionPath> = HashMap::new();
     for (impl_key, impl_def) in db.symbol_tables().impls(db).get().iter() {
         if impl_def.trait_name.is_some() {
@@ -247,7 +232,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         resolved,
         impls,
         inherent_impls,
-        generic_solutions,
+        generic_solutions: solver.state.generic_solutions,
     }
 }
 
