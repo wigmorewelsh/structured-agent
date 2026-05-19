@@ -1631,6 +1631,57 @@ mod tests {
     }
 
     #[test]
+    fn test_field_access_on_parameterized_struct_is_valid() {
+        let input = concat!(
+            "struct Box<T> {\n",
+            "    value: T,\n",
+            "}\n",
+            "fn get_value(b: Box<Int>): Int {\n",
+            "    return b.value\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(
+            result.is_ok(),
+            "field access on parameterized struct should type-check: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_field_access_on_parameterized_struct_unknown_field_is_error() {
+        let input = concat!(
+            "struct Box<T> {\n",
+            "    value: T,\n",
+            "}\n",
+            "fn get_value(b: Box<Int>): Int {\n",
+            "    return b.missing\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(e, TypeError::UnknownField { field_name, .. } if field_name == "missing")),
+            "expected UnknownField for 'missing', got {:?}", errors
+        );
+    }
+
+    #[test]
     fn test_generic_in_struct_field_is_error() {
         let module = create_test_module(vec![create_struct_definition(
             "Wrapper",
@@ -4901,6 +4952,55 @@ mod typed_ast_tests {
             expr.ty(),
             &RT::Parameterized(DefinitionPath::for_type(mn, "Pair"), vec![RT::string()]),
             "struct literal with String field should infer Pair<String>"
+        );
+    }
+
+    #[test]
+    fn field_access_on_parameterized_struct_has_concrete_type() {
+        let input = concat!(
+            "struct Box<T> {\n",
+            "    value: T,\n",
+            "}\n",
+            "fn get(b: Box<String>): String {\n",
+            "    return b.value\n",
+            "}\n",
+        );
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let typed_module = check_typed(&module);
+        let get_fn = typed_module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "get" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .expect("get fn should be elaborated");
+        let expr = get_fn
+            .body
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let typed_ast::Statement::Return(e) = s {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .expect("expected return statement");
+        assert_eq!(
+            expr.ty(),
+            &RT::string(),
+            "field access on Box<String>.value should have type String, got {:?}",
+            expr.ty()
         );
     }
 

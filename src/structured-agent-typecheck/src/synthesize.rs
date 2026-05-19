@@ -1724,6 +1724,37 @@ fn synthesize_field_access(
                 )?;
             resolve(db, &field_ast_type, &type_env, span, ctx)
         }
+        RT::Parameterized(type_name, args) => {
+            let (definition, type_params) =
+                get_struct_fields(db, type_name.last_name(), ctx.module_name).or_accumulate(
+                    db,
+                    TypeError::UnsupportedType {
+                        type_name: type_name.last_name().to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
+            let type_env = super::TypeEnvironment::with_type_params(&type_params);
+            let field_ast_type = definition
+                .iter()
+                .find(|(n, _)| n == field)
+                .map(|(_, t)| t.clone())
+                .or_accumulate(
+                    db,
+                    TypeError::UnknownField {
+                        struct_name: type_name.last_name().to_string(),
+                        field_name: field.to_string(),
+                        span,
+                        file_id: ctx.file_id,
+                    },
+                )?;
+            let generic_ty = resolve(db, &field_ast_type, &type_env, span, ctx)?;
+            let mut subst = Substitution::new();
+            for (tp, arg) in type_params.iter().zip(args.iter()) {
+                subst.bind(tp.name.clone(), arg.clone());
+            }
+            Some(subst.apply_subst(&generic_ty))
+        }
         other => {
             TypeErrorAccumulator(TypeError::TypeMismatch {
                 expected: "struct".to_string(),

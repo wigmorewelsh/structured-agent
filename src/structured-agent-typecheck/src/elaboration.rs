@@ -986,18 +986,28 @@ fn elaborate_field_access(
 ) -> Option<typed_ast::Expression> {
     let typed_base = elaborate_expression(db, base, env, ctx)?;
     let base_type = typed_base.ty().clone();
-    let struct_type_name = match &base_type {
-        RT::Named(tn) => tn.last_name().to_string(),
-        RT::Generic(name) => name.clone(),
+    let (struct_type_name, type_args) = match &base_type {
+        RT::Named(tn) => (tn.last_name().to_string(), vec![]),
+        RT::Generic(name) => (name.clone(), vec![]),
+        RT::Parameterized(tn, args) => (tn.last_name().to_string(), args.clone()),
         _ => return None,
     };
-    let (definition, _) = get_struct_fields(db, &struct_type_name, ctx.module_name)?;
+    let (definition, type_params) = get_struct_fields(db, &struct_type_name, ctx.module_name)?;
     let field_ast_type = definition
         .iter()
         .find(|(n, _)| n == field)
         .map(|(_, t)| t.clone())?;
-    let empty_env = synthesize::TypeEnvironment::new();
-    let field_ty = synthesize::resolve(db, &field_ast_type, &empty_env, span, ctx)?;
+    let type_env = synthesize::TypeEnvironment::with_type_params(&type_params);
+    let generic_field_ty = synthesize::resolve(db, &field_ast_type, &type_env, span, ctx)?;
+    let field_ty = if type_args.is_empty() {
+        generic_field_ty
+    } else {
+        let mut subst = synthesize::Substitution::new();
+        for (tp, arg) in type_params.iter().zip(type_args.iter()) {
+            subst.bind(tp.name.clone(), arg.clone());
+        }
+        subst.apply_subst(&generic_field_ty)
+    };
     Some(typed_ast::Expression::FieldAccess {
         base: Box::new(typed_base),
         field: field.to_string(),

@@ -1943,6 +1943,25 @@ fn main(): Int {
         assert_eq!(result.as_integer().unwrap(), 99);
     }
 
+    #[tokio::test]
+    async fn test_vm_generic_struct_field_access() {
+        let code = r#"
+struct Wrapper<T> {
+    item: T,
+}
+fn get_item(): String {
+    let w = Wrapper { item: "hello" }
+    return w.item
+}
+fn main(): String {
+    return get_item()
+}
+"#;
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        let result = runtime.run().await.unwrap();
+        assert_eq!(result.as_string().unwrap(), "hello");
+    }
+
     #[test]
     fn test_struct_value_type_name() {
         let value = ExpressionValue::struct_value(vec![

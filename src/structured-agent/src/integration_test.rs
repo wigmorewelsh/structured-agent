@@ -155,10 +155,37 @@ fn main(): String {
 
         assert!(
             result.is_err(),
-            "Select statement with mismatched types should fail"
+            "Select returning a union type where String is declared should fail"
         );
         let err = result.unwrap_err();
-        assert!(err.contains("select branches have incompatible types"));
+        assert!(err.contains("mismatched return type"));
+    }
+
+    #[test]
+    fn test_type_checker_integration_select_infers_union_type() {
+        let code = r#"
+fn get_string(): String {
+    return "hello"
+}
+
+fn get_boolean(): Boolean {
+    return true
+}
+
+fn main(): String | Boolean {
+    return select {
+        get_string(),
+        get_boolean()
+    }
+}
+"#;
+
+        let result = compile(code);
+        assert!(
+            result.is_ok(),
+            "Select with mixed arms should infer union type: {:?}",
+            result.err()
+        );
     }
 
     #[test]
