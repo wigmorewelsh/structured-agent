@@ -94,6 +94,15 @@ pub enum Statement {
         else_body: Option<Vec<Statement>>,
         span: Span,
     },
+    IfLet {
+        variant_name: DefinitionPath,
+        binding: String,
+        binding_id: BindingId,
+        scrutinee: Expression,
+        body: Vec<Statement>,
+        else_body: Option<Vec<Statement>>,
+        span: Span,
+    },
     While {
         condition: Expression,
         body: Vec<Statement>,

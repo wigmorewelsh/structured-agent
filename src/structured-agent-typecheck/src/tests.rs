@@ -556,7 +556,67 @@ mod tests {
     }
 
     #[test]
-    fn test_select_branch_type_mismatch() {
+    fn test_select_infers_union_type() {
+        let get_string_func = create_test_function(
+            "get_string",
+            vec![],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "text".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+
+        let get_bool_func = create_test_function(
+            "get_bool",
+            vec![],
+            AstType::simple("Boolean"),
+            vec![Statement::Return(Expression::BooleanLiteral {
+                value: true,
+                span: crate::types::Span::dummy(),
+            })],
+        );
+
+        let main_func = create_test_function(
+            "main",
+            vec![],
+            AstType::Union(vec![AstType::simple("String"), AstType::simple("Boolean")]),
+            vec![Statement::Return(Expression::Select(SelectExpression {
+                clauses: vec![
+                    SelectClause {
+                        expression_to_run: Expression::Call {
+                            function: "get_string".to_string(),
+                            type_args: vec![],
+                            arguments: vec![],
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
+                    },
+                    SelectClause {
+                        expression_to_run: Expression::Call {
+                            function: "get_bool".to_string(),
+                            type_args: vec![],
+                            arguments: vec![],
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
+                    },
+                ],
+                span: crate::types::Span::dummy(),
+            }))],
+        );
+
+        let module = create_test_module(vec![
+            Definition::Function(Arc::new(get_string_func)),
+            Definition::Function(Arc::new(get_bool_func)),
+            Definition::Function(Arc::new(main_func)),
+        ]);
+
+        assert!(check(module).is_ok());
+    }
+
+    #[test]
+    fn test_select_return_type_mismatch_when_union_not_declared() {
         let get_string_func = create_test_function(
             "get_string",
             vec![],
@@ -615,7 +675,7 @@ mod tests {
         let result = check(module);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(errors[0], TypeError::TypeMismatch { .. }));
+        assert!(matches!(errors[0], TypeError::ReturnTypeMismatch { .. }));
     }
 
     #[test]
@@ -2749,6 +2809,92 @@ mod tests {
         let result = check(module);
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
     }
+
+    #[test]
+    fn if_let_valid_typechecks() {
+        let input =
+            "fn f(m: Image | Audio): String { if let Image(img) = m { } return \"done\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn if_let_with_else_typechecks() {
+        let input = "fn f(m: Image | Audio): String { if let Image(img) = m { } else { } return \"done\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn if_let_unknown_variant_is_error() {
+        let input = "fn f(m: Image | Audio): String { if let Link(l) = m { } return \"done\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::UnreachableArm { .. }))
+        );
+    }
+
+    #[test]
+    fn if_let_non_union_scrutinee_is_error() {
+        let input = "fn f(x: String): String { if let Image(img) = x { } return \"done\" }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::MatchOnNonUnion { .. }))
+        );
+    }
+
+    #[test]
+    fn if_let_binding_not_in_else() {
+        let input = "fn f(m: Image | Audio): String { if let Image(img) = m { return \"ok\" } else { return img } }\n";
+        let module = parse_program(0)
+            .parse(combine::stream::position::Stream::with_positioner(
+                input,
+                combine::stream::position::IndexPositioner::default(),
+            ))
+            .unwrap()
+            .0;
+        let result = check(module);
+        let errors = result.unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::UnknownVariable { .. }))
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3328,6 +3474,75 @@ mod typed_ast_tests {
             .unwrap();
         let expr = stmt_expr(f.body.statements.first().unwrap());
         assert_eq!(expr.ty(), &RT::string());
+        assert!(matches!(expr, typed_ast::Expression::Select(_, _)));
+    }
+
+    #[test]
+    fn select_with_mixed_arms_infers_union_type() {
+        let get_str = create_test_function(
+            "get_str",
+            vec![],
+            AstType::simple("String"),
+            vec![Statement::Return(Expression::StringLiteral {
+                value: "v".to_string(),
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let get_bool = create_test_function(
+            "get_bool",
+            vec![],
+            AstType::simple("Boolean"),
+            vec![Statement::Return(Expression::BooleanLiteral {
+                value: true,
+                span: crate::types::Span::dummy(),
+            })],
+        );
+        let func = create_test_function(
+            "f",
+            vec![],
+            AstType::Union(vec![AstType::simple("String"), AstType::simple("Boolean")]),
+            vec![Statement::Return(Expression::Select(SelectExpression {
+                clauses: vec![
+                    SelectClause {
+                        expression_to_run: Expression::Call {
+                            function: "get_str".to_string(),
+                            type_args: vec![],
+                            arguments: vec![],
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
+                    },
+                    SelectClause {
+                        expression_to_run: Expression::Call {
+                            function: "get_bool".to_string(),
+                            type_args: vec![],
+                            arguments: vec![],
+                            span: crate::types::Span::dummy(),
+                        },
+                        span: crate::types::Span::dummy(),
+                    },
+                ],
+                span: crate::types::Span::dummy(),
+            }))],
+        );
+        let module = check_typed(&create_test_module(vec![
+            Definition::Function(Arc::new(get_str)),
+            Definition::Function(Arc::new(get_bool)),
+            Definition::Function(Arc::new(func)),
+        ]));
+        let f = module
+            .definitions
+            .iter()
+            .find_map(|d| {
+                if let typed_ast::Definition::Function(f) = d {
+                    if f.name == "f" { Some(f) } else { None }
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let expr = stmt_expr(f.body.statements.first().unwrap());
+        assert_eq!(expr.ty(), &RT::union(vec![RT::string(), RT::boolean()]));
         assert!(matches!(expr, typed_ast::Expression::Select(_, _)));
     }
 

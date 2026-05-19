@@ -172,6 +172,39 @@ fn elaborate_statement(
                 env,
             ))
         }
+        Statement::IfLet {
+            variant_name,
+            binding,
+            scrutinee,
+            body,
+            else_body,
+            span,
+        } => {
+            let typed_scrutinee = elaborate_expression(db, scrutinee, &env, ctx)?;
+            let variants = typed_scrutinee.ty().union_variants()?.to_vec();
+            let variant_type = variants.iter().find(|v| v.name() == *variant_name)?.clone();
+            let variant_path = variant_type.definition_path()?.clone();
+            let mut child_env = env.create_child();
+            let binding_id = child_env.declare_variable(binding.clone(), variant_type, *span);
+            let typed_body = elaborate_block(db, body, child_env, ctx)?;
+            let typed_else = if let Some(else_stmts) = else_body {
+                Some(elaborate_block(db, else_stmts, env.create_child(), ctx)?)
+            } else {
+                None
+            };
+            Some((
+                typed_ast::Statement::IfLet {
+                    variant_name: variant_path,
+                    binding: binding.clone(),
+                    binding_id,
+                    scrutinee: typed_scrutinee,
+                    body: typed_body,
+                    else_body: typed_else,
+                    span: *span,
+                },
+                env,
+            ))
+        }
         Statement::While {
             condition,
             body,
@@ -845,15 +878,11 @@ fn elaborate_select(
     if clauses.is_empty() {
         return None;
     }
-    let first = &clauses[0];
-    let typed_first_run = elaborate_expression(db, &first.expression_to_run, env, ctx)?;
-    let first_type = typed_first_run.ty().clone();
-    let mut typed_clauses = vec![typed_ast::SelectClause {
-        expression_to_run: typed_first_run,
-        span: first.span,
-    }];
-    for clause in clauses.iter().skip(1) {
+    let mut typed_clauses = Vec::with_capacity(clauses.len());
+    let mut arm_types = Vec::with_capacity(clauses.len());
+    for clause in clauses {
         let typed_run = elaborate_expression(db, &clause.expression_to_run, env, ctx)?;
+        arm_types.push(typed_run.ty().clone());
         typed_clauses.push(typed_ast::SelectClause {
             expression_to_run: typed_run,
             span: clause.span,
@@ -864,7 +893,7 @@ fn elaborate_select(
             clauses: typed_clauses,
             span,
         },
-        first_type,
+        RT::union(arm_types),
     ))
 }
 

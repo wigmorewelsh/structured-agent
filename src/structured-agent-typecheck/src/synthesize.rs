@@ -635,6 +635,30 @@ fn check_statement(
             }
             Some(env)
         }
+        Statement::IfLet {
+            variant_name,
+            binding,
+            scrutinee,
+            body,
+            else_body,
+            span,
+        } => {
+            check_if_let_statement(
+                db,
+                variant_name,
+                binding,
+                scrutinee,
+                body,
+                else_body.as_deref(),
+                *span,
+                &env,
+                function_name,
+                return_type,
+                ctx,
+                constraints,
+            )?;
+            Some(env)
+        }
         Statement::While {
             condition,
             body,
@@ -734,6 +758,70 @@ fn check_statement(
     }
 }
 
+fn check_if_let_statement(
+    db: &dyn TypeCheckDatabase,
+    variant_name: &str,
+    binding: &str,
+    scrutinee: &Expression,
+    body: &[Statement],
+    else_body: Option<&[Statement]>,
+    span: Span,
+    env: &TypeEnvironment,
+    function_name: &str,
+    return_type: &RT,
+    ctx: &CheckContext,
+    constraints: &mut Vec<Constraint>,
+) -> Option<()> {
+    let scrutinee_type = synthesize_expression(db, scrutinee, env, ctx, constraints)?;
+    let variants = match scrutinee_type.union_variants() {
+        Some(vs) => vs.to_vec(),
+        None => {
+            TypeErrorAccumulator(TypeError::MatchOnNonUnion {
+                found: scrutinee_type.name(),
+                span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            return None;
+        }
+    };
+    let variant_type = match variants.iter().find(|v| v.name() == variant_name) {
+        Some(v) => v.clone(),
+        None => {
+            TypeErrorAccumulator(TypeError::UnreachableArm {
+                variant: variant_name.to_string(),
+                span,
+                file_id: ctx.file_id,
+            })
+            .accumulate(db);
+            return None;
+        }
+    };
+    let mut child_env = env.create_child();
+    child_env.declare_variable(binding.to_string(), variant_type, span);
+    check_block(
+        db,
+        body,
+        child_env,
+        function_name,
+        return_type,
+        ctx,
+        constraints,
+    )?;
+    if let Some(else_stmts) = else_body {
+        check_block(
+            db,
+            else_stmts,
+            env.create_child(),
+            function_name,
+            return_type,
+            ctx,
+            constraints,
+        )?;
+    }
+    Some(())
+}
+
 fn check_match_statement_logic(
     db: &dyn TypeCheckDatabase,
     scrutinee: &Expression,
@@ -827,6 +915,27 @@ fn check_expression(
             check_boolean_condition(db, condition, env, ctx, constraints)?;
             check_expression(db, then_expr, expected, env, ctx, constraints)?;
             check_expression(db, else_expr, expected, env, ctx, constraints)
+        }
+        Expression::Select(select_expr) => {
+            let first = &select_expr.clauses[0];
+            let mut all_ok = true;
+            for (i, clause) in select_expr.clauses.iter().enumerate() {
+                let arm_type =
+                    synthesize_expression(db, &clause.expression_to_run, env, ctx, constraints)?;
+                if !arm_type.is_assignable_to(expected) {
+                    TypeErrorAccumulator(TypeError::SelectBranchTypeMismatch {
+                        expected: expected.name(),
+                        found: arm_type.name(),
+                        branch_index: i,
+                        span: clause.expression_to_run.span(),
+                        first_branch_span: first.expression_to_run.span(),
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                    all_ok = false;
+                }
+            }
+            if all_ok { Some(()) } else { None }
         }
         _ => {
             let got = synthesize_expression(db, expression, env, ctx, constraints)?;
@@ -1432,33 +1541,12 @@ fn synthesize_select(
             file_id: ctx.file_id,
         }
     );
-    let first = &clauses[0];
-    let first_type = synthesize_expression(db, &first.expression_to_run, env, ctx, constraints)?;
-    for (i, clause) in clauses.iter().enumerate().skip(1) {
-        ensure_or_accumulate!(
-            check_expression(
-                db,
-                &clause.expression_to_run,
-                &first_type,
-                env,
-                ctx,
-                constraints
-            )
-            .is_some(),
-            db,
-            TypeError::SelectBranchTypeMismatch {
-                expected: first_type.name(),
-                found: synthesize_expression(db, &clause.expression_to_run, env, ctx, constraints)
-                    .map(|t| t.name())
-                    .unwrap_or_default(),
-                branch_index: i,
-                span: clause.expression_to_run.span(),
-                first_branch_span: first.expression_to_run.span(),
-                file_id: ctx.file_id,
-            }
-        );
+    let mut arm_types = Vec::with_capacity(clauses.len());
+    for clause in clauses {
+        let arm_type = synthesize_expression(db, &clause.expression_to_run, env, ctx, constraints)?;
+        arm_types.push(arm_type);
     }
-    Some(first_type)
+    Some(RT::union(arm_types))
 }
 
 fn synthesize_if_else(
