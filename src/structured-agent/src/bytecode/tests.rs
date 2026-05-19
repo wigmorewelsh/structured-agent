@@ -932,6 +932,52 @@ fn test(): Int {
 "#;
         assert_eq!(format!("{}", compiled), expected);
     }
+
+    #[test]
+    fn test_compile_if_let_statement() {
+        let code = r#"
+            fn test(m: Image | Audio): () {
+                if let Image(img) = m {
+                    "then"!
+                } else {
+                    "else"!
+                }
+            }
+        "#;
+        let expected = r#"fn test(
+    m: Image | Audio
+): Unit {
+  .slots:
+    s0  ret    $ret
+    s1  param  m
+    s2  local  img
+    s3  temp   $t0
+    s4  temp   $t1
+    s5  temp   $t2
+    s6  temp   $t3
+    s7  temp   $t4
+      0: mov s3 ($t0), s1 (m)
+      1: match.type s4 ($t1), s3 ($t0), prelude::Image
+      2: brfalse s4 ($t1), 9
+      3: mov s2 (img), s3 ($t0)
+      4: ctx.child
+      5: ldc.str s5 ($t2), "then"
+      6: ctx.event s5 ($t2)
+      7: ctx.restore
+      8: br 13
+  else_0:
+      9: ctx.child
+     10: ldc.str s6 ($t3), "else"
+     11: ctx.event s6 ($t3)
+     12: ctx.restore
+  end_0:
+     13: nop
+     14: ldc.unit s7 ($t4)
+     15: ret s7 ($t4)
+}
+"#;
+        compile_and_check(code, expected);
+    }
 }
 
 #[cfg(test)]
@@ -1176,6 +1222,7 @@ mod vm_execution_tests {
                 variable,
                 expression,
                 span,
+                ..
             } => typed_ast::Statement::Assignment {
                 variable: variable.clone(),
                 binding_id: typed_ast::BindingId(0),
@@ -1221,6 +1268,7 @@ mod vm_execution_tests {
             AS::Yield { span } => typed_ast::Statement::Yield { span: *span },
             AS::ForIn { .. } => todo!("ForIn not yet supported in VM test helper"),
             AS::Match { .. } => unimplemented!("Match not supported in test helper"),
+            AS::IfLet { .. } => unimplemented!("IfLet not supported in test helper"),
         }
     }
 
@@ -1654,6 +1702,70 @@ mod vm_execution_tests {
             .await
             .unwrap();
         assert_eq!(result.value.as_string().unwrap(), "audio");
+    }
+
+    #[tokio::test]
+    async fn test_vm_if_let_matching_branch_runs() {
+        let code = r#"
+            fn test(m: Image | Audio): String {
+                if let Image(img) = m {
+                    return "matched"
+                }
+                return "no_match"
+            }
+        "#;
+
+        let module = parse_and_typecheck(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
+
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let context = Context::with_runtime(runtime.clone());
+
+        let mut frame = vec![None; compiled.slot_table.len()];
+        frame[1] = Some(crate::runtime::ExpressionResult::new(
+            ExpressionValue::image("image/png", vec![]),
+        ));
+
+        let vm = VM::new(runtime);
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
+        assert_eq!(result.value.as_string().unwrap(), "matched");
+    }
+
+    #[tokio::test]
+    async fn test_vm_if_let_non_matching_skips_body() {
+        let code = r#"
+            fn test(m: Image | Audio): String {
+                if let Image(img) = m {
+                    return "matched"
+                }
+                return "no_match"
+            }
+        "#;
+
+        let module = parse_and_typecheck(code);
+        let func = get_function(&module, "test");
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(func).unwrap();
+
+        let runtime: Arc<dyn RuntimeService> =
+            Arc::new(Runtime::builder(ProgramSource::Inline("".to_string())).build());
+        let context = Context::with_runtime(runtime.clone());
+
+        let mut frame = vec![None; compiled.slot_table.len()];
+        frame[1] = Some(crate::runtime::ExpressionResult::new(
+            ExpressionValue::audio("audio/mp3", vec![]),
+        ));
+
+        let vm = VM::new(runtime);
+        let (_context, result) = vm
+            .execute(&compiled.instructions, context, frame)
+            .await
+            .unwrap();
+        assert_eq!(result.value.as_string().unwrap(), "no_match");
     }
 }
 

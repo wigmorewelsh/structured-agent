@@ -161,6 +161,22 @@ impl ConstantConditionAnalyzer {
                     self.analyze_expression(&arm.body, file_id, variable_values, warnings);
                 }
             }
+            Statement::IfLet {
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                self.analyze_expression(scrutinee, file_id, variable_values, warnings);
+                for stmt in body {
+                    self.analyze_statement(stmt, file_id, variable_values, warnings);
+                }
+                if let Some(else_stmts) = else_body {
+                    for stmt in else_stmts {
+                        self.analyze_statement(stmt, file_id, variable_values, warnings);
+                    }
+                }
+            }
         }
     }
 }

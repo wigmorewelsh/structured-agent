@@ -99,6 +99,22 @@ impl OverwrittenValueAnalyzer {
                     Self::collect_reads_in_expression(&arm.body, reads);
                 }
             }
+            Statement::IfLet {
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                Self::collect_reads_in_expression(scrutinee, reads);
+                for stmt in body {
+                    Self::collect_reads_in_statement(stmt, reads);
+                }
+                if let Some(else_stmts) = else_body {
+                    for stmt in else_stmts {
+                        Self::collect_reads_in_statement(stmt, reads);
+                    }
+                }
+            }
         }
     }
 
@@ -115,6 +131,7 @@ impl OverwrittenValueAnalyzer {
                     variable,
                     expression,
                     span,
+                    ..
                 } => {
                     if let Some(&old_span) = assignments.get(variable)
                         && !reads.contains(variable)
@@ -170,6 +187,22 @@ impl OverwrittenValueAnalyzer {
                     Self::collect_reads_in_expression(scrutinee, reads);
                     for arm in arms {
                         Self::collect_reads_in_expression(&arm.body, reads);
+                    }
+                }
+                Statement::IfLet {
+                    scrutinee,
+                    body,
+                    else_body,
+                    ..
+                } => {
+                    Self::collect_reads_in_expression(scrutinee, reads);
+                    for stmt in body {
+                        Self::collect_reads_in_statement(stmt, reads);
+                    }
+                    if let Some(else_stmts) = else_body {
+                        for stmt in else_stmts {
+                            Self::collect_reads_in_statement(stmt, reads);
+                        }
                     }
                 }
             }

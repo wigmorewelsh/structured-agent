@@ -46,6 +46,7 @@ mod tests {
             Type::simple("Unit"),
             vec![Statement::Assignment {
                 variable: "unused".to_string(),
+                type_annotation: None,
                 expression: Expression::StringLiteral {
                     value: "hello".to_string(),
                     span: Span::new(10, 17),
@@ -76,6 +77,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "used".to_string(),
+                    type_annotation: None,
                     expression: Expression::StringLiteral {
                         value: "hello".to_string(),
                         span: Span::dummy(),
@@ -157,6 +159,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "used".to_string(),
+                    type_annotation: None,
                     expression: Expression::StringLiteral {
                         value: "hello".to_string(),
                         span: Span::dummy(),
@@ -196,6 +199,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "unused".to_string(),
+                    type_annotation: None,
                     expression: Expression::StringLiteral {
                         value: "hello".to_string(),
                         span: Span::new(0, 5),
@@ -435,6 +439,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "continue_loop".to_string(),
+                    type_annotation: None,
                     expression: Expression::BooleanLiteral {
                         value: true,
                         span: Span::dummy(),
@@ -478,6 +483,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "active".to_string(),
+                    type_annotation: None,
                     expression: Expression::BooleanLiteral {
                         value: true,
                         span: Span::dummy(),

@@ -159,6 +159,21 @@ impl BytecodeCompiler {
             typed_ast::Statement::Match {
                 scrutinee, arms, ..
             } => self.compile_match_statement(ctx, scrutinee, arms),
+            typed_ast::Statement::IfLet {
+                variant_name,
+                binding_id,
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => self.compile_if_let_statement(
+                ctx,
+                variant_name,
+                binding_id,
+                scrutinee,
+                body,
+                else_body.as_deref(),
+            ),
         }
     }
 
@@ -223,6 +238,61 @@ impl BytecodeCompiler {
         let end_label = format!("end_{}", id);
 
         ctx.builder.emit_brfalse(cond_slot, &else_label);
+
+        ctx.builder.emit(Instruction::CtxChild);
+        for stmt in body {
+            self.compile_statement(ctx, stmt)?;
+        }
+        ctx.builder.emit(Instruction::CtxRestore);
+        ctx.builder.emit_br(&end_label);
+
+        ctx.builder.emit_label(&else_label);
+        if let Some(else_stmts) = else_body {
+            ctx.builder.emit(Instruction::CtxChild);
+            for stmt in else_stmts {
+                self.compile_statement(ctx, stmt)?;
+            }
+            ctx.builder.emit(Instruction::CtxRestore);
+        }
+
+        ctx.builder.emit_label(&end_label);
+        ctx.builder.emit(Instruction::Nop);
+        Ok(())
+    }
+
+    fn compile_if_let_statement(
+        &self,
+        ctx: &mut CompilerCtx,
+        variant_name: &DefinitionPath,
+        binding_id: &BindingId,
+        scrutinee: &typed_ast::Expression,
+        body: &[typed_ast::Statement],
+        else_body: Option<&[typed_ast::Statement]>,
+    ) -> Result<(), String> {
+        let scrutinee_slot = ctx.builder.next_temp_slot();
+        self.compile_expression(ctx, scrutinee, scrutinee_slot)?;
+
+        let check_slot = ctx.builder.next_temp_slot();
+        ctx.builder.emit(Instruction::MatchType {
+            src: scrutinee_slot,
+            dest: check_slot,
+            variant: variant_name.clone(),
+        });
+
+        let id = ctx.builder.next_label_id();
+        let else_label = format!("else_{}", id);
+        let end_label = format!("end_{}", id);
+
+        ctx.builder.emit_brfalse(check_slot, &else_label);
+
+        let binding_slot = *ctx
+            .binding_id_to_slot
+            .get(binding_id)
+            .ok_or_else(|| format!("binding {:?} not found", binding_id))?;
+        ctx.builder.emit(Instruction::Mov {
+            dest: binding_slot,
+            src: scrutinee_slot,
+        });
 
         ctx.builder.emit(Instruction::CtxChild);
         for stmt in body {
@@ -997,6 +1067,23 @@ fn collect_binding_ids_inner(
                         result.push((arm.binding_id, arm.binding.clone()));
                     }
                     collect_from_expr(&arm.body, result, seen);
+                }
+            }
+            typed_ast::Statement::IfLet {
+                binding_id,
+                binding,
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                collect_from_expr(scrutinee, result, seen);
+                if seen.insert(*binding_id) {
+                    result.push((*binding_id, binding.clone()));
+                }
+                collect_binding_ids_inner(body, result, seen);
+                if let Some(else_stmts) = else_body {
+                    collect_binding_ids_inner(else_stmts, result, seen);
                 }
             }
         }

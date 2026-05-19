@@ -101,6 +101,22 @@ impl UnusedReturnValueAnalyzer {
                     self.analyze_expression(&arm.body);
                 }
             }
+            Statement::IfLet {
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                self.analyze_expression(scrutinee);
+                for stmt in body {
+                    self.analyze_statement(stmt);
+                }
+                if let Some(else_stmts) = else_body {
+                    for stmt in else_stmts {
+                        self.analyze_statement(stmt);
+                    }
+                }
+            }
         }
     }
 

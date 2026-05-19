@@ -38,6 +38,18 @@ impl ReachabilityAnalyzer {
                 Statement::Return(expr) => expr.span(),
                 Statement::Yield { span, .. } => *span,
                 Statement::Match { span, .. } => *span,
+                Statement::IfLet {
+                    span,
+                    body,
+                    else_body,
+                    ..
+                } => {
+                    self.collect_all_statements(body);
+                    if let Some(else_stmts) = else_body {
+                        self.collect_all_statements(else_stmts);
+                    }
+                    *span
+                }
             };
             self.all_statements.push(span);
         }
@@ -59,6 +71,7 @@ impl ReachabilityAnalyzer {
                     Statement::Return(expr) => expr.span(),
                     Statement::Yield { span, .. } => *span,
                     Statement::Match { span, .. } => *span,
+                    Statement::IfLet { span, .. } => *span,
                 };
                 self.reachable.insert(span);
             }
@@ -88,6 +101,16 @@ impl ReachabilityAnalyzer {
                 Statement::ForIn { body, .. } => {
                     if current_reachable {
                         self.analyze_statements(body, true);
+                    }
+                }
+                Statement::IfLet {
+                    body, else_body, ..
+                } => {
+                    if current_reachable {
+                        self.analyze_statements(body, true);
+                        if let Some(else_stmts) = else_body {
+                            self.analyze_statements(else_stmts, true);
+                        }
                     }
                 }
                 Statement::Return(_) => {

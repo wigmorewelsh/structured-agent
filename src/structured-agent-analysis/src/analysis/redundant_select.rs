@@ -86,6 +86,22 @@ impl RedundantSelectAnalyzer {
                     self.analyze_expression(&arm.body, file_id, warnings);
                 }
             }
+            Statement::IfLet {
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                self.analyze_expression(scrutinee, file_id, warnings);
+                for stmt in body {
+                    self.analyze_statement(stmt, file_id, warnings);
+                }
+                if let Some(else_stmts) = else_body {
+                    for stmt in else_stmts {
+                        self.analyze_statement(stmt, file_id, warnings);
+                    }
+                }
+            }
         }
     }
 }
