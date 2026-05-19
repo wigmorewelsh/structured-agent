@@ -1,7 +1,6 @@
 use crate::TypeError;
 use crate::db::TypeCheckDatabase;
 use crate::solver::{Constraint, ConstraintKind, SolveResult, SolveRule, SolverState};
-use structured_agent_runtime::Type;
 
 pub struct UnifyRule;
 
@@ -55,6 +54,7 @@ mod unify_rule_tests {
     use crate::db::TypeCheckDb;
     use crate::solver::{Flavour, Solver};
     use structured_agent_ast::types::Span;
+    use structured_agent_runtime::Type;
 
     fn unify(file_id: usize, call_site: usize, var: &str, ty: Type) -> Constraint {
         Constraint {

@@ -13,11 +13,9 @@ impl SolveRule for TypeBoundRule {
         &self,
         constraint: &Constraint,
         _db: &dyn TypeCheckDatabase,
-        state: &mut SolverState,
+        _state: &mut SolverState,
     ) -> SolveResult {
         let ConstraintKind::TypeBound {
-            caller,
-            callee,
             actual_type,
             bound_type,
             ..
@@ -33,13 +31,6 @@ impl SolveRule for TypeBoundRule {
                 file_id: constraint.file_id,
             })
         } else {
-            state
-                .resolved
-                .entry(caller.clone())
-                .or_default()
-                .entry(callee.clone())
-                .or_default()
-                .push(actual_type.clone());
             SolveResult::Solved
         }
     }
@@ -77,7 +68,6 @@ mod type_bound_rule_tests {
             .push_back(type_bound("caller", "callee", Type::int(), Type::int()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.resolved["caller"]["callee"], vec![Type::int()]);
     }
 
     #[test]
@@ -89,7 +79,6 @@ mod type_bound_rule_tests {
             .push_back(type_bound("caller", "callee", Type::int(), Type::boolean()));
         solver.solve(&db);
         assert_eq!(solver.errors.len(), 1);
-        assert!(!solver.state.resolved.contains_key("caller"));
     }
 
     #[test]
@@ -104,6 +93,5 @@ mod type_bound_rule_tests {
             .push_back(type_bound("caller", "callee", Type::int(), Type::int()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.resolved["caller"]["callee"].len(), 2);
     }
 }

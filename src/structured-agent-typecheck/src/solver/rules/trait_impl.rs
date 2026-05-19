@@ -51,7 +51,7 @@ impl SolveRule for TraitImplRule {
         let fn_table = db.symbol_tables().functions(db);
         for sig_entry in functions {
             let has_fn = fn_table.get().keys().any(|fn_path| {
-                fn_path.impl_key() == Some(impl_def.key.clone())
+                fn_path.impl_key().as_ref() == Some(&impl_def.key)
                     && fn_path.last_name() == sig_entry.name
             });
             if !has_fn {
@@ -77,11 +77,11 @@ impl SolveRule for TraitImplRule {
                 trait_path: trp,
                 ..
             } = &c.kind
+                && tp == type_path
+                && trp == trait_path
             {
-                if tp == type_path && trp == trait_path {
-                    kicked.push(c.clone());
-                    return false;
-                }
+                kicked.push(c.clone());
+                return false;
             }
             true
         });

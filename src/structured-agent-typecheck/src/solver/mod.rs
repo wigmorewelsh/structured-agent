@@ -74,7 +74,6 @@ pub enum SolveResult {
 pub struct SolverState {
     pub inert: Vec<Constraint>,
     pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
-    pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
 }
 
@@ -101,7 +100,6 @@ impl Solver {
             state: SolverState {
                 inert: vec![],
                 generic_solutions: HashMap::new(),
-                resolved: HashMap::new(),
                 impls: HashMap::new(),
             },
             errors: Vec::new(),
@@ -138,7 +136,6 @@ impl Solver {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolvedConstraints {
-    pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
     pub inherent_impls: HashMap<DefinitionPath, DefinitionPath>,
     pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
@@ -223,7 +220,6 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
     }
 
     SolvedConstraints {
-        resolved: solver.state.resolved,
         impls: solver.state.impls,
         inherent_impls,
         generic_solutions: solver.state.generic_solutions,
