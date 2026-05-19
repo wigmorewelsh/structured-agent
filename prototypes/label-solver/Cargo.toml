@@ -1,0 +1,10 @@
+[workspace]
+
+[package]
+name = "label-solver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "label_solver"
+path = "src/lib.rs"

@@ -6,7 +6,7 @@ use super::db::{
 use super::error::OrAccumulateError;
 use crate::ensure_or_accumulate;
 use crate::error::{TypeError, TypeErrorAccumulator};
-use crate::solver::{Constraint, ConstraintKind};
+use crate::solver::{Constraint, ConstraintKind, Flavour};
 use structured_agent_ast::ast::{
     Definition, Expression, Function, MatchArm, SelectClause, Statement, StringPart,
     Type as AstType, TypeParam,
@@ -469,6 +469,7 @@ pub fn check_definition(
                     },
                     span: t.span,
                     file_id: ctx.file_id,
+                    flavour: Flavour::Wanted,
                 });
             }
             Some(())
@@ -1116,6 +1117,7 @@ pub fn synthesize_expression(
                         },
                         span: *span,
                         file_id: ctx.file_id,
+                        flavour: Flavour::Wanted,
                     });
                 }
             }
@@ -1274,6 +1276,7 @@ fn synthesize_call(
                 },
                 span,
                 file_id: ctx.file_id,
+                flavour: Flavour::Wanted,
             });
         }
     }
@@ -1309,6 +1312,7 @@ fn synthesize_call(
                     },
                     span,
                     file_id: ctx.file_id,
+                    flavour: Flavour::Wanted,
                 });
             }
         }
@@ -1349,6 +1353,7 @@ fn synthesize_call(
                             },
                             span,
                             file_id: ctx.file_id,
+                            flavour: Flavour::Wanted,
                         });
                     }
                 } else if let Some(bound_type) = resolve(db, bound, env, span, ctx) {
@@ -1365,6 +1370,7 @@ fn synthesize_call(
                         },
                         span,
                         file_id: ctx.file_id,
+                        flavour: Flavour::Wanted,
                     });
                 }
             }

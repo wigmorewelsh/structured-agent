@@ -136,6 +136,51 @@ Constraint solver (HM(X))
 Elaborated typed AST
 ```
 
+## Constraint Solver Design
+
+The current solver in `structured-agent-typecheck` is a single-pass function over a flat list of constraints. It handles `Unify`, `TypeBound`, `TraitImpl`, and `TraitBound`, with `TraitBound` checking deferred to a second explicit pass because it depends on the `impls` map built during the `TraitImpl` pass. This ordering dependency is the first sign that a more principled architecture is needed. The planned type system features — taint labels, trust lattice enforcement, label polymorphism, and refinement contracts — each introduce new constraint forms with different propagation rules and ordering requirements. Adding each as a new explicit pass compounds fragility in the same way that sequential type-checking passes do.
+
+### Flavours
+
+Every constraint carries a flavour that determines how the solver treats it. This is the central idea from GHC's `TcS` monad and its `OutsideIn(X)` algorithm (Vytiniotis, Jones, Schrijvers, Sulzmann, Journal of Functional Programming 2011, https://www.microsoft.com/en-us/research/publication/outsideinx-modular-type-inference-with-local-assumptions/).
+
+`Given` constraints are assumed true, drawn from a function signature or module declaration. They are placed directly into the inert set at startup and never discharged — they exist to be interacted against. A taint label on a function's return type is a `Given`. `Wanted` constraints need to be proved. They are emitted at each call site and drive the solver's work. A label flow check at a call site is a `Wanted`. `Derived` constraints are implied by other constraints but are not themselves obligations. They are produced when a label variable is unified and the consequences propagate through the call graph. A `Derived` conflict is informational: it reports the downstream effect of a root `Wanted` error rather than generating an independent diagnostic. Without the `Wanted`/`Derived` distinction, a single root type error generates cascading duplicate messages for every downstream consequence.
+
+### Inert Set and Worklist
+
+The solver maintains two data structures: a worklist of active constraints and an inert set of constraints that cannot currently make progress. Each step pops a constraint from the worklist, canonicalises it by applying the current substitution, interacts it against the inert set, and handles the result. `SolveResult` has four cases: `Solved` (discharged), `Deferred` (blocked on an unresolved variable, moves to the inert set), `Conflict` (type error), and `Emits` (produces derived constraints that go onto the worklist).
+
+The two-pass ordering problem in the current solver dissolves under this model. A `TraitBound` constraint that arrives before the relevant `impls` map is populated returns `Deferred` and sits in the inert set until a subsequent `TraitImpl` constraint populates the map and kicks it back out. Kick-out is the mechanism that prevents the inert set from growing monotonically: when a new substitution is added, all inert constraints that reference the affected variable are returned to the worklist for re-processing. Without kick-out, stale inert entries accumulate and can produce false unresolved `Wanted` errors for constraints that were discharged via their `Derived` counterparts.
+
+### SolveRule
+
+Each constraint kind is handled by a struct implementing a `SolveRule` trait:
+
+```/dev/null/solve-rule.rs#L1-4
+trait SolveRule {
+    fn applies(&self, constraint: &Constraint) -> bool;
+    fn apply(&self, constraint: &Constraint, state: &mut SolverState) -> SolveResult;
+}
+```
+
+`SolverState` holds the inert set, substitution, and trust lattice. The solver holds a `Vec<Box<dyn SolveRule>>` and dispatches to the first matching rule. Adding a new constraint kind is a new file implementing `SolveRule` and a registration in the solver's rule list — the solver loop itself does not change. This pattern is explored and validated in `prototypes/label-solver/`.
+
+### Solver Lanes
+
+The constraint system separates into three lanes solved by different mechanisms.
+
+The structural lane handles `Unify`, `TypeBound`, `TraitImpl`, and `TraitBound` — the constraints the current solver already processes. These are standard HM(X) structural constraints with straightforward unification and subtype rules.
+
+The grade lane handles label and taint constraints: `LabelFlow` (a value's label must satisfy a trust requirement) and `LabelUnify` (a label variable is bound to a concrete label). Label polymorphism — `fn identity<l>(x: T + l): T + l` — is solved in this lane as grade inference over the trust lattice. The trust lattice itself is a precomputed partial order, not solved iteratively: `trust External < Internal` is a static declaration looked up at interaction time rather than a constraint to discharge. F# units of measure (Kennedy, "Programming Languages and Dimensions", 1994) are the closest prior art for this lane's erasure semantics: labels are checked at compile time and erased at runtime, with polymorphism inferred rather than requiring full annotation.
+
+The refinement lane handles `{ x: Int | x > 0 }` style contracts. These cannot be discharged within the type checker — they are emitted as proof obligations and either discharged by an SMT solver at compile time in the style of liquid types (Rondon, Kawaguchi, Jhala, "Liquid Types", PLDI 2008, https://dl.acm.org/doi/10.1145/1375581.1375602) or deferred to runtime as checked contracts. This lane is independent of the structural and grade lanes.
+
+### Relationship to Chalk
+
+Chalk, Rust's trait solver, models trait solving as Datalog: constraints are program clauses, solving is bottom-up evaluation, and cycles are handled by SLG resolution through tabling. The Chalk book (https://rust-lang.github.io/chalk/) covers the design. The trust lattice in SA is naturally expressible as Horn clauses — `trust A < B` and `trust B < C` derive `trust A < C` by resolution — and Chalk's model was considered for that part of the system. The operational GHC model is preferable for a codebase that is actively growing: Chalk's Datalog approach requires building and maintaining an evaluation engine, whereas the inert set and worklist are self-contained data structures with straightforward semantics.
+
+Swift's type checker (`lib/Sema/CSGen.cpp`, `CSSimplify.cpp`) uses an explicit constraint graph with active edge tracking — only constraints adjacent to recently changed nodes are re-processed. This is the relevant performance model for the grade lane once label propagation spans large call graphs. Scala 3's `TypeComparer` tracks upper and lower bounds on type variables separately; for label polymorphism, a label variable has bounds from the trust lattice, and this model is cleaner than `is_assignable_to` checks once label variables interact with union types.
+
 ## Priority and Sequencing
 
 Constrained generics build directly on existing signatures and are the most pressing gap — without them, any function that requires behaviour from its type parameter is blocked. HKTs are an architectural decision with a closing window: the standard library and any sig involving container types will progressively bake in assumptions that are hard to undo. Both should precede a growing standard library.
@@ -161,3 +206,7 @@ Typestate for `ActorRef<T>` resolves an explicitly open question in the actor-sy
 - Vytiniotis, D., Jones, S. P., Schrijvers, T., Sulzmann, M. (2011). "OutsideIn(X): Modular Type Inference with Local Assumptions." Journal of Functional Programming. https://www.microsoft.com/en-us/research/publication/outsideinx-modular-type-inference-with-local-assumptions/
 - Honda, K., Vasconcelos, V., Kubo, M. (1998). "Language Primitives and Type Discipline for Structured Communication-Based Programming." ESOP 1998.
 - Rossberg, A. (2015). "1ML — Core and Modules United." ICFP 2015. https://people.mpi-sws.org/~rossberg/1ml/
+- Chalk Book. Rust trait solver design. https://rust-lang.github.io/chalk/
+- Kennedy, A. (1994). "Programming Languages and Dimensions." PhD thesis, University of Cambridge. Implemented as F# units of measure.
+- Rondon, P., Kawaguchi, M., Jhala, R. (2008). "Liquid Types." PLDI 2008. https://dl.acm.org/doi/10.1145/1375581.1375602
+- [prototypes/label-solver/](../prototypes/label-solver/) — prototype of the inert set, worklist, SolveRule trait, and Given/Wanted/Derived flavours for a minimal label type system

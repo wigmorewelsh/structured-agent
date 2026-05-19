@@ -1,6 +1,8 @@
 use nonempty::NonEmpty;
 use salsa::Accumulator;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+
+pub mod rules;
 use structured_agent_ast::CheckerAstRef;
 use structured_agent_runtime::Type;
 use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
@@ -8,6 +10,14 @@ use structured_agent_runtime::symbols::{DefinitionPath, TypeDefinitionKind};
 use crate::db::{ProgramInput, TypeCheckDatabase, check_module};
 use crate::{TypeError, TypeErrorAccumulator};
 use structured_agent_ast::types::Span;
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Flavour {
+    Wanted,
+    Given,
+    Derived,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstraintKind {
@@ -45,11 +55,72 @@ pub struct Constraint {
     pub kind: ConstraintKind,
     pub span: Span,
     pub file_id: usize,
+    pub flavour: Flavour,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CheckResult {
     pub constraints: Vec<Constraint>,
+}
+
+#[derive(Debug)]
+pub enum SolveResult {
+    Solved,
+    Deferred,
+    Conflict(TypeError),
+    Emits(Vec<Constraint>),
+}
+
+pub struct SolverState {
+    pub inert: Vec<Constraint>,
+}
+
+pub trait SolveRule {
+    fn applies(&self, constraint: &Constraint) -> bool;
+    fn apply(
+        &self,
+        constraint: &Constraint,
+        db: &dyn TypeCheckDatabase,
+        state: &mut SolverState,
+    ) -> SolveResult;
+}
+
+pub struct Solver {
+    pub state: SolverState,
+    pub errors: Vec<TypeError>,
+    pub worklist: VecDeque<Constraint>,
+    pub rules: Vec<Box<dyn SolveRule>>,
+}
+
+impl Solver {
+    pub fn new() -> Self {
+        Self {
+            state: SolverState { inert: vec![] },
+            errors: Vec::new(),
+            worklist: VecDeque::new(),
+            rules: Vec::new(),
+        }
+    }
+
+    pub fn step(&mut self, db: &dyn TypeCheckDatabase) -> Option<SolveResult> {
+        let c = self.worklist.pop_front()?;
+        let idx = self.rules.iter().position(|r| r.applies(&c));
+        let result = match idx {
+            Some(i) => self.rules[i].apply(&c, db, &mut self.state),
+            None => SolveResult::Deferred,
+        };
+        match &result {
+            SolveResult::Deferred => self.state.inert.push(c),
+            SolveResult::Conflict(e) => self.errors.push(e.clone()),
+            SolveResult::Emits(cs) => self.worklist.extend(cs.clone()),
+            SolveResult::Solved => {}
+        }
+        Some(result)
+    }
+
+    pub fn solve(&mut self, db: &dyn TypeCheckDatabase) {
+        while self.step(db).is_some() {}
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
