@@ -267,10 +267,6 @@ impl Substitution {
         }
     }
 
-    pub fn from_map(map: HashMap<String, RT>) -> Self {
-        Self { subst: map }
-    }
-
     pub fn bind(&mut self, name: String, ty: RT) {
         self.subst.insert(name, ty);
     }

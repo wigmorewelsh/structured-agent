@@ -1,6 +1,6 @@
 use crate::TypeError;
 use crate::db::TypeCheckDatabase;
-use crate::solver::{Constraint, ConstraintKind, SolveResult, SolveRule, SolverState};
+use crate::solver::{CallSiteId, Constraint, ConstraintKind, SolveResult, SolveRule, SolverState};
 
 pub struct UnifyRule;
 
@@ -27,7 +27,10 @@ impl SolveRule for UnifyRule {
         };
         let slot = state
             .generic_solutions
-            .entry((constraint.file_id, *call_site))
+            .entry(CallSiteId {
+                file_id: constraint.file_id,
+                position: *call_site,
+            })
             .or_default();
         match slot.get(var) {
             Some(existing) if existing != ty => {
@@ -52,7 +55,7 @@ impl SolveRule for UnifyRule {
 mod unify_rule_tests {
     use super::*;
     use crate::db::TypeCheckDb;
-    use crate::solver::{Flavour, Solver};
+    use crate::solver::{CallSiteId, Flavour, Solver};
     use structured_agent_ast::types::Span;
     use structured_agent_runtime::Type;
 
@@ -71,6 +74,13 @@ mod unify_rule_tests {
         }
     }
 
+    fn site(position: usize) -> CallSiteId {
+        CallSiteId {
+            file_id: 0,
+            position,
+        }
+    }
+
     #[test]
     fn consistent_unify_is_solved() {
         let db = TypeCheckDb::default();
@@ -78,7 +88,7 @@ mod unify_rule_tests {
         solver.worklist.push_back(unify(0, 0, "T", Type::int()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.generic_solutions[&(0, 0)]["T"], Type::int());
+        assert_eq!(solver.state.generic_solutions[&site(0)]["T"], Type::int());
     }
 
     #[test]
@@ -89,7 +99,7 @@ mod unify_rule_tests {
         solver.worklist.push_back(unify(0, 0, "T", Type::int()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.generic_solutions[&(0, 0)].len(), 1);
+        assert_eq!(solver.state.generic_solutions[&site(0)].len(), 1);
     }
 
     #[test]
@@ -100,7 +110,7 @@ mod unify_rule_tests {
         solver.worklist.push_back(unify(0, 0, "T", Type::boolean()));
         solver.solve(&db);
         assert_eq!(solver.errors.len(), 1);
-        assert_eq!(solver.state.generic_solutions[&(0, 0)]["T"], Type::int());
+        assert_eq!(solver.state.generic_solutions[&site(0)]["T"], Type::int());
     }
 
     #[test]
@@ -111,9 +121,9 @@ mod unify_rule_tests {
         solver.worklist.push_back(unify(0, 1, "T", Type::boolean()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.generic_solutions[&(0, 0)]["T"], Type::int());
+        assert_eq!(solver.state.generic_solutions[&site(0)]["T"], Type::int());
         assert_eq!(
-            solver.state.generic_solutions[&(0, 1)]["T"],
+            solver.state.generic_solutions[&site(1)]["T"],
             Type::boolean()
         );
     }
@@ -126,9 +136,9 @@ mod unify_rule_tests {
         solver.worklist.push_back(unify(0, 0, "U", Type::boolean()));
         solver.solve(&db);
         assert!(solver.errors.is_empty());
-        assert_eq!(solver.state.generic_solutions[&(0, 0)]["T"], Type::int());
+        assert_eq!(solver.state.generic_solutions[&site(0)]["T"], Type::int());
         assert_eq!(
-            solver.state.generic_solutions[&(0, 0)]["U"],
+            solver.state.generic_solutions[&site(0)]["U"],
             Type::boolean()
         );
     }

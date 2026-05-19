@@ -11,6 +11,12 @@ use crate::db::{ProgramInput, TypeCheckDatabase, check_module};
 use crate::{TypeError, TypeErrorAccumulator};
 use structured_agent_ast::types::Span;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CallSiteId {
+    pub file_id: usize,
+    pub position: usize,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Flavour {
@@ -73,7 +79,7 @@ pub enum SolveResult {
 
 pub struct SolverState {
     pub inert: Vec<Constraint>,
-    pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
+    pub generic_solutions: HashMap<CallSiteId, HashMap<String, Type>>,
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
 }
 
@@ -138,7 +144,7 @@ impl Solver {
 pub struct SolvedConstraints {
     pub impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath>,
     pub inherent_impls: HashMap<DefinitionPath, DefinitionPath>,
-    pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
+    pub generic_solutions: HashMap<CallSiteId, HashMap<String, Type>>,
 }
 
 #[salsa::tracked]

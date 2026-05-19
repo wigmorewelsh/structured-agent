@@ -751,7 +751,10 @@ fn build_typed_call(
     let solved = crate::solver::solve_constraints(db, ctx.program);
     let solutions = solved
         .generic_solutions
-        .get(&(ctx.file_id, span.start))
+        .get(&crate::solver::CallSiteId {
+            file_id: ctx.file_id,
+            position: span.start,
+        })
         .cloned()
         .unwrap_or_default();
     let (elaborated_receiver, target) = if callee.receiver_is_target {
