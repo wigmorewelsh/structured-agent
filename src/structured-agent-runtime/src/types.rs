@@ -201,7 +201,12 @@ impl Type {
     }
 
     pub fn union(variants: Vec<Type>) -> Type {
-        Type::Union(normalise(variants))
+        let normalised = normalise(variants);
+        if normalised.len() == 1 {
+            normalised.into_iter().next().unwrap()
+        } else {
+            Type::Union(normalised)
+        }
     }
 
     pub fn is_assignable_to(&self, other: &Type) -> bool {
