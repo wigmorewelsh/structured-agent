@@ -306,6 +306,14 @@ pub enum Statement {
         else_body: Option<Vec<Statement>>,
         span: Span,
     },
+    IfLet {
+        variant_name: String,
+        binding: String,
+        scrutinee: Expression,
+        body: Vec<Statement>,
+        else_body: Option<Vec<Statement>>,
+        span: Span,
+    },
     While {
         condition: Expression,
         body: Vec<Statement>,
@@ -336,6 +344,7 @@ impl Spanned for Statement {
             Statement::VariableAssignment { span, .. } => *span,
             Statement::ExpressionStatement(expr) => expr.span(),
             Statement::If { span, .. } => *span,
+            Statement::IfLet { span, .. } => *span,
             Statement::While { span, .. } => *span,
             Statement::ForIn { span, .. } => *span,
             Statement::Return(expr) => expr.span(),
@@ -595,6 +604,28 @@ impl fmt::Display for Statement {
                 ..
             } => {
                 writeln!(f, "if {} {{", condition)?;
+                for stmt in body {
+                    writeln!(f, "    {}", stmt)?;
+                }
+                if let Some(else_stmts) = else_body {
+                    writeln!(f, "}} else {{")?;
+                    for stmt in else_stmts {
+                        writeln!(f, "    {}", stmt)?;
+                    }
+                    write!(f, "}}")
+                } else {
+                    write!(f, "}}")
+                }
+            }
+            Statement::IfLet {
+                variant_name,
+                binding,
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                writeln!(f, "if let {}({}) = {} {{", variant_name, binding, scrutinee)?;
                 for stmt in body {
                     writeln!(f, "    {}", stmt)?;
                 }

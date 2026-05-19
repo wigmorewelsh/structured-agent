@@ -730,6 +730,7 @@ combine::parser! {
             parse_variable_assignment(),
             parse_select(),
             attempt(parse_injection()),
+            parse_if_let_statement(),
             parse_if_statement(),
             parse_while_statement(),
             parse_for_statement(),
@@ -1329,6 +1330,54 @@ combine::parser! {
             })
         })
     }
+}
+
+fn parse_if_let_statement<Input>() -> impl Parser<Input, Output = Statement>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (position(), attempt((lex_keyword("if"), lex_keyword("let")))).then(|(start, _)| {
+        (
+            (
+                satisfy(|c: char| c.is_uppercase()),
+                many(satisfy(|c: char| c.is_alphanumeric() || c == '_')),
+            )
+                .map(|(first, rest): (char, Vec<char>)| {
+                    let mut s = String::new();
+                    s.push(first);
+                    s.extend(rest);
+                    s
+                })
+                .skip(skip_spaces()),
+            between(lex_char('('), lex_char(')'), identifier()),
+            lex_char('='),
+            parse_simple_expression(),
+            between(
+                lex_char('{'),
+                lex_char('}'),
+                many(statement_with_comments()),
+            ),
+            optional(lex_keyword("else").with(between(
+                lex_char('{'),
+                lex_char('}'),
+                many(statement_with_comments()),
+            ))),
+            position(),
+        )
+            .map(
+                move |(variant_name, binding, _, scrutinee, body, else_body, end)| {
+                    Statement::IfLet {
+                        variant_name,
+                        binding,
+                        scrutinee,
+                        body,
+                        else_body,
+                        span: Span::new(start, end),
+                    }
+                },
+            )
+    })
 }
 
 fn parse_if_statement<Input>() -> impl Parser<Input, Output = Statement>
@@ -4378,5 +4427,103 @@ fn main(): String {
         } else {
             panic!("expected Match expression");
         }
+    }
+
+    #[test]
+    fn test_parse_if_let_without_else() {
+        let input = r#"
+fn test(): () {
+    if let Some(x) = val { x! }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected Function"),
+        };
+        match &func.body.statements[0] {
+            Statement::IfLet {
+                variant_name,
+                binding,
+                scrutinee,
+                body,
+                else_body,
+                ..
+            } => {
+                assert_eq!(variant_name, "Some");
+                assert_eq!(binding, "x");
+                assert!(matches!(scrutinee, Expression::Variable { name, .. } if name == "val"));
+                assert_eq!(body.len(), 1);
+                assert!(else_body.is_none());
+            }
+            _ => panic!("expected IfLet statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_if_let_with_else() {
+        let input = r#"
+fn test(): () {
+    if let Some(x) = val { x! } else { "none"! }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected Function"),
+        };
+        match &func.body.statements[0] {
+            Statement::IfLet {
+                variant_name,
+                binding,
+                else_body,
+                ..
+            } => {
+                assert_eq!(variant_name, "Some");
+                assert_eq!(binding, "x");
+                let else_stmts = else_body.as_ref().expect("expected else body");
+                assert_eq!(else_stmts.len(), 1);
+            }
+            _ => panic!("expected IfLet statement"),
+        }
+    }
+
+    #[test]
+    fn test_plain_if_not_affected_by_if_let() {
+        let input = r#"
+fn test(): () {
+    if true { "ok"! }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("expected Function"),
+        };
+        assert!(matches!(&func.body.statements[0], Statement::If { .. }));
+    }
+
+    #[test]
+    fn test_if_let_lowercase_variant_fails() {
+        let input = r#"
+fn test(): () {
+    if let foo(x) = val { x! }
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(
+            result.is_err(),
+            "expected parse to fail for lowercase variant"
+        );
     }
 }
