@@ -759,13 +759,15 @@ where
         position(),
         attempt(lex_keyword("let")),
         identifier(),
+        optional(attempt(lex_char(':').with(parse_type()))),
         lex_char('='),
         parse_expression(),
     )
-        .map(|(start, _, variable, _, expression)| {
+        .map(|(start, _, variable, type_annotation, _, expression)| {
             let end = expression.span().end;
             Statement::Assignment {
                 variable,
+                type_annotation,
                 expression,
                 span: Span::new(start, end),
             }
@@ -1713,6 +1715,7 @@ fn main(): () {
         match statement {
             Statement::Assignment {
                 variable,
+                type_annotation: _,
                 expression,
                 span: _,
             } => {
@@ -1841,6 +1844,7 @@ fn test_function(): () {
         match &func.body.statements[0] {
             Statement::Assignment {
                 variable,
+                type_annotation: _,
                 expression,
                 span: _,
             } => {
@@ -1899,6 +1903,7 @@ fn calculator_agent(ctx: String, request: String): String {
 
         let Statement::Assignment {
             variable,
+            type_annotation: _,
             expression,
             span: _,
         } = &func.body.statements[2]
@@ -1959,6 +1964,7 @@ fn calculator_agent(ctx: String, request: String): String {
 
         let Statement::Assignment {
             variable,
+            type_annotation: _,
             expression,
             span: _,
         } = &func.body.statements[0]
@@ -2012,6 +2018,7 @@ fn test_agent(ctx: String): String {
 
         let Statement::Assignment {
             variable,
+            type_annotation: _,
             expression,
             span: _,
         } = &func.body.statements[0]
@@ -2062,6 +2069,7 @@ fn test_agent(ctx: String): String {
 
         let Statement::Assignment {
             variable,
+            type_annotation: _,
             expression,
             span: _,
         } = &func.body.statements[0]
