@@ -290,6 +290,7 @@ pub enum Statement {
     Injection(Expression),
     Assignment {
         variable: String,
+        type_annotation: Option<Type>,
         expression: Expression,
         span: Span,
     },
@@ -572,11 +573,13 @@ impl fmt::Display for Statement {
             Statement::Injection(expr) => write!(f, "{}!", expr),
             Statement::Assignment {
                 variable,
+                type_annotation,
                 expression,
                 ..
-            } => {
-                write!(f, "let {} = {}", variable, expression)
-            }
+            } => match type_annotation {
+                Some(ty) => write!(f, "let {}: {} = {}", variable, ty, expression),
+                None => write!(f, "let {} = {}", variable, expression),
+            },
             Statement::VariableAssignment {
                 variable,
                 expression,
