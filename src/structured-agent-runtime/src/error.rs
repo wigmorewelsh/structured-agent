@@ -142,6 +142,13 @@ pub enum TypeError {
         span: Span,
         file_id: FileId,
     },
+    TypeAnnotationMismatch {
+        variable: String,
+        annotated: String,
+        inferred: String,
+        span: Span,
+        file_id: FileId,
+    },
 }
 
 impl TypeError {
@@ -170,6 +177,7 @@ impl TypeError {
             TypeError::IncompleteMatch { span, .. } => *span,
             TypeError::UnreachableArm { span, .. } => *span,
             TypeError::DuplicateArm { span, .. } => *span,
+            TypeError::TypeAnnotationMismatch { span, .. } => *span,
         }
     }
 
@@ -198,6 +206,7 @@ impl TypeError {
             TypeError::IncompleteMatch { file_id, .. } => *file_id,
             TypeError::UnreachableArm { file_id, .. } => *file_id,
             TypeError::DuplicateArm { file_id, .. } => *file_id,
+            TypeError::TypeAnnotationMismatch { file_id, .. } => *file_id,
         }
     }
 
@@ -491,6 +500,18 @@ impl TypeError {
                     Label::primary(*file_id, span.to_byte_range())
                         .with_message(format!("variant `{}` appears more than once", variant)),
                 ]),
+            TypeError::TypeAnnotationMismatch {
+                variable,
+                annotated,
+                inferred,
+                span,
+                file_id,
+            } => Diagnostic::error()
+                .with_message(format!("type annotation mismatch for `{}`", variable))
+                .with_labels(vec![
+                    Label::primary(*file_id, span.to_byte_range())
+                        .with_message(format!("annotated {}, inferred {}", annotated, inferred)),
+                ]),
         }
     }
 }
@@ -628,6 +649,16 @@ impl fmt::Display for TypeError {
             TypeError::DuplicateArm { variant, .. } => {
                 write!(f, "Duplicate arm: {}", variant)
             }
+            TypeError::TypeAnnotationMismatch {
+                variable,
+                annotated,
+                inferred,
+                ..
+            } => write!(
+                f,
+                "Type annotation mismatch for `{}`: annotated {}, inferred {}",
+                variable, annotated, inferred
+            ),
         }
     }
 }

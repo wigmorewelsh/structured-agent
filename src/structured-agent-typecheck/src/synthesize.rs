@@ -545,9 +545,23 @@ fn check_statement(
         Statement::Assignment {
             variable,
             expression,
+            type_annotation,
             span: _,
         } => {
             let ty = synthesize_expression(db, expression, &env, ctx, constraints)?;
+            if let Some(annotation) = type_annotation {
+                let annotated_ty = resolve(db, annotation, &env, expression.span(), ctx)?;
+                if ty != annotated_ty {
+                    TypeErrorAccumulator(TypeError::TypeAnnotationMismatch {
+                        variable: variable.clone(),
+                        annotated: annotated_ty.name(),
+                        inferred: ty.name(),
+                        span: expression.span(),
+                        file_id: ctx.file_id,
+                    })
+                    .accumulate(db);
+                }
+            }
             env.declare_variable(variable.clone(), ty, expression.span());
             Some(env)
         }

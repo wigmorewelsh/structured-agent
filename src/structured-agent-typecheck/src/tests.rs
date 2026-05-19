@@ -297,6 +297,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "name".to_string(),
+                    type_annotation: None,
                     expression: Expression::Call {
                         function: "get_name".to_string(),
                         type_args: vec![],
@@ -333,6 +334,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "flag".to_string(),
+                    type_annotation: None,
                     expression: Expression::BooleanLiteral {
                         value: true,
                         span: crate::types::Span::dummy(),
@@ -356,6 +358,52 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(matches!(errors[0], TypeError::VariableTypeMismatch { .. }));
+    }
+
+    #[test]
+    fn let_annotation_matches_inferred_type() {
+        let func = create_test_function(
+            "test",
+            vec![],
+            AstType::simple("Unit"),
+            vec![Statement::Assignment {
+                variable: "x".to_string(),
+                type_annotation: Some(AstType::simple("Int")),
+                expression: Expression::IntLiteral {
+                    value: 1,
+                    span: crate::types::Span::dummy(),
+                },
+                span: crate::types::Span::dummy(),
+            }],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        assert!(check(module).is_ok());
+    }
+
+    #[test]
+    fn let_annotation_mismatch() {
+        let func = create_test_function(
+            "test",
+            vec![],
+            AstType::simple("Unit"),
+            vec![Statement::Assignment {
+                variable: "x".to_string(),
+                type_annotation: Some(AstType::simple("String")),
+                expression: Expression::IntLiteral {
+                    value: 1,
+                    span: crate::types::Span::dummy(),
+                },
+                span: crate::types::Span::dummy(),
+            }],
+        );
+        let module = create_test_module(vec![Definition::Function(Arc::new(func))]);
+        let result = check(module);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(matches!(
+            errors[0],
+            TypeError::TypeAnnotationMismatch { .. }
+        ));
     }
 
     #[test]
@@ -629,6 +677,7 @@ mod tests {
                     },
                     body: vec![Statement::Assignment {
                         variable: "inner_var".to_string(),
+                        type_annotation: None,
                         expression: Expression::StringLiteral {
                             value: "hello".to_string(),
                             span: crate::types::Span::dummy(),
@@ -662,6 +711,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "shared".to_string(),
+                    type_annotation: None,
                     expression: Expression::StringLiteral {
                         value: "foo".to_string(),
                         span: crate::types::Span::dummy(),
@@ -675,6 +725,7 @@ mod tests {
                     },
                     body: vec![Statement::Assignment {
                         variable: "shared".to_string(),
+                        type_annotation: None,
                         expression: Expression::BooleanLiteral {
                             value: true,
                             span: crate::types::Span::dummy(),
@@ -717,6 +768,7 @@ mod tests {
                 body: vec![
                     Statement::Assignment {
                         variable: "x".to_string(),
+                        type_annotation: None,
                         expression: Expression::StringLiteral {
                             value: "outer".to_string(),
                             span: crate::types::Span::dummy(),
@@ -731,6 +783,7 @@ mod tests {
                         body: vec![
                             Statement::Assignment {
                                 variable: "y".to_string(),
+                                type_annotation: None,
                                 expression: Expression::StringLiteral {
                                     value: "middle".to_string(),
                                     span: crate::types::Span::dummy(),
@@ -745,6 +798,7 @@ mod tests {
                                 body: vec![
                                     Statement::Assignment {
                                         variable: "z".to_string(),
+                                        type_annotation: None,
                                         expression: Expression::StringLiteral {
                                             value: "inner".to_string(),
                                             span: crate::types::Span::dummy(),
@@ -1431,6 +1485,7 @@ mod tests {
             vec![
                 Statement::Assignment {
                     variable: "result".to_string(),
+                    type_annotation: None,
                     expression: Expression::Call {
                         function: "head".to_string(),
                         type_args: vec![],
@@ -3012,6 +3067,7 @@ mod typed_ast_tests {
             vec![
                 Statement::Assignment {
                     variable: "x".to_string(),
+                    type_annotation: None,
                     expression: Expression::IntLiteral {
                         value: 1,
                         span: crate::types::Span::dummy(),
@@ -3688,6 +3744,7 @@ mod typed_ast_tests {
             vec![
                 Statement::Assignment {
                     variable: "z".to_string(),
+                    type_annotation: None,
                     expression: Expression::Variable {
                         name: "x".to_string(),
                         span: crate::types::Span::dummy(),

@@ -112,6 +112,7 @@ fn elaborate_statement(
         Statement::Assignment {
             variable,
             expression,
+            type_annotation: _,
             span,
         } => {
             let typed_expr = elaborate_expression(db, expression, &env, ctx)?;
