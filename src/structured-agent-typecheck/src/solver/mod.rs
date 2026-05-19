@@ -74,6 +74,7 @@ pub enum SolveResult {
 pub struct SolverState {
     pub inert: Vec<Constraint>,
     pub generic_solutions: HashMap<(usize, usize), HashMap<String, Type>>,
+    pub resolved: HashMap<String, HashMap<String, Vec<Type>>>,
 }
 
 pub trait SolveRule {
@@ -99,10 +100,14 @@ impl Solver {
             state: SolverState {
                 inert: vec![],
                 generic_solutions: HashMap::new(),
+                resolved: HashMap::new(),
             },
             errors: Vec::new(),
             worklist: VecDeque::new(),
-            rules: vec![Box::new(rules::unify::UnifyRule)],
+            rules: vec![
+                Box::new(rules::unify::UnifyRule),
+                Box::new(rules::type_bound::TypeBoundRule),
+            ],
         }
     }
 
@@ -142,14 +147,13 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         .iter()
         .flat_map(|parsed| check_module(db, *parsed, program).constraints)
         .collect();
-    let mut resolved: HashMap<String, HashMap<String, Vec<Type>>> = HashMap::new();
     let mut impls: HashMap<(DefinitionPath, DefinitionPath), DefinitionPath> = HashMap::new();
     let mut solver = Solver::new();
 
     for constraint in &constraints {
         match &constraint.kind {
             ConstraintKind::TypeBound { .. } => {
-                check_type_bound(db, constraint, &mut resolved);
+                solver.worklist.push_back(constraint.clone());
             }
 
             ConstraintKind::TraitImpl { .. } => {
@@ -229,7 +233,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
     }
 
     SolvedConstraints {
-        resolved,
+        resolved: solver.state.resolved,
         impls,
         inherent_impls,
         generic_solutions: solver.state.generic_solutions,
@@ -297,37 +301,4 @@ fn check_trait_impl(
         (type_path.clone(), trait_path.clone()),
         impl_def.key.clone(),
     );
-}
-
-fn check_type_bound(
-    db: &dyn TypeCheckDatabase,
-    constraint: &Constraint,
-    resolved: &mut HashMap<String, HashMap<String, Vec<Type>>>,
-) {
-    let ConstraintKind::TypeBound {
-        caller,
-        callee,
-        actual_type,
-        bound_type,
-        ..
-    } = &constraint.kind
-    else {
-        return;
-    };
-    if !actual_type.is_assignable_to(bound_type) {
-        TypeErrorAccumulator(TypeError::TypeMismatch {
-            expected: bound_type.to_string(),
-            found: actual_type.to_string(),
-            span: constraint.span,
-            file_id: constraint.file_id,
-        })
-        .accumulate(db);
-    } else {
-        resolved
-            .entry(caller.clone())
-            .or_default()
-            .entry(callee.clone())
-            .or_default()
-            .push(actual_type.clone());
-    }
 }
