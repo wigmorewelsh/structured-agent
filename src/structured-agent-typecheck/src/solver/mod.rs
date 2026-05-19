@@ -153,22 +153,7 @@ pub fn solve_constraints(db: &dyn TypeCheckDatabase, program: ProgramInput) -> S
         .collect();
     let mut solver = Solver::new();
 
-    for constraint in &constraints {
-        match &constraint.kind {
-            ConstraintKind::TypeBound { .. } => {
-                solver.worklist.push_back(constraint.clone());
-            }
-            ConstraintKind::TraitImpl { .. } => {
-                solver.worklist.push_back(constraint.clone());
-            }
-            ConstraintKind::TraitBound { .. } => {
-                solver.worklist.push_back(constraint.clone());
-            }
-            ConstraintKind::Unify { .. } => {
-                solver.worklist.push_back(constraint.clone());
-            }
-        }
-    }
+    solver.worklist.extend(constraints);
 
     for (impl_key, impl_def) in db.symbol_tables().impls(db).get().iter() {
         if !matches!(impl_def.ast_ref, CheckerAstRef::Primitive) {
