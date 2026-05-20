@@ -184,7 +184,7 @@ mod tests {
     use crate::service::RuntimeService;
     use arrow::datatypes::DataType;
     use std::sync::Arc;
-    use structured_agent_runtime::{DefinitionPath, ExpressionValue, Type};
+    use structured_agent_runtime::{DefinitionPath, ExpressionValue, Source, Type};
 
     struct MockRuntime {
         engine: Arc<PrintEngine>,
@@ -294,6 +294,7 @@ mod tests {
             content: ExpressionValue::string("hello".to_string()),
             name: None,
             params: None,
+            source: Source::System,
         };
         assert_eq!(event.format(), "hello");
     }
@@ -304,6 +305,7 @@ mod tests {
             content: ExpressionValue::string("result".to_string()),
             name: Some("test".to_string()),
             params: None,
+            source: Source::System,
         };
         let formatted = event.format();
         assert!(formatted.contains("<test>"));
@@ -315,7 +317,12 @@ mod tests {
     async fn print_engine_request_typed_string() {
         let engine = PrintEngine {};
         let mut context = make_context();
-        context.add_event(ExpressionValue::string("hello".to_string()), None, None);
+        context.add_event(
+            ExpressionValue::string("hello".to_string()),
+            None,
+            None,
+            Source::System,
+        );
         let request = TypedEvent {
             return_type: Type::string(),
         };

@@ -35,7 +35,10 @@ pub trait Spanned {
     fn span(&self) -> Span;
 }
 
-pub struct NativeFnPtr(pub Arc<NativeFn>);
+pub struct NativeFnPtr {
+    pub source: crate::expression::Source,
+    f: Arc<NativeFn>,
+}
 
 impl NativeFnPtr {
     pub fn new<F>(f: F) -> Self
@@ -48,7 +51,26 @@ impl NativeFnPtr {
             + Sync
             + 'static,
     {
-        Self(Arc::new(f))
+        Self {
+            source: crate::expression::Source::System,
+            f: Arc::new(f),
+        }
+    }
+
+    pub fn new_with_source<F>(f: F, source: crate::expression::Source) -> Self
+    where
+        F: Fn(
+                Vec<ExpressionValue>,
+                AgentHandle,
+            ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            source,
+            f: Arc::new(f),
+        }
     }
 
     pub fn call(
@@ -56,13 +78,16 @@ impl NativeFnPtr {
         args: Vec<ExpressionValue>,
         handle: AgentHandle,
     ) -> Pin<Box<dyn Future<Output = Result<ExpressionValue, String>> + Send>> {
-        (self.0)(args, handle)
+        (self.f)(args, handle)
     }
 }
 
 impl Clone for NativeFnPtr {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            source: self.source.clone(),
+            f: self.f.clone(),
+        }
     }
 }
 
@@ -74,7 +99,7 @@ impl std::fmt::Debug for NativeFnPtr {
 
 impl PartialEq for NativeFnPtr {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.f, &other.f)
     }
 }
 use nonempty::NonEmpty;

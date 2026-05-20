@@ -6,7 +6,7 @@ use structured_agent_il::slot::Slot;
 use structured_agent_il::{BytecodeRef, Instruction};
 use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
-    ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, TypedEvent,
+    ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, Source, TypedEvent,
 };
 use structured_agent_runtime::{
     ActorRef, AgentHandle, DefinitionPath, DefinitionSegment, NativeFnPtr,
@@ -131,6 +131,7 @@ impl VM {
                         name: Some(frame.display_name),
                         params: Some(frame.evaluated_parameters),
                         value: result.value,
+                        source: result.source,
                     };
                     state.call_stack.last_mut().unwrap().slots[frame.dest.0 as usize] =
                         Some(result_with_meta);
@@ -343,6 +344,7 @@ impl VM {
             ExpressionValue::string(format!("## {}", display_name)),
             None,
             None,
+            Source::System,
         );
         state.context = child_context;
         let mut callee_frame = vec![None; slot_count];
@@ -396,6 +398,7 @@ impl VM {
             ExpressionValue::string(format!("## {}", display_name)),
             None,
             None,
+            Source::System,
         );
         let (returned_child_context, result) = func.execute(child_context, args).await?;
         state.context = returned_child_context.restore_parent()?;
@@ -403,6 +406,7 @@ impl VM {
             name: Some(display_name.to_string()),
             params: Some(evaluated_parameters),
             value: result.value.clone(),
+            source: Source::Model,
         };
         Self::write_slot(&mut state, dest, result_with_metadata);
         Ok(Self::advance_pc(state))
@@ -466,6 +470,7 @@ impl VM {
             expr_result.value.clone(),
             expr_result.name.clone(),
             expr_result.params.clone(),
+            expr_result.source.clone(),
         );
         Ok(Self::advance_pc(state))
     }
@@ -579,7 +584,14 @@ impl VM {
                 });
             state.context.add_thinking_event(t);
         }
-        Self::write_slot(&mut state, dest, ExpressionResult::new(value));
+        Self::write_slot(
+            &mut state,
+            dest,
+            ExpressionResult {
+                source: Source::Model,
+                ..ExpressionResult::new(value)
+            },
+        );
         Ok(Self::advance_pc(state))
     }
 
@@ -632,7 +644,10 @@ impl VM {
                 selected_index, option_count
             ));
         }
-        let result = ExpressionResult::new(ExpressionValue::string(selected_index.to_string()));
+        let result = ExpressionResult {
+            source: Source::Model,
+            ..ExpressionResult::new(ExpressionValue::string(selected_index.to_string()))
+        };
         Self::write_slot(&mut state, dest, result);
         Ok(Self::advance_pc(state))
     }
@@ -762,8 +777,16 @@ impl VM {
             .map(|s| Self::read_slot(&state, *s).map(|r| r.value))
             .collect::<Result<Vec<_>, _>>()?;
         let agent_handle = state.context.agent_handle().clone();
+        let source = f.source.clone();
         let result = f.call(args, agent_handle).await?;
-        Self::write_slot(&mut state, dest, ExpressionResult::new(result));
+        Self::write_slot(
+            &mut state,
+            dest,
+            ExpressionResult {
+                source,
+                ..ExpressionResult::new(result)
+            },
+        );
         Ok(Self::advance_pc(state))
     }
 
@@ -1003,26 +1026,28 @@ mod tests {
     #[tokio::test]
     async fn execute_branch_if_bool_true_takes_branch() {
         let bytecode = make_bytecode_ref(
-            "test_fn",
-            vec![],
-            Type::string(),
             vec![
                 Instruction::LdcBool {
-                    dest: 1,
+                    dest: Slot(1),
                     value: true,
                 },
-                Instruction::BrTrue { var: 1, offset: 2 },
+                Instruction::BrTrue {
+                    var: Slot(1),
+                    offset: 4,
+                },
                 Instruction::LdcStr {
-                    dest: 0,
+                    dest: Slot(0),
                     value: "should not be returned".to_string(),
                 },
-                Instruction::Ret { var: 0 },
+                Instruction::Ret { var: Slot(0) },
                 Instruction::LdcStr {
-                    dest: 0,
+                    dest: Slot(0),
                     value: "expected value".to_string(),
                 },
-                Instruction::Ret { var: 0 },
+                Instruction::Ret { var: Slot(0) },
             ],
+            2,
+            vec![],
         );
         let runtime = Arc::new(NoopRuntime {});
         let context = make_context_with_runtime(runtime.clone());
@@ -1036,32 +1061,34 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result.as_string().unwrap(), "expected value");
+        assert_eq!(result.value.as_string().unwrap(), "expected value");
     }
 
     #[tokio::test]
     async fn execute_ret_inside_conditional_returns_immediately() {
         let bytecode = make_bytecode_ref(
-            "test_ret_conditional",
-            vec![],
-            Type::string(),
             vec![
                 Instruction::LdcBool {
-                    dest: 1,
+                    dest: Slot(1),
                     value: true,
                 },
-                Instruction::BrFalse { var: 1, offset: 2 },
+                Instruction::BrFalse {
+                    var: Slot(1),
+                    offset: 2,
+                },
                 Instruction::LdcStr {
-                    dest: 0,
+                    dest: Slot(0),
                     value: "returned from if".to_string(),
                 },
-                Instruction::Ret { var: 0 },
+                Instruction::Ret { var: Slot(0) },
                 Instruction::LdcStr {
-                    dest: 0,
+                    dest: Slot(0),
                     value: "should not be reached".to_string(),
                 },
-                Instruction::Ret { var: 0 },
+                Instruction::Ret { var: Slot(0) },
             ],
+            2,
+            vec![],
         );
 
         let runtime = Arc::new(NoopRuntime {});

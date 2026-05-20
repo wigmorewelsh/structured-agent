@@ -433,7 +433,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use structured_agent_interpreter_runtime::{
-        DefinitionPath, ExecutableFunction, RuntimeService,
+        DefinitionPath, ExecutableFunction, RuntimeService, Source,
     };
 
     struct MockRuntime {
@@ -651,6 +651,7 @@ mod tests {
             ExpressionValue::image("image/png", vec![1u8, 2, 3]),
             None,
             None,
+            Source::System,
         );
         let messages = OpenAIEngine::build_context_messages(&context);
         assert_eq!(messages.len(), 1);
@@ -670,7 +671,12 @@ mod tests {
     #[test]
     fn build_context_messages_with_string_has_single_text_part() {
         let mut context = empty_context();
-        context.add_event(ExpressionValue::string("hello".to_string()), None, None);
+        context.add_event(
+            ExpressionValue::string("hello".to_string()),
+            None,
+            None,
+            Source::System,
+        );
         let messages = OpenAIEngine::build_context_messages(&context);
         assert_eq!(messages.len(), 1);
         assert!(matches!(

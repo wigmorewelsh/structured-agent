@@ -5,7 +5,7 @@ pub mod messaging {
     use structured_agent_runtime::AgentMessageContent;
     use structured_agent_runtime::StringValue;
 
-    #[sa_fn]
+    #[sa_fn(source = User)]
     async fn receive() -> StringValue {
         let (msg, ack) = agent.recv_message().await?;
         let content = match &msg.content {

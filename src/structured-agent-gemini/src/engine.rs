@@ -10,8 +10,8 @@ use schemars::schema::SchemaObject;
 use std::time::Instant;
 
 use structured_agent_interpreter_runtime::{
-    Context, ContextEvent, DefinitionPath, Event, ExpressionValue, LanguageEngine, ThinkingEvent,
-    Type,
+    Context, ContextEvent, DefinitionPath, Event, ExpressionValue, LanguageEngine, Source,
+    ThinkingEvent, Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
@@ -122,15 +122,26 @@ impl GeminiEngine {
             .iter()
             .filter_map(|event| match event {
                 ContextEvent::Action(a) => {
-                    let msg = ChatMessage::system(a.format());
+                    let msg = match a.source {
+                        Source::System => ChatMessage::system(a.format()),
+                        Source::Model => ChatMessage::model(a.format()),
+                        Source::User => ChatMessage::user(a.format()),
+                    };
                     Some(match Self::expression_value_to_part(&a.content) {
                         Some(part) => msg.with_extra_part(part),
                         None => msg,
                     })
                 }
-                ContextEvent::Thinking(t) => t.thought_signature.as_ref().map(|_| {
-                    ChatMessage::thinking_model(t.content.clone(), t.thought_signature.clone())
-                }),
+                ContextEvent::Thinking(t) => {
+                    if t.thought_signature.is_some() {
+                        Some(ChatMessage::thinking_model(
+                            t.content.clone(),
+                            t.thought_signature.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                }
             })
             .collect()
     }
@@ -311,7 +322,7 @@ impl LanguageEngine for GeminiEngine {
             .with_top_p(0.95)
             .with_response_mime_type("application/json".to_string())
             .with_response_schema(schema)
-            .with_thinking_config(ThinkingConfig::low());
+            .with_thinking_config(ThinkingConfig::low().with_include_thoughts(true));
 
         let start = Instant::now();
         let response = self
@@ -604,6 +615,7 @@ mod tests {
             ExpressionValue::image("image/png", vec![1u8, 2, 3]),
             None,
             None,
+            Source::System,
         );
         let messages = engine.build_context_messages(&context);
         assert_eq!(messages.len(), 1);
@@ -619,7 +631,7 @@ mod tests {
             model: ModelName::default(),
         };
         let mut context = empty_context();
-        context.add_event(ExpressionValue::string("hello"), None, None);
+        context.add_event(ExpressionValue::string("hello"), None, None, Source::System);
         let messages = engine.build_context_messages(&context);
         assert_eq!(messages.len(), 1);
         assert!(messages[0].extra_parts.is_empty());

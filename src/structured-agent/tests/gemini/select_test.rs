@@ -2,8 +2,7 @@ use std::sync::Arc;
 use structured_agent::cli::config::ProgramSource;
 use structured_agent::gemini::GeminiEngine;
 use structured_agent::runtime::{Context, ExpressionValue, Runtime};
-use structured_agent::types::LanguageEngine;
-use structured_agent_interpreter_runtime::SelectEvent;
+use structured_agent_interpreter_runtime::{LanguageEngine, SelectEvent, Source};
 use tokio;
 
 async fn make_engine() -> GeminiEngine {
@@ -18,7 +17,7 @@ fn make_context(events: &[&str]) -> Context {
         Arc::new(Runtime::builder(ProgramSource::Inline("fn main() {}".to_string())).build());
     let mut context = Context::with_runtime(runtime);
     for event in events {
-        context.add_event(ExpressionValue::string(*event), None, None);
+        context.add_event(ExpressionValue::string(*event), None, None, Source::System);
     }
     context
 }
@@ -28,7 +27,8 @@ async fn select(
     context: &Context,
     options: Vec<ExpressionValue>,
 ) -> Result<usize, String> {
-    let (value, _) = engine.request(context, &SelectEvent { options }).await?;
+    let (value, _): (ExpressionValue, _) =
+        engine.request(context, &SelectEvent { options }).await?;
     value
         .as_integer()
         .map_err(|e| format!("Expected integer selection: {}", e))

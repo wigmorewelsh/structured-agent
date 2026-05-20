@@ -105,13 +105,29 @@ fn thinking(content: String): String {
     content!
 }
 
+struct Done {
+    report: String
+}
+
+type Result = String | Done
+
+## use this when there is nothing remaining to do
+fn complete(): Done {
+    # it looks like this function is breaking reporting in normal loops
+    '''
+    Summarize what has been done and why.
+    Add a list of files changed.
+    What has been learnt that can be applied in the future.
+    '''!
+}
+
 fn agent_loop(turns_remaining: Int): String {
 
     if turns_remaining.equal(0) {
         return summarize()
     }
 
-    let result = select {
+    let result: Result = select {
         edit_file(_),
         read_file(_),
         write_file_content(_, _),
@@ -123,16 +139,17 @@ fn agent_loop(turns_remaining: Int): String {
         thinking(_),
         report_to_user(_),
         sub_tasks(_),
-        sub_process(_)
+        sub_process(_),
+        complete()
+    }
+
+    if let Done(done) = result {
+        return done.report
     }
 
     result!
 
-    if is_task_complete() {
-        return summarize()
-    } else {
-        return agent_loop(turns_remaining.subtract(1))
-    }
+    return agent_loop(turns_remaining.subtract(1))
 }
 
 ## use when needing to think for longer on what to do
@@ -184,8 +201,6 @@ fn main(): () {
 
         let task = receive()
         task!
-
-        plan()!
 
         let task_summary = agent_loop(20)
 

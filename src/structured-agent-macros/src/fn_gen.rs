@@ -8,28 +8,61 @@ use crate::types::{is_unit_type, map_type_to_runtime};
 
 struct SaFnArgs {
     type_params: Vec<String>,
+    source: FnSource,
+}
+
+enum FnSource {
+    System,
+    Model,
+    User,
 }
 
 impl syn::parse::Parse for SaFnArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.is_empty() {
-            return Ok(Self {
-                type_params: vec![],
-            });
+        let mut type_params = vec![];
+        let mut source = FnSource::System;
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            let _eq: Token![=] = input.parse()?;
+
+            if ident == "type_params" {
+                let s: LitStr = input.parse()?;
+                type_params = s
+                    .value()
+                    .split(',')
+                    .map(|p| p.trim().to_string())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+            } else if ident == "source" {
+                let val: Ident = input.parse()?;
+                source = match val.to_string().as_str() {
+                    "System" => FnSource::System,
+                    "Model" => FnSource::Model,
+                    "User" => FnSource::User,
+                    other => {
+                        return Err(syn::Error::new(
+                            val.span(),
+                            format!("unknown source `{other}`"),
+                        ));
+                    }
+                };
+            } else {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "expected `type_params` or `source`",
+                ));
+            }
+
+            if input.peek(Token![,]) {
+                let _: Token![,] = input.parse()?;
+            }
         }
-        let ident: Ident = input.parse()?;
-        if ident != "type_params" {
-            return Err(syn::Error::new(ident.span(), "expected `type_params`"));
-        }
-        let _eq: Token![=] = input.parse()?;
-        let s: LitStr = input.parse()?;
-        let type_params = s
-            .value()
-            .split(',')
-            .map(|p| p.trim().to_string())
-            .filter(|p| !p.is_empty())
-            .collect();
-        Ok(Self { type_params })
+
+        Ok(Self {
+            type_params,
+            source,
+        })
     }
 }
 
@@ -197,9 +230,9 @@ pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Resul
         quote! { vec![#(::structured_agent_il::Slot(#slot_indices)),*] }
     };
 
-    Ok(quote! {
-        pub fn #fn_def_name() -> ::structured_agent_il::NativeFunctionDef {
-            let f = ::structured_agent_runtime::NativeFnPtr::new(
+    let fn_ptr_constructor = match args.source {
+        FnSource::System => quote! {
+            ::structured_agent_runtime::NativeFnPtr::new(
                 move |args: Vec<::structured_agent_runtime::ExpressionValue>, agent: ::structured_agent_runtime::AgentHandle| -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::structured_agent_runtime::ExpressionValue, String>> + Send>> {
                     Box::pin(async move {
                         let _ = &agent;
@@ -213,7 +246,49 @@ pub fn generate_native_function(attr: TokenStream2, input: ItemFn) -> syn::Resul
                         #return_conversion
                     })
                 }
-            );
+            )
+        },
+        FnSource::Model => quote! {
+            ::structured_agent_runtime::NativeFnPtr::new_with_source(
+                move |args: Vec<::structured_agent_runtime::ExpressionValue>, agent: ::structured_agent_runtime::AgentHandle| -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::structured_agent_runtime::ExpressionValue, String>> + Send>> {
+                    Box::pin(async move {
+                        let _ = &agent;
+                        if args.len() != #param_count {
+                            return Err(format!(
+                                "{} expects {} argument(s), got {}",
+                                #fn_name, #param_count, args.len()
+                            ));
+                        }
+                        #(#arg_extractions)*
+                        #return_conversion
+                    })
+                },
+                ::structured_agent_runtime::Source::Model,
+            )
+        },
+        FnSource::User => quote! {
+            ::structured_agent_runtime::NativeFnPtr::new_with_source(
+                move |args: Vec<::structured_agent_runtime::ExpressionValue>, agent: ::structured_agent_runtime::AgentHandle| -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::structured_agent_runtime::ExpressionValue, String>> + Send>> {
+                    Box::pin(async move {
+                        let _ = &agent;
+                        if args.len() != #param_count {
+                            return Err(format!(
+                                "{} expects {} argument(s), got {}",
+                                #fn_name, #param_count, args.len()
+                            ));
+                        }
+                        #(#arg_extractions)*
+                        #return_conversion
+                    })
+                },
+                ::structured_agent_runtime::Source::User,
+            )
+        },
+    };
+
+    Ok(quote! {
+        pub fn #fn_def_name() -> ::structured_agent_il::NativeFunctionDef {
+            let f = #fn_ptr_constructor;
             let body = vec![
                 ::structured_agent_il::Instruction::CallNative {
                     f,

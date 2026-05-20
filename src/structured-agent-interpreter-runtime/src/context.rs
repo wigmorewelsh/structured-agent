@@ -1,6 +1,6 @@
 use crate::service::RuntimeService;
 use std::sync::Arc;
-use structured_agent_runtime::{AgentHandle, ExpressionParameter, ExpressionValue};
+use structured_agent_runtime::{AgentHandle, ExpressionParameter, ExpressionValue, Source};
 
 #[derive(Debug, Clone)]
 pub struct ThinkingEvent {
@@ -13,6 +13,7 @@ pub struct ActionEvent {
     pub content: ExpressionValue,
     pub name: Option<String>,
     pub params: Option<Vec<ExpressionParameter>>,
+    pub source: Source,
 }
 
 #[derive(Debug, Clone)]
@@ -59,11 +60,13 @@ impl Context {
         content: ExpressionValue,
         name: Option<String>,
         params: Option<Vec<ExpressionParameter>>,
+        source: Source,
     ) {
         self.events.push(ContextEvent::Action(ActionEvent {
             content,
             name,
             params,
+            source,
         }));
     }
 

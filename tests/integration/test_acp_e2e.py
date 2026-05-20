@@ -116,6 +116,99 @@ fn main(): () {
 """
 
 
+UNION_STRUCT_DONE_PROGRAM = """
+struct Done {
+    report: String
+}
+
+type Result = String | Done
+
+use io::print
+use messaging::receive
+
+extern fn read_file(path: String): String
+
+fn complete(): Done {
+    '''
+    The task is done. Summarize what was found.
+    '''!
+}
+
+fn agent_loop(turns_remaining: Int): String {
+    if turns_remaining.equal(0) {
+        return "timed out"
+    }
+
+    let result: Result = select {
+        read_file(_),
+        complete()
+    }
+
+    if let Done(done) = result {
+        return done.report
+    }
+
+    result!
+
+    return agent_loop(turns_remaining.subtract(1))
+}
+
+fn main(): () {
+    let task = receive()
+    task!
+    let summary = agent_loop(10)
+    print(summary)
+}
+"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(180)
+async def test_agent_union_done_struct_completes(binary_path, gemini_api_key):
+    collector = ResponseCollector()
+    env = {**os.environ, "GEMINI_API_KEY": gemini_api_key}
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        secret_file = Path(work_dir) / "info.txt"
+        secret_file.write_text("The answer is 42")
+
+        async with acp.spawn_agent_process(
+            lambda agent: collector,
+            str(binary_path),
+            "acp",
+            "--engine", "gemini",
+            "--inline", UNION_STRUCT_DONE_PROGRAM,
+            "--with-default-functions",
+            "--with-acp-functions",
+            cwd=work_dir,
+            transport_kwargs={"stderr": subprocess.PIPE},
+            env=env,
+        ) as (conn, process):
+            await conn.initialize(
+                protocol_version=acp.PROTOCOL_VERSION,
+                client_info=acp.schema.Implementation(name="test", version="1.0"),
+            )
+
+            await conn.new_session(cwd=work_dir, mcp_servers=[])
+
+            await conn.prompt(
+                prompt=[acp.text_block("Read info.txt and then call complete.")],
+                session_id=(await conn.new_session(cwd=work_dir, mcp_servers=[])).session_id,
+            )
+
+            try:
+                await asyncio.wait_for(collector.got_event.wait(), timeout=120)
+            except asyncio.TimeoutError:
+                pass
+
+    stderr = (await process.stderr.read()).decode()
+
+    assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
+    assert len(collector.events) > 0, (
+        f"Expected agent to print a summary. Got no events.\nStderr:\n{stderr}"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agent_sa_with_config_toml(binary_path, gemini_api_key):

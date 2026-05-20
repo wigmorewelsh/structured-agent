@@ -9,11 +9,20 @@ use crate::runtime_value::{
 use crate::symbols::{DefinitionPath, MetaData, References, SymbolQuery, TypeDefinitionKind};
 use crate::types::Type;
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Source {
+    #[default]
+    System,
+    Model,
+    User,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionResult {
     pub name: Option<String>,
     pub params: Option<Vec<ExpressionParameter>>,
     pub value: ExpressionValue,
+    pub source: Source,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,6 +180,7 @@ impl ExpressionResult {
             name: None,
             params: None,
             value,
+            source: Source::System,
         }
     }
 
@@ -179,6 +189,7 @@ impl ExpressionResult {
             name: None,
             params: Some(params),
             value,
+            source: Source::System,
         }
     }
 
@@ -187,6 +198,7 @@ impl ExpressionResult {
             name: Some(name),
             params: None,
             value,
+            source: Source::System,
         }
     }
 
@@ -199,6 +211,7 @@ impl ExpressionResult {
             name: Some(name),
             params: Some(params),
             value,
+            source: Source::System,
         }
     }
 }

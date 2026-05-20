@@ -14,5 +14,5 @@ pub use traits::{
 pub use structured_agent_runtime::{
     ActorMailboxReceiver, ActorMessage, ActorRef, ActorRegistry, AgentError, AgentHandle, AgentId,
     AgentMessage, AgentMessageContent, DefinitionPath, ExpressionParameter, ExpressionResult,
-    ExpressionValue, ExternalFunctionDefinition, Parameter, RuntimeError, Type,
+    ExpressionValue, ExternalFunctionDefinition, Parameter, RuntimeError, Source, Type,
 };
