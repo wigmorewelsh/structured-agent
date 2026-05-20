@@ -978,6 +978,56 @@ fn test(): Int {
 "#;
         compile_and_check(code, expected);
     }
+
+    #[test]
+    fn test_select_with_struct_literal_clause() {
+        let span = Span::dummy();
+        let struct_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("test".to_string())),
+            "Task",
+        );
+        let struct_expr = typed_ast::Expression::StructLiteral {
+            struct_name: struct_name.clone(),
+            fields: vec![],
+            ty: RT::Named(struct_name),
+            span,
+        };
+        let select = typed_ast::Expression::Select(
+            typed_ast::SelectExpression {
+                clauses: vec![typed_ast::SelectClause {
+                    expression_to_run: struct_expr,
+                    span,
+                }],
+                span,
+            },
+            RT::Named(DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new("test".to_string())),
+                "Task",
+            )),
+        );
+        let func = typed_ast::Function {
+            name: "test".to_string(),
+            parameters: vec![],
+            return_type: RT::Named(DefinitionPath::for_type(
+                DefinitionPath::for_module(NonEmpty::new("test".to_string())),
+                "Task",
+            )),
+            body: typed_ast::FunctionBody {
+                statements: vec![typed_ast::Statement::Return(select)],
+                span,
+            },
+            documentation: None,
+            is_pub: false,
+            span,
+        };
+        let compiled = BytecodeCompiler::new().compile_to_bytecode(&func).unwrap();
+        let output = format!("{}", compiled);
+        assert!(
+            output.contains("meta.function test::Task"),
+            "Expected MetaFunction for test::Task in output:\n{}",
+            output
+        );
+    }
 }
 
 #[cfg(test)]

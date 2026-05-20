@@ -8,7 +8,9 @@ use structured_agent_interpreter_runtime::{
     AgentMessageContent, Context, ExecutableFunction, ExpressionParameter, ExpressionResult,
     ExpressionValue, FillParameterEvent, RuntimeService, SelectEvent, TypedEvent,
 };
-use structured_agent_runtime::{ActorRef, AgentHandle, DefinitionPath, NativeFnPtr};
+use structured_agent_runtime::{
+    ActorRef, AgentHandle, DefinitionPath, DefinitionSegment, NativeFnPtr,
+};
 
 struct CallFrame {
     instructions: Arc<[Instruction]>,
@@ -489,8 +491,10 @@ impl VM {
             body.documentation
         } else if let Some(func) = self.runtime.get_native_function(function_name.last_name()) {
             func.documentation().map(|s| s.to_string())
+        } else if matches!(function_name.segments.last(), DefinitionSegment::Type(_)) {
+            self.runtime.get_type_documentation(function_name)
         } else {
-            return Err(format!("Function not found: {}", function_name));
+            return Err(format!("Definition not found: {}", function_name));
         };
         let metadata = ExpressionValue::metadata(&name_str, documentation);
         Self::write_slot(&mut state, dest, ExpressionResult::new(metadata));
@@ -1425,6 +1429,48 @@ mod tests {
         ) -> Option<Vec<(String, structured_agent_runtime::Type)>> {
             None
         }
+    }
+
+    #[tokio::test]
+    async fn execute_meta_function_with_type_path_produces_metadata() {
+        let main_path = DefinitionPath::for_function(DefinitionPath::root(), "main");
+        let type_path = DefinitionPath::root()
+            .with_module("test".to_string())
+            .with_type("Task".to_string());
+
+        let main_ref = make_bytecode_ref(
+            vec![
+                Instruction::MetaFunction {
+                    function_name: type_path,
+                    dest: Slot(1),
+                },
+                Instruction::Ret { var: Slot(1) },
+            ],
+            2,
+            vec![],
+        );
+
+        let mut functions = HashMap::new();
+        functions.insert(main_path.clone(), main_ref);
+        let runtime = Arc::new(TestRuntime::new(functions));
+        let context = make_context_with_runtime(runtime.clone());
+
+        let caller_instructions = vec![
+            Instruction::CallBytecode {
+                function_name: main_path,
+                params: vec![],
+                dest: Slot(0),
+            },
+            Instruction::Ret { var: Slot(0) },
+        ];
+
+        let vm = VM::new(runtime);
+        let (_, result) = vm
+            .execute(&caller_instructions, context, vec![None])
+            .await
+            .unwrap();
+        let (name, _) = result.value.as_metadata().unwrap();
+        assert_eq!(name, "test::Task");
     }
 
     #[tokio::test]

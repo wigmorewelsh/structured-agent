@@ -736,6 +736,10 @@ impl BytecodeCompiler {
                     typed_ast::MethodBinding::Early(path) => path.clone(),
                     typed_ast::MethodBinding::Late(_, path) => path.clone(),
                 }
+            } else if let typed_ast::Expression::StructLiteral { struct_name, .. } =
+                &select.clauses[i].expression_to_run
+            {
+                struct_name.clone()
             } else {
                 return Err(format!("select clause {} expression is not a Call", i));
             };
