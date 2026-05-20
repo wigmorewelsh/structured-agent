@@ -24,4 +24,8 @@ pub trait RuntimeService: Send + Sync {
     fn spawn_actor(&self, _mailbox: ActorMailboxReceiver, _context: Context) {
         unimplemented!("spawn_actor not supported by this runtime")
     }
+
+    fn get_type_documentation(&self, _name: &DefinitionPath) -> Option<String> {
+        None
+    }
 }

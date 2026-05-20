@@ -386,6 +386,14 @@ impl Runtime {
         }
     }
 
+    pub fn get_type_documentation(
+        &self,
+        name: &structured_agent_runtime::symbols::DefinitionPath,
+    ) -> Option<String> {
+        let cached = self.compiled.get()?.as_ref().ok()?;
+        cached.metadata.types.get(name)?.documentation.clone()
+    }
+
     pub fn get_struct_with_args(
         &self,
         type_name: &structured_agent_runtime::symbols::DefinitionPath,
@@ -619,6 +627,10 @@ impl RuntimeService for Runtime {
         args: &[crate::types::Type],
     ) -> Option<Vec<(String, crate::types::Type)>> {
         Runtime::get_struct_with_args(self, type_name, args)
+    }
+
+    fn get_type_documentation(&self, name: &DefinitionPath) -> Option<String> {
+        Runtime::get_type_documentation(self, name)
     }
 
     fn spawn_actor(
@@ -877,5 +889,32 @@ fn main(): () {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].0, "title");
         assert_eq!(fields[1].0, "steps");
+    }
+
+    #[tokio::test]
+    async fn get_type_documentation_returns_doc_for_documented_struct() {
+        let code = r#"
+## A task
+struct Task {
+    title: String,
+}
+fn main(): String { "ok" }
+"#;
+        let runtime = Runtime::builder(ProgramSource::Inline(code.to_string())).build();
+        runtime.run().await.unwrap();
+        let task_type_name = runtime
+            .compiled
+            .get()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .metadata
+            .types
+            .keys()
+            .find(|tn| tn.last_name() == "Task")
+            .cloned()
+            .unwrap();
+        let doc = runtime.get_type_documentation(&task_type_name);
+        assert_eq!(doc, Some("A task".to_string()));
     }
 }
