@@ -120,17 +120,17 @@ impl GeminiEngine {
 
         all_events
             .iter()
-            .map(|event| match event {
+            .filter_map(|event| match event {
                 ContextEvent::Action(a) => {
                     let msg = ChatMessage::system(a.format());
-                    match Self::expression_value_to_part(&a.content) {
+                    Some(match Self::expression_value_to_part(&a.content) {
                         Some(part) => msg.with_extra_part(part),
                         None => msg,
-                    }
+                    })
                 }
-                ContextEvent::Thinking(t) => {
+                ContextEvent::Thinking(t) => t.thought_signature.as_ref().map(|_| {
                     ChatMessage::thinking_model(t.content.clone(), t.thought_signature.clone())
-                }
+                }),
             })
             .collect()
     }
@@ -311,7 +311,7 @@ impl LanguageEngine for GeminiEngine {
             .with_top_p(0.95)
             .with_response_mime_type("application/json".to_string())
             .with_response_schema(schema)
-            .with_thinking_config(ThinkingConfig::low().with_include_thoughts(true));
+            .with_thinking_config(ThinkingConfig::low());
 
         let start = Instant::now();
         let response = self
