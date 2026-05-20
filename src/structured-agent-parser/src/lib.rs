@@ -172,9 +172,9 @@ where
                 parse_sig_definition(),
                 parse_trait_impl(),
                 parse_trait(),
+                parse_struct_definition_with_docs().map(|s| Definition::Struct(Arc::new(s))),
                 parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
                 parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
-                parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
             ))
             .skip(skip_spaces_and_comments()),
         )),
@@ -220,9 +220,9 @@ where
                     parse_sig_definition(),
                     parse_trait_impl(),
                     parse_trait(),
+                    parse_struct_definition_with_docs().map(|s| Definition::Struct(Arc::new(s))),
                     parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
                     parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
-                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
                 ))
                 .skip(skip_spaces_and_comments()),
             ),
@@ -356,6 +356,17 @@ where
                     }
                 },
             )
+    })
+}
+
+fn parse_struct_definition_with_docs<Input>() -> impl Parser<Input, Output = StructDefinition>
+where
+    Input: Stream<Token = char, Position = usize>,
+    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    attempt((parse_doc_comments(), parse_struct_definition())).map(|(doc, mut s)| {
+        s.documentation = doc;
+        s
     })
 }
 
@@ -1275,10 +1286,15 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (position(), parse_call(), position()).map(|(start, expression_to_run, end)| SelectClause {
-        expression_to_run,
-        span: Span::new(start, end),
-    })
+    (
+        position(),
+        choice((attempt(parse_struct_literal()), parse_call())),
+        position(),
+    )
+        .map(|(start, expression_to_run, end)| SelectClause {
+            expression_to_run,
+            span: Span::new(start, end),
+        })
 }
 
 fn parse_match_arm<Input>() -> impl Parser<Input, Output = MatchArm>
@@ -4511,6 +4527,52 @@ fn test(): () {
             _ => panic!("expected Function"),
         };
         assert!(matches!(&func.body.statements[0], Statement::If { .. }));
+    }
+
+    #[test]
+    fn test_parse_struct_definition_with_docs() {
+        let input = "\n## doc\nstruct Point {\n    x: Int,\n}\n";
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        assert_eq!(module.definitions.len(), 1);
+        if let Definition::Struct(s) = &module.definitions[0] {
+            assert_eq!(s.documentation, Some("doc".to_string()));
+        } else {
+            panic!("Expected struct definition");
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_struct_literal_clause() {
+        let input = r#"
+fn example(): () {
+    let result = select {
+        MyTask { title: "x" }
+    }
+    result
+}
+"#;
+        let stream = Stream::with_positioner(input, IndexPositioner::default());
+        let result = parse_program(TEST_FILE_ID).parse(stream);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let (module, _) = result.unwrap();
+        let func = match &module.definitions[0] {
+            Definition::Function(f) => f,
+            _ => panic!("Expected function"),
+        };
+        let Statement::Assignment { expression, .. } = &func.body.statements[0] else {
+            panic!("Expected assignment");
+        };
+        let Expression::Select(select) = expression else {
+            panic!("Expected select expression");
+        };
+        assert_eq!(select.clauses.len(), 1);
+        assert!(matches!(
+            select.clauses[0].expression_to_run,
+            Expression::StructLiteral { .. }
+        ));
     }
 
     #[test]
