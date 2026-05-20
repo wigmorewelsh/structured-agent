@@ -347,6 +347,7 @@ pub struct SignatureEntry {
 pub struct TypeDefinition<R: References> {
     pub name: DefinitionPath,
     pub kind: TypeDefinitionKind<R>,
+    pub documentation: Option<String>,
     pub source_ref: R::Source,
     pub ast_ref: R::Ast,
 }

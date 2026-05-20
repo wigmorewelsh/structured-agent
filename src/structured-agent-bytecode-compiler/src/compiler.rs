@@ -1156,6 +1156,7 @@ pub fn compile_metadata(
             Arc::new(TypeDefinition {
                 name: arc_def.name.clone(),
                 kind: clone_kind_typenames(&arc_def.kind),
+                documentation: arc_def.documentation.clone(),
                 source_ref: arc_def.source_ref.clone(),
                 ast_ref: arc_def.ast_ref.clone(),
             }),

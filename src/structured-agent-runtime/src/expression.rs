@@ -600,6 +600,7 @@ mod tests {
                 }],
                 factory: Arc::new(NullFactory),
             },
+            documentation: None,
             source_ref: NoSource,
             ast_ref: NoAst,
         };
@@ -709,6 +710,7 @@ mod tests {
                     }],
                     generic_parameters: vec![],
                 },
+                documentation: None,
                 source_ref: NoSource,
                 ast_ref: NoAst,
             }),
@@ -749,6 +751,7 @@ mod tests {
                         constraints: vec![],
                     }],
                 },
+                documentation: None,
                 source_ref: NoSource,
                 ast_ref: NoAst,
             }),

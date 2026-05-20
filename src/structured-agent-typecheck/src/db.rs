@@ -904,6 +904,7 @@ pub fn elaborate_metadata(
         let new_def = TypeDefinition {
             name: type_def.name.clone(),
             kind,
+            documentation: type_def.documentation.clone(),
             source_ref: SourceLocation(type_def.source_ref.0, type_def.source_ref.1),
             ast_ref: TypedCheckerAstRef::Other(type_def.ast_ref.clone()),
         };

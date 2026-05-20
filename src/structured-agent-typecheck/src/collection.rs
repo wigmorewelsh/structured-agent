@@ -90,6 +90,7 @@ impl SymbolTableBuilder {
                             generic_parameters: vec![],
                             return_type,
                         },
+                        documentation: None,
                         source_ref: SourceLocation(0, Span::dummy()),
                         ast_ref: CheckerAstRef::Primitive,
                     };
@@ -106,6 +107,7 @@ impl SymbolTableBuilder {
                         functions: entries,
                         witness_ref: NoWitness,
                     },
+                    documentation: None,
                     source_ref: SourceLocation(0, Span::dummy()),
                     ast_ref: CheckerAstRef::Primitive,
                 };
@@ -168,6 +170,7 @@ impl SymbolTableBuilder {
                             generic_parameters,
                             return_type,
                         },
+                        documentation: None,
                         source_ref: SourceLocation(0, Span::dummy()),
                         ast_ref: CheckerAstRef::Primitive,
                     };
@@ -196,6 +199,7 @@ impl SymbolTableBuilder {
                 let entry = TypeDefinition {
                     name: type_path.clone(),
                     kind,
+                    documentation: None,
                     source_ref: SourceLocation(0, Span::dummy()),
                     ast_ref: CheckerAstRef::Primitive,
                 };
@@ -236,6 +240,7 @@ impl SymbolTableBuilder {
             let module_type = TypeDefinition {
                 name: module_name.clone(),
                 kind: TypeDefinitionKind::Signature { entries },
+                documentation: None,
                 source_ref: SourceLocation(0, Span::dummy()),
                 ast_ref: CheckerAstRef::Module(Arc::new(Module {
                     definitions: vec![],
@@ -311,6 +316,7 @@ impl SymbolTableBuilder {
                 generic_parameters,
                 return_type: return_type.clone(),
             },
+            documentation: None,
             source_ref: SourceLocation(source_ref.0, source_ref.1),
             ast_ref: CheckerAstRef::ExternalFn {
                 params,
@@ -357,6 +363,7 @@ impl SymbolTableBuilder {
         let entry = TypeDefinition {
             name: type_name.clone(),
             kind: TypeDefinitionKind::Alias { ty: ast_ty.clone() },
+            documentation: None,
             source_ref: SourceLocation(file_id, span),
             ast_ref: CheckerAstRef::Primitive,
         };
@@ -396,6 +403,7 @@ impl SymbolTableBuilder {
                         .collect(),
                     return_type: f.return_type.clone(),
                 },
+                documentation: None,
                 source_ref: SourceLocation(file_id, f.span),
                 ast_ref: ast_ref.clone(),
             };
@@ -425,6 +433,7 @@ impl SymbolTableBuilder {
         let entry = TypeDefinition {
             name: sig_type_name.clone(),
             kind: TypeDefinitionKind::Signature { entries },
+            documentation: None,
             source_ref: SourceLocation(file_id, sig.span),
             ast_ref: CheckerAstRef::Signature(Arc::clone(sig)),
         };
@@ -458,6 +467,7 @@ impl SymbolTableBuilder {
                     })
                     .collect(),
             },
+            documentation: struct_def.documentation.clone(),
             source_ref: SourceLocation(file_id, struct_def.span),
             ast_ref: CheckerAstRef::Struct(Arc::clone(struct_def)),
         };
@@ -542,6 +552,7 @@ impl SymbolTableBuilder {
                 generic_parameters: fn_generic_parameters,
                 return_type: func.return_type.clone(),
             },
+            documentation: None,
             source_ref: SourceLocation(file_id, func.span),
             ast_ref: CheckerAstRef::Function(Arc::clone(func), FunctionKind::Bytecode),
         };
@@ -592,6 +603,7 @@ impl SymbolTableBuilder {
                 functions,
                 witness_ref: NoWitness,
             },
+            documentation: None,
             source_ref: SourceLocation(file_id, trait_def.span),
             ast_ref: CheckerAstRef::Trait(Arc::clone(trait_def)),
         };
@@ -680,6 +692,7 @@ impl SymbolTableBuilder {
                 generic_parameters: fn_generic_parameters,
                 return_type: func.return_type.clone(),
             },
+            documentation: None,
             source_ref: SourceLocation(file_id, func.span),
             ast_ref: CheckerAstRef::ImplFunction(
                 Arc::clone(func),
@@ -758,6 +771,7 @@ impl SymbolTableBuilder {
         let module_type = TypeDefinition {
             name: module_name.clone(),
             kind: TypeDefinitionKind::Signature { entries },
+            documentation: None,
             source_ref: SourceLocation(parsed.file_id, crate::types::Span::dummy()),
             ast_ref: CheckerAstRef::Module(Arc::new(parsed.module.clone())),
         };
@@ -788,5 +802,43 @@ impl SymbolTableBuilder {
             .collect();
         exports.extend(type_exports);
         exports
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nonempty::NonEmpty;
+    use std::sync::Arc;
+    use structured_agent_ast::ast::StructDefinition;
+    use structured_agent_ast::types::Span;
+
+    fn build_symbol_table_for_struct(struct_def: StructDefinition) -> MetaData<CheckerRefs> {
+        let module_name = DefinitionPath::for_module(NonEmpty::new("test_module".to_string()));
+        let mut builder = SymbolTableBuilder::new();
+        builder.register_struct(&Arc::new(struct_def), 0, &module_name);
+        builder.metadata
+    }
+
+    #[test]
+    fn register_struct_threads_documentation() {
+        let struct_def = StructDefinition {
+            name: "MyTask".to_string(),
+            type_params: vec![],
+            fields: vec![],
+            documentation: Some("A task type".to_string()),
+            span: Span::dummy(),
+        };
+
+        let metadata = build_symbol_table_for_struct(struct_def);
+        let type_name = DefinitionPath::for_type(
+            DefinitionPath::for_module(NonEmpty::new("test_module".to_string())),
+            "MyTask",
+        );
+        let type_def = metadata
+            .types
+            .get(&type_name)
+            .expect("type should be registered");
+        assert_eq!(type_def.documentation, Some("A task type".to_string()));
     }
 }
