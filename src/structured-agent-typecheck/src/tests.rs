@@ -914,6 +914,7 @@ mod tests {
                     span: crate::types::Span::dummy(),
                 })
                 .collect(),
+            documentation: None,
             span: crate::types::Span::dummy(),
         }))
     }
@@ -1717,6 +1718,7 @@ mod tests {
                     span: crate::types::Span::dummy(),
                 },
             ],
+            documentation: None,
             span: crate::types::Span::dummy(),
         }));
         let pair_string = AstType::parameterized("Pair", vec![AstType::simple("String")]);
@@ -3399,6 +3401,7 @@ mod typed_ast_tests {
                     span: crate::types::Span::dummy(),
                 },
             ],
+            documentation: None,
             span: crate::types::Span::dummy(),
         };
         let func = create_test_function(
@@ -3457,6 +3460,7 @@ mod typed_ast_tests {
                     span: crate::types::Span::dummy(),
                 },
             ],
+            documentation: None,
             span: crate::types::Span::dummy(),
         };
         let func = create_test_function(
@@ -5137,6 +5141,7 @@ mod metadata_query_tests {
                 field_type: AstType::simple("Int"),
                 span: crate::types::Span::dummy(),
             }],
+            documentation: None,
             span: crate::types::Span::dummy(),
         }))]);
         let metadata = check_meta(module);

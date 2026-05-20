@@ -198,6 +198,7 @@ pub struct StructDefinition {
     pub name: String,
     pub type_params: Vec<TypeParam>,
     pub fields: Vec<StructField>,
+    pub documentation: Option<String>,
     pub span: Span,
 }
 
@@ -707,6 +708,11 @@ impl fmt::Display for Definition {
             Definition::Function(func) => write!(f, "{}", func),
             Definition::ExternalFunction(ext_func) => write!(f, "{}", ext_func),
             Definition::Struct(s) => {
+                if let Some(doc) = &s.documentation {
+                    for line in doc.lines() {
+                        write!(f, "## {}\n", line)?;
+                    }
+                }
                 if s.type_params.is_empty() {
                     write!(f, "struct {} {{", s.name)?;
                 } else {
@@ -946,6 +952,19 @@ impl TypeAnnotation for Type {}
 mod tests {
     use super::*;
     use crate::types::Span;
+
+    #[test]
+    fn struct_definition_display_renders_documentation() {
+        let s = StructDefinition {
+            name: "Point".to_string(),
+            type_params: vec![],
+            fields: vec![],
+            documentation: Some("A point".to_string()),
+            span: Span::dummy(),
+        };
+        let output = format!("{}", Definition::Struct(std::sync::Arc::new(s)));
+        assert!(output.contains("## A point"));
+    }
 
     #[test]
     fn string_part_literal_roundtrip() {

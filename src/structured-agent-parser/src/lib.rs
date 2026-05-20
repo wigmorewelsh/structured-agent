@@ -682,6 +682,7 @@ where
                 name,
                 type_params: type_params_opt.unwrap_or_default(),
                 fields,
+                documentation: None,
                 span: Span::new(start, end),
             },
         )
