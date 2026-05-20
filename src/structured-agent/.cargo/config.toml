@@ -1,12 +1,12 @@
 [alias]
 # Run structured agent with default functions and Gemini AI from a file
-run-agent = "run -- --with-default-functions --engine gemini --file"
+run-agent = "run -- --engine gemini --file"
 
 # Run structured agent with default functions and Gemini AI using specific model from a file
-run-agent-pro = "run -- --with-default-functions --engine gemini --gemini-model gemini-2.5-pro --file"
+run-agent-pro = "run -- --engine gemini --gemini-model gemini-2.5-pro --file"
 
 # Run structured agent with web-tools MCP server and Gemini AI from a file (with proxy)
-run-agent-web = ["run", "--", "--with-default-functions", "--mcp-server", "uv run python ../web-tools/server.py --proxy http://localhost:8080", "--engine", "gemini", "--file"]
+run-agent-web = ["run", "--", "--mcp-server", "uv run python ../web-tools/server.py --proxy http://localhost:8080", "--engine", "gemini", "--file"]
 
 # Run structured agent with web-tools MCP server and Gemini AI from a file (no proxy)
-run-agent-web-no-proxy = ["run", "--", "--with-default-functions", "--mcp-server", "uv run python ../web-tools/server.py", "--engine", "gemini", "--file"]
+run-agent-web-no-proxy = ["run", "--", "--mcp-server", "uv run python ../web-tools/server.py", "--engine", "gemini", "--file"]
