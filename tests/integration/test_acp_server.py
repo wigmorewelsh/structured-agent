@@ -94,11 +94,8 @@ fn main(): () {
             "acp",
             "--engine", "print",
             "--file", temp_file,
-            "--with-default-functions",
-            "--with-acp-functions",
             cwd=project_root,
             transport_kwargs={"stderr": subprocess.PIPE},
-            env={"RUST_LOG": "debug"},
         ) as (conn, process):
             await conn.initialize(
                 protocol_version=acp.PROTOCOL_VERSION,

@@ -241,6 +241,7 @@ async def test_resource_link_path_resolved_to_full_path(binary_path, gemini_api_
             "--with-default-functions",
             "--with-acp-functions",
             "--mcp-server", "common-tools",
+            "--metrics-port", "9091",
             cwd=PROJECT_ROOT,
             transport_kwargs={"stderr": subprocess.PIPE},
             env=env,

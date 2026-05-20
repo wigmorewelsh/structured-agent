@@ -87,10 +87,32 @@ async fn init_telemetry(config: &Config) -> TelemetryGuard {
     }
 
     if let Some(port) = obs.metrics_port {
-        if let Err(e) = metrics_exporter_prometheus::PrometheusBuilder::new()
+        let result = metrics_exporter_prometheus::PrometheusBuilder::new()
             .with_http_listener(([0, 0, 0, 0], port))
-            .install()
-        {
+            .set_buckets_for_metric(
+                metrics_exporter_prometheus::Matcher::Full(
+                    "gemini.request.duration_ms".to_string(),
+                ),
+                &[
+                    50.0, 100.0, 250.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 30000.0,
+                ],
+            )
+            .and_then(|b| {
+                b.set_buckets_for_metric(
+                    metrics_exporter_prometheus::Matcher::Prefix("gemini.tokens".to_string()),
+                    &[100.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 50000.0],
+                )
+            })
+            .and_then(|b| {
+                b.set_buckets_for_metric(
+                    metrics_exporter_prometheus::Matcher::Full(
+                        "gemini.context.message_count".to_string(),
+                    ),
+                    &[1.0, 2.0, 5.0, 10.0, 20.0, 50.0],
+                )
+            })
+            .and_then(|b| b.install());
+        if let Err(e) = result {
             eprintln!(
                 "Warning: failed to start metrics exporter on :{}: {}",
                 port, e

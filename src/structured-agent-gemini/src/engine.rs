@@ -341,7 +341,7 @@ impl LanguageEngine for GeminiEngine {
             .record(elapsed_ms);
 
         if let Some(usage) = &response.usage_metadata {
-            tracing::debug!(
+            tracing::info!(
                 model = model_name,
                 prompt_tokens = usage.prompt_token_count,
                 output_tokens = usage.candidates_token_count,
