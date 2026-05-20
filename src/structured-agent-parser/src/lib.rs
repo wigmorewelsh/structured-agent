@@ -6,7 +6,9 @@ use combine::parser::char::{char, letter, newline, spaces, string};
 use combine::parser::choice::choice;
 use combine::parser::repeat::{many, many1, sep_by, skip_many};
 use combine::parser::token::satisfy;
-use combine::{attempt, between, not_followed_by, optional, position, sep_by1, Parser, Stream};
+use combine::{
+    attempt, between, not_followed_by, optional, position, sep_by1, sep_end_by, Parser, Stream,
+};
 use structured_agent_ast::ast::{
     AstPath, AstSignature, AstTrait, AstTraitImpl, Definition, Expression, ExternalFunction,
     Function, FunctionBody, MatchArm, Module, Parameter, PathArg, PathSegment, SelectClause,
@@ -172,8 +174,8 @@ where
                 parse_sig_definition(),
                 parse_trait_impl(),
                 parse_trait(),
-                parse_struct_definition_with_docs().map(|s| Definition::Struct(Arc::new(s))),
-                parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+                parse_function().map(|f| Definition::Function(Arc::new(f))),
                 parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
             ))
             .skip(skip_spaces_and_comments()),
@@ -220,8 +222,8 @@ where
                     parse_sig_definition(),
                     parse_trait_impl(),
                     parse_trait(),
-                    parse_struct_definition_with_docs().map(|s| Definition::Struct(Arc::new(s))),
-                    parse_function_with_docs().map(|f| Definition::Function(Arc::new(f))),
+                    parse_struct_definition().map(|s| Definition::Struct(Arc::new(s))),
+                    parse_function().map(|f| Definition::Function(Arc::new(f))),
                     parse_external_function().map(|f| Definition::ExternalFunction(Arc::new(f))),
                 ))
                 .skip(skip_spaces_and_comments()),
@@ -359,39 +361,18 @@ where
     })
 }
 
-fn parse_struct_definition_with_docs<Input>() -> impl Parser<Input, Output = StructDefinition>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    attempt((parse_doc_comments(), parse_struct_definition())).map(|(doc, mut s)| {
-        s.documentation = doc;
-        s
-    })
-}
-
-fn parse_function_with_docs<Input>() -> impl Parser<Input, Output = Function>
-where
-    Input: Stream<Token = char, Position = usize>,
-    Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (parse_doc_comments(), parse_function()).map(|(doc, mut func)| {
-        func.documentation = doc;
-        func
-    })
-}
-
 fn parse_function<Input>() -> impl Parser<Input, Output = Function>
 where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
     attempt((
+        parse_doc_comments(),
         position(),
         optional(attempt(lex_string("pub"))),
         lex_string("fn"),
     ))
-    .then(|(start, pub_kw, _)| {
+    .then(|(docs, start, pub_kw, _)| {
         (
             identifier(),
             optional(attempt(between(
@@ -425,7 +406,7 @@ where
                         parameters: params,
                         return_type,
                         body,
-                        documentation: None,
+                        documentation: docs.clone(),
                         is_pub: pub_kw.is_some(),
                         span: Span::new(start, end),
                     }
@@ -477,7 +458,7 @@ where
                 lex_char('}'),
                 many(
                     skip_spaces_and_comments()
-                        .with(parse_function_with_docs())
+                        .with(parse_function())
                         .skip(skip_spaces_and_comments()),
                 ),
             ),
@@ -669,34 +650,40 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        position(),
-        lex_keyword("struct"),
-        identifier(),
-        optional(attempt(between(
-            lex_char('<'),
-            lex_char('>'),
-            sep_by1(parse_type_param(), lex_char(',')),
-        ))),
-        between(lex_char('{'), lex_char('}'), many(parse_struct_field())),
-        position(),
+    attempt((parse_doc_comments(), position(), lex_keyword("struct"))).then(
+        |(docs, start, _): (Option<String>, usize, _)| {
+            (
+                identifier(),
+                optional(attempt(between(
+                    lex_char('<'),
+                    lex_char('>'),
+                    sep_by1(parse_type_param(), lex_char(',')),
+                ))),
+                between(
+                    lex_char('{'),
+                    lex_char('}'),
+                    sep_end_by(parse_struct_field(), lex_char(',')),
+                ),
+                position(),
+            )
+                .map(
+                    move |(name, type_params_opt, fields, end): (
+                        _,
+                        Option<Vec<TypeParam>>,
+                        _,
+                        _,
+                    )| {
+                        StructDefinition {
+                            name,
+                            type_params: type_params_opt.unwrap_or_default(),
+                            fields,
+                            documentation: docs.clone(),
+                            span: Span::new(start, end),
+                        }
+                    },
+                )
+        },
     )
-        .map(
-            |(start, _, name, type_params_opt, fields, end): (
-                _,
-                _,
-                _,
-                Option<Vec<TypeParam>>,
-                _,
-                _,
-            )| StructDefinition {
-                name,
-                type_params: type_params_opt.unwrap_or_default(),
-                fields,
-                documentation: None,
-                span: Span::new(start, end),
-            },
-        )
 }
 
 fn parse_struct_field<Input>() -> impl Parser<Input, Output = StructField>
@@ -704,20 +691,15 @@ where
     Input: Stream<Token = char, Position = usize>,
     Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    (
-        skip_spaces_and_comments(),
-        position(),
-        identifier(),
-        lex_char(':'),
-        parse_type(),
-        lex_char(','),
-        position(),
+    attempt((skip_spaces_and_comments(), position(), identifier())).then(
+        |(_, start, name): ((), usize, String)| {
+            (lex_char(':'), parse_type(), position()).map(move |(_, field_type, end)| StructField {
+                name: name.clone(),
+                field_type,
+                span: Span::new(start, end),
+            })
+        },
     )
-        .map(|(_, start, name, _, field_type, _, end)| StructField {
-            name,
-            field_type,
-            span: Span::new(start, end),
-        })
 }
 
 fn parse_function_body<Input>() -> impl Parser<Input, Output = FunctionBody>

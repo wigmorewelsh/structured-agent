@@ -16,7 +16,7 @@ mod extern_fns {
     ## List the files and directories at the given path
     pub extern fn list_directory(path: String): String
     ## Search file contents using a regular expression
-    pub extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: String, offset: String): String
+    pub extern fn grep(regex: String, working_directory: String, include_pattern: String, case_sensitive: Boolean, offset: Int): String
     ## Execute a shell command and return its output
     pub extern fn execute_command(command: String): String
 }

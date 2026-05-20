@@ -335,6 +335,55 @@ async def test_available_commands_received_after_new_session(binary_path):
     assert "reload" in command_names, f"Expected 'reload' command, got: {command_names}"
 
 
+SELECT_STRUCT_PROGRAM = """
+## A create task action
+struct CreateTask { title: String }
+
+## A complete task action
+struct CompleteTask { id: String }
+
+use io::print
+
+fn main(): () {
+    let result = select { CreateTask { title: "buy milk" }, CompleteTask { id: "42" } }
+    print("select_done")
+}
+"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_select_with_struct_literal_clause(binary_path):
+    collector = ResponseCollector()
+
+    async with acp.spawn_agent_process(
+        lambda agent: collector,
+        str(binary_path),
+        "acp",
+        "--engine", "print",
+        "--inline", SELECT_STRUCT_PROGRAM,
+        cwd=PROJECT_ROOT,
+        transport_kwargs={"stderr": subprocess.PIPE},
+    ) as (conn, process):
+        await conn.initialize(
+            protocol_version=acp.PROTOCOL_VERSION,
+            client_info=acp.schema.Implementation(name="test", version="1.0"),
+        )
+        await conn.new_session(cwd=str(PROJECT_ROOT), mcp_servers=[])
+        try:
+            await asyncio.wait_for(collector.got_event.wait(), timeout=15)
+        except asyncio.TimeoutError:
+            pass
+
+    stderr = (await process.stderr.read()).decode()
+
+    assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
+    assert any("select_done" in e for e in collector.events), (
+        f"Expected 'select_done' output after select expression. "
+        f"Got: {collector.events}\nStderr:\n{stderr}"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
 async def test_runtime_error_reported_when_extern_fn_has_no_provider(binary_path, gemini_api_key):
