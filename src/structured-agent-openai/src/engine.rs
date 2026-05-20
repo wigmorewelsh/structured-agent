@@ -12,7 +12,8 @@ use async_openai::{
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use structured_agent_interpreter_runtime::{
-    Context, ContextEvent, Event, ExpressionValue, LanguageEngine, ThinkingEvent, Type,
+    Context, ContextEvent, DefinitionPath, Event, ExpressionValue, LanguageEngine, ThinkingEvent,
+    Type,
 };
 
 const DEFAULT_NO_EVENTS_MESSAGE: &str = "No events available.";
@@ -224,7 +225,7 @@ impl OpenAIEngine {
                     .get_struct(type_name)
                     .ok_or_else(|| format!("Unknown struct: {}", type_name.last_name()))?
                     .clone();
-                Self::parse_struct_fields(obj, &fields, context)
+                Self::parse_struct_fields(obj, type_name, &fields, context)
             }
             Type::Parameterized(n, args) => {
                 let obj = json_value
@@ -235,7 +236,7 @@ impl OpenAIEngine {
                     .get_struct_with_args(n, args)
                     .ok_or_else(|| format!("Unknown struct: {}", n.last_name()))?
                     .clone();
-                Self::parse_struct_fields(obj, &fields, context)
+                Self::parse_struct_fields(obj, n, &fields, context)
             }
             _ => Err(format!("Unsupported type: {}", value_type.name())),
         }
@@ -243,6 +244,7 @@ impl OpenAIEngine {
 
     fn parse_struct_fields(
         obj: &serde_json::Map<String, serde_json::Value>,
+        type_name: &DefinitionPath,
         fields: &[(String, Type)],
         context: &Context,
     ) -> Result<ExpressionValue, String> {
@@ -257,7 +259,10 @@ impl OpenAIEngine {
                 Ok((field_name.as_str(), val))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Ok(ExpressionValue::struct_value(field_values))
+        Ok(ExpressionValue::named_struct_value(
+            type_name.clone(),
+            field_values,
+        ))
     }
 
     fn parse_typed_response(
@@ -269,32 +274,16 @@ impl OpenAIEngine {
             .map_err(|_| format!("Invalid JSON response: '{}'", response_text))?;
 
         match return_type {
-            Type::Named(_) if !return_type.is_unit() => {
-                Self::parse_json_value(response_json, return_type, context)
+            _ if return_type.is_unit() => {
+                Err("Unit type cannot be used as return type".to_string())
             }
+            Type::Generic(_) => Err("Generic type cannot be used as return type".to_string()),
+            Type::Union(_) => Err("Union type cannot be used as return type".to_string()),
             _ => {
                 let value_field = response_json
                     .get("value")
                     .ok_or_else(|| "Missing 'value' field in response".to_string())?;
-                match return_type {
-                    _ if return_type.is_string()
-                        || return_type.is_boolean()
-                        || return_type.is_int() =>
-                    {
-                        Self::parse_json_value(value_field.clone(), return_type, context)
-                    }
-                    Type::Parameterized(_, _) => {
-                        Self::parse_json_value(value_field.clone(), return_type, context)
-                    }
-                    _ if return_type.is_unit() => {
-                        Err("Unit type cannot be used as return type".to_string())
-                    }
-                    Type::Generic(_) => {
-                        Err("Generic type cannot be used as return type".to_string())
-                    }
-                    Type::Union(_) => Err("Union type cannot be used as return type".to_string()),
-                    _ => unreachable!(),
-                }
+                Self::parse_json_value(value_field.clone(), return_type, context)
             }
         }
     }
@@ -594,6 +583,43 @@ mod tests {
             value.get_struct_field("y").unwrap().as_integer().unwrap(),
             7
         );
+    }
+
+    #[test]
+    fn test_parse_typed_response_struct() {
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Done".to_string(),
+            vec![("report".to_string(), Type::string())],
+        );
+        let context = make_context(structs);
+        let response = "{\"value\": {\"report\": \"all done\"}}";
+        let done_type = Type::Named(make_def_path("main", "Done"));
+        let result = OpenAIEngine::parse_typed_response(response, &done_type, &context);
+        assert!(result.is_ok(), "Expected value, got: {:?}", result.err());
+        assert_eq!(
+            result
+                .unwrap()
+                .get_struct_field("report")
+                .unwrap()
+                .as_string()
+                .unwrap(),
+            "all done"
+        );
+    }
+
+    #[test]
+    fn test_parse_typed_response_struct_has_correct_type_path() {
+        let mut structs = HashMap::new();
+        structs.insert(
+            "Done".to_string(),
+            vec![("report".to_string(), Type::string())],
+        );
+        let context = make_context(structs);
+        let response = "{\"value\": {\"report\": \"all done\"}}";
+        let done_type = Type::Named(make_def_path("main", "Done"));
+        let result = OpenAIEngine::parse_typed_response(response, &done_type, &context).unwrap();
+        assert_eq!(result.type_path, make_def_path("main", "Done"));
     }
 
     #[test]

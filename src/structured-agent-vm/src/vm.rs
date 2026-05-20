@@ -1001,6 +1001,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_branch_if_bool_true_takes_branch() {
+        let bytecode = make_bytecode_ref(
+            "test_fn",
+            vec![],
+            Type::string(),
+            vec![
+                Instruction::LdcBool {
+                    dest: 1,
+                    value: true,
+                },
+                Instruction::BrTrue { var: 1, offset: 2 },
+                Instruction::LdcStr {
+                    dest: 0,
+                    value: "should not be returned".to_string(),
+                },
+                Instruction::Ret { var: 0 },
+                Instruction::LdcStr {
+                    dest: 0,
+                    value: "expected value".to_string(),
+                },
+                Instruction::Ret { var: 0 },
+            ],
+        );
+        let runtime = Arc::new(NoopRuntime {});
+        let context = make_context_with_runtime(runtime.clone());
+        let vm = VM::new(runtime);
+        let (context, result) = vm
+            .execute(
+                &bytecode.instructions,
+                context,
+                vec![None; bytecode.slot_table.len()],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.as_string().unwrap(), "expected value");
+    }
+
+    #[tokio::test]
+    async fn execute_ret_inside_conditional_returns_immediately() {
+        let bytecode = make_bytecode_ref(
+            "test_ret_conditional",
+            vec![],
+            Type::string(),
+            vec![
+                Instruction::LdcBool {
+                    dest: 1,
+                    value: true,
+                },
+                Instruction::BrFalse { var: 1, offset: 2 },
+                Instruction::LdcStr {
+                    dest: 0,
+                    value: "returned from if".to_string(),
+                },
+                Instruction::Ret { var: 0 },
+                Instruction::LdcStr {
+                    dest: 0,
+                    value: "should not be reached".to_string(),
+                },
+                Instruction::Ret { var: 0 },
+            ],
+        );
+
+        let runtime = Arc::new(NoopRuntime {});
+        let context = make_context_with_runtime(runtime.clone());
+        let vm = VM::new(runtime);
+        let (context, result) = vm
+            .execute(
+                &bytecode.instructions,
+                context,
+                vec![None; bytecode.slot_table.len()],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.value.as_string().unwrap(), "returned from if");
+        assert_eq!(context.has_events(), false);
+    }
+
+    #[tokio::test]
     async fn execute_call_native_writes_result_to_dest() {
         let f = NativeFnPtr::new(|_, _| Box::pin(async { Ok(ExpressionValue::string("ok")) }));
 
