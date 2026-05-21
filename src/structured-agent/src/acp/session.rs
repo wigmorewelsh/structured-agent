@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tracing::{debug, error, warn};
 
 use super::AGENT_RUNTIME;
@@ -22,6 +22,8 @@ pub struct AcpSession {
     pending_input: Arc<Mutex<Option<oneshot::Sender<String>>>>,
     task_handle: Option<tokio::task::JoinHandle<Result<ExpressionValue, AgentError>>>,
     event_task_handle: Option<tokio::task::JoinHandle<Result<(), ()>>>,
+    task_done_tx: Arc<watch::Sender<bool>>,
+    task_done_rx: watch::Receiver<bool>,
 }
 
 impl AcpSession {
@@ -43,6 +45,7 @@ impl AcpSession {
 
         let agent = Agent::new(Arc::new(runtime));
 
+        let (task_done_tx, task_done_rx) = watch::channel(false);
         Ok(Self {
             agent,
             program_source: program_source.clone(),
@@ -52,6 +55,8 @@ impl AcpSession {
             pending_input: Arc::new(Mutex::new(None)),
             task_handle: None,
             event_task_handle: None,
+            task_done_tx: Arc::new(task_done_tx),
+            task_done_rx,
         })
     }
 
@@ -64,6 +69,7 @@ impl AcpSession {
         let runtime = Runtime::builder(program_source.clone()).build();
         let agent = Agent::new(Arc::new(runtime));
 
+        let (task_done_tx, task_done_rx) = watch::channel(false);
         Self {
             agent,
             program_source,
@@ -73,6 +79,8 @@ impl AcpSession {
             pending_input: Arc::new(Mutex::new(None)),
             task_handle: None,
             event_task_handle: None,
+            task_done_tx: Arc::new(task_done_tx),
+            task_done_rx,
         }
     }
 
@@ -99,6 +107,7 @@ impl AcpSession {
 
         let runtime_arc = self.agent.runtime.clone();
         let handle = self.agent.handle.clone();
+        let task_done_tx = self.task_done_tx.clone();
 
         self.task_handle = Some(AGENT_RUNTIME.spawn(async move {
             let result = runtime_arc
@@ -116,6 +125,7 @@ impl AcpSession {
                 );
                 update_tx_for_task.send((notification, tx)).ok();
             }
+            task_done_tx.send(true).ok();
             result
         }));
 
@@ -331,6 +341,10 @@ impl AcpSession {
         }
         drop(pending);
 
+        if *self.task_done_rx.borrow() {
+            return Err(AgentError::Cancelled);
+        }
+
         debug!("send_prompt: sending to messagebox");
         let (ack_tx, ack_rx) = oneshot::channel();
         let msg = AgentMessage {
@@ -342,7 +356,11 @@ impl AcpSession {
             .send((msg, ack_tx))
             .map_err(|_| AgentError::Cancelled)?;
         debug!("send_prompt: awaiting ack");
-        let result = ack_rx.await.map_err(|_| AgentError::Cancelled);
+        let mut done_rx = self.task_done_rx.clone();
+        let result = tokio::select! {
+            result = ack_rx => result.map_err(|_| AgentError::Cancelled),
+            _ = done_rx.wait_for(|v| *v) => Err(AgentError::Cancelled),
+        };
         debug!("send_prompt: ack received, result ok={}", result.is_ok());
         result
     }
@@ -526,5 +544,27 @@ mod tests {
         };
         assert_eq!(link.uri, "https://example.com/logo.png");
         assert_eq!(link.name, "logo.png");
+    }
+
+    #[tokio::test]
+    async fn send_prompt_returns_error_when_program_has_finished() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let session_id = acp::SessionId::new("test");
+        let mut session = AcpSession::new(ProgramSource::Inline("".to_string()), session_id, tx);
+        session.start().unwrap();
+
+        session.task_done_rx.wait_for(|v| *v).await.unwrap();
+
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_millis(500),
+            session.send_prompt("hello".to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok(), "send_prompt timed out - was blocked");
+        assert!(
+            result.unwrap().is_err(),
+            "send_prompt should return error after program finished"
+        );
     }
 }
