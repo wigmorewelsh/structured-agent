@@ -89,7 +89,7 @@ impl Function for ExternalFunctionExpr {
             .map_err(|e| format!("MCP tool call failed: {}", e));
 
         match result {
-            Err(e) => Err(e),
+            Err(e) => Ok((context, ExpressionResult::
             Ok(value) => Ok((context, ExpressionResult::new(value))),
         }
     }
