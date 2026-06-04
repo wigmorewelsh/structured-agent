@@ -270,6 +270,69 @@ pub struct FileConfig {
     pub loki_url: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn run_args_parse_copilot_github_token_flag() {
+        let args = Args::try_parse_from([
+            "structured-agent",
+            "run",
+            "--inline",
+            "let x = 1",
+            "--engine",
+            "copilot",
+            "--github-token",
+            "ghs_test",
+        ])
+        .unwrap();
+        let Command::Run(run_args) = args.command else {
+            panic!("expected Run command");
+        };
+        assert_eq!(run_args.github_token, Some("ghs_test".to_string()));
+    }
+
+    #[test]
+    fn acp_args_parse_copilot_github_token_flag() {
+        let args = Args::try_parse_from([
+            "structured-agent",
+            "acp",
+            "--inline",
+            "let x = 1",
+            "--github-token",
+            "ghs_test",
+        ])
+        .unwrap();
+        let Command::Acp(acp_args) = args.command else {
+            panic!("expected Acp command");
+        };
+        assert_eq!(acp_args.github_token, Some("ghs_test".to_string()));
+    }
+
+    #[test]
+    fn run_args_parse_copilot_model_flag() {
+        let args = Args::try_parse_from([
+            "structured-agent",
+            "run",
+            "--inline",
+            "let x = 1",
+            "--engine",
+            "copilot",
+            "--github-token",
+            "ghs_test",
+            "--copilot-model",
+            "gpt-4o",
+        ])
+        .unwrap();
+        let Command::Run(run_args) = args.command else {
+            panic!("expected Run command");
+        };
+        assert_eq!(run_args.copilot_model, Some("gpt-4o".to_string()));
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct McpServerEntry {
     pub command: String,
