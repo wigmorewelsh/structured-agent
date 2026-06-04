@@ -15,6 +15,8 @@ struct EngineArgs {
     openai_base_url: Option<String>,
     hf_token: Option<String>,
     hf_model: Option<String>,
+    copilot_github_token: Option<String>,
+    copilot_model: Option<String>,
     with_unstable_functions: bool,
     metrics_port: Option<u16>,
     otlp_endpoint: Option<String>,
@@ -56,6 +58,10 @@ pub enum EngineType {
     },
     HuggingFace {
         token: String,
+        model: String,
+    },
+    Copilot {
+        github_token: String,
         model: String,
     },
 }
@@ -107,6 +113,8 @@ impl Config {
                 openai_base_url: args.openai_base_url,
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
+                copilot_github_token: args.github_token,
+                copilot_model: args.copilot_model,
                 with_unstable_functions: args.with_unstable_functions,
                 metrics_port: args.metrics_port,
                 otlp_endpoint: args.otlp_endpoint,
@@ -160,6 +168,8 @@ impl Config {
                 openai_base_url: args.openai_base_url,
                 hf_token: args.hf_token,
                 hf_model: args.hf_model,
+                copilot_github_token: args.github_token,
+                copilot_model: args.copilot_model,
                 with_unstable_functions: args.with_unstable_functions,
                 metrics_port: args.metrics_port,
                 otlp_endpoint: args.otlp_endpoint,
@@ -186,6 +196,12 @@ impl Config {
             .or_else(|| file_config.openai_base_url.clone());
         let hf_token = ea.hf_token.or_else(|| file_config.hf_token.clone());
         let hf_model = ea.hf_model.or_else(|| file_config.hf_model.clone());
+        let copilot_github_token = ea
+            .copilot_github_token
+            .or_else(|| file_config.github_token.clone());
+        let copilot_model = ea
+            .copilot_model
+            .or_else(|| file_config.copilot_model.clone());
         let engine = Self::merge_engine(
             &ea.engine,
             file_config,
@@ -196,6 +212,8 @@ impl Config {
             openai_base_url,
             hf_token,
             hf_model,
+            copilot_github_token,
+            copilot_model,
         );
         let with_unstable_functions =
             ea.with_unstable_functions || file_config.with_unstable_functions.unwrap_or(false);
@@ -333,6 +351,8 @@ impl Config {
         openai_base_url: Option<String>,
         hf_token: Option<String>,
         hf_model: Option<String>,
+        copilot_github_token: Option<String>,
+        copilot_model: Option<String>,
     ) -> EngineType {
         let engine_str = if engine != "print" {
             engine
@@ -363,6 +383,14 @@ impl Config {
                 let model = hf_model.unwrap_or_default();
                 EngineType::HuggingFace { token, model }
             }
+            "copilot" => {
+                let github_token = copilot_github_token.unwrap_or_default();
+                let model = copilot_model.unwrap_or_else(|| "gpt-4o".to_string());
+                EngineType::Copilot {
+                    github_token,
+                    model,
+                }
+            }
             _ => EngineType::Print,
         }
     }
@@ -371,6 +399,62 @@ impl Config {
         match &self.program_source {
             ProgramSource::File(path) => format!("Loading program from: {}", path),
             ProgramSource::Inline(_) => "Executing inline program".to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::FileConfig;
+
+    #[test]
+    fn merge_engine_copilot_with_token_produces_copilot_engine_type() {
+        let result = Config::merge_engine(
+            "copilot",
+            &FileConfig::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("tok".into()),
+            Some("gpt-4o".into()),
+        );
+        match result {
+            EngineType::Copilot {
+                github_token,
+                model,
+            } => {
+                assert_eq!(github_token, "tok");
+                assert_eq!(model, "gpt-4o");
+            }
+            other => panic!("expected Copilot, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn merge_engine_copilot_uses_default_model_when_not_specified() {
+        let result = Config::merge_engine(
+            "copilot",
+            &FileConfig::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("tok".into()),
+            None,
+        );
+        match result {
+            EngineType::Copilot { model, .. } => {
+                assert_eq!(model, "gpt-4o");
+            }
+            other => panic!("expected Copilot, got {:?}", other),
         }
     }
 }

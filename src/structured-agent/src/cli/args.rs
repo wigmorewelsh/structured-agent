@@ -93,6 +93,16 @@ pub struct RunArgs {
 
     #[arg(
         long,
+        value_name = "TOKEN",
+        help = "GitHub token for Copilot authentication"
+    )]
+    pub github_token: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "Copilot model name")]
+    pub copilot_model: Option<String>,
+
+    #[arg(
+        long,
         value_name = "PORT",
         help = "Expose Prometheus metrics scrape endpoint on this port"
     )]
@@ -194,6 +204,16 @@ pub struct AcpArgs {
 
     #[arg(
         long,
+        value_name = "TOKEN",
+        help = "GitHub token for Copilot authentication"
+    )]
+    pub github_token: Option<String>,
+
+    #[arg(long, value_name = "MODEL", help = "Copilot model name")]
+    pub copilot_model: Option<String>,
+
+    #[arg(
+        long,
         value_name = "PORT",
         help = "Expose Prometheus metrics scrape endpoint on this port"
     )]
@@ -243,6 +263,8 @@ pub struct FileConfig {
     pub openai_base_url: Option<String>,
     pub hf_token: Option<String>,
     pub hf_model: Option<String>,
+    pub github_token: Option<String>,
+    pub copilot_model: Option<String>,
     pub metrics_port: Option<u16>,
     pub otlp_endpoint: Option<String>,
     pub loki_url: Option<String>,

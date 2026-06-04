@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use structured_agent_il::CompiledFunction;
 use structured_agent_il::Module;
-use structured_agent_openai::{HF_BASE_URL, OpenAIEngine};
+use structured_agent_openai::{CopilotEngine, HF_BASE_URL, OpenAIEngine};
 use structured_agent_runtime::actor::ActorRegistry;
 use structured_agent_runtime::symbols::{MetaData, TypeDefinitionKind};
 use structured_agent_runtime::{DefinitionPath, SymbolQuery};
@@ -138,6 +138,10 @@ impl RuntimeBuilder {
             EngineType::HuggingFace { token, model } => {
                 Arc::new(OpenAIEngine::new(token, HF_BASE_URL, model))
             }
+            EngineType::Copilot {
+                github_token,
+                model,
+            } => Arc::new(CopilotEngine::new(github_token, model)),
             EngineType::Gemini { api_key, model } => {
                 let gemini_config = if let Some(key) = api_key {
                     GeminiConfig::default().with_api_key_auth(key.clone())
@@ -916,5 +920,25 @@ fn main(): String { "ok" }
             .unwrap();
         let doc = runtime.get_type_documentation(&task_type_name);
         assert_eq!(doc, Some("A task".to_string()));
+    }
+
+    #[tokio::test]
+    async fn runtime_builder_constructs_copilot_engine_from_config() {
+        use crate::cli::config::{Config, EngineType, Mode, ObservabilityConfig};
+        let config = Config {
+            program_source: ProgramSource::Inline("let x = 1".to_string()),
+            engine: EngineType::Copilot {
+                github_token: "tok".to_string(),
+                model: "gpt-4o".to_string(),
+            },
+            mcp_servers: vec![],
+            with_unstable_functions: false,
+            mode: Mode::Run,
+            observability: ObservabilityConfig::default(),
+        };
+        let result = RuntimeBuilder::new(config.program_source.clone())
+            .with_config(&config)
+            .await;
+        assert!(result.is_ok());
     }
 }
