@@ -40,6 +40,14 @@ def gemini_api_key():
     return key
 
 
+@pytest.fixture(scope="session")
+def copilot_github_token():
+    token = os.environ.get("COPILOT_GITHUB_TOKEN")
+    if not token:
+        pytest.skip("COPILOT_GITHUB_TOKEN not set")
+    return token
+
+
 class ResponseCollector(acp.Client):
     def __init__(self):
         self.events = []
@@ -112,6 +120,22 @@ extern fn missing_tool(input: String): String
 
 fn main(): () {
     missing_tool("hello")
+}
+"""
+
+
+COPILOT_SIMPLE_PROGRAM = """
+use io::print
+
+fn answer(): String {
+    '''
+    Reply with a single word: hello
+    '''!
+}
+
+fn main(): () {
+    let result = answer()
+    print(result)
 }
 """
 
@@ -476,6 +500,49 @@ async def test_select_with_struct_literal_clause(binary_path):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
+async def test_copilot_engine_completes_simple_task(binary_path, copilot_github_token):
+    collector = ResponseCollector()
+    env = {**os.environ}
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        async with acp.spawn_agent_process(
+            lambda agent: collector,
+            str(binary_path),
+            "acp",
+            "--engine", "copilot",
+            "--github-token", copilot_github_token,
+            "--inline", COPILOT_SIMPLE_PROGRAM,
+            cwd=work_dir,
+            transport_kwargs={"stderr": subprocess.PIPE},
+            env=env,
+        ) as (conn, process):
+            await conn.initialize(
+                protocol_version=acp.PROTOCOL_VERSION,
+                client_info=acp.schema.Implementation(name="test", version="1.0"),
+            )
+
+            session_id = (await conn.new_session(cwd=work_dir, mcp_servers=[])).session_id
+
+            await conn.prompt(
+                prompt=[acp.text_block("Say hello.")],
+                session_id=session_id,
+            )
+
+            try:
+                await asyncio.wait_for(collector.got_event.wait(), timeout=120)
+            except asyncio.TimeoutError:
+                pass
+
+    stderr = (await process.stderr.read()).decode()
+
+    assert "panicked" not in stderr, f"Process panicked:\n{stderr}"
+    assert len(collector.events) > 0, (
+        f"Expected agent to print a response. Got no events.\nStderr:\n{stderr}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(180)
 async def test_runtime_error_reported_when_extern_fn_has_no_provider(binary_path, gemini_api_key):
     collector = ResponseCollector()
 
