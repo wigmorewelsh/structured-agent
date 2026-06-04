@@ -1,6 +1,6 @@
 use async_openai::{
     Client,
-    config::OpenAIConfig,
+    config::{Config, OpenAIConfig},
     types::chat::{
         ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartAudio,
         ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
@@ -21,13 +21,13 @@ const DEFAULT_NO_RESPONSE_MESSAGE: &str = "No response received";
 pub const HF_BASE_URL: &str = "https://api-inference.huggingface.co/v1";
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
-pub struct OpenAIEngine {
-    client: Client<OpenAIConfig>,
+pub struct OpenAIEngine<C: Config = OpenAIConfig> {
+    pub(crate) client: Client<C>,
     model: String,
     reasoning_effort: Option<ReasoningEffort>,
 }
 
-impl OpenAIEngine {
+impl OpenAIEngine<OpenAIConfig> {
     pub fn new(
         api_key: impl Into<String>,
         base_url: impl Into<String>,
@@ -48,6 +48,16 @@ impl OpenAIEngine {
     pub fn with_reasoning_effort(mut self, effort: ReasoningEffort) -> Self {
         self.reasoning_effort = Some(effort);
         self
+    }
+}
+
+impl<C: Config> OpenAIEngine<C> {
+    pub(crate) fn with_client(client: Client<C>, model: impl Into<String>) -> Self {
+        Self {
+            client,
+            model: model.into(),
+            reasoning_effort: None,
+        }
     }
 
     fn build_value_schema(
@@ -338,7 +348,7 @@ impl OpenAIEngine {
 }
 
 #[async_trait]
-impl LanguageEngine for OpenAIEngine {
+impl<C: Config + Send + Sync + 'static> LanguageEngine for OpenAIEngine<C> {
     async fn request(
         &self,
         context: &Context,
@@ -423,6 +433,7 @@ impl LanguageEngine for OpenAIEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    type OpenAIEngine = super::OpenAIEngine<OpenAIConfig>;
     use arrow::datatypes::DataType;
     use async_openai::types::chat::{
         ChatCompletionRequestMessage, ChatCompletionRequestUserMessageContent,

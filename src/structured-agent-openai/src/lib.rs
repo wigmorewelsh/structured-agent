@@ -1,3 +1,6 @@
+pub mod copilot_engine;
+pub use copilot_engine::{COPILOT_BASE_URL, CopilotEngine};
+
 pub mod copilot_token;
 pub use copilot_token::{CopilotTokenError, CopilotTokenProvider};
 
