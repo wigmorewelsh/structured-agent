@@ -1,5 +1,6 @@
 use messaging::receive
 use io::print
+use fs::get_working_dir
 
 extern fn read_file(path: String): String
 extern fn write_file(path: String, content: String): String
@@ -191,6 +192,9 @@ fn main(): () {
     At no other point can you call tools.
     Youll have to decide what to use in a given context.
     '''!
+
+    let working_dir = get_working_dir()
+    "the current working directory is `{working_dir}`"!
 
     print("Starting agent loop...")
 
